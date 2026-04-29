@@ -2,31 +2,29 @@
 -- SafwanTiger Shop Bot — initial schema
 -- Run this in the Supabase SQL editor (or `supabase db push`).
 --
--- This file is idempotent and wrapped in a single transaction so a
--- failure leaves nothing half-applied. If you previously ran a partial
--- migration and want a clean slate, uncomment the DROP block below
--- before running.
+-- All statements use `if not exists` so this file is safe to re-run.
+-- If a previous attempt left a half-applied state, run the DROP block
+-- below first (it's commented out — uncomment it once, run, then run
+-- the rest).
 -- =====================================================================
 
-begin;
-
 -- ---------- (Optional) clean slate — uncomment to drop everything ---
--- drop view  if exists public.products_view cascade;
--- drop table if exists public.referrals      cascade;
--- drop table if exists public.announcements  cascade;
--- drop table if exists public.settings       cascade;
--- drop table if exists public.payment_methods cascade;
--- drop table if exists public.deposits       cascade;
--- drop table if exists public.orders         cascade;
--- drop table if exists public.products       cascade;
--- drop table if exists public.categories     cascade;
--- drop table if exists public.admins         cascade;
--- drop table if exists public.users          cascade;
+-- Run these by themselves first if a previous migration attempt left
+-- a partial state behind:
+--
+--   drop view  if exists public.products_view cascade;
+--   drop table if exists public.referrals      cascade;
+--   drop table if exists public.announcements  cascade;
+--   drop table if exists public.settings       cascade;
+--   drop table if exists public.payment_methods cascade;
+--   drop table if exists public.deposits       cascade;
+--   drop table if exists public.orders         cascade;
+--   drop table if exists public.products       cascade;
+--   drop table if exists public.categories     cascade;
+--   drop table if exists public.admins         cascade;
+--   drop table if exists public.users          cascade;
 
 -- ---------- USERS ----------
--- Self-reference (referred_by → users.telegram_id) is added below
--- via ALTER TABLE so the CREATE TABLE itself never depends on
--- the table existing yet.
 create table if not exists public.users (
     telegram_id     bigint primary key,
     username        text,
@@ -37,23 +35,18 @@ create table if not exists public.users (
     stock_alert     boolean not null default true,
     announcements   boolean not null default true,
     ref_code        text unique,
+    -- referred_by intentionally has no FK constraint — enforcement
+    -- is handled at the application layer to avoid self-reference
+    -- quirks in some SQL editors. Add it later if you want strict
+    -- integrity:
+    --   alter table public.users
+    --     add constraint users_referred_by_fkey
+    --     foreign key (referred_by) references public.users(telegram_id)
+    --     on delete set null;
     referred_by     bigint,
     joined_at       timestamptz not null default now(),
     last_seen_at    timestamptz not null default now()
 );
-
-do $$
-begin
-    if not exists (
-        select 1 from pg_constraint where conname = 'users_referred_by_fkey'
-    ) then
-        alter table public.users
-            add constraint users_referred_by_fkey
-            foreign key (referred_by)
-            references public.users(telegram_id)
-            on delete set null;
-    end if;
-end$$;
 
 create index if not exists users_referred_by_idx on public.users(referred_by);
 
@@ -203,5 +196,3 @@ insert into public.settings (key, value) values
     ('text.welcome',       '"Welcome to SafwanTiger Shop"'::jsonb),
     ('text.menu_button',   '"Main Menu"'::jsonb)
 on conflict (key) do nothing;
-
-commit;
