@@ -57,11 +57,20 @@ export type AdminFlow =
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } };
 
+/** Multi-step user-side flow (currently just Binance Pay top-up). */
+export type UserFlow = {
+  type: 'binance_topup';
+  step: 'amount';
+  data: { method_id: number; method_name: string; min: number };
+};
+
 export type SessionData = {
   /** Selected qty per product id, used by the shop product page */
   qty: Record<number, number>;
   /** Multi-step admin input flow, if any */
   adminFlow?: AdminFlow;
+  /** Multi-step user input flow, if any (e.g. Binance Pay top-up). */
+  userFlow?: UserFlow;
   /**
    * Whether we've already silently cleared any leftover persistent
    * reply keyboard for this user (one-time migration from earlier

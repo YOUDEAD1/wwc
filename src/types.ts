@@ -70,5 +70,6 @@ export type DBPaymentMethod = {
   min_amount: number;
   active: boolean;
   sort_order: number;
+  provider: 'manual' | 'binance_pay';
   created_at: string;
 };
