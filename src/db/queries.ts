@@ -245,14 +245,32 @@ export async function addPaymentMethod(p: {
   name: string;
   instructions: string;
   min_amount?: number;
+  provider?: 'manual' | 'binance_pay';
 }): Promise<DBPaymentMethod> {
   const { data, error } = await supabase
     .from('payment_methods')
-    .insert({ name: p.name, instructions: p.instructions, min_amount: p.min_amount ?? 1 })
+    .insert({
+      name: p.name,
+      instructions: p.instructions,
+      min_amount: p.min_amount ?? 1,
+      provider: p.provider ?? 'manual',
+    })
     .select('*')
     .single();
   if (error || !data) throw error ?? new Error('addPaymentMethod failed');
   return data as DBPaymentMethod;
+}
+
+/** Look up a deposit by its merchantTradeNo (stored in `reference`). */
+export async function findDepositByReference(reference: string): Promise<DBDeposit | null> {
+  const { data } = await supabase
+    .from('deposits')
+    .select('*')
+    .eq('reference', reference)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as DBDeposit) ?? null;
 }
 
 export async function createDeposit(d: {

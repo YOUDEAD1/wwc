@@ -304,12 +304,32 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
   ctx.session.adminFlow = undefined;
   const kb = new InlineKeyboard()
     .text('➕ Add Payment Method', 'adm:pay:add')
-    .text('📋 List & Manage', 'adm:pay:list');
+    .text('📋 List & Manage', 'adm:pay:list')
+    .row()
+    .text('💎 Add Binance Pay (auto)', 'adm:pay:add_binance');
   backRow(kb);
-  await ctx.editMessageText('💳 *Payment Methods*', {
-    parse_mode: 'Markdown',
-    reply_markup: kb,
+  await ctx.editMessageText(
+    '💳 *Payment Methods*\n\n_Use_ *Binance Pay (auto)* _for instant on-chain top-ups via Binance Pay merchant API. Manual methods are reviewed in the Deposits tab._',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:pay:add_binance', async (ctx) => {
+  if (!(await import('../../services/binance.js')).binanceEnabled()) {
+    await ctx.answerCallbackQuery({
+      text: 'Set BINANCE_PAY_API_KEY and BINANCE_PAY_API_SECRET on the server first.',
+      show_alert: true,
+    });
+    return;
+  }
+  const m = await addPaymentMethod({
+    name: 'Binance Pay',
+    instructions: 'Auto-approved via Binance Pay merchant API.',
+    min_amount: 1,
+    provider: 'binance_pay',
   });
+  await ctx.answerCallbackQuery({ text: `✅ Added Binance Pay (id ${m.id}).` });
+  await showRoot(ctx);
 });
 
 adminBot.callbackQuery('adm:pay:add', async (ctx) => {
