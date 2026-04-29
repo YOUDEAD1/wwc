@@ -62,6 +62,12 @@ export type SessionData = {
   qty: Record<number, number>;
   /** Multi-step admin input flow, if any */
   adminFlow?: AdminFlow;
+  /**
+   * Whether we've already silently cleared any leftover persistent
+   * reply keyboard for this user (one-time migration from earlier
+   * bot versions that used a bottom keyboard).
+   */
+  kbCleared?: boolean;
 };
 
 export type SessionCtx = Context & SessionFlavor<SessionData>;
