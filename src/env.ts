@@ -1,8 +1,13 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+// Accept either TELEGRAM_BOT_TOKEN (preferred) or BOT_TOKEN (legacy alias).
+if (!process.env.TELEGRAM_BOT_TOKEN && process.env.BOT_TOKEN) {
+  process.env.TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN;
+}
+
 const schema = z.object({
-  BOT_TOKEN: z.string().min(10, 'BOT_TOKEN missing'),
+  TELEGRAM_BOT_TOKEN: z.string().min(10, 'TELEGRAM_BOT_TOKEN (or BOT_TOKEN) missing'),
   ADMIN_USER_ID: z.coerce.number().int().positive(),
   BOT_USERNAME: z.string().min(3),
 
@@ -21,7 +26,10 @@ const schema = z.object({
   OPENAI_MODEL: z.string().default('gpt-4o-mini'),
 });
 
-export type Env = z.infer<typeof schema>;
+// Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.
+export type EnvWithAlias = z.infer<typeof schema> & { BOT_TOKEN: string };
+
+export type Env = EnvWithAlias;
 
 export const env: Env = (() => {
   const parsed = schema.safeParse(process.env);
@@ -30,5 +38,5 @@ export const env: Env = (() => {
     console.error(parsed.error.flatten().fieldErrors);
     process.exit(1);
   }
-  return parsed.data;
+  return { ...parsed.data, BOT_TOKEN: parsed.data.TELEGRAM_BOT_TOKEN };
 })();
