@@ -36,22 +36,20 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
   // Pre-load admin-editable settings into memory.
   await refreshSettings();
 
-  // Public users see only /start in the slash-menu.
+  // Slash-menu shows only /start to everyone. /admin and /menu still
+  // work as typed commands but are intentionally hidden.
   await bot.api.setMyCommands([{ command: 'start', description: 'Open the main menu' }]);
 
-  // The admin gets /admin too, scoped to their private chat so it
-  // doesn't leak into the public command list.
+  // Wipe any lingering admin-scoped commands left over from earlier
+  // versions of the bot (so /admin doesn't show up in the popup for
+  // the admin either).
   if (env.ADMIN_USER_ID) {
     try {
-      await bot.api.setMyCommands(
-        [
-          { command: 'start', description: 'Open the main menu' },
-          { command: 'admin', description: 'Open the admin dashboard' },
-        ],
-        { scope: { type: 'chat', chat_id: env.ADMIN_USER_ID } },
-      );
+      await bot.api.deleteMyCommands({
+        scope: { type: 'chat', chat_id: env.ADMIN_USER_ID },
+      });
     } catch (err) {
-      logger.warn({ err }, 'Could not set admin-scoped commands');
+      logger.debug({ err }, 'No admin-scoped commands to delete');
     }
   }
 

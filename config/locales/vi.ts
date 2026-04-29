@@ -29,6 +29,7 @@ export const vi: Record<string, string> = {
   'btn.language': '🌐 Ngôn ngữ',
   'btn.deposit_history': '💳 Lịch sử nạp',
   'btn.clear_cache': '🧹 Xóa cache',
+  'btn.channel': '📢 Kênh',
 
   'shop.choose_category': '🛒 *Cửa hàng* — chọn danh mục:',
   'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
@@ -81,6 +82,10 @@ export const vi: Record<string, string> = {
   'support.ai.title': '🤖 *Trợ lý hỗ trợ tự động*',
   'support.ai.prompt': 'Mô tả vấn đề và tôi sẽ cố gắng hỗ trợ.',
   'support.ai.fallback': 'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
+  'channel.not_set': '📢 Liên kết kênh chưa được cài đặt.',
+  'channel.subscribe.title': '📢 *Tham gia kênh* để tiếp tục',
+  'channel.subscribe.body': 'Vui lòng tham gia kênh bên dưới rồi nhấn *Tôi đã tham gia*.',
+  'channel.subscribe.joined': '✅ Tôi đã tham gia',
 
   'admin.only': '⛔ Chỉ dành cho quản trị viên.',
   'admin.help.title': '🛠 *Lệnh quản trị*',

@@ -29,6 +29,7 @@ export const ar: Record<string, string> = {
   'btn.language': '🌐 اللغة',
   'btn.deposit_history': '💳 سجل الإيداعات',
   'btn.clear_cache': '🧹 مسح الكاش',
+  'btn.channel': '📢 القناة',
 
   'shop.choose_category': '🛒 *المتجر* — اختر فئة:',
   'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
@@ -79,6 +80,10 @@ export const ar: Record<string, string> = {
   'support.ai.title': '🤖 *مساعد الدعم الآلي*',
   'support.ai.prompt': 'اشرح مشكلتك وسأبذل قصارى جهدي للمساعدة.',
   'support.ai.fallback': 'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',
+  'channel.not_set': '📢 لم يتم ضبط رابط القناة بعد.',
+  'channel.subscribe.title': '📢 *انضم إلى قناتنا* للمتابعة',
+  'channel.subscribe.body': 'يرجى الانضمام أدناه ثم الضغط على *لقد انضممت*.',
+  'channel.subscribe.joined': '✅ لقد انضممت',
 
   'admin.only': '⛔ للمسؤول فقط.',
   'admin.help.title': '🛠 *أوامر المسؤول*',

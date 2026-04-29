@@ -82,3 +82,19 @@ export function clearLocalCache(): void {
   cache.clear();
   loaded = false;
 }
+
+/** Channel URL shown as a direct-join button in the main menu. */
+export function getChannelUrl(): string | undefined {
+  const v = cache.get('channel.url');
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+export async function setChannelUrl(url: string, updated_by?: number): Promise<void> {
+  await setSetting('channel.url', url, updated_by);
+  cache.set('channel.url', url);
+}
+
+export async function clearChannelUrl(updated_by?: number): Promise<void> {
+  await setSetting('channel.url', '', updated_by);
+  cache.set('channel.url', '');
+}

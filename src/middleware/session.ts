@@ -52,7 +52,10 @@ export type AdminFlow =
   | { type: 'set_emoji'; step: 'value'; data: { key: string } }
   | { type: 'set_color'; step: 'value'; data: { key: string } }
   | { type: 'announce'; step: 'text'; data: Record<string, never> }
-  | { type: 'announce'; step: 'confirm'; data: { text: string } };
+  | { type: 'announce'; step: 'confirm'; data: { text: string } }
+  | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
+  | { type: 'find_user'; step: 'query'; data: Record<string, never> }
+  | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } };
 
 export type SessionData = {
   /** Selected qty per product id, used by the shop product page */
