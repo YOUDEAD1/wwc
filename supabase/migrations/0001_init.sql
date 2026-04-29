@@ -1,9 +1,32 @@
 -- =====================================================================
 -- SafwanTiger Shop Bot — initial schema
 -- Run this in the Supabase SQL editor (or `supabase db push`).
+--
+-- This file is idempotent and wrapped in a single transaction so a
+-- failure leaves nothing half-applied. If you previously ran a partial
+-- migration and want a clean slate, uncomment the DROP block below
+-- before running.
 -- =====================================================================
 
+begin;
+
+-- ---------- (Optional) clean slate — uncomment to drop everything ---
+-- drop view  if exists public.products_view cascade;
+-- drop table if exists public.referrals      cascade;
+-- drop table if exists public.announcements  cascade;
+-- drop table if exists public.settings       cascade;
+-- drop table if exists public.payment_methods cascade;
+-- drop table if exists public.deposits       cascade;
+-- drop table if exists public.orders         cascade;
+-- drop table if exists public.products       cascade;
+-- drop table if exists public.categories     cascade;
+-- drop table if exists public.admins         cascade;
+-- drop table if exists public.users          cascade;
+
 -- ---------- USERS ----------
+-- Self-reference (referred_by → users.telegram_id) is added below
+-- via ALTER TABLE so the CREATE TABLE itself never depends on
+-- the table existing yet.
 create table if not exists public.users (
     telegram_id     bigint primary key,
     username        text,
@@ -14,10 +37,24 @@ create table if not exists public.users (
     stock_alert     boolean not null default true,
     announcements   boolean not null default true,
     ref_code        text unique,
-    referred_by     bigint references public.users(telegram_id) on delete set null,
+    referred_by     bigint,
     joined_at       timestamptz not null default now(),
     last_seen_at    timestamptz not null default now()
 );
+
+do $$
+begin
+    if not exists (
+        select 1 from pg_constraint where conname = 'users_referred_by_fkey'
+    ) then
+        alter table public.users
+            add constraint users_referred_by_fkey
+            foreign key (referred_by)
+            references public.users(telegram_id)
+            on delete set null;
+    end if;
+end$$;
+
 create index if not exists users_referred_by_idx on public.users(referred_by);
 
 -- ---------- ADMINS ----------
@@ -43,27 +80,27 @@ create table if not exists public.products (
     category_id  bigint references public.categories(id) on delete cascade,
     name         text not null,
     description  text,
-    note         text,           -- 'View Note' content shown on the product page
+    note         text,
     price        numeric(14,2) not null check (price >= 0),
     stock        int not null default 0 check (stock >= 0),
-    warranty     text,           -- free-form, e.g. "30 days"
+    warranty     text,
     emoji        text,
     active       boolean not null default true,
     created_at   timestamptz not null default now()
 );
 create index if not exists products_category_idx on public.products(category_id);
-create index if not exists products_active_idx on public.products(active);
+create index if not exists products_active_idx   on public.products(active);
 
 -- ---------- ORDERS ----------
 create table if not exists public.orders (
     id           bigserial primary key,
     user_id      bigint not null references public.users(telegram_id) on delete cascade,
     product_id   bigint references public.products(id) on delete set null,
-    product_name text not null,                    -- snapshot
+    product_name text not null,
     qty          int not null check (qty > 0),
     unit_price   numeric(14,2) not null,
     total        numeric(14,2) not null,
-    delivery     text,                             -- delivered code / credentials
+    delivery     text,
     status       text not null default 'paid' check (status in ('paid','refunded','cancelled')),
     created_at   timestamptz not null default now()
 );
@@ -81,7 +118,7 @@ create table if not exists public.deposits (
     created_at  timestamptz not null default now(),
     updated_at  timestamptz not null default now()
 );
-create index if not exists deposits_user_idx on public.deposits(user_id, created_at desc);
+create index if not exists deposits_user_idx   on public.deposits(user_id, created_at desc);
 create index if not exists deposits_status_idx on public.deposits(status);
 
 -- ---------- PAYMENT METHODS ----------
@@ -95,9 +132,8 @@ create table if not exists public.payment_methods (
     created_at    timestamptz not null default now()
 );
 
--- ---------- SETTINGS (key/value, JSONB) ----------
--- Used to store admin-editable texts, button labels, color modes,
--- premium emoji ids, etc. Keys are namespaced like:
+-- ---------- SETTINGS (key/value JSONB; admin-editable runtime config) ---
+-- Keys are namespaced like:
 --   text.welcome
 --   text.shop.title
 --   button.shop
@@ -129,7 +165,7 @@ create table if not exists public.referrals (
     unique (referrer_id, referee_id)
 );
 
--- ---------- VIEW: products with stock state ----------
+-- ---------- VIEW: products + category name + in_stock flag ----------
 create or replace view public.products_view as
     select
         p.*,
@@ -139,10 +175,8 @@ create or replace view public.products_view as
     left join public.categories c on c.id = p.category_id;
 
 -- =====================================================================
--- Row Level Security
--- The bot connects with the service_role key, so RLS is bypassed.
--- Enable RLS anyway as a defense-in-depth measure for any future
--- anon/auth access (e.g. an admin web dashboard).
+-- Row Level Security (defense in depth — bot uses service_role key
+-- which bypasses RLS, but enable it for any future anon access).
 -- =====================================================================
 alter table public.users           enable row level security;
 alter table public.admins          enable row level security;
@@ -169,3 +203,5 @@ insert into public.settings (key, value) values
     ('text.welcome',       '"Welcome to SafwanTiger Shop"'::jsonb),
     ('text.menu_button',   '"Main Menu"'::jsonb)
 on conflict (key) do nothing;
+
+commit;
