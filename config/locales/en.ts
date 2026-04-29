@@ -2,16 +2,18 @@
 export const en: Record<string, string> = {
   // ---------- Welcome / menu ----------
   'welcome': 'Welcome to SafwanTiger Shop',
+  'welcome.title': 'Welcome to SafwanTiger Shop!',
+  'welcome.balance': 'Your balance: *${balance}*',
   'welcome.tap_menu': 'Tap *Main Menu* below to begin.',
   'menu.title': '🐯 *SafwanTiger Shop* — Main Menu',
 
   // ---------- Buttons ----------
-  'btn.main_menu': 'Main Menu',
-  'btn.shop': 'Shop',
-  'btn.topup': 'Topup',
-  'btn.profile': 'My Profile',
-  'btn.support': 'Support',
-  'btn.ai_support': 'Automated Support Assistant',
+  'btn.main_menu': '⬅️ Main Menu',
+  'btn.shop': '🛍 Shop',
+  'btn.topup': '🪙 Topup',
+  'btn.profile': '👤 My Profile',
+  'btn.support': '💬 Support',
+  'btn.ai_support': '🤖 AI Support',
   'btn.back': '⬅️ Back',
   'btn.next': 'Next ▶️',
   'btn.prev': '◀️ Prev',

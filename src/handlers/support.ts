@@ -1,40 +1,35 @@
 import type { Composer } from 'grammy';
 import { env } from '../env.js';
+import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
 import type { AppCtx } from '../middleware/user.js';
 
+const aiArmed = new Set<number>();
+
 export function registerSupport(bot: Composer<AppCtx>): void {
-  bot.hears(/Support|الدعم|Hỗ trợ/i, async (ctx, next) => {
-    if (!ctx.message?.text) return next();
-    const txt = ctx.message.text;
-    // Don't intercept the AI assistant button
-    if (/Automated|الآلي|tự động/i.test(txt)) return next();
-    if (!/Support|الدعم|Hỗ trợ/i.test(txt)) return next();
-    await ctx.reply(`${ctx.t('support.title')}\n\n${ctx.t('support.body')}`, {
+  bot.callbackQuery('support:open', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(`${ctx.t('support.title')}\n\n${ctx.t('support.body')}`, {
       parse_mode: 'Markdown',
+      reply_markup: backToMenuKeyboard(ctx.lang),
     });
   });
 
-  bot.hears(/Automated|Trợ lý|الآلي/i, async (ctx, next) => {
-    if (!ctx.message?.text) return next();
-    if (!/Automated|Trợ lý|الآلي/i.test(ctx.message.text)) return next();
-    await ctx.reply(
-      `${ctx.t('support.ai.title')}\n\n${ctx.t('support.ai.prompt')}`,
-      { parse_mode: 'Markdown' },
-    );
-    // Mark next free-text as an AI question. For brevity we do not
-    // implement multi-turn here — a single reply is sufficient.
-    aiArmed.add(ctx.from!.id);
+  bot.callbackQuery('support:ai', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(`${ctx.t('support.ai.title')}\n\n${ctx.t('support.ai.prompt')}`, {
+      parse_mode: 'Markdown',
+      reply_markup: backToMenuKeyboard(ctx.lang),
+    });
+    if (ctx.from) aiArmed.add(ctx.from.id);
   });
 
   bot.on('message:text', async (ctx, next) => {
     if (!ctx.from || !aiArmed.has(ctx.from.id)) return next();
     aiArmed.delete(ctx.from.id);
     const answer = await answerAI(ctx.message.text);
-    await ctx.reply(answer);
+    await ctx.reply(answer, { reply_markup: backToMenuKeyboard(ctx.lang) });
   });
 }
-
-const aiArmed = new Set<number>();
 
 async function answerAI(question: string): Promise<string> {
   if (!env.OPENAI_API_KEY) {
@@ -53,7 +48,7 @@ async function answerAI(question: string): Promise<string> {
           {
             role: 'system',
             content:
-              'You are SafwanTiger Shop\'s helpful customer support assistant. Be concise.',
+              "You are SafwanTiger Shop's helpful customer support assistant. Be concise.",
           },
           { role: 'user', content: question },
         ],

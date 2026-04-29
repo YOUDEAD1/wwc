@@ -36,12 +36,24 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
   // Pre-load admin-editable settings into memory.
   await refreshSettings();
 
-  // Set Telegram bot commands so they appear in the menu hint.
-  await bot.api.setMyCommands([
-    { command: 'start', description: 'Open the main menu' },
-    { command: 'menu', description: 'Show the main menu' },
-    { command: 'admin', description: 'Admin commands (admin only)' },
-  ]);
+  // Public users see only /start in the slash-menu.
+  await bot.api.setMyCommands([{ command: 'start', description: 'Open the main menu' }]);
+
+  // The admin gets /admin too, scoped to their private chat so it
+  // doesn't leak into the public command list.
+  if (env.ADMIN_USER_ID) {
+    try {
+      await bot.api.setMyCommands(
+        [
+          { command: 'start', description: 'Open the main menu' },
+          { command: 'admin', description: 'Open the admin dashboard' },
+        ],
+        { scope: { type: 'chat', chat_id: env.ADMIN_USER_ID } },
+      );
+    } catch (err) {
+      logger.warn({ err }, 'Could not set admin-scoped commands');
+    }
+  }
 
   return bot;
 }

@@ -13,7 +13,9 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
     .text(btn(lang, 'language'), 'profile:lang')
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .row()
-    .text(btn(lang, 'clear_cache'), 'profile:clear_cache');
+    .text(btn(lang, 'clear_cache'), 'profile:clear_cache')
+    .row()
+    .text(btn(lang, 'main_menu'), 'main:open');
 }
 
 export function languageKeyboard(): InlineKeyboard {

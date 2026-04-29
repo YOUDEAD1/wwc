@@ -5,12 +5,6 @@ import { btn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 
 export function registerTopup(bot: Composer<AppCtx>): void {
-  bot.hears(/Topup|شحن الرصيد|Nạp tiền/i, async (ctx, next) => {
-    if (!ctx.message?.text) return next();
-    if (!/Topup|شحن|Nạp/i.test(ctx.message.text)) return next();
-    await showTopupMenu(ctx);
-  });
-
   bot.callbackQuery('topup:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     await showTopupMenu(ctx, /* asEdit */ true);
@@ -77,6 +71,8 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     kb.text(`💳 ${m.name}`, `topup:method:${m.id}`);
     if (i % 2 === 1) kb.row();
   });
+  if (methods.length % 2 === 1) kb.row();
+  kb.text(btn(ctx.lang, 'main_menu'), 'main:open');
   const text = `${ctx.t('topup.title')}\n\n${ctx.t('topup.choose_method')}`;
   if (asEdit) {
     await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb });
