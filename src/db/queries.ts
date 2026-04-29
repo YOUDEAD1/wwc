@@ -418,3 +418,67 @@ export async function setDepositStatus(
 ): Promise<void> {
   await supabase.from('deposits').update({ status }).eq('id', id);
 }
+
+// ---------- User management (admin) ----------
+
+/** List most-recently-active users for the admin Users panel. */
+export async function listRecentUsers(
+  page: number,
+  perPage: number,
+): Promise<{ rows: DBUser[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count } = await supabase
+    .from('users')
+    .select('*', { count: 'exact' })
+    .order('last_seen_at', { ascending: false })
+    .range(from, to);
+  return { rows: (data ?? []) as DBUser[], total: count ?? 0 };
+}
+
+/** Find a user by Telegram numeric id. */
+export async function findUserById(telegram_id: number): Promise<DBUser | null> {
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .eq('telegram_id', telegram_id)
+    .maybeSingle();
+  return (data as DBUser) ?? null;
+}
+
+/** Find a user by case-insensitive @username (without the @). */
+export async function findUserByUsername(username: string): Promise<DBUser | null> {
+  const clean = username.replace(/^@/, '').trim();
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .ilike('username', clean)
+    .limit(1)
+    .maybeSingle();
+  return (data as DBUser) ?? null;
+}
+
+/** Add a Telegram user as bot admin. */
+export async function promoteAdmin(telegram_id: number, username?: string | null): Promise<void> {
+  await supabase
+    .from('admins')
+    .upsert({ telegram_id, username: username ?? null }, { onConflict: 'telegram_id' });
+}
+
+/** Remove a Telegram user from bot admins. */
+export async function demoteAdmin(telegram_id: number): Promise<void> {
+  await supabase.from('admins').delete().eq('telegram_id', telegram_id);
+}
+
+/** Count orders + total spent by a single user (for the admin user view). */
+export async function getUserOrderSummary(
+  telegram_id: number,
+): Promise<{ orders: number; spent: number }> {
+  const { data } = await supabase
+    .from('orders')
+    .select('total')
+    .eq('user_id', telegram_id);
+  const orders = (data ?? []).length;
+  const spent = (data ?? []).reduce((s, r) => s + Number((r as { total: number }).total), 0);
+  return { orders, spent };
+}

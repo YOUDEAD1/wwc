@@ -4,8 +4,7 @@
  * Entry: /admin (admin only). Everything else happens via inline
  * buttons + multi-step text input collected through `session.adminFlow`.
  */
-import { Composer, InlineKeyboard } from 'grammy';
-import { adminOnly } from '../../middleware/adminOnly.js';
+import { Composer, InlineKeyboard, type MiddlewareFn } from 'grammy';
 import {
   addCategory,
   addPaymentMethod,
@@ -14,26 +13,67 @@ import {
   deleteCategory,
   deletePaymentMethod,
   deleteProduct,
+  demoteAdmin,
+  findUserById,
+  findUserByUsername,
   getDeposit,
   getStats,
+  getUserOrderSummary,
+  isAdmin,
   listAllCategories,
   listAllProducts,
   listPaymentMethods,
   listPendingDeposits,
+  listRecentUsers,
   listUsersForAnnouncement,
+  promoteAdmin,
   setDepositStatus,
   setProductActive,
 } from '../../db/queries.js';
 import * as cache from '../../services/cache.js';
-import { setColor, setEmoji, setText, refreshSettings } from '../../services/settings.js';
+import {
+  setColor,
+  setEmoji,
+  setText,
+  refreshSettings,
+  setChannelUrl,
+  clearChannelUrl,
+  getChannelUrl,
+} from '../../services/settings.js';
 import { renderPremium } from '../../services/premium.js';
 import type { ColorMode } from '../../../config/index.js';
 import { COLOR_PREFIX } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
+import type { DBUser } from '../../types.js';
 
 export const adminBot = new Composer<AppCtx>();
-adminBot.use(adminOnly);
+
+/**
+ * Gate that ONLY blocks explicit admin invocations (commands and
+ * `adm:` callback queries) for non-admins. Other updates pass through
+ * untouched so non-admin users never see the "⛔ Admin only" reply
+ * for ordinary chat messages.
+ */
+const requireAdmin: MiddlewareFn<AppCtx> = async (ctx, next) => {
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) {
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: '⛔ Admin only.', show_alert: true });
+    } else {
+      await ctx.reply('⛔ Admin only.');
+    }
+    return;
+  }
+  return next();
+};
+
+// Apply requireAdmin only to admin entry points.
+adminBot.callbackQuery(/^adm:/, requireAdmin, async (_ctx, next) => next());
+adminBot.command(
+  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload'],
+  requireAdmin,
+  async (_ctx, next) => next(),
+);
 
 const PER_PAGE = 8;
 const ROOT_TEXT = '🛠 *Admin Dashboard*\n\nPick a section:';
@@ -46,13 +86,15 @@ function rootMenu(): InlineKeyboard {
     .text('💳 Payments', 'adm:pay')
     .text('💰 Deposits', 'adm:dep')
     .row()
-    .text('✏️ Customize', 'adm:cust')
+    .text('👥 Users', 'adm:usr:0')
     .text('📣 Announce', 'adm:ann')
     .row()
+    .text('✏️ Customize', 'adm:cust')
     .text('📊 Stats', 'adm:stats')
-    .text('🔁 Reload', 'adm:reload')
     .row()
+    .text('🔁 Reload', 'adm:reload')
     .text('🧹 Clear Cache', 'adm:clr')
+    .row()
     .text('❌ Close', 'adm:close');
 }
 
@@ -387,17 +429,44 @@ adminBot.callbackQuery(/^adm:dep:no:(\d+)$/, async (ctx) => {
 adminBot.callbackQuery('adm:cust', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = undefined;
+  const channelUrl = getChannelUrl();
   const kb = new InlineKeyboard()
     .text('📝 Edit Text', 'adm:cust:text')
     .text('🎨 Set Color', 'adm:cust:color:pick')
     .row()
     .text('😀 Set Emoji', 'adm:cust:emoji')
+    .text('🔗 Set Channel URL', 'adm:cust:channel')
+    .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
+  const channelLine = channelUrl
+    ? `\n\nChannel URL: \`${channelUrl}\``
+    : '\n\n_No channel URL set yet._';
   await ctx.editMessageText(
-    '✏️ *Customize*\n\nEdit any text, button color, or emoji used by the bot.',
+    `✏️ *Customize*\n\nEdit any text, button color, emoji, or the channel link used by the bot.${channelLine}`,
     { parse_mode: 'Markdown', reply_markup: kb },
   );
+});
+
+adminBot.callbackQuery('adm:cust:channel', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_channel', step: 'value', data: {} };
+  const kb = new InlineKeyboard()
+    .text('🗑 Remove channel', 'adm:cust:channel:clear')
+    .row()
+    .text('⬅️ Back', 'adm:cust');
+  await ctx.editMessageText(
+    '🔗 *Set Channel URL*\n\nSend the channel link (e.g. `https://t.me/yourchannel`).' +
+      '\n\nOr `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:cust:channel:clear', async (ctx) => {
+  await clearChannelUrl(ctx.from!.id);
+  ctx.session.adminFlow = undefined;
+  await ctx.answerCallbackQuery({ text: 'Channel link removed.' });
+  await showRoot(ctx);
 });
 
 adminBot.callbackQuery('adm:cust:text', async (ctx) => {
@@ -489,6 +558,113 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
   );
 });
 
+// ---------- Users ----------
+adminBot.callbackQuery(/^adm:usr:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showUserList(ctx, Number(ctx.match[1]));
+});
+
+async function showUserList(ctx: AppCtx, page: number): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const { rows, total } = await listRecentUsers(page, PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const lines = [`👥 *Users* — page ${page + 1}/${totalPages}  (total ${total})`, ''];
+  const kb = new InlineKeyboard();
+  for (const u of rows) {
+    const handle = u.username ? `@${u.username}` : (u.first_name ?? `id ${u.telegram_id}`);
+    lines.push(`\`${u.telegram_id}\` ${handle}  •  $${Number(u.balance).toFixed(2)}`);
+    kb.text(handle.slice(0, 24), `adm:usr:v:${u.telegram_id}`).row();
+  }
+  if (page > 0) kb.text('◀️ Prev', `adm:usr:${page - 1}`);
+  if (page + 1 < totalPages) kb.text('Next ▶️', `adm:usr:${page + 1}`);
+  kb.row().text('🔍 Find user', 'adm:usr:find').row().text('⬅️ Back', 'adm:root');
+  await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
+}
+
+adminBot.callbackQuery('adm:usr:find', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'find_user', step: 'query', data: {} };
+  await ctx.editMessageText(
+    '🔍 *Find User*\n\nSend the user\'s Telegram numeric ID or `@username` (or `/cancel`).',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
+  const isAdminUser = await isAdmin(user.telegram_id);
+  const summary = await getUserOrderSummary(user.telegram_id);
+  const lines = [
+    `👤 *User Details*`,
+    '',
+    `ID: \`${user.telegram_id}\``,
+    user.username ? `Username: @${user.username}` : 'Username: _none_',
+    `Name: ${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Name: _none_',
+    `Balance: *$${Number(user.balance).toFixed(2)}*`,
+    `Language: ${user.language}`,
+    `Joined: ${new Date(user.joined_at).toLocaleDateString('en-GB')}`,
+    `Orders: *${summary.orders}* • Total spent: *$${summary.spent.toFixed(2)}*`,
+    `Admin: ${isAdminUser ? '✅' : '❌'}`,
+  ];
+  const kb = new InlineKeyboard()
+    .text('💰 Adjust balance', `adm:usr:bal:${user.telegram_id}`)
+    .row();
+  if (isAdminUser) {
+    kb.text('🛡 Demote admin', `adm:usr:demote:${user.telegram_id}`);
+  } else {
+    kb.text('🛡 Promote admin', `adm:usr:promote:${user.telegram_id}`);
+  }
+  kb.row().text('⬅️ Back to users', 'adm:usr:0').text('🏠 Main', 'adm:root');
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
+  } else {
+    await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
+  }
+}
+
+adminBot.callbackQuery(/^adm:usr:v:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await findUserById(Number(ctx.match[1]));
+  if (!user) {
+    await ctx.editMessageText('User not found.', { reply_markup: backRow(new InlineKeyboard()) });
+    return;
+  }
+  await showUserCard(ctx, user);
+});
+
+adminBot.callbackQuery(/^adm:usr:promote:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const u = await findUserById(id);
+  await promoteAdmin(id, u?.username ?? null);
+  await ctx.answerCallbackQuery({ text: '🛡 Promoted to admin.' });
+  if (u) await showUserCard(ctx, u);
+});
+
+adminBot.callbackQuery(/^adm:usr:demote:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  if (id === ctx.from!.id) {
+    await ctx.answerCallbackQuery({
+      text: 'Refusing to demote yourself. Promote another admin first.',
+      show_alert: true,
+    });
+    return;
+  }
+  await demoteAdmin(id);
+  await ctx.answerCallbackQuery({ text: 'Demoted.' });
+  const u = await findUserById(id);
+  if (u) await showUserCard(ctx, u);
+});
+
+adminBot.callbackQuery(/^adm:usr:bal:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  ctx.session.adminFlow = { type: 'adjust_balance', step: 'amount', data: { telegram_id: id } };
+  await ctx.editMessageText(
+    `💰 *Adjust Balance* for \`${id}\`\n\nSend a number to add (e.g. \`5\`) or subtract (e.g. \`-3.50\`).` +
+      '\n\nOr `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
 // ============================================================
 // Multi-step input handler — fired for any text msg from admin
 // when session.adminFlow is set.
@@ -496,6 +672,12 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
 adminBot.on('message:text', async (ctx, next) => {
   const flow = ctx.session.adminFlow;
   if (!flow) return next();
+  // Defence in depth: if for any reason a non-admin has a flow set
+  // (shouldn't happen), discard it silently.
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) {
+    ctx.session.adminFlow = undefined;
+    return next();
+  }
 
   const text = ctx.message.text.trim();
 
@@ -709,6 +891,65 @@ adminBot.on('message:text', async (ctx, next) => {
           parse_mode: entities.length ? undefined : 'Markdown',
         });
         await ctx.reply('Confirm sending:', { reply_markup: kb });
+      }
+      return;
+    }
+
+    if (flow.type === 'set_channel') {
+      if (!/^https?:\/\/t\.me\//i.test(text) && !/^https?:\/\//i.test(text)) {
+        await ctx.reply(
+          '❌ That doesn\'t look like a URL. Send a link like `https://t.me/yourchannel`.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      await setChannelUrl(text, ctx.from!.id);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Channel link saved:\n\`${text}\``, {
+        parse_mode: 'Markdown',
+        reply_markup: rootMenu(),
+      });
+      return;
+    }
+
+    if (flow.type === 'find_user') {
+      const query = text.replace(/^@/, '');
+      const user = /^\d+$/.test(query)
+        ? await findUserById(Number(query))
+        : await findUserByUsername(query);
+      ctx.session.adminFlow = undefined;
+      if (!user) {
+        await ctx.reply('No user found.', { reply_markup: rootMenu() });
+        return;
+      }
+      await showUserCard(ctx, user);
+      return;
+    }
+
+    if (flow.type === 'adjust_balance') {
+      const delta = Number(text);
+      if (!Number.isFinite(delta)) {
+        await ctx.reply('❌ Bad number. Send e.g. `5` or `-3.5`.');
+        return;
+      }
+      const newBal = await adjustBalance(flow.data.telegram_id, delta);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Balance adjusted by *${delta >= 0 ? '+' : ''}${delta}*. New balance: *$${newBal}*.`,
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      try {
+        if (delta !== 0) {
+          await ctx.api.sendMessage(
+            flow.data.telegram_id,
+            delta > 0
+              ? `💰 An admin credited *$${delta.toFixed(2)}* to your wallet. New balance: *$${newBal}*.`
+              : `⚠️ An admin debited *$${Math.abs(delta).toFixed(2)}* from your wallet. New balance: *$${newBal}*.`,
+            { parse_mode: 'Markdown' },
+          );
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Could not DM user about balance change');
       }
       return;
     }

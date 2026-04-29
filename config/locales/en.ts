@@ -31,6 +31,7 @@ export const en: Record<string, string> = {
   'btn.language': '🌐 Language',
   'btn.deposit_history': '💳 Deposit History',
   'btn.clear_cache': '🧹 Clear Cache',
+  'btn.channel': '📢 Channel',
 
   // ---------- Shop ----------
   'shop.choose_category': '🛒 *Shop* — choose a category:',
@@ -89,6 +90,12 @@ export const en: Record<string, string> = {
   'support.ai.prompt': 'Describe your issue and I\'ll do my best to help.',
   'support.ai.fallback':
     'I couldn\'t answer that automatically. A human will reach out shortly.',
+
+  // ---------- Channel ----------
+  'channel.not_set': '📢 The channel link hasn\'t been set yet. Ask the admin to configure it.',
+  'channel.subscribe.title': '📢 *Join our channel* to continue',
+  'channel.subscribe.body': 'Please join the channel below, then tap *I joined*.',
+  'channel.subscribe.joined': '✅ I joined',
 
   // ---------- Admin ----------
   'admin.only': '⛔ Admin only.',

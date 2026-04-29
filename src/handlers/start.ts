@@ -42,15 +42,6 @@ async function showMainMenu(ctx: AppCtx, opts: { fresh?: boolean } = {}): Promis
 
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
-    // First, clear any old persistent reply keyboard from previous bot
-    // versions, then show the new inline menu.
-    try {
-      await ctx.api.sendMessage(ctx.chat!.id, '🐯', {
-        reply_markup: { remove_keyboard: true },
-      });
-    } catch {
-      /* non-fatal */
-    }
     await showMainMenu(ctx, { fresh: true });
   });
 
@@ -62,5 +53,12 @@ export function registerStart(bot: Composer<AppCtx>): void {
   bot.callbackQuery('main:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     await showMainMenu(ctx);
+  });
+
+  // Fallback for the channel button when admin hasn't set the URL yet.
+  // (When the URL is set, mainMenuKeyboard renders a direct URL button
+  // and Telegram never sends us this callback.)
+  bot.callbackQuery('channel:open', async (ctx) => {
+    await ctx.answerCallbackQuery({ text: ctx.t('channel.not_set'), show_alert: true });
   });
 }

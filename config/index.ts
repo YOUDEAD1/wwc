@@ -68,6 +68,7 @@ export const BUTTON_KEYS = {
   language: 'btn.language',
   deposit_history: 'btn.deposit_history',
   clear_cache: 'btn.clear_cache',
+  channel: 'btn.channel',
 } as const;
 
 /**
@@ -100,6 +101,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   language: 'none',
   deposit_history: 'none',
   clear_cache: 'none',
+  channel: 'none',
 };
 
 /**
@@ -174,6 +176,7 @@ export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_K
   ['shop'],
   ['topup', 'profile'],
   ['support', 'ai_support'],
+  ['refer', 'channel'],
 ];
 
 /** Shop pagination size — products per page */
