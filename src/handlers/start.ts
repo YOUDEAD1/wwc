@@ -4,6 +4,30 @@ import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderPremium } from '../services/premium.js';
 
 /**
+ * Silently dismiss any leftover persistent reply keyboard from older
+ * versions of the bot. We send a near-invisible message with
+ * `remove_keyboard: true`, then immediately delete it. The keyboard
+ * removal sticks even after the message is gone. Once-per-session.
+ */
+async function clearOldReplyKeyboard(ctx: AppCtx): Promise<void> {
+  if (ctx.session.kbCleared) return;
+  ctx.session.kbCleared = true;
+  if (!ctx.chat) return;
+  try {
+    const m = await ctx.api.sendMessage(ctx.chat.id, '\u2063', {
+      reply_markup: { remove_keyboard: true },
+    });
+    try {
+      await ctx.api.deleteMessage(ctx.chat.id, m.message_id);
+    } catch {
+      /* deletion is best-effort */
+    }
+  } catch {
+    /* sending is best-effort */
+  }
+}
+
+/**
  * Build the welcome screen text (with balance line) and entities for
  * any premium-emoji placeholders.
  */
@@ -42,10 +66,12 @@ async function showMainMenu(ctx: AppCtx, opts: { fresh?: boolean } = {}): Promis
 
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
+    await clearOldReplyKeyboard(ctx);
     await showMainMenu(ctx, { fresh: true });
   });
 
   bot.command('menu', async (ctx) => {
+    await clearOldReplyKeyboard(ctx);
     await showMainMenu(ctx, { fresh: true });
   });
 
