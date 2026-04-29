@@ -26,6 +26,10 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
   bot.use(adminBot);
 
   bot.catch((err) => {
+    // "message is not modified" fires whenever the user taps a button
+    // that re-renders the exact same screen — purely cosmetic and harmless.
+    const msg = (err.error as { description?: string } | undefined)?.description ?? '';
+    if (msg.includes('message is not modified')) return;
     logger.error({ err: err.error }, 'Unhandled bot error');
   });
 
