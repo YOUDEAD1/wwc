@@ -1,15 +1,17 @@
 /* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
   'welcome': 'مرحبًا بك في متجر SafwanTiger',
+  'welcome.title': 'مرحبًا بك في متجر SafwanTiger!',
+  'welcome.balance': 'رصيدك: *${balance}*',
   'welcome.tap_menu': 'اضغط *القائمة الرئيسية* بالأسفل للبدء.',
   'menu.title': '🐯 *متجر SafwanTiger* — القائمة الرئيسية',
 
-  'btn.main_menu': 'القائمة الرئيسية',
-  'btn.shop': 'المتجر',
-  'btn.topup': 'شحن الرصيد',
-  'btn.profile': 'ملفي الشخصي',
-  'btn.support': 'الدعم',
-  'btn.ai_support': 'مساعد الدعم الآلي',
+  'btn.main_menu': '⬅️ القائمة الرئيسية',
+  'btn.shop': '🛍 المتجر',
+  'btn.topup': '🪙 شحن',
+  'btn.profile': '👤 ملفي',
+  'btn.support': '💬 الدعم',
+  'btn.ai_support': '🤖 مساعد آلي',
   'btn.back': '⬅️ رجوع',
   'btn.next': 'التالي ▶️',
   'btn.prev': '◀️ السابق',

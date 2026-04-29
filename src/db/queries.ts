@@ -314,3 +314,107 @@ export async function listUsersForAnnouncement(): Promise<{ telegram_id: number 
     .eq('announcements', true);
   return (data ?? []) as { telegram_id: number }[];
 }
+
+// ---------- Admin: stats / management ----------
+
+export type Stats = {
+  users: number;
+  orders: number;
+  revenue: number;
+  pending_deposits: number;
+  active_products: number;
+  active_categories: number;
+};
+
+export async function getStats(): Promise<Stats> {
+  const [usersR, ordersR, depR, prodR, catR, totalsR] = await Promise.all([
+    supabase.from('users').select('telegram_id', { count: 'exact', head: true }),
+    supabase.from('orders').select('id', { count: 'exact', head: true }),
+    supabase
+      .from('deposits')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
+    supabase
+      .from('products')
+      .select('id', { count: 'exact', head: true })
+      .eq('active', true),
+    supabase
+      .from('categories')
+      .select('id', { count: 'exact', head: true })
+      .eq('active', true),
+    supabase.from('orders').select('total'),
+  ]);
+  const revenue =
+    (totalsR.data as { total: number }[] | null)?.reduce(
+      (acc, r) => acc + Number(r.total ?? 0),
+      0,
+    ) ?? 0;
+  return {
+    users: usersR.count ?? 0,
+    orders: ordersR.count ?? 0,
+    revenue: Number(revenue.toFixed(2)),
+    pending_deposits: depR.count ?? 0,
+    active_products: prodR.count ?? 0,
+    active_categories: catR.count ?? 0,
+  };
+}
+
+export async function listAllProducts(
+  page: number,
+  perPage: number,
+): Promise<{ rows: DBProduct[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count } = await supabase
+    .from('products')
+    .select('*', { count: 'exact' })
+    .order('id', { ascending: false })
+    .range(from, to);
+  return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
+}
+
+export async function deleteProduct(id: number): Promise<void> {
+  await supabase.from('products').delete().eq('id', id);
+}
+
+export async function setProductActive(id: number, active: boolean): Promise<void> {
+  await supabase.from('products').update({ active }).eq('id', id);
+}
+
+export async function listAllCategories(): Promise<DBCategory[]> {
+  const { data } = await supabase
+    .from('categories')
+    .select('*')
+    .order('id', { ascending: true });
+  return (data ?? []) as DBCategory[];
+}
+
+export async function deleteCategory(id: number): Promise<void> {
+  await supabase.from('categories').delete().eq('id', id);
+}
+
+export async function deletePaymentMethod(id: number): Promise<void> {
+  await supabase.from('payment_methods').delete().eq('id', id);
+}
+
+export async function listPendingDeposits(): Promise<DBDeposit[]> {
+  const { data } = await supabase
+    .from('deposits')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(20);
+  return (data ?? []) as DBDeposit[];
+}
+
+export async function getDeposit(id: number): Promise<DBDeposit | null> {
+  const { data } = await supabase.from('deposits').select('*').eq('id', id).maybeSingle();
+  return (data as DBDeposit) ?? null;
+}
+
+export async function setDepositStatus(
+  id: number,
+  status: 'approved' | 'rejected',
+): Promise<void> {
+  await supabase.from('deposits').update({ status }).eq('id', id);
+}

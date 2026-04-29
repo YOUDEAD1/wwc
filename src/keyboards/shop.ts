@@ -1,17 +1,17 @@
 import { InlineKeyboard } from 'grammy';
-import { COLOR_PREFIX, type Lang } from '../../config/index.js';
+import { type Lang } from '../../config/index.js';
 import { btn } from './helpers.js';
-import { getStateColor } from '../services/settings.js';
-import { t } from '../i18n/index.js';
 import type { DBCategory, DBProduct } from '../types.js';
 
 /** Categories list — one button per category, two per row. */
-export function categoriesKeyboard(categories: DBCategory[]): InlineKeyboard {
+export function categoriesKeyboard(lang: Lang, categories: DBCategory[]): InlineKeyboard {
   const kb = new InlineKeyboard();
   categories.forEach((c, i) => {
     kb.text(`${c.emoji ?? '📁'} ${c.name}`, `cat:${c.id}:0`);
     if (i % 2 === 1) kb.row();
   });
+  if (categories.length % 2 === 1) kb.row();
+  kb.text(btn(lang, 'main_menu'), 'main:open');
   return kb;
 }
 
@@ -27,13 +27,12 @@ export function productsKeyboard(
   totalPages: number,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
-  const inStockColor = getStateColor('in_stock');
-  const outColor = getStateColor('out_of_stock');
 
   products.forEach((p) => {
     const inStock = p.stock > 0;
-    const prefix = COLOR_PREFIX[inStock ? inStockColor : outColor];
-    const label = `${prefix} ${p.emoji ?? ''} ${p.name} — ${p.price}`.trim();
+    // Clean dot indicator instead of coloured square prefix
+    const dot = inStock ? '🟢' : '🔴';
+    const label = `${dot} ${p.emoji ?? ''} ${p.name} — ${p.price}`.trim();
     kb.text(label, inStock ? `prod:${p.id}` : 'noop:oos').row();
   });
 
@@ -46,7 +45,7 @@ export function productsKeyboard(
     kb.text(btn(lang, 'next'), `cat:${categoryId}:${page + 1}`);
   }
   kb.row();
-  kb.text(btn(lang, 'back'), 'shop:home');
+  kb.text(btn(lang, 'back'), 'shop:home').text(btn(lang, 'main_menu'), 'main:open');
   return kb;
 }
 
@@ -72,12 +71,14 @@ export function productKeyboard(
   kb.text(
     btn(lang, 'back'),
     product.category_id ? `cat:${product.category_id}:0` : 'shop:home',
-  );
+  ).text(btn(lang, 'main_menu'), 'main:open');
   return kb;
 }
 
 export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
-  return new InlineKeyboard().text(btn(lang, 'back'), 'shop:home');
+  return new InlineKeyboard()
+    .text(btn(lang, 'back'), 'shop:home')
+    .text(btn(lang, 'main_menu'), 'main:open');
 }
 
-export const _ = t; // satisfy TS unused import in some builds
+

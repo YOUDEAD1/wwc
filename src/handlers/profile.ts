@@ -1,5 +1,5 @@
 import type { Composer } from 'grammy';
-import { BUTTON_KEYS, type Lang } from '../../config/index.js';
+import { type Lang } from '../../config/index.js';
 import {
   countReferrals,
   listDeposits,
@@ -9,7 +9,6 @@ import {
 } from '../db/queries.js';
 import * as cache from '../services/cache.js';
 import { profileKeyboard, languageKeyboard } from '../keyboards/profile.js';
-import { t } from '../i18n/index.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 
@@ -44,23 +43,6 @@ async function showProfile(ctx: AppCtx) {
 }
 
 export function registerProfile(bot: Composer<AppCtx>): void {
-  const profileLabels = new Set(
-    (['en', 'ar', 'vi'] as const satisfies readonly Lang[]).map((l) =>
-      t(l, BUTTON_KEYS.profile),
-    ),
-  );
-  bot.hears(
-    /My Profile|ملفي الشخصي|Hồ sơ của tôi/i,
-    async (ctx, next) => {
-      if (!ctx.message?.text) return next();
-      if ([...profileLabels].some((s) => ctx.message!.text!.includes(s))) {
-        await showProfile(ctx);
-      } else {
-        await next();
-      }
-    },
-  );
-
   bot.callbackQuery('profile:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     await showProfile(ctx);

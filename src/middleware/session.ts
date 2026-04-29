@@ -1,8 +1,64 @@
 import { session, type Context, type SessionFlavor } from 'grammy';
 
+/** Multi-step admin input flow state. */
+export type AdminFlow =
+  | { type: 'add_category'; step: 'name'; data: { emoji?: string } }
+  | { type: 'add_category'; step: 'emoji'; data: { name: string } }
+  | { type: 'add_product'; step: 'name'; data: { category_id: number } }
+  | { type: 'add_product'; step: 'price'; data: { category_id: number; name: string } }
+  | {
+      type: 'add_product';
+      step: 'stock';
+      data: { category_id: number; name: string; price: number };
+    }
+  | {
+      type: 'add_product';
+      step: 'warranty';
+      data: { category_id: number; name: string; price: number; stock: number };
+    }
+  | {
+      type: 'add_product';
+      step: 'description';
+      data: {
+        category_id: number;
+        name: string;
+        price: number;
+        stock: number;
+        warranty?: string;
+      };
+    }
+  | {
+      type: 'add_product';
+      step: 'note';
+      data: {
+        category_id: number;
+        name: string;
+        price: number;
+        stock: number;
+        warranty?: string;
+        description?: string;
+      };
+    }
+  | { type: 'add_payment'; step: 'name'; data: Record<string, never> }
+  | { type: 'add_payment'; step: 'instructions'; data: { name: string } }
+  | {
+      type: 'add_payment';
+      step: 'min_amount';
+      data: { name: string; instructions: string };
+    }
+  | { type: 'set_text'; step: 'key'; data: Record<string, never> }
+  | { type: 'set_text'; step: 'value'; data: { key: string } }
+  | { type: 'set_emoji'; step: 'key'; data: Record<string, never> }
+  | { type: 'set_emoji'; step: 'value'; data: { key: string } }
+  | { type: 'set_color'; step: 'value'; data: { key: string } }
+  | { type: 'announce'; step: 'text'; data: Record<string, never> }
+  | { type: 'announce'; step: 'confirm'; data: { text: string } };
+
 export type SessionData = {
   /** Selected qty per product id, used by the shop product page */
   qty: Record<number, number>;
+  /** Multi-step admin input flow, if any */
+  adminFlow?: AdminFlow;
 };
 
 export type SessionCtx = Context & SessionFlavor<SessionData>;

@@ -73,31 +73,33 @@ export const BUTTON_KEYS = {
 /**
  * COLOR ASSIGNMENTS PER BUTTON
  * The admin can override these via /setcolor <key> <mode>.
+ * Default is 'none' for clean, professional buttons. Re-enable with
+ * /setcolor <key> <mode> if you want coloured-square indicators.
  */
 export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> = {
-  shop: 'blue',
-  topup: 'green',
-  profile: 'blue',
-  support: 'blue',
-  ai_support: 'blue',
-  main_menu: 'blue',
+  shop: 'none',
+  topup: 'none',
+  profile: 'none',
+  support: 'none',
+  ai_support: 'none',
+  main_menu: 'none',
   back: 'none',
-  next: 'blue',
-  prev: 'blue',
-  refresh: 'yellow',
-  buy_now: 'green',
-  topup_wallet: 'green',
-  view_note: 'blue',
-  qty_plus: 'blue',
-  qty_minus: 'blue',
-  out_of_stock: 'red',
-  my_orders: 'blue',
-  refer: 'blue',
-  toggle_stock: 'blue',
-  toggle_announcements: 'blue',
-  language: 'blue',
-  deposit_history: 'blue',
-  clear_cache: 'yellow',
+  next: 'none',
+  prev: 'none',
+  refresh: 'none',
+  buy_now: 'none',
+  topup_wallet: 'none',
+  view_note: 'none',
+  qty_plus: 'none',
+  qty_minus: 'none',
+  out_of_stock: 'none',
+  my_orders: 'none',
+  refer: 'none',
+  toggle_stock: 'none',
+  toggle_announcements: 'none',
+  language: 'none',
+  deposit_history: 'none',
+  clear_cache: 'none',
 };
 
 /**
@@ -117,8 +119,9 @@ export const EMOJI: Record<string, EmojiSpec> = {
   fire: '🔥',
   rocket: '🚀',
   tiger: '🐯',
-  cart: '🛒',
-  wallet: '👛',
+  cart: '🛍',
+  wallet: '🪙',
+  wave: '👋',
   bell: '🔔',
   globe: '🌐',
   user: '👤',
@@ -135,6 +138,18 @@ export const EMOJI: Record<string, EmojiSpec> = {
   note: '📝',
   star: '⭐',
   ai: '🤖',
+  settings: '⚙️',
+  pencil: '✏️',
+  megaphone: '📣',
+  chart: '📊',
+  trash: '🗑',
+  reload: '🔁',
+  broom: '🧹',
+  package: '📦',
+  card: '💳',
+  folder: '🗂',
+  check: '✅',
+  cross: '❌',
 };
 
 /**
@@ -148,12 +163,12 @@ export const EMOJI: Record<string, EmojiSpec> = {
 export const LOCALES = { en, ar, vi } as const satisfies Record<Lang, Record<string, string>>;
 
 /**
- * MAIN MENU LAYOUT
- * Edit here to rearrange the keyboard rows.
+ * MAIN MENU LAYOUT (inline keyboard).
+ * Edit here to rearrange the rows.
  *
  *   Row 1: Shop
  *   Row 2: Topup | My Profile
- *   Row 3: Support | Automated Support Assistant
+ *   Row 3: Support | AI Support
  */
 export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_KEYS>> = [
   ['shop'],

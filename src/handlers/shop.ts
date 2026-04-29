@@ -1,5 +1,5 @@
 import type { Composer } from 'grammy';
-import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN, BUTTON_KEYS } from '../../config/index.js';
+import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   createOrder,
   decrementProductStock,
@@ -16,7 +16,6 @@ import {
   productsKeyboard,
   shopHomeBackKeyboard,
 } from '../keyboards/shop.js';
-import { t } from '../i18n/index.js';
 import type { AppCtx } from '../middleware/user.js';
 
 async function showCategories(ctx: AppCtx) {
@@ -30,7 +29,7 @@ async function showCategories(ctx: AppCtx) {
     return;
   }
   const text = ctx.t('shop.choose_category');
-  const kb = categoriesKeyboard(cats);
+  const kb = categoriesKeyboard(ctx.lang, cats);
   if (ctx.callbackQuery) {
     await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb });
   } else {
@@ -89,23 +88,6 @@ async function showProduct(ctx: AppCtx, productId: number) {
 }
 
 export function registerShop(bot: Composer<AppCtx>): void {
-  // ----- Reply-keyboard "Shop" button (any locale) -----
-  const shopLabels = new Set(
-    (['en', 'ar', 'vi'] as const).map((l) => t(l, BUTTON_KEYS.shop)),
-  );
-  bot.hears([...shopLabels].map((s) => new RegExp(`^${escape(s)}$`, 'i')), async (ctx) => {
-    await showCategories(ctx);
-  });
-  // Allow color-prefixed labels too (e.g. "🟦 Shop")
-  bot.hears(/Shop|المتجر|Cửa hàng/i, async (ctx, next) => {
-    if (!ctx.message?.text) return next();
-    if ([...shopLabels].some((s) => ctx.message!.text!.includes(s))) {
-      await showCategories(ctx);
-    } else {
-      await next();
-    }
-  });
-
   // ----- Inline callbacks -----
   bot.callbackQuery('shop:home', async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -201,8 +183,4 @@ export function registerShop(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^noop:/, async (ctx) => {
     await ctx.answerCallbackQuery();
   });
-}
-
-function escape(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

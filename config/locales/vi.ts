@@ -1,15 +1,17 @@
 /* Tiếng Việt — keep keys in sync with en.ts */
 export const vi: Record<string, string> = {
   'welcome': 'Chào mừng đến với SafwanTiger Shop',
+  'welcome.title': 'Chào mừng đến với SafwanTiger Shop!',
+  'welcome.balance': 'Số dư của bạn: *${balance}*',
   'welcome.tap_menu': 'Nhấn *Menu Chính* bên dưới để bắt đầu.',
   'menu.title': '🐯 *SafwanTiger Shop* — Menu Chính',
 
-  'btn.main_menu': 'Menu Chính',
-  'btn.shop': 'Cửa hàng',
-  'btn.topup': 'Nạp tiền',
-  'btn.profile': 'Hồ sơ của tôi',
-  'btn.support': 'Hỗ trợ',
-  'btn.ai_support': 'Trợ lý hỗ trợ tự động',
+  'btn.main_menu': '⬅️ Menu Chính',
+  'btn.shop': '🛍 Cửa hàng',
+  'btn.topup': '🪙 Nạp',
+  'btn.profile': '👤 Hồ sơ',
+  'btn.support': '💬 Hỗ trợ',
+  'btn.ai_support': '🤖 AI',
   'btn.back': '⬅️ Quay lại',
   'btn.next': 'Tiếp ▶️',
   'btn.prev': '◀️ Trước',
