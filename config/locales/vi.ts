@@ -25,12 +25,15 @@ export const vi: Record<string, string> = {
   'btn.my_orders': '🧾 Đơn hàng của tôi',
   'btn.refer': '🎁 Giới thiệu',
   'btn.notifications': '🔔 Thông báo',
-  'btn.toggle_stock': '📦 Thông báo tồn kho',
-  'btn.toggle_announcements': '📣 Thông báo chung',
-  'btn.notify.stock.on': '📦 Tồn kho: BẬT',
-  'btn.notify.stock.off': '📦 Tồn kho: TẮT',
-  'btn.notify.ann.on': '📣 Thông báo: BẬT',
-  'btn.notify.ann.off': '📣 Thông báo: TẮT',
+  'btn.toggle_stock': '📢 Thông báo tồn kho',
+  'btn.toggle_announcements': '💬 Thông báo tin tức',
+  'btn.toggle_wallet': '💰 Thông báo ví',
+  'btn.notify.stock.on': '🟢 Tồn kho: BẬT',
+  'btn.notify.stock.off': '🔕 Tồn kho: TẮT',
+  'btn.notify.ann.on': '🟢 Tin tức: BẬT',
+  'btn.notify.ann.off': '🔕 Tin tức: TẮT',
+  'btn.notify.wallet.on': '🟢 Ví: BẬT',
+  'btn.notify.wallet.off': '🔕 Ví: TẮT',
   'btn.back_to_settings': '⬅️ Quay lại Cài đặt',
   'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
   'btn.deposit_history': '💳 Lịch sử nạp',
@@ -59,9 +62,14 @@ export const vi: Record<string, string> = {
   'shop.page.header': '🛒 *{category}* — trang {page}',
 
   'profile.title': '⚙️ *Cài đặt*',
-  'profile.notifications.title': '🔔 *Thông báo*',
+  'profile.notifications.title': '{notify_bell} *Thông báo*',
   'profile.notifications.body':
-    'Chọn loại thông báo bạn muốn nhận. Nhấn vào nút để bật hoặc tắt.',
+    'Bật hoặc tắt các loại thông báo bạn muốn nhận.\n\n' +
+    '{notify_stock} *Thông báo tồn kho*\n' +
+    '{notify_info} *Thông báo tin tức*\n' +
+    '{notify_wallet} *Thông báo ví*\n\n' +
+    '{notify_on} BẬT\n' +
+    '{notify_off} TẮT',
   'profile.user_id': 'ID người dùng: `{id}`',
   'profile.username': 'Tên người dùng: @{username}',
   'profile.balance': '👛 Số dư: *{balance}*',
@@ -75,8 +83,12 @@ export const vi: Record<string, string> = {
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
   'profile.notify.stock_on': 'Thông báo tồn kho: ✅ BẬT',
   'profile.notify.stock_off': 'Thông báo tồn kho: ⛔ TẮT',
-  'profile.notify.ann_on': 'Thông báo chung: ✅ BẬT',
-  'profile.notify.ann_off': 'Thông báo chung: ⛔ TẮT',
+  'profile.notify.ann_on': 'Thông báo tin tức: ✅ BẬT',
+  'profile.notify.ann_off': 'Thông báo tin tức: ⛔ TẮT',
+  'profile.notify.wallet_on': 'Thông báo ví: ✅ BẬT',
+  'profile.notify.wallet_off': 'Thông báo ví: ⛔ TẮT',
+  'profile.notify.error':
+    '⚠️ Không thể lưu trạng thái — cần áp dụng `0008_wallet_alert.sql` vào cơ sở dữ liệu.',
   'profile.deposits.title': '💳 *Lịch sử nạp*',
   'profile.deposits.empty': 'Chưa có giao dịch nạp.',
   'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',

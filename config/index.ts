@@ -189,6 +189,15 @@ export const EMOJI: Record<string, EmojiSpec> = {
   welcome_banner: { unicode: '👋', custom_emoji_id: '6003746779474956178' },
   welcome_balance: { unicode: '💳', custom_emoji_id: '6084583651738132915' },
 
+  // ---- Notifications screen (premium emojis only render in body
+  //      text — inline-keyboard buttons fall back to the unicode glyph).
+  notify_bell: { unicode: '🔔', custom_emoji_id: '5215372534060428125' },
+  notify_stock: { unicode: '📢', custom_emoji_id: '6082236434930998087' },
+  notify_info: { unicode: '💬', custom_emoji_id: '6082420431329957672' },
+  notify_wallet: { unicode: '💰', custom_emoji_id: '6084800852529258692' },
+  notify_on: { unicode: '🟢', custom_emoji_id: '5213147006561692829' },
+  notify_off: { unicode: '🔕', custom_emoji_id: '5843822645711212265' },
+
   // ---- Email screens (set / change / why) -----------------------
   email_saved_check: { unicode: '✨', custom_emoji_id: '5098088779776787441' },
   email_bracket_l: { unicode: '📩', custom_emoji_id: '6008233706039284019' },

@@ -9,6 +9,7 @@ export type DBUser = {
   balance: number;
   stock_alert: boolean;
   announcements: boolean;
+  wallet_alert: boolean;
   ref_code: string | null;
   referred_by: number | null;
   joined_at: string;

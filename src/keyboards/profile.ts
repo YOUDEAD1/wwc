@@ -29,16 +29,14 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
 
 /**
  * Email Settings hub — rendered when the user taps "Email Settings"
- * on the main Settings screen. Always shows the same three buttons:
- *   - Set Email
- *   - Change Email   (alerts "Please set up email first" if no email)
- *   - Why Email?
+ * on the main Settings screen. Three short buttons in a single row:
+ *   Set | Change | Why Email
+ * with a Back row below.
  */
 export function emailHubKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
     .text(t(lang, 'btn.email.set'), 'profile:email:set')
     .text(t(lang, 'btn.email.change'), 'profile:email:change')
-    .row()
     .text(t(lang, 'btn.email.why'), 'profile:email:why')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
@@ -81,18 +79,27 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
 }
 
 /**
- * Notifications submenu — both toggles on a single row, with a back
- * button to return to Settings.
+ * Notifications submenu — three independent toggles (Stock / Info /
+ * Wallet), each in its own row, plus a back button to return to
+ * Settings.
  */
 export function notificationsKeyboard(
   lang: Lang,
-  state: { stock_alert: boolean; announcements: boolean },
+  state: {
+    stock_alert: boolean;
+    announcements: boolean;
+    wallet_alert: boolean;
+  },
 ): InlineKeyboard {
   const stockKey = state.stock_alert ? 'btn.notify.stock.on' : 'btn.notify.stock.off';
   const annKey = state.announcements ? 'btn.notify.ann.on' : 'btn.notify.ann.off';
+  const walletKey = state.wallet_alert ? 'btn.notify.wallet.on' : 'btn.notify.wallet.off';
   return new InlineKeyboard()
     .text(t(lang, stockKey), 'profile:toggle_stock')
+    .row()
     .text(t(lang, annKey), 'profile:toggle_ann')
+    .row()
+    .text(t(lang, walletKey), 'profile:toggle_wallet')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
 }
