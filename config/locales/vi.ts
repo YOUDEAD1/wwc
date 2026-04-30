@@ -65,6 +65,7 @@ export const vi: Record<string, string> = {
   'profile.title': '⚙️ *Cài đặt*',
   'profile.notifications.title': '{notify_bell} *Thông báo*',
   'profile.notifications.body':
+    '{notify_on} _Chỉ bật những thông báo bạn thích_ {notify_bell}\n\n' +
     '{notify_stock} *Thông báo tồn kho*\n' +
     '{notify_info} *Thông báo tin tức*\n' +
     '{notify_wallet} *Thông báo ví*\n\n' +

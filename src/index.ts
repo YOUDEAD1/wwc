@@ -4,9 +4,11 @@ import { env } from './env.js';
 import { logger } from './logger.js';
 import { handleBinanceWebhook } from './server/binanceWebhook.js';
 import { binanceEnabled } from './services/binance.js';
+import { logMailerStatus } from './services/mailer.js';
 
 async function main() {
   const bot = await buildBot();
+  logMailerStatus();
 
   if (env.BOT_MODE === 'webhook') {
     if (!env.WEBHOOK_URL) {

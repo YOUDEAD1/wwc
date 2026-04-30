@@ -77,6 +77,7 @@ export const en: Record<string, string> = {
   'profile.title': '*User Profile*',
   'profile.notifications.title': '{notify_bell} *Notifications*',
   'profile.notifications.body':
+    '{notify_on} _Tune in only the alerts you love_ {notify_bell}\n\n' +
     '{notify_stock} *Stock Alerts*\n' +
     '{notify_info} *Info Alerts*\n' +
     '{notify_wallet} *Wallet Alerts*\n\n' +
