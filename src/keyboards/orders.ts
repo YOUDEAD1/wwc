@@ -1,0 +1,61 @@
+/**
+ * Keyboards for the redesigned My Orders screen.
+ */
+import { InlineKeyboard } from 'grammy';
+import type { DBOrder } from '../types.js';
+import { type Lang } from '../../config/index.js';
+import { btn } from './helpers.js';
+import { t } from '../i18n/index.js';
+
+export const ORDERS_PER_PAGE = 6;
+
+/**
+ * Two-column paginated orders list — left button is the product
+ * name, right button is the live status. Both go to the same
+ * detail screen so a tap anywhere on the row works.
+ */
+export function ordersListKeyboard(
+  lang: Lang,
+  rows: DBOrder[],
+  page: number,
+  totalPages: number,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const row of rows) {
+    const name = row.product_name.length > 22
+      ? row.product_name.slice(0, 21) + '…'
+      : row.product_name;
+    const statusKey =
+      row.status === 'paid'
+        ? 'orders.status.active'
+        : row.status === 'refunded'
+        ? 'orders.status.refunded'
+        : 'orders.status.cancelled';
+    kb.text(name, `orders:open:${row.id}`)
+      .text(t(lang, statusKey), `orders:open:${row.id}`)
+      .row();
+  }
+  // Pagination row: `Page X/Y` is purely informational; we put it on
+  // the same callback as the current page so taps are cheap no-ops.
+  const navRow: Array<[string, string]> = [];
+  if (totalPages > 1) {
+    if (page > 0) navRow.push(['◀️ Prev', `orders:p:${page - 1}`]);
+    navRow.push([
+      t(lang, 'orders.page', { page: page + 1, pages: totalPages }),
+      `orders:p:${page}`,
+    ]);
+    if (page < totalPages - 1) navRow.push(['Next ▶️', `orders:p:${page + 1}`]);
+    for (const [label, cb] of navRow) kb.text(label, cb);
+    kb.row();
+  }
+  kb.text(btn(lang, 'back_to_settings'), 'profile:open');
+  return kb;
+}
+
+/** Order-detail keyboard — `Open Link` (when delivery contains a URL) + Back. */
+export function orderDetailKeyboard(lang: Lang, openUrl: string | null): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (openUrl) kb.url(t(lang, 'btn.orders_open_link'), openUrl).row();
+  kb.text(t(lang, 'btn.orders_back_list'), 'profile:orders');
+  return kb;
+}

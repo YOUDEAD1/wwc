@@ -11,6 +11,8 @@ import type {
   DBDeposit,
   DBPaymentMethod,
   DBWalletLedger,
+  DBGiftCode,
+  DBGiftCodeRedemption,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -276,6 +278,37 @@ export async function listOrders(user_id: number, limit = 10): Promise<DBOrder[]
     .order('created_at', { ascending: false })
     .limit(limit);
   return (data ?? []) as DBOrder[];
+}
+
+/**
+ * Paginated orders list for the My Orders screen.
+ * Returns the slice plus the total count so the UI can render
+ * `Page X/Y` without a second round-trip.
+ */
+export async function listOrdersPaginated(
+  user_id: number,
+  page: number,
+  perPage: number,
+): Promise<{ rows: DBOrder[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count } = await supabase
+    .from('orders')
+    .select('*', { count: 'exact' })
+    .eq('user_id', user_id)
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  return { rows: (data ?? []) as DBOrder[], total: count ?? 0 };
+}
+
+/** Get a single order by numeric primary key. */
+export async function getOrder(id: number): Promise<DBOrder | null> {
+  const { data } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  return (data ?? null) as DBOrder | null;
 }
 
 // ---------- Deposits ----------
@@ -641,4 +674,119 @@ export async function listWalletLedger(
     .order('created_at', { ascending: false })
     .limit(limit);
   return (data ?? []) as DBWalletLedger[];
+}
+
+// ---------- Gift codes ----------
+
+export async function getGiftCode(code: string): Promise<DBGiftCode | null> {
+  const { data } = await supabase
+    .from('gift_codes')
+    .select('*')
+    .eq('code', code)
+    .maybeSingle();
+  return (data ?? null) as DBGiftCode | null;
+}
+
+export async function listGiftCodes(limit = 50): Promise<DBGiftCode[]> {
+  const { data } = await supabase
+    .from('gift_codes')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return (data ?? []) as DBGiftCode[];
+}
+
+export async function createGiftCode(args: {
+  code: string;
+  amount: number;
+  max_redemptions?: number | null;
+  per_user_limit?: number;
+  expires_at?: string | null;
+  note?: string | null;
+  created_by?: number | null;
+}): Promise<DBGiftCode> {
+  const insert: Record<string, unknown> = {
+    code: args.code,
+    amount: args.amount,
+    max_redemptions: args.max_redemptions ?? null,
+    per_user_limit: args.per_user_limit ?? 1,
+    expires_at: args.expires_at ?? null,
+    note: args.note ?? null,
+    created_by: args.created_by ?? null,
+  };
+  const { data, error } = await supabase
+    .from('gift_codes')
+    .insert(insert)
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, code: args.code }, 'createGiftCode failed');
+    throw error ?? new Error('Failed to create gift code');
+  }
+  return data as DBGiftCode;
+}
+
+export async function deleteGiftCode(code: string): Promise<void> {
+  await supabase.from('gift_codes').delete().eq('code', code);
+}
+
+export async function updateGiftCode(
+  code: string,
+  patch: Partial<Pick<DBGiftCode, 'amount' | 'max_redemptions' | 'per_user_limit' | 'expires_at' | 'note'>>,
+): Promise<void> {
+  const { error } = await supabase.from('gift_codes').update(patch).eq('code', code);
+  if (error) {
+    logger.error({ err: error, code }, 'updateGiftCode failed');
+    throw error;
+  }
+}
+
+export async function countGiftCodeRedemptions(code: string): Promise<number> {
+  const { count } = await supabase
+    .from('gift_code_redemptions')
+    .select('id', { count: 'exact', head: true })
+    .eq('code', code);
+  return count ?? 0;
+}
+
+export async function countGiftCodeRedemptionsByUser(
+  code: string,
+  user_id: number,
+): Promise<number> {
+  const { count } = await supabase
+    .from('gift_code_redemptions')
+    .select('id', { count: 'exact', head: true })
+    .eq('code', code)
+    .eq('user_id', user_id);
+  return count ?? 0;
+}
+
+export async function listGiftCodeRedemptions(
+  code: string,
+  limit = 50,
+): Promise<DBGiftCodeRedemption[]> {
+  const { data } = await supabase
+    .from('gift_code_redemptions')
+    .select('*')
+    .eq('code', code)
+    .order('redeemed_at', { ascending: false })
+    .limit(limit);
+  return (data ?? []) as DBGiftCodeRedemption[];
+}
+
+export async function recordGiftCodeRedemption(args: {
+  code: string;
+  user_id: number;
+  amount: number;
+}): Promise<DBGiftCodeRedemption> {
+  const { data, error } = await supabase
+    .from('gift_code_redemptions')
+    .insert(args)
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, ...args }, 'recordGiftCodeRedemption failed');
+    throw error ?? new Error('Failed to record gift redemption');
+  }
+  return data as DBGiftCodeRedemption;
 }

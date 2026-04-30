@@ -34,7 +34,10 @@ export const en: Record<string, string> = {
   'btn.notify.ann.on': '📣 Announcements: ON',
   'btn.notify.ann.off': '📣 Announcements: OFF',
   'btn.back_to_settings': '⬅️ Back to Settings',
-  'btn.language': '🌐 Language',
+  // Multi-language label so users see their own language regardless of which
+  // locale is currently active. Premium emoji ID 5310249748903504323 wraps
+  // the leading globe.
+  'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
   'btn.deposit_history': '💳 My Deposits',
   'btn.channel': '📢 Channel',
   'btn.stats': '📊 Stats',
@@ -125,6 +128,49 @@ export const en: Record<string, string> = {
   'btn.email.know_more': '📄 Know More',
   // My Deposits button.
   'btn.my_deposits': '💳 My Deposits',
+  // Redeem Gift Code button (Settings) + screen.
+  'btn.redeem': '🎁 Redeem Gift Code',
+  'btn.buy_code': '🛒 Buy Code',
+  // ---------- Redeem Gift Code screen ----------
+  'gift.title': '{gift_title} *Redeem Gift Code*',
+  'gift.body':
+    '{gift_send} Send your gift code below to credit USDT {gift_usdt} to your wallet.\n\n' +
+    '{gift_balance} *Current Balance:* {balance} USDT\n\n' +
+    '_Each gift code can be redeemed only once per user (unless owner sets a higher limit)._',
+  'gift.expired': '{gift_expired} This gift code has expired.',
+  'gift.invalid': '{gift_invalid} This gift code is invalid.',
+  'gift.already_used': '{gift_expired} You have already redeemed this code.',
+  'gift.exhausted': '{gift_expired} This gift code is no longer available.',
+  'gift.redeemed':
+    '{gift_redeemed} Gift code has been redeemed successfully — *{amount} USDT* has been credited.',
+  // ---------- My Orders screen ----------
+  'orders.title': '{orders_title} *My Orders*',
+  'orders.body': 'Tap any order below to open details, or send the public Order ID shown in your receipt.',
+  'orders.empty': 'You haven\'t placed any orders yet.',
+  'orders.page': 'Page {page}/{pages}',
+  'orders.status.active': '🛡 Active',
+  'orders.status.refunded': '↩️ Refunded',
+  'orders.status.cancelled': '⛔ Cancelled',
+  // Order detail screen.
+  'orders.detail.title': '{orders_title} *My Orders*',
+  'orders.detail.id': '{orders_id} *Order ID#* : `{id}`',
+  'orders.detail.product': '{orders_product} *Product:* {name}',
+  'orders.detail.type': '{orders_type} *Type:* {type}',
+  'orders.detail.qty': '{orders_qty} *Selected Qty:* {qty}',
+  'orders.detail.total': '{orders_total} *Total Amount:* {total} USDT',
+  'orders.detail.when': '{orders_when} *When:* {when}',
+  'orders.detail.status': '{orders_status} *Status:* {status}',
+  'orders.detail.paid': '{orders_type} *Paid:* {paid}',
+  'orders.detail.delivered': '{orders_status} *Delivered:* {delivered}',
+  'orders.detail.note': '*Product Note* {orders_note}\n{note}',
+  'orders.detail.warranty': '*Warranty:* {warranty} {orders_warranty}',
+  'orders.detail.received': '*Received:* {orders_received}\n{received}',
+  'orders.detail.no_warranty': 'Non',
+  'orders.detail.type.wallet': 'Wallet balance',
+  'orders.detail.type.direct': 'Direct payment',
+  // Buttons used on the Order detail screen.
+  'btn.orders_back_list': '⬅️ Back to Orders',
+  'btn.orders_open_link': '🔗 Open Link',
   // Legacy keys kept so anything still calling them won't break.
   'profile.email.title': '📧 *Set Email*',
   'profile.email.body':

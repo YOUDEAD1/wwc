@@ -67,6 +67,25 @@ export type DBDeposit = {
   updated_at: string;
 };
 
+export type DBGiftCode = {
+  code: string;
+  amount: number;
+  max_redemptions: number | null;
+  per_user_limit: number;
+  expires_at: string | null;
+  note: string | null;
+  created_by: number | null;
+  created_at: string;
+};
+
+export type DBGiftCodeRedemption = {
+  id: number;
+  code: string;
+  user_id: number;
+  amount: number;
+  redeemed_at: string;
+};
+
 export type DBWalletLedger = {
   id: number;
   user_id: number;

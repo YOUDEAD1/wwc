@@ -2,11 +2,18 @@ import type { Composer } from 'grammy';
 import { type Lang } from '../../config/index.js';
 import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/regions.js';
 import {
+  adjustBalance,
   countReferrals,
+  countGiftCodeRedemptions,
+  countGiftCodeRedemptionsByUser,
+  getGiftCode,
+  getOrder,
   getUserStats,
   listDeposits,
-  listOrders,
+  listOrdersPaginated,
   listWalletLedger,
+  recordGiftCodeRedemption,
+  recordLedger,
   setUserEmail,
   setUserLanguage,
   setUserRegion,
@@ -24,10 +31,13 @@ import {
   whyEmailKeyboard,
 } from '../keyboards/profile.js';
 import { regionPickerKeyboard } from '../keyboards/region.js';
+import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../keyboards/orders.js';
+import { redeemKeyboard } from '../keyboards/redeem.js';
+import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
-import { getEmailPdfUrl } from '../services/settings.js';
+import { getEmailPdfUrl, getAdminContactUrl } from '../services/settings.js';
 import { InputFile } from 'grammy';
 import { fileURLToPath } from 'url';
 import { dirname, resolve as pathResolve } from 'path';
@@ -265,32 +275,196 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await showStats(ctx);
   });
 
-  // ---- Orders ----
-  bot.callbackQuery('profile:orders', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    const orders = await listOrders(ctx.user.telegram_id);
-    if (orders.length === 0) {
-      await ctx.editMessageText(ctx.t('profile.orders.empty'), {
+  // ---- My Orders (list) ----
+  // Paginated 2-column grid: each row is [Product Name] [Active status]
+  // and tapping anywhere opens that order's detail screen.
+  async function showOrdersPage(ctx: AppCtx, page: number): Promise<void> {
+    const { rows, total } = await listOrdersPaginated(
+      ctx.user.telegram_id,
+      page,
+      ORDERS_PER_PAGE,
+    );
+    if (total === 0) {
+      await ctx.editMessageText(renderMdHtml(ctx.t('orders.empty')), {
+        parse_mode: 'HTML',
         reply_markup: backToSettingsKeyboard(ctx.lang),
       });
       return;
     }
-    const lines = [ctx.t('profile.orders.title'), ''];
-    for (const o of orders) {
-      lines.push(
-        ctx.t('profile.orders.line', {
-          id: o.id,
-          name: o.product_name,
-          qty: o.qty,
-          total: o.total,
-          date: o.created_at.slice(0, 10),
-        }),
-      );
-    }
-    await ctx.editMessageText(renderMdHtml(lines.join('\n')), {
+    const totalPages = Math.max(1, Math.ceil(total / ORDERS_PER_PAGE));
+    const text = [ctx.t('orders.title'), '', ctx.t('orders.body')].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: backToSettingsKeyboard(ctx.lang),
+      reply_markup: ordersListKeyboard(ctx.lang, rows, page, totalPages),
     });
+  }
+
+  bot.callbackQuery('profile:orders', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = { type: 'orders_lookup', step: 'value', data: {} };
+    await showOrdersPage(ctx, 0);
+  });
+
+  bot.callbackQuery(/^orders:p:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showOrdersPage(ctx, Number(ctx.match[1]));
+  });
+
+  // ---- Order detail ----
+  async function renderOrderDetail(ctx: AppCtx, orderId: number, asReply = false): Promise<void> {
+    const order = await getOrder(orderId);
+    if (!order || order.user_id !== ctx.user.telegram_id) {
+      const msg = '⚠️ Order not found.';
+      if (asReply) await ctx.reply(msg);
+      else await ctx.editMessageText(msg, { reply_markup: backToSettingsKeyboard(ctx.lang) });
+      return;
+    }
+    const pubId = publicOrderId(order);
+    const status =
+      order.status === 'paid'
+        ? ctx.t('orders.status.active')
+        : order.status === 'refunded'
+        ? ctx.t('orders.status.refunded')
+        : ctx.t('orders.status.cancelled');
+    const when = formatAbsoluteUtc(order.created_at);
+    const total = Number(order.total).toFixed(order.total % 1 === 0 ? 0 : 2);
+    const lines = [
+      ctx.t('orders.detail.title'),
+      '',
+      ctx.t('orders.detail.id', { id: pubId }),
+      ctx.t('orders.detail.product', { name: order.product_name }),
+      ctx.t('orders.detail.type', { type: ctx.t('orders.detail.type.wallet') }),
+      ctx.t('orders.detail.qty', { qty: order.qty }),
+      ctx.t('orders.detail.total', { total }),
+      ctx.t('orders.detail.when', { when }),
+      ctx.t('orders.detail.status', { status }),
+      ctx.t('orders.detail.paid', { paid: when }),
+      ctx.t('orders.detail.delivered', { delivered: when }),
+    ];
+    if (order.delivery) {
+      const urlMatch = order.delivery.match(/https?:\/\/\S+/);
+      const deliveryText = urlMatch ? urlMatch[0] : order.delivery;
+      lines.push('', ctx.t('orders.detail.received', { received: deliveryText }));
+    }
+    const html = renderMdHtml(lines.join('\n'));
+    const openUrl = order.delivery?.match(/https?:\/\/\S+/)?.[0] ?? null;
+    const reply_markup = orderDetailKeyboard(ctx.lang, openUrl);
+    if (asReply) {
+      await ctx.reply(html, {
+        parse_mode: 'HTML',
+        reply_markup,
+        link_preview_options: { is_disabled: true },
+      });
+    } else {
+      await ctx.editMessageText(html, {
+        parse_mode: 'HTML',
+        reply_markup,
+        link_preview_options: { is_disabled: true },
+      });
+    }
+  }
+
+  bot.callbackQuery(/^orders:open:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await renderOrderDetail(ctx, Number(ctx.match[1]));
+  });
+
+  // Allow users to type a public Order ID to open it (works while
+  // the My Orders flow is active).
+  bot.on('message:text', async (ctx, next) => {
+    const flow = ctx.session.userFlow;
+    if (!flow || flow.type !== 'orders_lookup') return next();
+    const text = ctx.message.text.trim();
+    if (text === '/cancel' || text.startsWith('/')) {
+      ctx.session.userFlow = undefined;
+      return next();
+    }
+    const id = parsePublicOrderId(text);
+    if (!id) {
+      await ctx.reply('That doesn\'t look like a valid Order ID.');
+      return;
+    }
+    await renderOrderDetail(ctx, id, true);
+  });
+
+  // ---- Redeem Gift Code ----
+  async function showRedeemScreen(ctx: AppCtx): Promise<void> {
+    const balance = Number(ctx.user.balance).toFixed(
+      ctx.user.balance % 1 === 0 ? 0 : 2,
+    );
+    const text = [
+      ctx.t('gift.title'),
+      '',
+      ctx.t('gift.body', { balance }),
+    ].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: redeemKeyboard(ctx.lang, getAdminContactUrl()),
+    });
+  }
+
+  bot.callbackQuery('profile:redeem', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = { type: 'redeem_gift', step: 'value', data: {} };
+    await showRedeemScreen(ctx);
+  });
+
+  // Capture the next plain-text message as the gift code.
+  bot.on('message:text', async (ctx, next) => {
+    const flow = ctx.session.userFlow;
+    if (!flow || flow.type !== 'redeem_gift') return next();
+    const code = ctx.message.text.trim().toUpperCase();
+    if (code === '/CANCEL' || code.startsWith('/')) {
+      ctx.session.userFlow = undefined;
+      return next();
+    }
+    if (!/^[A-Z0-9_-]{3,40}$/.test(code)) {
+      await ctx.reply(renderMdHtml(ctx.t('gift.invalid')), { parse_mode: 'HTML' });
+      return;
+    }
+    const gift = await getGiftCode(code);
+    if (!gift) {
+      await ctx.reply(renderMdHtml(ctx.t('gift.invalid')), { parse_mode: 'HTML' });
+      return;
+    }
+    if (gift.expires_at && new Date(gift.expires_at).getTime() < Date.now()) {
+      await ctx.reply(renderMdHtml(ctx.t('gift.expired')), { parse_mode: 'HTML' });
+      return;
+    }
+    const usedByUser = await countGiftCodeRedemptionsByUser(code, ctx.user.telegram_id);
+    if (usedByUser >= gift.per_user_limit) {
+      await ctx.reply(renderMdHtml(ctx.t('gift.already_used')), { parse_mode: 'HTML' });
+      return;
+    }
+    if (gift.max_redemptions != null) {
+      const totalUsed = await countGiftCodeRedemptions(code);
+      if (totalUsed >= gift.max_redemptions) {
+        await ctx.reply(renderMdHtml(ctx.t('gift.exhausted')), { parse_mode: 'HTML' });
+        return;
+      }
+    }
+    // All checks passed — credit the wallet, log the ledger entry,
+    // record the redemption row.
+    const amount = Number(gift.amount);
+    const newBalance = await adjustBalance(ctx.user.telegram_id, amount);
+    await recordLedger(
+      ctx.user.telegram_id,
+      'gift_code',
+      amount,
+      `gift:${code}`,
+    );
+    await recordGiftCodeRedemption({
+      code,
+      user_id: ctx.user.telegram_id,
+      amount,
+    });
+    ctx.user.balance = newBalance;
+    ctx.session.userFlow = undefined;
+    const formatted = amount.toFixed(amount % 1 === 0 ? 0 : 2);
+    await ctx.reply(
+      renderMdHtml(ctx.t('gift.redeemed', { amount: formatted })),
+      { parse_mode: 'HTML' },
+    );
   });
 
   // ---- Refer ----

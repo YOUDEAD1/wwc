@@ -32,7 +32,7 @@ export const ar: Record<string, string> = {
   'btn.notify.ann.on': '📣 الإعلانات: مفعلة',
   'btn.notify.ann.off': '📣 الإعلانات: معطلة',
   'btn.back_to_settings': '⬅️ رجوع للإعدادات',
-  'btn.language': '🌐 اللغة',
+  'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
   'btn.deposit_history': '💳 سجل الإيداعات',
   'btn.channel': '📢 القناة',
   'btn.stats': '📊 إحصائيات',

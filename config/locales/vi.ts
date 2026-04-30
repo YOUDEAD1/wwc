@@ -32,7 +32,7 @@ export const vi: Record<string, string> = {
   'btn.notify.ann.on': '📣 Thông báo: BẬT',
   'btn.notify.ann.off': '📣 Thông báo: TẮT',
   'btn.back_to_settings': '⬅️ Quay lại Cài đặt',
-  'btn.language': '🌐 Ngôn ngữ',
+  'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
   'btn.deposit_history': '💳 Lịch sử nạp',
   'btn.channel': '📢 Kênh',
   'btn.stats': '📊 Thống kê',
