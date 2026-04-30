@@ -228,7 +228,24 @@ function mdToHtml(md: string): string {
     `${lead}<i>${body}</i>`,
   );
 
-  // 6) Markdown links [label](url) — only http(s) and tg:// URLs.
+  // 6) Blockquotes — collapse runs of `&gt; …` lines into a single
+  //    `<blockquote>…</blockquote>` block. Empty `&gt;` lines become
+  //    a blank line inside the quote so consecutive entries stay
+  //    visually grouped.
+  s = s.replace(
+    /(?:^|\n)((?:&gt;[^\n]*(?:\n|$))+)/g,
+    (m, block: string) => {
+      const inner = block
+        .split('\n')
+        .filter((l) => l.length > 0)
+        .map((l) => l.replace(/^&gt;\s?/, ''))
+        .join('\n');
+      const lead = m.startsWith('\n') ? '\n' : '';
+      return `${lead}<blockquote>${inner}</blockquote>\n`;
+    },
+  );
+
+  // 7) Markdown links [label](url) — only http(s) and tg:// URLs.
   // The URL is already HTML-escaped (escapeHtml ran on the whole input),
   // but escapeHtml doesn't touch `"`. Escape it here so a quote inside
   // the URL can never break out of the href attribute.

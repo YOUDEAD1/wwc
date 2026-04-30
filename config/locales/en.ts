@@ -35,7 +35,7 @@ export const en: Record<string, string> = {
   'btn.notify.ann.off': '📣 Announcements: OFF',
   'btn.back_to_settings': '⬅️ Back to Settings',
   'btn.language': '🌐 Language',
-  'btn.deposit_history': '💳 Deposit History',
+  'btn.deposit_history': '💳 My Deposits',
   'btn.channel': '📢 Channel',
   'btn.stats': '📊 Stats',
   'btn.stats_refresh': '🔄 Refresh',
@@ -61,6 +61,8 @@ export const en: Record<string, string> = {
   'shop.buy.insufficient':
     '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please topup first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
+  'shop.buy.email_required':
+    'Setup email system first — we need your email to send the receipt.',
   'shop.page.header': '🛒 *{category}* — page {page}',
 
   // ---------- Profile ----------
@@ -107,12 +109,22 @@ export const en: Record<string, string> = {
     '{email_saved_check} We need your email to send invoices {email_invoice} and to keep our services secure {email_secure} — thanks {email_thanks}.',
   // Misc.
   'profile.email.saved': '✅ Email saved: `{email}`',
-  'profile.email.bad': '❌ That doesn\'t look like a valid email. Please try again.',
+  'profile.email.bad': '{email_invalid} *Please Enter A Valid Email*',
+  // Email Settings hub (the new submenu opened from a single Settings button).
+  'profile.email.hub.title': '{email_bracket_l} *Email Settings* {profile_email}',
+  'profile.email.hub.body':
+    'Manage the email used for your invoices and account messages.\n\n' +
+    'Current email: {current}',
+  // Mobile popup shown when the user taps "Change Email" without one.
+  'profile.email.change.no_email_popup': 'Please Set up email first',
   // Buttons used on the Settings screen + email sub-screens.
+  'btn.email.settings': '📧 Email Settings',
   'btn.email.change': '✏️ Change Email',
   'btn.email.set': '📧 Set Email',
   'btn.email.why': '❔ Why Email?',
   'btn.email.know_more': '📄 Know More',
+  // My Deposits button.
+  'btn.my_deposits': '💳 My Deposits',
   // Legacy keys kept so anything still calling them won't break.
   'profile.email.title': '📧 *Set Email*',
   'profile.email.body':
@@ -127,9 +139,30 @@ export const en: Record<string, string> = {
   'profile.notify.stock_off': 'Stock alerts: ⛔ OFF',
   'profile.notify.ann_on': 'Announcements: ✅ ON',
   'profile.notify.ann_off': 'Announcements: ⛔ OFF',
-  'profile.deposits.title': '💳 *Deposit History*',
-  'profile.deposits.empty': 'No deposits yet.',
-  'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',
+  // ---------- My Deposits screen (rewritten) ----------
+  'profile.deposits.title': '{deposits_title} *My Deposits*',
+  'profile.deposits.empty': '{email_bracket_l} No deposits yet. {email_bracket_l}',
+  'profile.deposits.payments_header': '*Payment Deposits* {deposits_payments}',
+  'profile.deposits.wallet_header': '*Wallet Balance History* {deposits_wallet}',
+  'profile.deposits.line.id': '*#{n}*',
+  'profile.deposits.line.amount': 'Amount: {amount} USDT',
+  'profile.deposits.line.method': 'Method: {method}',
+  'profile.deposits.line.status': 'Status: {status}',
+  'profile.deposits.line.reference': 'Reference: `{reference}`',
+  'profile.deposits.line.when': 'When: {when}',
+  'profile.deposits.wallet.line.type': 'Type: {type}',
+  'profile.deposits.wallet.line.amount': 'Amount: {sign}{amount} USDT',
+  'profile.deposits.wallet.line.reference': 'Reference: `{reference}`',
+  'profile.deposits.wallet.line.when': 'When: {when}',
+  // Wallet ledger type labels.
+  'profile.deposits.wallet.type.wallet_purchase': 'Wallet purchase',
+  'profile.deposits.wallet.type.deposit_credit': 'Deposit credit',
+  'profile.deposits.wallet.type.admin_add_balance': 'Admin added balance',
+  'profile.deposits.wallet.type.admin_deduct_balance': 'Admin deducted balance',
+  // Status labels (deposit row).
+  'profile.deposits.status.pending': 'pending_review',
+  'profile.deposits.status.approved': 'Credited',
+  'profile.deposits.status.rejected': 'failed',
 
   'profile.stats.title': 'Your Stats',
   'profile.stats.orders': 'Orders: {count}',

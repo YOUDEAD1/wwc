@@ -67,6 +67,16 @@ export type DBDeposit = {
   updated_at: string;
 };
 
+export type DBWalletLedger = {
+  id: number;
+  user_id: number;
+  type: string;
+  /** Signed amount; negative = debit, positive = credit. */
+  amount: number;
+  reference: string | null;
+  created_at: string;
+};
+
 export type DBPaymentMethod = {
   id: number;
   name: string;

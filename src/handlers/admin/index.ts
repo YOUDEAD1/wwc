@@ -10,6 +10,7 @@ import {
   addPaymentMethod,
   addProduct,
   adjustBalance,
+  recordLedger,
   deleteCategory,
   deletePaymentMethod,
   deleteProduct,
@@ -32,6 +33,7 @@ import {
   setProductActive,
 } from '../../db/queries.js';
 import * as cache from '../../services/cache.js';
+import { credit } from '../../services/wallet.js';
 import {
   setColor,
   setEmoji,
@@ -471,7 +473,12 @@ adminBot.callbackQuery(/^adm:dep:ok:(\d+)$/, async (ctx) => {
     return;
   }
   await setDepositStatus(id, 'approved');
-  const newBal = await adjustBalance(dep.user_id, Number(dep.amount));
+  const newBal = await credit(
+    dep.user_id,
+    Number(dep.amount),
+    dep.reference ?? `deposit:${dep.id}`,
+    'deposit_credit',
+  );
   await ctx.answerCallbackQuery({ text: `Approved. Balance: $${newBal}` });
   try {
     await ctx.api.sendMessage(
@@ -1194,6 +1201,12 @@ adminBot.on('message:text', async (ctx, next) => {
         return;
       }
       const newBal = await adjustBalance(flow.data.telegram_id, delta);
+      await recordLedger(
+        flow.data.telegram_id,
+        delta > 0 ? 'admin_add_balance' : 'admin_deduct_balance',
+        delta,
+        delta > 0 ? 'admin_add_balance' : 'admin_deduct_balance',
+      );
       ctx.session.adminFlow = undefined;
       await ctx.reply(
         `✅ Balance adjusted by *${delta >= 0 ? '+' : ''}${delta}*. New balance: *$${newBal}*.`,

@@ -135,6 +135,23 @@ export function registerShop(bot: Composer<AppCtx>): void {
       await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
       return;
     }
+    // Email gate — purchase requires a saved email so receipts/invoices
+    // can be delivered. New users land here with `ctx.user.email` null.
+    if (!ctx.user.email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.buy.email_required'),
+        show_alert: true,
+      });
+      // Bounce them straight into the Set-Email flow.
+      ctx.session.userFlow = { type: 'set_email', step: 'value', data: { mode: 'set' } };
+      const text = [
+        ctx.t('profile.email.set.title'),
+        '',
+        ctx.t('profile.email.set.body'),
+      ].join('\n');
+      await ctx.reply(renderMdHtml(text), { parse_mode: 'HTML' });
+      return;
+    }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const total = Number((p.price * qty).toFixed(2));
     if (ctx.user.balance < total) {
@@ -145,9 +162,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     try {
-      const newBalance = await charge(ctx.from!.id, total, ctx.user.balance);
-      ctx.user.balance = newBalance;
-      await decrementProductStock(id, qty);
       const order = await createOrder({
         user_id: ctx.from!.id,
         product_id: id,
@@ -157,6 +171,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
         total,
         delivery: `Order #${id}-${qty} (mock delivery)`,
       });
+      const newBalance = await charge(
+        ctx.from!.id,
+        total,
+        ctx.user.balance,
+        `order:${order.id}`,
+      );
+      ctx.user.balance = newBalance;
+      await decrementProductStock(id, qty);
       delete ctx.session.qty[id];
       await ctx.answerCallbackQuery();
       await ctx.reply(
