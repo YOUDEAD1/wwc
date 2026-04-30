@@ -671,9 +671,10 @@ function buttonKeyList(): string[] {
 }
 
 function buttonColorLabel(key: keyof typeof BUTTON_KEYS): string {
+  // COLOR_PREFIX values are now empty (the old 🟦🟩🟥🟨 squares were
+  // removed). Show the bare button key + its assigned colour name.
   const c = getButtonColor(key);
-  const prefix = COLOR_PREFIX[c] || '∅';
-  return `${prefix} ${key} — ${c}`;
+  return `${key} — ${c}`;
 }
 
 function colorPickerKb(page: number): InlineKeyboard {
@@ -701,9 +702,8 @@ function colorPickerKb(page: number): InlineKeyboard {
 async function showColorPicker(ctx: AppCtx, page: number): Promise<void> {
   await ctx.editMessageText(
     '🎨 *Set Color*\n\n' +
-      'Inline buttons can be tinted by prefixing them with a colored ' +
-      'square: 🟦 blue, 🟩 green, 🟥 red, 🟨 yellow, or none. Tap a button ' +
-      'key to change its color.',
+      'Pick a tint hint for an inline button (blue / green / red / ' +
+      'yellow / none). Tap a button key to change its color.',
     { parse_mode: 'Markdown', reply_markup: colorPickerKb(page) },
   );
 }
@@ -724,7 +724,7 @@ adminBot.callbackQuery(/^adm:color:pick:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const kb = new InlineKeyboard();
   for (const c of Object.keys(COLOR_PREFIX) as ColorMode[]) {
-    kb.text(`${COLOR_PREFIX[c] || '∅'} ${c}`, `adm:color:set:${key}:${c}`);
+    kb.text(c, `adm:color:set:${key}:${c}`);
   }
   kb.row().text('⬅️ Back', 'adm:cust:color:pick');
   await ctx.editMessageText(`🎨 *Set Color* — \`${key}\`\n\nPick a color:`, {

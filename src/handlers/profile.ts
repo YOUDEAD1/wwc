@@ -18,11 +18,21 @@ import {
   statsKeyboard,
   backToMainKeyboard,
   backToSettingsKeyboard,
+  emailScreenKeyboard,
+  whyEmailKeyboard,
 } from '../keyboards/profile.js';
 import { regionPickerKeyboard } from '../keyboards/region.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
+import { InputFile } from 'grammy';
+import { fileURLToPath } from 'url';
+import { dirname, resolve as pathResolve } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+/** Path to the explanatory PDF shipped under `assets/`. */
+const EMAIL_PDF_PATH = pathResolve(__dirname, '../../../assets/email-explanation.pdf');
 
 const MONTHS_SHORT = [
   'Jan',
@@ -87,11 +97,13 @@ function profileText(ctx: AppCtx): string {
   );
   lines.push(`{profile_link} ${ctx.t('profile.row.link', { link: userLink })}`);
   lines.push(`{profile_status} ${ctx.t('profile.row.status', { status })}`);
-  lines.push(
-    u.email
-      ? `{profile_email} ${ctx.t('profile.row.email', { email: u.email })}`
-      : `{profile_email} ${ctx.t('profile.row.email_empty')}`,
-  );
+  // Email row: when set, also stamp "Has been Saved!" + the saved-check
+  // premium emoji at the end.
+  if (u.email) {
+    lines.push(`{profile_email} ${ctx.t('profile.row.email', { email: u.email })}`);
+  } else {
+    lines.push(`{profile_email} ${ctx.t('profile.row.email_empty')}`);
+  }
   lines.push(
     `{profile_balance} ${ctx.t('profile.row.balance', { balance: Number(u.balance).toFixed(3) })}`,
   );
@@ -111,20 +123,24 @@ function profileText(ctx: AppCtx): string {
   return lines.join('\n');
 }
 
-async function showProfile(ctx: AppCtx) {
+async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
   // HTML render path: keeps Markdown styling AND auto-wraps any unicode
   // emoji whose key has a configured premium custom_emoji_id.
   const html = renderMdHtml(profileText(ctx));
-  if (ctx.callbackQuery) {
+  const reply_markup = profileKeyboard(ctx.lang, Boolean(ctx.user.email));
+  // `forceReply` is used after saving an email — we want to send a
+  // FRESH settings message (not edit the pre-edit prompt) so the user
+  // immediately sees the saved value.
+  if (ctx.callbackQuery && !opts.forceReply) {
     await ctx.editMessageText(html, {
       parse_mode: 'HTML',
-      reply_markup: profileKeyboard(ctx.lang),
+      reply_markup,
       link_preview_options: { is_disabled: true },
     });
   } else {
     await ctx.reply(html, {
       parse_mode: 'HTML',
-      reply_markup: profileKeyboard(ctx.lang),
+      reply_markup,
       link_preview_options: { is_disabled: true },
     });
   }
@@ -351,15 +367,66 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await showProfile(ctx);
   });
 
-  // ---- Email setter ----
-  bot.callbackQuery('profile:email', async (ctx) => {
+  // ---- Email screens (set / change / why) ----
+  // Set Email — only reachable when the user hasn't saved an email yet.
+  bot.callbackQuery('profile:email:set', async (ctx) => {
     await ctx.answerCallbackQuery();
-    ctx.session.userFlow = { type: 'set_email', step: 'value', data: {} };
-    const text = [ctx.t('profile.email.title'), '', ctx.t('profile.email.body')].join('\n');
+    ctx.session.userFlow = { type: 'set_email', step: 'value', data: { mode: 'set' } };
+    const text = [
+      ctx.t('profile.email.set.title'),
+      '',
+      ctx.t('profile.email.set.body'),
+    ].join('\n');
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: backToSettingsKeyboard(ctx.lang),
+      reply_markup: emailScreenKeyboard(ctx.lang),
     });
+  });
+
+  // Change Email — only reachable once an email is already saved.
+  bot.callbackQuery('profile:email:change', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = { type: 'set_email', step: 'value', data: { mode: 'change' } };
+    const text = [
+      ctx.t('profile.email.change.title'),
+      '',
+      ctx.t('profile.email.change.body', { current: ctx.user.email ?? '' }),
+    ].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: emailScreenKeyboard(ctx.lang),
+    });
+  });
+
+  // Why Email — explanatory screen with a "Know More" PDF button.
+  bot.callbackQuery('profile:email:why', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    // Drop any in-flight email flow so a stray text after reading
+    // "Why?" isn't misinterpreted as the new email value.
+    ctx.session.userFlow = undefined;
+    const text = [
+      ctx.t('profile.email.why.title'),
+      '',
+      ctx.t('profile.email.why.body'),
+    ].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: whyEmailKeyboard(ctx.lang),
+    });
+  });
+
+  // Send the explanation PDF as a chat document.
+  bot.callbackQuery('profile:email:why:more', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    try {
+      await ctx.replyWithDocument(new InputFile(EMAIL_PDF_PATH), {
+        caption: ctx.t('profile.email.why.title'),
+        parse_mode: 'HTML',
+      });
+    } catch (err) {
+      console.error('failed to send email-explanation PDF', err);
+      await ctx.reply(ctx.t('err.generic'));
+    }
   });
 
   // Capture the next text message as the email value.
@@ -378,10 +445,11 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await setUserEmail(ctx.user.telegram_id, text);
     ctx.user.email = text;
     ctx.session.userFlow = undefined;
-    await ctx.reply(renderMdHtml(ctx.t('profile.email.saved', { email: text })), {
-      parse_mode: 'HTML',
-      reply_markup: backToSettingsKeyboard(ctx.lang),
-    });
+    // Bug fix: re-render the FULL settings screen as a fresh message
+    // so the user immediately sees the saved email + new button row
+    // (previously only a tiny "saved" reply was sent and the email
+    // didn't visibly land on the settings card).
+    await showProfile(ctx, { forceReply: true });
   });
 
   // ---- Deposit history ----

@@ -80,10 +80,14 @@ export type UserFlow =
       };
     }
   | {
-      /** Capture an email address sent as a message after tapping "Set Email". */
+      /**
+       * Capture an email address sent as a message after tapping "Set
+       * Email" or "Change Email". `mode` distinguishes the two so we
+       * can echo the right confirmation copy.
+       */
       type: 'set_email';
       step: 'value';
-      data: Record<string, never>;
+      data: { mode: 'set' | 'change' };
     };
 
 export type SessionData = {
