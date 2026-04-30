@@ -34,7 +34,13 @@ export function renderPremium(
     if (typeof spec === 'string') {
       out += spec;
     } else {
-      const offset = [...out].length; // UTF-16 offset
+      // Telegram entity offsets/lengths are counted in UTF-16 code
+      // units (matching JavaScript's `String.prototype.length`), NOT
+      // Unicode code points. Non-BMP emojis like 📊 occupy 2 code
+      // units each, so spreading into an array (which yields code
+      // points) under-counts and Telegram rejects or misplaces the
+      // custom_emoji entities.
+      const offset = out.length;
       const unicode = spec.unicode;
       out += unicode;
       entities.push({
