@@ -98,3 +98,18 @@ export async function clearChannelUrl(updated_by?: number): Promise<void> {
   await setSetting('channel.url', '', updated_by);
   cache.set('channel.url', '');
 }
+
+/**
+ * Public URL of the email-explanation PDF. When set, the Why Email
+ * "Know More" button becomes a URL button that opens the PDF in
+ * Telegram's in-app browser. Falls back to env var `EMAIL_PDF_URL`
+ * so a sane default can be baked in at deploy time.
+ *
+ * Admins can set this at runtime via /settext key=`email.pdf_url`.
+ */
+export function getEmailPdfUrl(): string | null {
+  const v = cache.get('email.pdf_url');
+  if (typeof v === 'string' && v.length > 0) return v;
+  const env = process.env.EMAIL_PDF_URL;
+  return env && env.length > 0 ? env : null;
+}

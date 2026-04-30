@@ -197,6 +197,13 @@ export const EMOJI: Record<string, EmojiSpec> = {
   email_invoice: { unicode: '🧾', custom_emoji_id: '5444856076954520455' },
   email_secure: { unicode: '🔒', custom_emoji_id: '5463413771647069835' },
   email_thanks: { unicode: '🙏', custom_emoji_id: '5465262274031659421' },
+  email_invalid: { unicode: '⚠️', custom_emoji_id: '5974083768233760323' },
+
+  // ---- My Deposits screen --------------------------------------
+  deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },
+  deposits_payments: { unicode: '💸', custom_emoji_id: '5375312095346704820' },
+  deposits_wallet: { unicode: '👛', custom_emoji_id: '4965219701572503640' },
+  deposits_empty: { unicode: '📭', custom_emoji_id: '5798937402789597866' },
 };
 
 /**

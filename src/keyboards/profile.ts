@@ -6,53 +6,68 @@ import { t } from '../i18n/index.js';
 /**
  * Settings (profile) keyboard.
  *
- * The email row adapts to whether the user has saved an email yet:
- *   - has email: [Change Email] [Why Email?]
- *   - no email:  [Set Email]    [Why Email?]
- *
- * Bug fix: previously this row always showed *Set Email* regardless,
- * which is confusing once the value is saved.
+ * The email row is a single "Email Settings" button — it opens a
+ * submenu with Set / Change / Why so the main Settings card stays
+ * compact regardless of whether an email has been saved yet.
  */
-export function profileKeyboard(lang: Lang, hasEmail: boolean): InlineKeyboard {
-  const kb = new InlineKeyboard()
+export function profileKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard()
     .text(btn(lang, 'stats'), 'profile:stats')
     .text(btn(lang, 'my_orders'), 'profile:orders')
     .text(btn(lang, 'notifications'), 'profile:notifications')
     .row()
     .text(btn(lang, 'language'), 'profile:lang')
     .text(btn(lang, 'set_region'), 'profile:region')
-    .row();
-
-  if (hasEmail) {
-    kb.text(t(lang, 'btn.email.change'), 'profile:email:change')
-      .text(t(lang, 'btn.email.why'), 'profile:email:why');
-  } else {
-    kb.text(t(lang, 'btn.email.set'), 'profile:email:set')
-      .text(t(lang, 'btn.email.why'), 'profile:email:why');
-  }
-  kb.row()
+    .row()
+    .text(t(lang, 'btn.email.settings'), 'profile:email')
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .row()
     .text(btn(lang, 'back'), 'main:open');
-  return kb;
-}
-
-/** Email sub-screen footer — Why + Back to Settings. */
-export function emailScreenKeyboard(lang: Lang): InlineKeyboard {
-  return new InlineKeyboard()
-    .text(t(lang, 'btn.email.why'), 'profile:email:why')
-    .text(btn(lang, 'back_to_settings'), 'profile:open');
 }
 
 /**
- * Why-Email screen — has a "Know More" button that triggers the bot
- * to send the explanation PDF as a chat document.
+ * Email Settings hub — rendered when the user taps "Email Settings"
+ * on the main Settings screen. Always shows the same three buttons:
+ *   - Set Email
+ *   - Change Email   (alerts "Please set up email first" if no email)
+ *   - Why Email?
  */
-export function whyEmailKeyboard(lang: Lang): InlineKeyboard {
+export function emailHubKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
-    .text(t(lang, 'btn.email.know_more'), 'profile:email:why:more')
+    .text(t(lang, 'btn.email.set'), 'profile:email:set')
+    .text(t(lang, 'btn.email.change'), 'profile:email:change')
+    .row()
+    .text(t(lang, 'btn.email.why'), 'profile:email:why')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
+}
+
+/** Email sub-screen footer — Why + Back to Email Settings. */
+export function emailScreenKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(t(lang, 'btn.email.why'), 'profile:email:why')
+    .text(btn(lang, 'back_to_settings'), 'profile:email');
+}
+
+/**
+ * Why-Email screen.
+ *
+ * `pdfUrl` is read from runtime settings (admin-editable). When set,
+ * the "Know More" button is a *URL button* — tapping it opens the
+ * PDF directly in Telegram's in-app browser, no extra chat clutter.
+ * Otherwise the button is a callback that sends the bundled PDF as
+ * a chat document (fallback for deployments that haven't configured
+ * the public URL yet).
+ */
+export function whyEmailKeyboard(lang: Lang, pdfUrl: string | null): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (pdfUrl) {
+    kb.url(t(lang, 'btn.email.know_more'), pdfUrl);
+  } else {
+    kb.text(t(lang, 'btn.email.know_more'), 'profile:email:why:more');
+  }
+  kb.row().text(btn(lang, 'back_to_settings'), 'profile:email');
+  return kb;
 }
 
 /** Stats screen keyboard — Refresh + Back to Settings. */

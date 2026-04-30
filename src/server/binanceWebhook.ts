@@ -11,7 +11,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Bot } from 'grammy';
 import { logger } from '../logger.js';
 import { verifyWebhookSignature } from '../services/binance.js';
-import { adjustBalance, findDepositByReference, setDepositStatus } from '../db/queries.js';
+import { findDepositByReference, setDepositStatus } from '../db/queries.js';
+import { credit } from '../services/wallet.js';
 import type { AppCtx } from '../middleware/user.js';
 
 const PATH = '/webhook/binance';
@@ -108,7 +109,12 @@ export async function handleBinanceWebhook(
   }
 
   await setDepositStatus(deposit.id, 'approved');
-  const newBalance = await adjustBalance(deposit.user_id, Number(deposit.amount));
+  const newBalance = await credit(
+    deposit.user_id,
+    Number(deposit.amount),
+    deposit.reference ?? `deposit:${deposit.id}`,
+    'deposit_credit',
+  );
   logger.info(
     { deposit_id: deposit.id, user: deposit.user_id, amount: deposit.amount, newBalance },
     'Binance Pay deposit auto-approved',

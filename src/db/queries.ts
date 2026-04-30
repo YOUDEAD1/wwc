@@ -10,6 +10,7 @@ import type {
   DBOrder,
   DBDeposit,
   DBPaymentMethod,
+  DBWalletLedger,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -79,21 +80,43 @@ export async function setUserLanguage(telegram_id: number, language: Lang): Prom
 /**
  * Set the user's region + IANA timezone in one call. Either field
  * may be cleared by passing `null`.
+ *
+ * Throws (with a logged error) when the UPDATE fails — typically the
+ * `region`/`timezone` columns are missing because migration 0005 was
+ * never applied.
  */
 export async function setUserRegion(
   telegram_id: number,
   region: string | null,
   timezone: string | null,
 ): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('users')
     .update({ region, timezone })
     .eq('telegram_id', telegram_id);
+  if (error) {
+    logger.error({ err: error, telegram_id }, 'setUserRegion failed');
+    throw error;
+  }
 }
 
-/** Set the user's contact email (`null` clears it). */
+/**
+ * Set the user's contact email (`null` clears it).
+ *
+ * Throws on UPDATE failure — typically the `email` column is missing
+ * because migration 0005 was never applied. We surface the error so
+ * the caller can show the user a useful message instead of silently
+ * "succeeding" while the value is dropped.
+ */
 export async function setUserEmail(telegram_id: number, email: string | null): Promise<void> {
-  await supabase.from('users').update({ email }).eq('telegram_id', telegram_id);
+  const { error } = await supabase
+    .from('users')
+    .update({ email })
+    .eq('telegram_id', telegram_id);
+  if (error) {
+    logger.error({ err: error, telegram_id }, 'setUserEmail failed');
+    throw error;
+  }
 }
 
 /** Set the user's status string (`null` clears it). */
@@ -583,4 +606,39 @@ export async function getUserOrderSummary(
   const orders = (data ?? []).length;
   const spent = (data ?? []).reduce((s, r) => s + Number((r as { total: number }).total), 0);
   return { orders, spent };
+}
+
+// ---------- Wallet ledger ----------
+
+/**
+ * Append a wallet-balance change to the ledger. `amount` is a signed
+ * USDT delta (negative for debits, positive for credits). Failures
+ * are logged but never thrown — ledger writes must NEVER block the
+ * upstream balance change.
+ */
+export async function recordLedger(
+  user_id: number,
+  type: string,
+  amount: number,
+  reference: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('wallet_ledger')
+    .insert({ user_id, type, amount, reference });
+  if (error) {
+    logger.warn({ err: error, user_id, type }, 'recordLedger failed');
+  }
+}
+
+export async function listWalletLedger(
+  user_id: number,
+  limit = 10,
+): Promise<DBWalletLedger[]> {
+  const { data } = await supabase
+    .from('wallet_ledger')
+    .select('*')
+    .eq('user_id', user_id)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return (data ?? []) as DBWalletLedger[];
 }

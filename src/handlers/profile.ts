@@ -6,6 +6,7 @@ import {
   getUserStats,
   listDeposits,
   listOrders,
+  listWalletLedger,
   setUserEmail,
   setUserLanguage,
   setUserRegion,
@@ -18,6 +19,7 @@ import {
   statsKeyboard,
   backToMainKeyboard,
   backToSettingsKeyboard,
+  emailHubKeyboard,
   emailScreenKeyboard,
   whyEmailKeyboard,
 } from '../keyboards/profile.js';
@@ -25,6 +27,7 @@ import { regionPickerKeyboard } from '../keyboards/region.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
+import { getEmailPdfUrl } from '../services/settings.js';
 import { InputFile } from 'grammy';
 import { fileURLToPath } from 'url';
 import { dirname, resolve as pathResolve } from 'path';
@@ -127,7 +130,7 @@ async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
   // HTML render path: keeps Markdown styling AND auto-wraps any unicode
   // emoji whose key has a configured premium custom_emoji_id.
   const html = renderMdHtml(profileText(ctx));
-  const reply_markup = profileKeyboard(ctx.lang, Boolean(ctx.user.email));
+  const reply_markup = profileKeyboard(ctx.lang);
   // `forceReply` is used after saving an email — we want to send a
   // FRESH settings message (not edit the pre-edit prompt) so the user
   // immediately sees the saved value.
@@ -144,6 +147,21 @@ async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
       link_preview_options: { is_disabled: true },
     });
   }
+}
+
+async function showEmailHub(ctx: AppCtx) {
+  const current = ctx.user.email
+    ? `\`${ctx.user.email}\``
+    : '_not set_';
+  const text = [
+    ctx.t('profile.email.hub.title'),
+    '',
+    ctx.t('profile.email.hub.body', { current }),
+  ].join('\n');
+  await ctx.editMessageText(renderMdHtml(text), {
+    parse_mode: 'HTML',
+    reply_markup: emailHubKeyboard(ctx.lang),
+  });
 }
 
 function notificationsText(ctx: AppCtx): string {
@@ -350,7 +368,16 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       await ctx.answerCallbackQuery({ text: 'Unknown region' });
       return;
     }
-    await setUserRegion(ctx.user.telegram_id, reg.code, reg.timezone);
+    try {
+      await setUserRegion(ctx.user.telegram_id, reg.code, reg.timezone);
+    } catch (err) {
+      console.error('setUserRegion failed', err);
+      await ctx.answerCallbackQuery({
+        text: 'Could not save region — admin must apply migration 0005.',
+        show_alert: true,
+      });
+      return;
+    }
     ctx.user.region = reg.code;
     ctx.user.timezone = reg.timezone;
     await ctx.answerCallbackQuery({
@@ -360,15 +387,30 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   bot.callbackQuery('profile:region:clear', async (ctx) => {
-    await setUserRegion(ctx.user.telegram_id, null, null);
+    try {
+      await setUserRegion(ctx.user.telegram_id, null, null);
+    } catch (err) {
+      console.error('setUserRegion(null) failed', err);
+      await ctx.answerCallbackQuery({
+        text: 'Could not clear region — admin must apply migration 0005.',
+        show_alert: true,
+      });
+      return;
+    }
     ctx.user.region = null;
     ctx.user.timezone = null;
     await ctx.answerCallbackQuery({ text: '🚫 Cleared' });
     await showProfile(ctx);
   });
 
-  // ---- Email screens (set / change / why) ----
-  // Set Email — only reachable when the user hasn't saved an email yet.
+  // ---- Email Settings hub (3-button submenu) ----
+  bot.callbackQuery('profile:email', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = undefined;
+    await showEmailHub(ctx);
+  });
+
+  // Set Email screen.
   bot.callbackQuery('profile:email:set', async (ctx) => {
     await ctx.answerCallbackQuery();
     ctx.session.userFlow = { type: 'set_email', step: 'value', data: { mode: 'set' } };
@@ -383,14 +425,23 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  // Change Email — only reachable once an email is already saved.
+  // Change Email screen — always shown in the hub, but if the user
+  // doesn't have an email yet we abort with a mobile popup instead
+  // of opening the screen.
   bot.callbackQuery('profile:email:change', async (ctx) => {
+    if (!ctx.user.email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.email.change.no_email_popup'),
+        show_alert: true,
+      });
+      return;
+    }
     await ctx.answerCallbackQuery();
     ctx.session.userFlow = { type: 'set_email', step: 'value', data: { mode: 'change' } };
     const text = [
       ctx.t('profile.email.change.title'),
       '',
-      ctx.t('profile.email.change.body', { current: ctx.user.email ?? '' }),
+      ctx.t('profile.email.change.body', { current: ctx.user.email }),
     ].join('\n');
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
@@ -409,20 +460,22 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       '',
       ctx.t('profile.email.why.body'),
     ].join('\n');
+    const pdfUrl = getEmailPdfUrl();
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: whyEmailKeyboard(ctx.lang),
+      reply_markup: whyEmailKeyboard(ctx.lang, pdfUrl),
+      link_preview_options: { is_disabled: true },
     });
   });
 
-  // Send the explanation PDF as a chat document.
+  // Fallback: send the bundled PDF as a chat document (no caption,
+  // per user request — "don't add texts under file"). Only fires when
+  // `email.pdf_url` setting is unset and the keyboard renders this as
+  // a callback button instead of a URL button.
   bot.callbackQuery('profile:email:why:more', async (ctx) => {
     await ctx.answerCallbackQuery();
     try {
-      await ctx.replyWithDocument(new InputFile(EMAIL_PDF_PATH), {
-        caption: ctx.t('profile.email.why.title'),
-        parse_mode: 'HTML',
-      });
+      await ctx.replyWithDocument(new InputFile(EMAIL_PDF_PATH));
     } catch (err) {
       console.error('failed to send email-explanation PDF', err);
       await ctx.reply(ctx.t('err.generic'));
@@ -442,38 +495,117 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       await ctx.reply(renderMdHtml(ctx.t('profile.email.bad')), { parse_mode: 'HTML' });
       return;
     }
-    await setUserEmail(ctx.user.telegram_id, text);
+    try {
+      await setUserEmail(ctx.user.telegram_id, text);
+    } catch (err) {
+      console.error('setUserEmail failed', err);
+      // Most common cause: migration 0005 not applied so the `email`
+      // column doesn't exist. Tell the user instead of silently
+      // "succeeding" and dropping the value.
+      await ctx.reply(
+        '⚠️ Could not save your email — the bot operator needs to apply ' +
+          'migration `0005_user_profile_fields.sql` on the database.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
     ctx.user.email = text;
     ctx.session.userFlow = undefined;
+    // Notify admin so they have a record of the new contact email.
+    try {
+      const adminId = Number(env.ADMIN_USER_ID);
+      if (adminId && adminId !== ctx.user.telegram_id) {
+        await ctx.api.sendMessage(
+          adminId,
+          `📧 User \`${ctx.user.telegram_id}\` (@${ctx.user.username ?? '—'}) saved email \`${text}\`.`,
+          { parse_mode: 'Markdown' },
+        );
+      }
+    } catch (err) {
+      console.warn('admin email notify failed', err);
+    }
     // Bug fix: re-render the FULL settings screen as a fresh message
-    // so the user immediately sees the saved email + new button row
-    // (previously only a tiny "saved" reply was sent and the email
-    // didn't visibly land on the settings card).
+    // so the user immediately sees the saved email and the row of
+    // buttons under it updates.
     await showProfile(ctx, { forceReply: true });
   });
 
-  // ---- Deposit history ----
+  // ---- My Deposits ----
+  // Two-section screen:
+  //   1. Payment Deposits (rows from `deposits` table)
+  //   2. Wallet Balance History (rows from `wallet_ledger` table)
+  // Each entry is rendered inside a Markdown blockquote so it visually
+  // stands apart from the section header.
   bot.callbackQuery('profile:deposits', async (ctx) => {
     await ctx.answerCallbackQuery();
-    const deposits = await listDeposits(ctx.user.telegram_id);
-    if (deposits.length === 0) {
-      await ctx.editMessageText(ctx.t('profile.deposits.empty'), {
+    const [deposits, ledger] = await Promise.all([
+      listDeposits(ctx.user.telegram_id),
+      listWalletLedger(ctx.user.telegram_id).catch(() => []),
+    ]);
+
+    if (deposits.length === 0 && ledger.length === 0) {
+      await ctx.editMessageText(renderMdHtml(ctx.t('profile.deposits.empty')), {
+        parse_mode: 'HTML',
         reply_markup: backToSettingsKeyboard(ctx.lang),
       });
       return;
     }
-    const lines = [ctx.t('profile.deposits.title'), ''];
-    for (const d of deposits) {
-      lines.push(
-        ctx.t('profile.deposits.line', {
-          id: d.id,
-          amount: d.amount,
-          method: d.method,
-          status: d.status,
-          date: d.created_at.slice(0, 10),
-        }),
-      );
+
+    const lines: string[] = [ctx.t('profile.deposits.title'), ''];
+
+    if (deposits.length > 0) {
+      lines.push(ctx.t('profile.deposits.payments_header'));
+      deposits.forEach((d, i) => {
+        const statusKey =
+          `profile.deposits.status.${d.status}` as const;
+        const status = ctx.t(statusKey);
+        const block = [
+          ctx.t('profile.deposits.line.id', { n: i + 1 }),
+          ctx.t('profile.deposits.line.amount', { amount: Number(d.amount) }),
+          ctx.t('profile.deposits.line.method', { method: d.method }),
+          ctx.t('profile.deposits.line.status', { status }),
+          d.reference
+            ? ctx.t('profile.deposits.line.reference', { reference: d.reference })
+            : '',
+          ctx.t('profile.deposits.line.when', {
+            when: formatRelative(ctx, d.created_at),
+          }),
+        ].filter(Boolean);
+        // Markdown-style blockquote — one '>' per line, blank '>' between blocks.
+        lines.push(...block.map((l) => `> ${l}`));
+        if (i < deposits.length - 1) lines.push('>');
+      });
+      lines.push('');
     }
+
+    if (ledger.length > 0) {
+      lines.push(ctx.t('profile.deposits.wallet_header'));
+      ledger.forEach((row, i) => {
+        const typeKey =
+          `profile.deposits.wallet.type.${row.type}` as const;
+        const typeLabel = ctx.t(typeKey, {});
+        // Fallback when the type isn't in our locale map.
+        const displayType = typeLabel === typeKey ? row.type : typeLabel;
+        const amount = Math.abs(Number(row.amount));
+        const sign = Number(row.amount) >= 0 ? '+' : '-';
+        const block = [
+          ctx.t('profile.deposits.line.id', { n: i + 1 }),
+          ctx.t('profile.deposits.wallet.line.type', { type: displayType }),
+          ctx.t('profile.deposits.wallet.line.amount', { sign, amount }),
+          row.reference
+            ? ctx.t('profile.deposits.wallet.line.reference', {
+                reference: row.reference,
+              })
+            : '',
+          ctx.t('profile.deposits.wallet.line.when', {
+            when: formatRelative(ctx, row.created_at),
+          }),
+        ].filter(Boolean);
+        lines.push(...block.map((l) => `> ${l}`));
+        if (i < ledger.length - 1) lines.push('>');
+      });
+    }
+
     await ctx.editMessageText(renderMdHtml(lines.join('\n')), {
       parse_mode: 'HTML',
       reply_markup: backToSettingsKeyboard(ctx.lang),
