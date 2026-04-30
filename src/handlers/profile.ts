@@ -753,16 +753,23 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       );
       return;
     }
+    const previousEmail = ctx.user.email ?? null;
+    const mode: 'set' | 'change' =
+      flow.data && (flow.data as { mode?: 'set' | 'change' }).mode === 'change'
+        ? 'change'
+        : 'set';
     ctx.user.email = text;
     ctx.session.userFlow = undefined;
-    // Fire-and-forget: send the user a polished welcome email with
-    // the "Why we need your email" PDF attached. We deliberately do
-    // NOT await this — saving the address must always feel instant
-    // even if the SMTP relay is slow or unreachable.
+    // Fire-and-forget: send the user a polished welcome / confirmation
+    // email with the "Why we need your email" PDF attached. We
+    // deliberately do NOT await this — saving the address must always
+    // feel instant even if the SMTP relay is slow or unreachable.
     void sendWelcomeEmail({
       email: text,
+      previousEmail,
       firstName: ctx.user.first_name ?? null,
       username: ctx.user.username ?? null,
+      mode,
     });
     // Notify admin so they have a record of the new contact email.
     try {
