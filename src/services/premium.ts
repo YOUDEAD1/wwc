@@ -229,9 +229,13 @@ function mdToHtml(md: string): string {
   );
 
   // 6) Markdown links [label](url) — only http(s) and tg:// URLs.
+  // The URL is already HTML-escaped (escapeHtml ran on the whole input),
+  // but escapeHtml doesn't touch `"`. Escape it here so a quote inside
+  // the URL can never break out of the href attribute.
   s = s.replace(
     /\[([^\]\n]+?)\]\(((?:https?:\/\/|tg:\/\/)[^\s)]+)\)/g,
-    (_m, label: string, url: string) => `<a href="${url}">${label}</a>`,
+    (_m, label: string, url: string) =>
+      `<a href="${url.replace(/"/g, '&quot;')}">${label}</a>`,
   );
 
   return s;

@@ -73,6 +73,9 @@ export function registerStart(bot: Composer<AppCtx>): void {
   // "⬅️ Main Menu" inline button used across screens.
   bot.callbackQuery('main:open', async (ctx) => {
     await ctx.answerCallbackQuery();
+    // Reset any in-flight user flow when returning to the main menu so
+    // a stale prompt (e.g. set_email) can't capture later messages.
+    ctx.session.userFlow = undefined;
     await showMainMenu(ctx);
   });
 
