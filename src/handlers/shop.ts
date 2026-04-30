@@ -17,6 +17,7 @@ import {
   shopHomeBackKeyboard,
 } from '../keyboards/shop.js';
 import type { AppCtx } from '../middleware/user.js';
+import { renderMdHtml } from '../services/premium.js';
 
 async function showCategories(ctx: AppCtx) {
   let cats = cache.get<Awaited<ReturnType<typeof listCategories>>>('cats');
@@ -28,12 +29,12 @@ async function showCategories(ctx: AppCtx) {
     await ctx.reply(ctx.t('shop.empty_categories'));
     return;
   }
-  const text = ctx.t('shop.choose_category');
+  const html = renderMdHtml(ctx.t('shop.choose_category'));
   const kb = categoriesKeyboard(ctx.lang, cats);
   if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb });
+    await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {
-    await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: kb });
+    await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
 }
 
@@ -52,8 +53,8 @@ async function showCategoryPage(ctx: AppCtx, categoryId: number, page: number) {
     return;
   }
   const header = ctx.t('shop.page.header', { category: cat.name, page: page + 1 });
-  await ctx.editMessageText(header, {
-    parse_mode: 'Markdown',
+  await ctx.editMessageText(renderMdHtml(header), {
+    parse_mode: 'HTML',
     reply_markup: productsKeyboard(ctx.lang, categoryId, rows, page, totalPages),
   });
 }
@@ -81,8 +82,8 @@ async function showProduct(ctx: AppCtx, productId: number) {
     return;
   }
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
-  await ctx.editMessageText(productPageText(ctx, p, qty), {
-    parse_mode: 'Markdown',
+  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty)), {
+    parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty),
   });
 }
@@ -159,13 +160,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
       delete ctx.session.qty[id];
       await ctx.answerCallbackQuery();
       await ctx.reply(
-        ctx.t('shop.buy.success', {
-          name: p.name,
-          qty,
-          total,
-          delivery: order.delivery ?? '—',
-        }),
-        { parse_mode: 'Markdown' },
+        renderMdHtml(
+          ctx.t('shop.buy.success', {
+            name: p.name,
+            qty,
+            total,
+            delivery: order.delivery ?? '—',
+          }),
+        ),
+        { parse_mode: 'HTML' },
       );
     } catch (e: unknown) {
       const code = (e as { code?: string }).code;

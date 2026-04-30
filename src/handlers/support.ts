@@ -2,24 +2,25 @@ import type { Composer } from 'grammy';
 import { env } from '../env.js';
 import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
 import type { AppCtx } from '../middleware/user.js';
+import { renderMdHtml } from '../services/premium.js';
 
 const aiArmed = new Set<number>();
 
 export function registerSupport(bot: Composer<AppCtx>): void {
   bot.callbackQuery('support:open', async (ctx) => {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(`${ctx.t('support.title')}\n\n${ctx.t('support.body')}`, {
-      parse_mode: 'Markdown',
-      reply_markup: backToMenuKeyboard(ctx.lang),
-    });
+    await ctx.editMessageText(
+      renderMdHtml(`${ctx.t('support.title')}\n\n${ctx.t('support.body')}`),
+      { parse_mode: 'HTML', reply_markup: backToMenuKeyboard(ctx.lang) },
+    );
   });
 
   bot.callbackQuery('support:ai', async (ctx) => {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(`${ctx.t('support.ai.title')}\n\n${ctx.t('support.ai.prompt')}`, {
-      parse_mode: 'Markdown',
-      reply_markup: backToMenuKeyboard(ctx.lang),
-    });
+    await ctx.editMessageText(
+      renderMdHtml(`${ctx.t('support.ai.title')}\n\n${ctx.t('support.ai.prompt')}`),
+      { parse_mode: 'HTML', reply_markup: backToMenuKeyboard(ctx.lang) },
+    );
     if (ctx.from) aiArmed.add(ctx.from.id);
   });
 
