@@ -11,7 +11,6 @@ import { registerTopup } from './handlers/topup.js';
 import { adminBot } from './handlers/admin/index.js';
 import { refreshSettings } from './services/settings.js';
 import { recordMessage } from './services/messageTracker.js';
-import { callbackToButtonKey, playClick } from './services/clickSound.js';
 
 export async function buildBot(): Promise<Bot<AppCtx>> {
   const bot = new Bot<AppCtx>(env.BOT_TOKEN);
@@ -34,31 +33,6 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
   // Order matters: session → user (which depends on session) → handlers.
   bot.use(sessionMiddleware as unknown as (ctx: SessionCtx, next: () => Promise<void>) => Promise<void>);
   bot.use(userMiddleware);
-
-  // Click-sound effect on every inline-button tap. Fired before the
-  // actual handler runs (fire-and-forget) so the sound message lands
-  // alongside the screen change rather than after it. Skipped when the
-  // user has the master switch off OR has muted the specific button
-  // category. Click-sound bubbles auto-delete after a few seconds.
-  bot.on('callback_query', async (ctx, next) => {
-    try {
-      const u = ctx.user;
-      const chatId = ctx.chat?.id;
-      // Default to ON for users created before the click_sound columns
-      // existed (Supabase will report `undefined` for missing columns).
-      const masterOn = u?.click_sound !== false;
-      if (masterOn && typeof chatId === 'number') {
-        const key = callbackToButtonKey(ctx.callbackQuery?.data);
-        const off = Array.isArray(u?.click_sound_off) ? u.click_sound_off : [];
-        if (!off.includes(key)) {
-          playClick(ctx.api, chatId);
-        }
-      }
-    } catch (err) {
-      logger.debug({ err }, 'click-sound middleware threw');
-    }
-    return next();
-  });
 
   registerStart(bot);
   registerShop(bot);

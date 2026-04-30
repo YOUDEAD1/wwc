@@ -315,21 +315,55 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
 });
 
 adminBot.callbackQuery('adm:pay:add_binance', async (ctx) => {
+  await ctx.answerCallbackQuery();
+
+  // If the merchant API isn't configured we re-render the screen with
+  // a clear, copy-pasteable list of env vars to set. The previous
+  // version only showed an alert popup which was easy to miss on
+  // mobile, so the admin saw "nothing happen" when they tapped.
   if (!(await import('../../services/binance.js')).binanceEnabled()) {
-    await ctx.answerCallbackQuery({
-      text: 'Set BINANCE_PAY_API_KEY and BINANCE_PAY_API_SECRET on the server first.',
-      show_alert: true,
-    });
+    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:pay');
+    await ctx.editMessageText(
+      [
+        '⚠️ *Binance Pay isn\'t configured yet*',
+        '',
+        'To enable auto-credit Binance Pay top-ups, set these environment variables on your hosting (Railway → Variables → New Variable) and redeploy the bot:',
+        '',
+        '`BINANCE_PAY_API_KEY=your_merchant_api_key`',
+        '`BINANCE_PAY_API_SECRET=your_merchant_api_secret`',
+        '',
+        'Optional, recommended for the auto-credit webhook:',
+        '`PUBLIC_BASE_URL=https://your-bot.up.railway.app`',
+        '',
+        'Get the keys from https://merchant.binance.com → *Developers → API Management*. Once set and the bot redeploys, tap *Add Binance Pay (auto)* again.',
+      ].join('\n'),
+      { parse_mode: 'Markdown', reply_markup: kb },
+    );
     return;
   }
-  const m = await addPaymentMethod({
-    name: 'Binance Pay',
-    instructions: 'Auto-approved via Binance Pay merchant API.',
-    min_amount: 1,
-    provider: 'binance_pay',
-  });
-  await ctx.answerCallbackQuery({ text: `✅ Added Binance Pay (id ${m.id}).` });
-  await showRoot(ctx);
+
+  // Don't add a duplicate Binance Pay row if one already exists.
+  const existing = (await listPaymentMethods()).find((p) => p.provider === 'binance_pay');
+  const m =
+    existing ??
+    (await addPaymentMethod({
+      name: 'Binance Pay',
+      instructions: 'Auto-approved via Binance Pay merchant API.',
+      min_amount: 1,
+      provider: 'binance_pay',
+    }));
+
+  const kb = new InlineKeyboard().text('⬅️ Back', 'adm:pay');
+  await ctx.editMessageText(
+    [
+      existing
+        ? `✅ *Binance Pay already configured* (id ${m.id})`
+        : `✅ *Binance Pay added* (id ${m.id})`,
+      '',
+      'Users can now top up their wallet via Binance Pay from the *Topup* menu. Wallets are auto-credited within seconds of payment confirmation.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
 });
 
 adminBot.callbackQuery('adm:pay:add', async (ctx) => {

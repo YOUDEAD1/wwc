@@ -11,7 +11,7 @@ export function categoriesKeyboard(lang: Lang, categories: DBCategory[]): Inline
     if (i % 2 === 1) kb.row();
   });
   if (categories.length % 2 === 1) kb.row();
-  kb.text(btn(lang, 'main_menu'), 'main:open');
+  kb.text(btn(lang, 'back'), 'main:open');
   return kb;
 }
 
@@ -45,7 +45,7 @@ export function productsKeyboard(
     kb.text(btn(lang, 'next'), `cat:${categoryId}:${page + 1}`);
   }
   kb.row();
-  kb.text(btn(lang, 'back'), 'shop:home').text(btn(lang, 'main_menu'), 'main:open');
+  kb.text(btn(lang, 'back'), 'shop:home');
   return kb;
 }
 
@@ -71,14 +71,12 @@ export function productKeyboard(
   kb.text(
     btn(lang, 'back'),
     product.category_id ? `cat:${product.category_id}:0` : 'shop:home',
-  ).text(btn(lang, 'main_menu'), 'main:open');
+  );
   return kb;
 }
 
 export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
-  return new InlineKeyboard()
-    .text(btn(lang, 'back'), 'shop:home')
-    .text(btn(lang, 'main_menu'), 'main:open');
+  return new InlineKeyboard().text(btn(lang, 'back'), 'shop:home');
 }
 
 

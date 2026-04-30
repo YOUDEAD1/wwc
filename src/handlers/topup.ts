@@ -161,7 +161,7 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     if (i % 2 === 1) kb.row();
   });
   if (methods.length % 2 === 1) kb.row();
-  kb.text(btn(ctx.lang, 'main_menu'), 'main:open');
+  kb.text(btn(ctx.lang, 'back'), 'main:open');
   const text = `${ctx.t('topup.title')}\n\n${ctx.t('topup.choose_method')}`;
   if (asEdit) {
     await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb });

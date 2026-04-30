@@ -31,7 +31,6 @@ const CALLBACK: Record<keyof typeof BUTTON_KEYS, string> = {
   clear_cache: 'profile:clear_cache',
   channel: 'channel:open',
   back_to_settings: 'profile:open',
-  click_sounds: 'profile:click_sound',
 };
 
 /** Inline keyboard rendered under the welcome message. */
@@ -53,7 +52,7 @@ export function mainMenuKeyboard(lang: Lang): InlineKeyboard {
   return kb;
 }
 
-/** "⬅️ Main Menu" back button used at the bottom of sub-screens. */
+/** "⬅️ Back" button used at the bottom of sub-screens. Returns to main menu. */
 export function backToMenuKeyboard(lang: Lang): InlineKeyboard {
-  return new InlineKeyboard().text(btn(lang, 'main_menu'), 'main:open');
+  return new InlineKeyboard().text(btn(lang, 'back'), 'main:open');
 }

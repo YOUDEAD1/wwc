@@ -4,20 +4,12 @@ import {
   countReferrals,
   listDeposits,
   listOrders,
-  setClickSound,
   setUserLanguage,
-  toggleClickSoundButton,
   toggleNotification,
 } from '../db/queries.js';
 import * as cache from '../services/cache.js';
 import { buildDeletable } from '../services/messageTracker.js';
 import {
-  CLICK_SOUND_BUTTON_KEYS,
-  type ClickSoundButtonKey,
-} from '../services/clickSound.js';
-import {
-  clickSoundLabel,
-  clickSoundsKeyboard,
   profileKeyboard,
   notificationsKeyboard,
   languageKeyboard,
@@ -141,59 +133,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       text: next ? ctx.t('profile.notify.ann_on') : ctx.t('profile.notify.ann_off'),
     });
     await showNotifications(ctx);
-  });
-
-  // ---- Click sounds ----
-  bot.callbackQuery('profile:click_sound', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await ctx.editMessageText(
-      [ctx.t('click_sounds.title'), '', ctx.t('click_sounds.body')].join('\n'),
-      {
-        parse_mode: 'Markdown',
-        reply_markup: clickSoundsKeyboard(ctx.lang, {
-          master: ctx.user.click_sound !== false,
-          off: Array.isArray(ctx.user.click_sound_off) ? ctx.user.click_sound_off : [],
-        }),
-      },
-    );
-  });
-
-  bot.callbackQuery('profile:click_sound:master', async (ctx) => {
-    const next = !(ctx.user.click_sound !== false);
-    await setClickSound(ctx.user.telegram_id, next);
-    ctx.user.click_sound = next;
-    await ctx.answerCallbackQuery({
-      text: next
-        ? ctx.t('click_sounds.toast.master_on')
-        : ctx.t('click_sounds.toast.master_off'),
-    });
-    await ctx.editMessageReplyMarkup({
-      reply_markup: clickSoundsKeyboard(ctx.lang, {
-        master: next,
-        off: Array.isArray(ctx.user.click_sound_off) ? ctx.user.click_sound_off : [],
-      }),
-    });
-  });
-
-  bot.callbackQuery(/^profile:click_sound:btn:(.+)$/, async (ctx) => {
-    const key = ctx.match[1] as ClickSoundButtonKey;
-    if (!(CLICK_SOUND_BUTTON_KEYS as readonly string[]).includes(key)) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    const { muted, off } = await toggleClickSoundButton(ctx.user.telegram_id, key);
-    ctx.user.click_sound_off = off;
-    await ctx.answerCallbackQuery({
-      text: ctx.t(muted ? 'click_sounds.toast.muted' : 'click_sounds.toast.unmuted', {
-        label: clickSoundLabel(ctx.lang, key),
-      }),
-    });
-    await ctx.editMessageReplyMarkup({
-      reply_markup: clickSoundsKeyboard(ctx.lang, {
-        master: ctx.user.click_sound !== false,
-        off,
-      }),
-    });
   });
 
   // ---- Language ----
