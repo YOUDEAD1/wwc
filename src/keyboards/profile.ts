@@ -3,23 +3,56 @@ import { type Lang } from '../../config/index.js';
 import { btn } from './helpers.js';
 import { t } from '../i18n/index.js';
 
-export function profileKeyboard(lang: Lang): InlineKeyboard {
-  // Row 1 — analytics, history, notifications.
-  // Row 2 — language + region setter.
-  // Row 3 — email setter + deposit history.
-  // Row 4 — back to main menu.
-  return new InlineKeyboard()
+/**
+ * Settings (profile) keyboard.
+ *
+ * The email row adapts to whether the user has saved an email yet:
+ *   - has email: [Change Email] [Why Email?]
+ *   - no email:  [Set Email]    [Why Email?]
+ *
+ * Bug fix: previously this row always showed *Set Email* regardless,
+ * which is confusing once the value is saved.
+ */
+export function profileKeyboard(lang: Lang, hasEmail: boolean): InlineKeyboard {
+  const kb = new InlineKeyboard()
     .text(btn(lang, 'stats'), 'profile:stats')
     .text(btn(lang, 'my_orders'), 'profile:orders')
     .text(btn(lang, 'notifications'), 'profile:notifications')
     .row()
     .text(btn(lang, 'language'), 'profile:lang')
     .text(btn(lang, 'set_region'), 'profile:region')
-    .row()
-    .text(btn(lang, 'set_email'), 'profile:email')
+    .row();
+
+  if (hasEmail) {
+    kb.text(t(lang, 'btn.email.change'), 'profile:email:change')
+      .text(t(lang, 'btn.email.why'), 'profile:email:why');
+  } else {
+    kb.text(t(lang, 'btn.email.set'), 'profile:email:set')
+      .text(t(lang, 'btn.email.why'), 'profile:email:why');
+  }
+  kb.row()
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .row()
     .text(btn(lang, 'back'), 'main:open');
+  return kb;
+}
+
+/** Email sub-screen footer — Why + Back to Settings. */
+export function emailScreenKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(t(lang, 'btn.email.why'), 'profile:email:why')
+    .text(btn(lang, 'back_to_settings'), 'profile:open');
+}
+
+/**
+ * Why-Email screen — has a "Know More" button that triggers the bot
+ * to send the explanation PDF as a chat document.
+ */
+export function whyEmailKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(t(lang, 'btn.email.know_more'), 'profile:email:why:more')
+    .row()
+    .text(btn(lang, 'back_to_settings'), 'profile:open');
 }
 
 /** Stats screen keyboard — Refresh + Back to Settings. */

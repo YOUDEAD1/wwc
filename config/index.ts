@@ -21,19 +21,16 @@ export type Lang = 'en' | 'ar' | 'vi';
  * BUTTON COLOR MODE
  * ------------------------------------------------------------------
  * Telegram's Bot API does NOT expose a true "color" property on
- * inline-keyboard buttons. To indicate state we prefix labels with
- * coloured square emojis. Available modes:
- *   - "blue"   →  🟦  (default available / actionable)
- *   - "green"  →  🟩
- *   - "red"    →  🟥  (used for out-of-stock / destructive)
- *   - "yellow" →  🟨
- *   - "none"   →  no prefix
+ * inline-keyboard buttons. The legacy modes below are kept as labels
+ * for the admin colour-picker, but the *prefix* is now empty for all
+ * of them — the previous coloured-square indicators (🟦🟩🟥🟨) were
+ * removed because they cluttered the UI.
  */
 export const COLOR_PREFIX = {
-  blue: '🟦',
-  green: '🟩',
-  red: '🟥',
-  yellow: '🟨',
+  blue: '',
+  green: '',
+  red: '',
+  yellow: '',
   none: '',
 } as const;
 export type ColorMode = keyof typeof COLOR_PREFIX;
@@ -191,6 +188,15 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // ---- Welcome banner -------------------------------------------
   welcome_banner: { unicode: '👋', custom_emoji_id: '6003746779474956178' },
   welcome_balance: { unicode: '💳', custom_emoji_id: '6084583651738132915' },
+
+  // ---- Email screens (set / change / why) -----------------------
+  email_saved_check: { unicode: '✨', custom_emoji_id: '5098088779776787441' },
+  email_bracket_l: { unicode: '📩', custom_emoji_id: '6008233706039284019' },
+  email_bracket_r: { unicode: '🔧', custom_emoji_id: '6010111371251815589' },
+  email_arrow: { unicode: '👇', custom_emoji_id: '5229212516415978792' },
+  email_invoice: { unicode: '🧾', custom_emoji_id: '5444856076954520455' },
+  email_secure: { unicode: '🔒', custom_emoji_id: '5463413771647069835' },
+  email_thanks: { unicode: '🙏', custom_emoji_id: '5465262274031659421' },
 };
 
 /**

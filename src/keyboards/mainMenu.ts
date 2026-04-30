@@ -33,7 +33,7 @@ const CALLBACK: Record<keyof typeof BUTTON_KEYS, string> = {
   stats: 'profile:stats',
   stats_refresh: 'profile:stats:refresh',
   set_region: 'profile:region',
-  set_email: 'profile:email',
+  set_email: 'profile:email:set',
 };
 
 /** Inline keyboard rendered under the welcome message. */

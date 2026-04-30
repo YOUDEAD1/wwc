@@ -75,8 +75,8 @@ export const en: Record<string, string> = {
   'profile.row.username_empty': 'Username: _not set_',
   'profile.row.link': 'User link: [open]({link})',
   'profile.row.status': 'Status: *{status}*',
-  'profile.row.email': 'Email: `{email}`',
-  'profile.row.email_empty': 'Email: _not set_ — tap *Set Email* to add one',
+  'profile.row.email': 'Email: `{email}` — Has been Saved! {email_saved_check}',
+  'profile.row.email_empty': 'Email: _not set_ — tap *Set Email* below',
   'profile.row.balance': 'Balance: *{balance} USDT*',
   'profile.row.language': 'Language: *{language}*',
   'profile.row.region': 'Region: *{region}* — local time *{time}*',
@@ -93,11 +93,30 @@ export const en: Record<string, string> = {
   'profile.region.body':
     'Pick your country — your local time will then be used in messages and timestamps.',
   'profile.region.saved': '✅ Region set to *{region}*. Local time: *{time}*.',
+  // Set Email screen (no email yet).
+  'profile.email.set.title': '{email_bracket_l} *Set Email* {profile_email}',
+  'profile.email.set.body':
+    'Enter Below {email_arrow} *Your Email*\n\nEmail: `example@mail.com` {email_saved_check}',
+  // Change Email screen (email already set).
+  'profile.email.change.title': '{email_bracket_l} *Change Email* {email_bracket_r}',
+  'profile.email.change.body':
+    'Current Email {profile_email}: `{current}`\n\nEnter Below {email_arrow} *Your New Email*:\nExample: `Example@Email.Com` {email_saved_check}',
+  // Why Email screen.
+  'profile.email.why.title': '{email_bracket_l} *We Need Your Email* {profile_email}',
+  'profile.email.why.body':
+    '{email_saved_check} We need your email to send invoices {email_invoice} and to keep our services secure {email_secure} — thanks {email_thanks}.',
+  // Misc.
+  'profile.email.saved': '✅ Email saved: `{email}`',
+  'profile.email.bad': '❌ That doesn\'t look like a valid email. Please try again.',
+  // Buttons used on the Settings screen + email sub-screens.
+  'btn.email.change': '✏️ Change Email',
+  'btn.email.set': '📧 Set Email',
+  'btn.email.why': '❔ Why Email?',
+  'btn.email.know_more': '📄 Know More',
+  // Legacy keys kept so anything still calling them won't break.
   'profile.email.title': '📧 *Set Email*',
   'profile.email.body':
     'Send your contact email — replies and receipts will use this address.\n\nOr `/cancel`.',
-  'profile.email.saved': '✅ Email saved: `{email}`',
-  'profile.email.bad': '❌ That doesn\'t look like a valid email. Please try again.',
   'profile.refer.title': '🎁 *Refer*',
   'profile.refer.body':
     'Share your referral link with friends:\n\n`{link}`\n\nYou\'ve referred *{count}* user(s) so far.',
