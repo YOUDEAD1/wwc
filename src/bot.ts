@@ -10,9 +10,25 @@ import { registerSupport } from './handlers/support.js';
 import { registerTopup } from './handlers/topup.js';
 import { adminBot } from './handlers/admin/index.js';
 import { refreshSettings } from './services/settings.js';
+import { recordMessage } from './services/messageTracker.js';
 
 export async function buildBot(): Promise<Bot<AppCtx>> {
   const bot = new Bot<AppCtx>(env.BOT_TOKEN);
+
+  // Track every outgoing message we send into a chat so the user's
+  // "Clear Cache" button (in Settings) can delete old menu / navigation
+  // messages and speed the chat up. Order/delivery confirmations are
+  // marked protected separately and won't be wiped.
+  bot.api.config.use(async (prev, method, payload, signal) => {
+    const result = await prev(method, payload, signal);
+    if (result && typeof result === 'object') {
+      const r = result as { message_id?: number; chat?: { id?: number } };
+      if (typeof r.message_id === 'number' && typeof r.chat?.id === 'number') {
+        recordMessage(r.chat.id, r.message_id);
+      }
+    }
+    return result;
+  });
 
   // Order matters: session → user (which depends on session) → handlers.
   bot.use(sessionMiddleware as unknown as (ctx: SessionCtx, next: () => Promise<void>) => Promise<void>);

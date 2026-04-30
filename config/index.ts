@@ -63,12 +63,14 @@ export const BUTTON_KEYS = {
   out_of_stock: 'btn.out_of_stock',
   my_orders: 'btn.my_orders',
   refer: 'btn.refer',
+  notifications: 'btn.notifications',
   toggle_stock: 'btn.toggle_stock',
   toggle_announcements: 'btn.toggle_announcements',
   language: 'btn.language',
   deposit_history: 'btn.deposit_history',
   clear_cache: 'btn.clear_cache',
   channel: 'btn.channel',
+  back_to_settings: 'btn.back_to_settings',
 } as const;
 
 /**
@@ -96,12 +98,14 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   out_of_stock: 'none',
   my_orders: 'none',
   refer: 'none',
+  notifications: 'none',
   toggle_stock: 'none',
   toggle_announcements: 'none',
   language: 'none',
   deposit_history: 'none',
   clear_cache: 'none',
   channel: 'none',
+  back_to_settings: 'none',
 };
 
 /**

@@ -8,9 +8,15 @@ import {
   toggleNotification,
 } from '../db/queries.js';
 import * as cache from '../services/cache.js';
-import { profileKeyboard, languageKeyboard } from '../keyboards/profile.js';
+import { takeDeletable } from '../services/messageTracker.js';
+import {
+  profileKeyboard,
+  notificationsKeyboard,
+  languageKeyboard,
+} from '../keyboards/profile.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
+import { logger } from '../logger.js';
 
 function profileText(ctx: AppCtx): string {
   const joined = new Date(ctx.user.joined_at).toISOString().slice(0, 10);
@@ -40,6 +46,20 @@ async function showProfile(ctx: AppCtx) {
       reply_markup: profileKeyboard(ctx.lang),
     });
   }
+}
+
+function notificationsText(ctx: AppCtx): string {
+  return [ctx.t('profile.notifications.title'), '', ctx.t('profile.notifications.body')].join('\n');
+}
+
+async function showNotifications(ctx: AppCtx) {
+  await ctx.editMessageText(notificationsText(ctx), {
+    parse_mode: 'Markdown',
+    reply_markup: notificationsKeyboard(ctx.lang, {
+      stock_alert: ctx.user.stock_alert,
+      announcements: ctx.user.announcements,
+    }),
+  });
 }
 
 export function registerProfile(bot: Composer<AppCtx>): void {
@@ -91,14 +111,19 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     );
   });
 
-  // ---- Notifications ----
+  // ---- Notifications submenu ----
+  bot.callbackQuery('profile:notifications', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showNotifications(ctx);
+  });
+
   bot.callbackQuery('profile:toggle_stock', async (ctx) => {
     const next = await toggleNotification(ctx.user.telegram_id, 'stock_alert');
     ctx.user.stock_alert = next;
     await ctx.answerCallbackQuery({
       text: next ? ctx.t('profile.notify.stock_on') : ctx.t('profile.notify.stock_off'),
     });
-    await showProfile(ctx);
+    await showNotifications(ctx);
   });
 
   bot.callbackQuery('profile:toggle_ann', async (ctx) => {
@@ -107,7 +132,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery({
       text: next ? ctx.t('profile.notify.ann_on') : ctx.t('profile.notify.ann_off'),
     });
-    await showProfile(ctx);
+    await showNotifications(ctx);
   });
 
   // ---- Language ----
@@ -156,9 +181,48 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   // ---- Clear cache ----
+  // Wipes the in-memory data cache AND deletes old menu / navigation
+  // messages from the chat to speed it up. Claimed-product (account /
+  // link) delivery messages are flagged protected at send-time and are
+  // never deleted here.
   bot.callbackQuery('profile:clear_cache', async (ctx) => {
     cache.clearAll();
-    await ctx.answerCallbackQuery({ text: ctx.t('admin.cache.cleared') });
+
+    let deleted = 0;
+    const chatId = ctx.chat?.id;
+    const currentMsgId = ctx.callbackQuery?.message?.message_id;
+    if (chatId) {
+      // Keep the Settings screen we're rendering on so we can edit it
+      // back to the post-clear state instead of vanishing the UI.
+      const exclude = new Set<number>();
+      if (typeof currentMsgId === 'number') exclude.add(currentMsgId);
+      const ids = takeDeletable(chatId, exclude);
+
+      // Bulk-delete in chunks of 100 (Telegram API limit). Fall back to
+      // single-message deletes if the bulk call fails (e.g. messages
+      // older than 48h).
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        try {
+          await ctx.api.deleteMessages(chatId, chunk);
+          deleted += chunk.length;
+        } catch (err) {
+          logger.debug({ err }, 'deleteMessages bulk failed; retrying per-message');
+          for (const id of chunk) {
+            try {
+              await ctx.api.deleteMessage(chatId, id);
+              deleted++;
+            } catch {
+              /* message may already be gone or too old; ignore */
+            }
+          }
+        }
+      }
+    }
+
+    await ctx.answerCallbackQuery({
+      text: ctx.t('cache.cleared.user', { count: deleted }),
+    });
     await showProfile(ctx);
   });
 }

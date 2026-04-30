@@ -23,12 +23,14 @@ const CALLBACK: Record<keyof typeof BUTTON_KEYS, string> = {
   out_of_stock: 'noop:oos',
   my_orders: 'profile:orders',
   refer: 'profile:refer',
+  notifications: 'profile:notifications',
   toggle_stock: 'profile:toggle_stock',
   toggle_announcements: 'profile:toggle_ann',
   language: 'profile:lang',
   deposit_history: 'profile:deposits',
   clear_cache: 'profile:clear_cache',
   channel: 'channel:open',
+  back_to_settings: 'profile:open',
 };
 
 /** Inline keyboard rendered under the welcome message. */
