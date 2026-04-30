@@ -28,12 +28,13 @@ export const ar: Record<string, string> = {
   'btn.toggle_stock': '📢 تنبيهات المخزون',
   'btn.toggle_announcements': '💬 تنبيهات عامة',
   'btn.toggle_wallet': '💰 تنبيهات المحفظة',
-  'btn.notify.stock.on': '🟢 تنبيهات المخزون: مفعلة',
-  'btn.notify.stock.off': '🔕 تنبيهات المخزون: معطلة',
-  'btn.notify.ann.on': '🟢 تنبيهات عامة: مفعلة',
-  'btn.notify.ann.off': '🔕 تنبيهات عامة: معطلة',
-  'btn.notify.wallet.on': '🟢 تنبيهات المحفظة: مفعلة',
-  'btn.notify.wallet.off': '🔕 تنبيهات المحفظة: معطلة',
+  // تصبح أزرار التبديل قصيرة لتستوعب ثلاثتها في صف واحد.
+  'btn.notify.stock.on': '🟢 المخزون',
+  'btn.notify.stock.off': '🔕 المخزون',
+  'btn.notify.ann.on': '🟢 عامة',
+  'btn.notify.ann.off': '🔕 عامة',
+  'btn.notify.wallet.on': '🟢 المحفظة',
+  'btn.notify.wallet.off': '🔕 المحفظة',
   'btn.back_to_settings': '⬅️ رجوع للإعدادات',
   'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
   'btn.deposit_history': '💳 سجل الإيداعات',
@@ -63,7 +64,6 @@ export const ar: Record<string, string> = {
   'profile.title': '⚙️ *الإعدادات*',
   'profile.notifications.title': '{notify_bell} *الإشعارات*',
   'profile.notifications.body':
-    'فعّل أو عطّل التنبيهات التي تريدها.\n\n' +
     '{notify_stock} *تنبيهات المخزون*\n' +
     '{notify_info} *تنبيهات عامة*\n' +
     '{notify_wallet} *تنبيهات المحفظة*\n\n' +
@@ -74,9 +74,21 @@ export const ar: Record<string, string> = {
   'profile.balance': '👛 الرصيد: *{balance}*',
   'profile.language': '🌐 اللغة: *{language}*',
   'profile.joined': '📅 الانضمام: *{joined}*',
-  'profile.refer.title': '🎁 *إحالة*',
+  // شاشة الإحالة والتربح.
+  'profile.refer.title': '{refer_title} *إحالة وتربح*',
   'profile.refer.body':
-    'شارك رابط الإحالة الخاص بك مع الأصدقاء:\n\n`{link}`\n\nقمت بإحالة *{count}* مستخدم(ين) حتى الآن.',
+    '{refer_user} *الإحالات (24س):* {ref24h}\n' +
+    '{refer_user} *الإحالات (7أ):* {ref7d}\n' +
+    '{refer_user} *الإحالات (الإجمالي):* {refTotal}\n\n' +
+    '{refer_coin} *إجمالي الأرباح:* {earnedTotal} USDT\n' +
+    '{refer_coin} *المتاح:* {available} USDT\n' +
+    '{refer_transferred} *المحول:* {transferred} USDT\n' +
+    '{refer_withdrawn} *المسحوب:* {withdrawn} USDT\n\n' +
+    '> اربح 1٪ من كل شحن يقوم به مستخدموك المدعوون.\n' +
+    '> بحد أقصى 1$ لكل عملية شحن.\n' +
+    '> حوّل الأرباح إلى المحفظة في أي وقت. للسحب النقدي تواصل مع الدعم (الحد الأدنى 1$).\n\n' +
+    '*رابط الإحالة الخاص بك:*\n`{link}`',
+  'btn.copy_link': '📋 نسخ الرابط',
   'profile.orders.empty': 'لا توجد طلبات بعد.',
   'profile.orders.title': '🧾 *طلباتي*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',

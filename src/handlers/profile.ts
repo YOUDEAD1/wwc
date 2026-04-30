@@ -4,10 +4,12 @@ import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/region
 import {
   adjustBalance,
   countReferrals,
+  countReferralsSince,
   countGiftCodeRedemptions,
   countGiftCodeRedemptionsByUser,
   getGiftCode,
   getOrder,
+  getReferralEarnings,
   getUserStats,
   listDeposits,
   listOrdersPaginated,
@@ -24,10 +26,10 @@ import {
   notificationsKeyboard,
   languageKeyboard,
   statsKeyboard,
-  backToMainKeyboard,
   backToSettingsKeyboard,
   emailHubKeyboard,
   emailScreenKeyboard,
+  referKeyboard,
   whyEmailKeyboard,
 } from '../keyboards/profile.js';
 import { regionPickerKeyboard } from '../keyboards/region.js';
@@ -469,17 +471,35 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   // ---- Refer ----
-  // Reached from the main menu. Use a dedicated "Back to Main Menu"
-  // keyboard so the Settings buttons don't appear underneath.
+  // Reached from the main menu. Renders the user's referral stats
+  // (24-hour, 7-day, lifetime), referral-earning balances, the rules
+  // blockquote, and a Copy Link button + Back row.
   bot.callbackQuery('profile:refer', async (ctx) => {
     await ctx.answerCallbackQuery();
     const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
     const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
-    const count = await countReferrals(ctx.user.telegram_id);
-    const referText = `${ctx.t('profile.refer.title')}\n\n${ctx.t('profile.refer.body', { link, count })}`;
+    const DAY = 24 * 60 * 60 * 1000;
+    const [refTotal, ref24h, ref7d, earnings] = await Promise.all([
+      countReferrals(ctx.user.telegram_id),
+      countReferralsSince(ctx.user.telegram_id, DAY),
+      countReferralsSince(ctx.user.telegram_id, 7 * DAY),
+      getReferralEarnings(ctx.user.telegram_id),
+    ]);
+    const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
+    const body = ctx.t('profile.refer.body', {
+      link,
+      ref24h,
+      ref7d,
+      refTotal,
+      earnedTotal: fmt(earnings.total),
+      available: fmt(earnings.available),
+      transferred: fmt(earnings.transferred),
+      withdrawn: fmt(earnings.withdrawn),
+    });
+    const referText = `${ctx.t('profile.refer.title')}\n\n${body}`;
     await ctx.editMessageText(renderMdHtml(referText), {
       parse_mode: 'HTML',
-      reply_markup: backToMainKeyboard(ctx.lang),
+      reply_markup: referKeyboard(ctx.lang, link),
       link_preview_options: { is_disabled: true },
     });
   });
@@ -704,13 +724,27 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       await setUserEmail(ctx.user.telegram_id, text);
     } catch (err) {
       console.error('setUserEmail failed', err);
-      // Most common cause: migration 0005 not applied so the `email`
-      // column doesn't exist. Tell the user instead of silently
-      // "succeeding" and dropping the value.
+      // Most common causes:
+      //   1. Migration 0005 was never applied (`email` column missing).
+      //   2. Migration ran, but PostgREST's schema cache is stale — it
+      //      will return PGRST204 ("Could not find the 'email' column
+      //      … in the schema cache") until the API is reloaded:
+      //        select pg_notify('pgrst', 'reload schema');
+      //      or Supabase Dashboard → Project Settings → API → Restart.
+      const e = err as { code?: string; message?: string } | undefined;
+      const escape = (s: string): string =>
+        s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+      const detail = e?.message
+        ? ` <i>(${escape(e.code ?? 'err')}: ${escape(e.message)})</i>`
+        : '';
       await ctx.reply(
-        '⚠️ Could not save your email — the bot operator needs to apply ' +
-          'migration `0005_user_profile_fields.sql` on the database.',
-        { parse_mode: 'Markdown' },
+        '⚠️ Could not save your email — the bot operator must apply ' +
+          'migration <code>0005_user_profile_fields.sql</code>. If it is ' +
+          'already applied, reload the API schema in Supabase ' +
+          '(Project Settings → API → Restart server, or run ' +
+          "<code>select pg_notify('pgrst', 'reload schema');</code> once)." +
+          detail,
+        { parse_mode: 'HTML' },
       );
       return;
     }

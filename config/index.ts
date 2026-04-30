@@ -198,6 +198,13 @@ export const EMOJI: Record<string, EmojiSpec> = {
   notify_on: { unicode: '🟢', custom_emoji_id: '5213147006561692829' },
   notify_off: { unicode: '🔕', custom_emoji_id: '5843822645711212265' },
 
+  // ---- Refer & Earn screen -------------------------------------
+  refer_title: { unicode: '🎁', custom_emoji_id: '5053473385355412667' },
+  refer_user: { unicode: '👤', custom_emoji_id: '5332724926216428039' },
+  refer_coin: { unicode: '🪙', custom_emoji_id: '6325416826100519483' },
+  refer_transferred: { unicode: '🔁', custom_emoji_id: '5832493956503442338' },
+  refer_withdrawn: { unicode: '💵', custom_emoji_id: '5841484860652263006' },
+
   // ---- Email screens (set / change / why) -----------------------
   email_saved_check: { unicode: '✨', custom_emoji_id: '5098088779776787441' },
   email_bracket_l: { unicode: '📩', custom_emoji_id: '6008233706039284019' },

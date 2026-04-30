@@ -185,6 +185,69 @@ export async function countReferrals(telegram_id: number): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Count referrals made by `telegram_id` within the last `windowMs`
+ * milliseconds. Used by the Refer & Earn screen to render the 24-hour
+ * and 7-day breakdowns.
+ */
+export async function countReferralsSince(
+  telegram_id: number,
+  windowMs: number,
+): Promise<number> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { count } = await supabase
+    .from('referrals')
+    .select('id', { count: 'exact', head: true })
+    .eq('referrer_id', telegram_id)
+    .gte('created_at', since);
+  return count ?? 0;
+}
+
+/**
+ * Read referral-earning totals for a user. Defaults to all zeroes if
+ * migration 0009 has not yet been applied (the columns are missing,
+ * so the SELECT returns no row data for them).
+ */
+export async function getReferralEarnings(
+  telegram_id: number,
+): Promise<{
+  total: number;
+  available: number;
+  transferred: number;
+  withdrawn: number;
+}> {
+  const { data, error } = await supabase
+    .from('users')
+    .select(
+      'referral_earned_total, referral_available, referral_transferred, referral_withdrawn',
+    )
+    .eq('telegram_id', telegram_id)
+    .maybeSingle();
+  if (error) {
+    // Most likely cause: migration 0009 not applied yet — columns
+    // missing. Show zeroes so the screen still renders instead of
+    // throwing the user back to a generic error.
+    logger.warn(
+      { err: error, telegram_id },
+      'getReferralEarnings select failed (apply migration 0009?)',
+    );
+    return { total: 0, available: 0, transferred: 0, withdrawn: 0 };
+  }
+  const row = (data ?? {}) as Record<string, unknown>;
+  const num = (k: string): number => {
+    const v = row[k];
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') return Number(v) || 0;
+    return 0;
+  };
+  return {
+    total: num('referral_earned_total'),
+    available: num('referral_available'),
+    transferred: num('referral_transferred'),
+    withdrawn: num('referral_withdrawn'),
+  };
+}
+
 // ---------- Admins ----------
 
 export async function isAdmin(telegram_id: number): Promise<boolean> {

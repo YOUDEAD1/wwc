@@ -28,12 +28,13 @@ export const vi: Record<string, string> = {
   'btn.toggle_stock': '📢 Thông báo tồn kho',
   'btn.toggle_announcements': '💬 Thông báo tin tức',
   'btn.toggle_wallet': '💰 Thông báo ví',
-  'btn.notify.stock.on': '🟢 Tồn kho: BẬT',
-  'btn.notify.stock.off': '🔕 Tồn kho: TẮT',
-  'btn.notify.ann.on': '🟢 Tin tức: BẬT',
-  'btn.notify.ann.off': '🔕 Tin tức: TẮT',
-  'btn.notify.wallet.on': '🟢 Ví: BẬT',
-  'btn.notify.wallet.off': '🔕 Ví: TẮT',
+  // Rút gọn nhãn để ba nút toại nằm trên cùng một hàng.
+  'btn.notify.stock.on': '🟢 Tồn kho',
+  'btn.notify.stock.off': '🔕 Tồn kho',
+  'btn.notify.ann.on': '🟢 Tin tức',
+  'btn.notify.ann.off': '🔕 Tin tức',
+  'btn.notify.wallet.on': '🟢 Ví',
+  'btn.notify.wallet.off': '🔕 Ví',
   'btn.back_to_settings': '⬅️ Quay lại Cài đặt',
   'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
   'btn.deposit_history': '💳 Lịch sử nạp',
@@ -64,7 +65,6 @@ export const vi: Record<string, string> = {
   'profile.title': '⚙️ *Cài đặt*',
   'profile.notifications.title': '{notify_bell} *Thông báo*',
   'profile.notifications.body':
-    'Bật hoặc tắt các loại thông báo bạn muốn nhận.\n\n' +
     '{notify_stock} *Thông báo tồn kho*\n' +
     '{notify_info} *Thông báo tin tức*\n' +
     '{notify_wallet} *Thông báo ví*\n\n' +
@@ -75,9 +75,21 @@ export const vi: Record<string, string> = {
   'profile.balance': '👛 Số dư: *{balance}*',
   'profile.language': '🌐 Ngôn ngữ: *{language}*',
   'profile.joined': '📅 Tham gia: *{joined}*',
-  'profile.refer.title': '🎁 *Giới thiệu*',
+  // Màn hình Giới thiệu & Kiếm.
+  'profile.refer.title': '{refer_title} *Giới thiệu & Kiếm*',
   'profile.refer.body':
-    'Chia sẻ liên kết giới thiệu của bạn với bạn bè:\n\n`{link}`\n\nBạn đã giới thiệu *{count}* người.',
+    '{refer_user} *Giới thiệu (24h):* {ref24h}\n' +
+    '{refer_user} *Giới thiệu (7n):* {ref7d}\n' +
+    '{refer_user} *Giới thiệu (Tổng):* {refTotal}\n\n' +
+    '{refer_coin} *Tổng đã kiếm:* {earnedTotal} USDT\n' +
+    '{refer_coin} *Khả dụng:* {available} USDT\n' +
+    '{refer_transferred} *Đã chuyển:* {transferred} USDT\n' +
+    '{refer_withdrawn} *Đã rút:* {withdrawn} USDT\n\n' +
+    '> Kiếm 1% mỗi lần nạp của người bạn giới thiệu.\n' +
+    '> Tối đa $1.00 mỗi lần nạp.\n' +
+    '> Chuyển lợi nhuận vào ví bất kỳ lúc nào. Rút tiền mặt liên hệ hỗ trợ (tối thiểu $1.00).\n\n' +
+    '*Liên kết giới thiệu của bạn:*\n`{link}`',
+  'btn.copy_link': '📋 Sao chép',
   'profile.orders.empty': 'Bạn chưa có đơn hàng nào.',
   'profile.orders.title': '🧾 *Đơn hàng của tôi*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',

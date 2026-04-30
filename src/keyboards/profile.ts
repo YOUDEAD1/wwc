@@ -80,8 +80,8 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
 
 /**
  * Notifications submenu — three independent toggles (Stock / Info /
- * Wallet), each in its own row, plus a back button to return to
- * Settings.
+ * Wallet) on a single row, just like the Email Settings hub. Back
+ * button below.
  */
 export function notificationsKeyboard(
   lang: Lang,
@@ -96,9 +96,7 @@ export function notificationsKeyboard(
   const walletKey = state.wallet_alert ? 'btn.notify.wallet.on' : 'btn.notify.wallet.off';
   return new InlineKeyboard()
     .text(t(lang, stockKey), 'profile:toggle_stock')
-    .row()
     .text(t(lang, annKey), 'profile:toggle_ann')
-    .row()
     .text(t(lang, walletKey), 'profile:toggle_wallet')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
@@ -119,4 +117,16 @@ export function backToSettingsKeyboard(lang: Lang): InlineKeyboard {
 /** "Back to Main Menu" only — used for the Refer screen. */
 export function backToMainKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard().text(btn(lang, 'back'), 'main:open');
+}
+
+/**
+ * Refer & Earn screen keyboard — Copy Link button (using Telegram's
+ * `copy_text` button so tapping it copies the referral link to the
+ * user's clipboard) followed by a Back row.
+ */
+export function referKeyboard(lang: Lang, link: string): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.copyText(t(lang, 'btn.copy_link'), link);
+  kb.row().text(btn(lang, 'back'), 'main:open');
+  return kb;
 }

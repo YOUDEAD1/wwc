@@ -111,6 +111,11 @@ function rootMenu(): InlineKeyboard {
 
 const backRow = (kb: InlineKeyboard) => kb.row().text('⬅️ Back', 'adm:root');
 
+/** Tiny HTML-entity escape for use inside `parse_mode: 'HTML'` strings. */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+}
+
 async function showRoot(ctx: AppCtx, asReply = false): Promise<void> {
   ctx.session.adminFlow = undefined;
   if (asReply || !ctx.callbackQuery) {
@@ -1212,16 +1217,24 @@ adminBot.on('message:text', async (ctx, next) => {
     }
 
     if (flow.type === 'add_gift') {
+      // The whole gift-create flow uses HTML — Markdown V1 trips on
+      // any underscore in a code (e.g. `MY_CODE`) and silently rejects
+      // editMessageText / sendMessage, which surfaced as a generic
+      // "Something went wrong. Cancelled." at every step.
       if (flow.step === 'code') {
         if (!/^[A-Z0-9_-]{3,40}$/i.test(text)) {
-          await ctx.reply('⚠️ Code must be 3–40 chars, A–Z, 0–9, `_` or `-`.');
+          await ctx.reply(
+            '⚠️ Code must be 3–40 chars: letters, digits, <code>_</code> or <code>-</code>.',
+            { parse_mode: 'HTML' },
+          );
           return;
         }
         const code = text.toUpperCase();
         ctx.session.adminFlow = { type: 'add_gift', step: 'amount', data: { code } };
-        await ctx.reply(`Send the *amount in USDT* to credit when \`${code}\` is redeemed.`, {
-          parse_mode: 'Markdown',
-        });
+        await ctx.reply(
+          `Send the <b>amount in USDT</b> to credit when <code>${escapeHtml(code)}</code> is redeemed.`,
+          { parse_mode: 'HTML' },
+        );
       } else if (flow.step === 'amount') {
         const amount = Number(text);
         if (!Number.isFinite(amount) || amount <= 0) {
@@ -1234,13 +1247,16 @@ adminBot.on('message:text', async (ctx, next) => {
           data: { code: flow.data.code, amount },
         };
         await ctx.reply(
-          'How many times can a *single user* redeem this code? (default `1`, send the number or `1`)',
-          { parse_mode: 'Markdown' },
+          'How many times can a <b>single user</b> redeem this code? Send the number (default <code>1</code>).',
+          { parse_mode: 'HTML' },
         );
       } else if (flow.step === 'per_user_limit') {
         const lim = Number(text);
         if (!Number.isInteger(lim) || lim < 1) {
-          await ctx.reply('⚠️ Send a positive integer (e.g. `1`).');
+          await ctx.reply(
+            '⚠️ Send a positive integer (e.g. <code>1</code>).',
+            { parse_mode: 'HTML' },
+          );
           return;
         }
         ctx.session.adminFlow = {
@@ -1249,32 +1265,54 @@ adminBot.on('message:text', async (ctx, next) => {
           data: { code: flow.data.code, amount: flow.data.amount, per_user_limit: lim },
         };
         await ctx.reply(
-          'Total redemption *cap* across all users? Send a number, or `-` for unlimited.',
-          { parse_mode: 'Markdown' },
+          'Total redemption <b>cap</b> across all users? Send a number, or <code>-</code> for unlimited.',
+          { parse_mode: 'HTML' },
         );
       } else if (flow.step === 'max_redemptions') {
         let max: number | null = null;
         if (text !== '-' && text !== '') {
           const n = Number(text);
           if (!Number.isInteger(n) || n < 1) {
-            await ctx.reply('⚠️ Send a positive integer or `-` for unlimited.');
+            await ctx.reply(
+              '⚠️ Send a positive integer or <code>-</code> for unlimited.',
+              { parse_mode: 'HTML' },
+            );
             return;
           }
           max = n;
         }
-        const gift = await createGiftCode({
-          code: flow.data.code,
-          amount: flow.data.amount,
-          per_user_limit: flow.data.per_user_limit,
-          max_redemptions: max,
-          created_by: ctx.from!.id,
-        });
-        ctx.session.adminFlow = undefined;
-        await ctx.reply(
-          `✅ Gift code \`${gift.code}\` created — *${gift.amount} USDT*, ` +
-            `per-user ${gift.per_user_limit}, total ${gift.max_redemptions ?? '∞'}.`,
-          { parse_mode: 'Markdown', reply_markup: rootMenu() },
-        );
+        try {
+          const gift = await createGiftCode({
+            code: flow.data.code,
+            amount: flow.data.amount,
+            per_user_limit: flow.data.per_user_limit,
+            max_redemptions: max,
+            created_by: ctx.from!.id,
+          });
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(
+            `✅ Gift code <code>${escapeHtml(gift.code)}</code> created — <b>${gift.amount} USDT</b>, ` +
+              `per-user ${gift.per_user_limit}, total ${gift.max_redemptions ?? '∞'}.`,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        } catch (err) {
+          // Most likely cause: migration 0007 not applied → the
+          // `gift_codes` table doesn't exist. Surface this so the
+          // operator knows to run it instead of seeing the generic
+          // "Something went wrong" copy.
+          ctx.session.adminFlow = undefined;
+          const e = err as { code?: string; message?: string } | undefined;
+          const detail = e?.message
+            ? ` <i>(${escapeHtml(e.code ?? 'err')}: ${escapeHtml(e.message)})</i>`
+            : '';
+          await ctx.reply(
+            '⚠️ Could not create gift code — the bot operator must apply ' +
+              'migration <code>0007_gift_codes.sql</code>. ' +
+              'If already applied, reload the API schema in Supabase.' +
+              detail,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        }
       }
       return;
     }
