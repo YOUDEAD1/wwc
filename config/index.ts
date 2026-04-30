@@ -72,6 +72,8 @@ export const BUTTON_KEYS = {
   back_to_settings: 'btn.back_to_settings',
   stats: 'btn.stats',
   stats_refresh: 'btn.stats_refresh',
+  set_region: 'btn.set_region',
+  set_email: 'btn.set_email',
 } as const;
 
 /**
@@ -108,6 +110,8 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   back_to_settings: 'none',
   stats: 'none',
   stats_refresh: 'none',
+  set_region: 'none',
+  set_email: 'none',
 };
 
 /**
@@ -170,6 +174,23 @@ export const EMOJI: Record<string, EmojiSpec> = {
   stats_spent: { unicode: '💰', custom_emoji_id: '5926961826603472005' },
   stats_last: { unicode: '⏱', custom_emoji_id: '5226597108965993909' },
   stats_deposits: { unicode: '💳', custom_emoji_id: '5443127283898405358' },
+
+  // ---- Profile screen (one premium emoji per row) ----------------
+  profile_header: { unicode: '⚙️', custom_emoji_id: '5904630315946611415' },
+  profile_id: { unicode: '🆔', custom_emoji_id: '5796517197308236353' },
+  profile_first_name: { unicode: '🪪', custom_emoji_id: '5800956853462504394' },
+  profile_username: { unicode: '👤', custom_emoji_id: '5370935802844946281' },
+  profile_link: { unicode: '🔗', custom_emoji_id: '4958689671950369798' },
+  profile_status: { unicode: '🚀', custom_emoji_id: '5213147006561692829' },
+  profile_email: { unicode: '📧', custom_emoji_id: '5472239203590888751' },
+  profile_balance: { unicode: '💰', custom_emoji_id: '6325416826100519483' },
+  profile_language: { unicode: '🌐', custom_emoji_id: '5364021605578071936' },
+  profile_region: { unicode: '🗺', custom_emoji_id: '5309748255637118475' },
+  profile_joined: { unicode: '📅', custom_emoji_id: '5028418466000930064' },
+
+  // ---- Welcome banner -------------------------------------------
+  welcome_banner: { unicode: '👋', custom_emoji_id: '6003746779474956178' },
+  welcome_balance: { unicode: '💳', custom_emoji_id: '6084583651738132915' },
 };
 
 /**

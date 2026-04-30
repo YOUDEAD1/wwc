@@ -76,6 +76,31 @@ export async function setUserLanguage(telegram_id: number, language: Lang): Prom
   await supabase.from('users').update({ language }).eq('telegram_id', telegram_id);
 }
 
+/**
+ * Set the user's region + IANA timezone in one call. Either field
+ * may be cleared by passing `null`.
+ */
+export async function setUserRegion(
+  telegram_id: number,
+  region: string | null,
+  timezone: string | null,
+): Promise<void> {
+  await supabase
+    .from('users')
+    .update({ region, timezone })
+    .eq('telegram_id', telegram_id);
+}
+
+/** Set the user's contact email (`null` clears it). */
+export async function setUserEmail(telegram_id: number, email: string | null): Promise<void> {
+  await supabase.from('users').update({ email }).eq('telegram_id', telegram_id);
+}
+
+/** Set the user's status string (`null` clears it). */
+export async function setUserStatus(telegram_id: number, status: string | null): Promise<void> {
+  await supabase.from('users').update({ status }).eq('telegram_id', telegram_id);
+}
+
 export async function setUserBalance(telegram_id: number, balance: number): Promise<void> {
   await supabase.from('users').update({ balance }).eq('telegram_id', telegram_id);
 }

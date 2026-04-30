@@ -67,17 +67,24 @@ export type AdminFlow =
  * order ID back to the bot, which records a pending deposit for an
  * admin to verify.
  */
-export type UserFlow = {
-  type: 'binance_payid_topup';
-  step: 'order_id';
-  data: {
-    method_id: number;
-    method_name: string;
-    note_code: string;
-    /** ms-since-epoch when the user opened the screen; used to enforce a 30-min window */
-    opened_at: number;
-  };
-};
+export type UserFlow =
+  | {
+      type: 'binance_payid_topup';
+      step: 'order_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        note_code: string;
+        /** ms-since-epoch when the user opened the screen; used to enforce a 30-min window */
+        opened_at: number;
+      };
+    }
+  | {
+      /** Capture an email address sent as a message after tapping "Set Email". */
+      type: 'set_email';
+      step: 'value';
+      data: Record<string, never>;
+    };
 
 export type SessionData = {
   /** Selected qty per product id, used by the shop product page */

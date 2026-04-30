@@ -13,6 +13,10 @@ export type DBUser = {
   referred_by: number | null;
   joined_at: string;
   last_seen_at: string;
+  email: string | null;
+  region: string | null;
+  timezone: string | null;
+  status: string | null;
 };
 
 export type DBCategory = {
