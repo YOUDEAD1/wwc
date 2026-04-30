@@ -35,6 +35,9 @@ export const ar: Record<string, string> = {
   'btn.language': '🌐 اللغة',
   'btn.deposit_history': '💳 سجل الإيداعات',
   'btn.channel': '📢 القناة',
+  'btn.stats': '📊 إحصائيات',
+  'btn.stats_refresh': '🔄 تحديث',
+  'btn.stats_back': '◀️ رجوع',
 
   'shop.choose_category': '🛒 *المتجر* — اختر فئة:',
   'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
@@ -76,6 +79,18 @@ export const ar: Record<string, string> = {
   'profile.deposits.title': '💳 *سجل الإيداعات*',
   'profile.deposits.empty': 'لا توجد إيداعات بعد.',
   'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',
+
+  'profile.stats.title': 'إحصائياتك',
+  'profile.stats.orders': 'الطلبات: {count}',
+  'profile.stats.items': 'العناصر المشتراة: {count}',
+  'profile.stats.spent': 'إجمالي الإنفاق: {amount} USDT',
+  'profile.stats.last': 'آخر طلب: {rel} ({abs})',
+  'profile.stats.last_none': 'آخر طلب: —',
+  'profile.stats.deposits': 'الإيداعات: {amount} USDT',
+  'profile.stats.rel.now': 'الآن',
+  'profile.stats.rel.minutes': 'منذ {n} د',
+  'profile.stats.rel.hours': 'منذ {n} س',
+  'profile.stats.rel.days': 'منذ {n} ي',
 
   'topup.title': '👛 *شحن المحفظة*',
   'topup.choose_method': 'اختر طريقة الدفع:',

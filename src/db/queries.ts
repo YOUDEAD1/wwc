@@ -492,6 +492,61 @@ export async function demoteAdmin(telegram_id: number): Promise<void> {
   await supabase.from('admins').delete().eq('telegram_id', telegram_id);
 }
 
+/**
+ * Aggregate stats for one user — used by the Settings → Stats screen.
+ * Returns counts/sums across all of their paid orders and approved
+ * deposits, plus the timestamp of the most recent order.
+ */
+export async function getUserStats(telegram_id: number): Promise<{
+  orders: number;
+  items: number;
+  spent: number;
+  lastOrderAt: string | null;
+  deposits: number;
+}> {
+  const [{ data: orderRows }, { data: depositRows }] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('qty,total,created_at')
+      .eq('user_id', telegram_id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('deposits')
+      .select('amount,status')
+      .eq('user_id', telegram_id)
+      .eq('status', 'approved'),
+  ]);
+
+  const orders = orderRows ?? [];
+  const deposits = depositRows ?? [];
+
+  const totalOrders = orders.length;
+  const items = orders.reduce(
+    (s, r) => s + Number((r as { qty: number }).qty),
+    0,
+  );
+  const spent = orders.reduce(
+    (s, r) => s + Number((r as { total: number }).total),
+    0,
+  );
+  const lastOrderAt =
+    orders.length > 0
+      ? ((orders[0] as { created_at: string }).created_at ?? null)
+      : null;
+  const totalDeposits = deposits.reduce(
+    (s, r) => s + Number((r as { amount: number }).amount),
+    0,
+  );
+
+  return {
+    orders: totalOrders,
+    items,
+    spent,
+    lastOrderAt,
+    deposits: totalDeposits,
+  };
+}
+
 /** Count orders + total spent by a single user (for the admin user view). */
 export async function getUserOrderSummary(
   telegram_id: number,

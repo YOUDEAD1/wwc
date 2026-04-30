@@ -37,6 +37,9 @@ export const en: Record<string, string> = {
   'btn.language': '🌐 Language',
   'btn.deposit_history': '💳 Deposit History',
   'btn.channel': '📢 Channel',
+  'btn.stats': '📊 Stats',
+  'btn.stats_refresh': '🔄 Refresh',
+  'btn.stats_back': '◀️ Back',
 
   // ---------- Shop ----------
   'shop.choose_category': '🛒 *Shop* — choose a category:',
@@ -81,6 +84,18 @@ export const en: Record<string, string> = {
   'profile.deposits.title': '💳 *Deposit History*',
   'profile.deposits.empty': 'No deposits yet.',
   'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',
+
+  'profile.stats.title': 'Your Stats',
+  'profile.stats.orders': 'Orders: {count}',
+  'profile.stats.items': 'Items Bought: {count}',
+  'profile.stats.spent': 'Total Spent: {amount} USDT',
+  'profile.stats.last': 'Last Order: {rel} ({abs})',
+  'profile.stats.last_none': 'Last Order: —',
+  'profile.stats.deposits': 'Deposits: {amount} USDT',
+  'profile.stats.rel.now': 'just now',
+  'profile.stats.rel.minutes': '{n}m ago',
+  'profile.stats.rel.hours': '{n}h ago',
+  'profile.stats.rel.days': '{n}d ago',
 
   // ---------- Topup ----------
   'topup.title': '👛 *Topup Wallet*',
