@@ -9,8 +9,6 @@ export type DBUser = {
   balance: number;
   stock_alert: boolean;
   announcements: boolean;
-  click_sound: boolean;
-  click_sound_off: string[];
   ref_code: string | null;
   referred_by: number | null;
   joined_at: string;
