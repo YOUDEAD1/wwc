@@ -3,8 +3,12 @@ import { InlineKeyboard } from 'grammy';
 import { createDeposit, listPaymentMethods } from '../db/queries.js';
 import { btn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
-import { binanceEnabled, createOrder, makeMerchantTradeNo } from '../services/binance.js';
-import { env } from '../env.js';
+import {
+  BINANCE_PAY_ID,
+  BINANCE_PAY_NAME,
+  BINANCE_TOPUP_WINDOW_MINUTES,
+  generateNoteCode,
+} from '../services/binance.js';
 import { logger } from '../logger.js';
 
 export function registerTopup(bot: Composer<AppCtx>): void {
@@ -25,25 +29,23 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
 
     if (m.provider === 'binance_pay') {
-      if (!binanceEnabled()) {
-        await ctx.editMessageText(
-          '⚠️ Binance Pay isn\'t configured on the server yet. Please contact the admin.',
-          { reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open') },
-        );
-        return;
-      }
+      // Open a Pay-ID top-up session. The 6-digit note code is the
+      // user's proof of ownership when they later submit an Order ID.
+      const noteCode = generateNoteCode();
       ctx.session.userFlow = {
-        type: 'binance_topup',
-        step: 'amount',
-        data: { method_id: m.id, method_name: m.name, min: Number(m.min_amount) },
-      };
-      await ctx.editMessageText(
-        `💳 *${m.name}*\n\nEnter the amount in *USDT* you want to top up (minimum *$${m.min_amount}*).`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+        type: 'binance_payid_topup',
+        step: 'order_id',
+        data: {
+          method_id: m.id,
+          method_name: m.name,
+          note_code: noteCode,
+          opened_at: Date.now(),
         },
-      );
+      };
+      await ctx.editMessageText(buildPayIdScreen(noteCode), {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+      });
       return;
     }
 
@@ -82,68 +84,103 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     });
   });
 
-  // ----- Binance Pay amount entry -----
+  // ----- Binance Pay-ID top-up: user submits Order ID -----
   bot.on('message:text', async (ctx, next) => {
     const flow = ctx.session.userFlow;
-    if (!flow || flow.type !== 'binance_topup') return next();
+    if (!flow || flow.type !== 'binance_payid_topup') return next();
     const text = ctx.message.text.trim();
     if (text === '/cancel' || text.startsWith('/')) {
       ctx.session.userFlow = undefined;
       return next();
     }
-    const amount = Number(text);
-    if (!Number.isFinite(amount) || amount < flow.data.min) {
-      await ctx.reply(`❌ Send a number ≥ *$${flow.data.min}* (e.g. \`10\`).`, {
-        parse_mode: 'Markdown',
-      });
+
+    // Enforce the 30-minute submission window.
+    const elapsedMs = Date.now() - flow.data.opened_at;
+    const windowMs = BINANCE_TOPUP_WINDOW_MINUTES * 60_000;
+    if (elapsedMs > windowMs) {
+      ctx.session.userFlow = undefined;
+      await ctx.reply(
+        `⏰ This top-up window expired (${BINANCE_TOPUP_WINDOW_MINUTES} min limit). Please reopen Binance Pay top-up to get a fresh note code.`,
+        { parse_mode: 'Markdown' },
+      );
       return;
     }
-    const merchantTradeNo = makeMerchantTradeNo(ctx.user.telegram_id);
-    const baseUrl = env.PUBLIC_BASE_URL || env.WEBHOOK_URL || '';
-    let order;
+
+    // Light validation on the order ID. Binance Pay order IDs are
+    // typically long digit strings (e.g. ~18-22 chars). We accept any
+    // alphanumeric of reasonable length to stay future-proof.
+    const orderId = text.replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9]{6,64}$/.test(orderId)) {
+      await ctx.reply(
+        '❌ That doesn\'t look like a valid Binance Pay Order ID. Please paste only the order ID (digits/letters, 6–64 chars).',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    // Record a pending deposit. Amount is a placeholder (0.01) so the
+    // database CHECK (amount > 0) passes — the admin will set the
+    // real amount when verifying the order on the Binance dashboard.
+    let depId: number;
     try {
-      order = await createOrder({
-        merchantTradeNo,
-        amount,
-        currency: 'USDT',
-        goodsName: `Wallet top-up for ${ctx.user.telegram_id}`,
-        ...(baseUrl
-          ? {
-              returnUrl: `${baseUrl}/binance/return`,
-              webhookUrl: `${baseUrl}/webhook/binance`,
-            }
-          : {}),
+      const dep = await createDeposit({
+        user_id: ctx.user.telegram_id,
+        method: flow.data.method_name,
+        amount: 0.01,
+        reference: flow.data.note_code,
+        note: `Order ID: ${orderId}`,
       });
+      depId = dep.id;
     } catch (err) {
-      logger.error({ err }, 'Binance createOrder failed');
-      await ctx.reply('⚠️ Could not create the Binance Pay order. Please try again later.');
+      logger.error({ err }, 'Pay-ID deposit insert failed');
+      await ctx.reply(
+        '⚠️ Could not record your submission. Please try again or contact support.',
+      );
       ctx.session.userFlow = undefined;
       return;
     }
-    if (!order) {
-      await ctx.reply('⚠️ Could not create the Binance Pay order.');
-      ctx.session.userFlow = undefined;
-      return;
-    }
-    // Record a pending deposit. The webhook will look it up by reference.
-    await createDeposit({
-      user_id: ctx.user.telegram_id,
-      method: flow.data.method_name,
-      amount,
-      reference: merchantTradeNo,
-      note: 'Binance Pay (auto)',
-    });
     ctx.session.userFlow = undefined;
 
-    const kb = new InlineKeyboard()
-      .url('💎 Pay with Binance', order.checkoutUrl)
-      .row()
-      .text(btn(ctx.lang, 'back'), 'topup:open');
     await ctx.reply(
-      `🧾 *Order created*\n\nAmount: *$${amount.toFixed(2)} USDT*\nOrder #: \`${merchantTradeNo}\`\n\nTap the button below to pay. Your wallet will be auto-credited within seconds of confirmation.`,
-      { parse_mode: 'Markdown', reply_markup: kb },
+      [
+        `✅ *Submitted (#${depId}).*`,
+        '',
+        `Order ID: \`${orderId}\``,
+        `Note code: \`${flow.data.note_code}\``,
+        '',
+        'Admin will verify your payment on the Binance Pay dashboard and credit your wallet shortly. You\'ll get a confirmation message when it\'s done.',
+      ].join('\n'),
+      {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
+      },
     );
   });
+}
+
+/**
+ * Build the Pay-ID top-up screen body. The note code is highlighted
+ * because it MUST be pasted into Binance Pay's Remark field — without
+ * it the admin has no way to attribute the transfer to this user.
+ */
+function buildPayIdScreen(noteCode: string): string {
+  return [
+    '💎 *Binance Pay — Deposit*',
+    '',
+    `*Pay ID:* \`${BINANCE_PAY_ID}\``,
+    `*Binance Pay Name:* *${BINANCE_PAY_NAME}*`,
+    `*Your note code:* \`${noteCode}\``,
+    '',
+    `1️⃣ Open Binance Pay → *Send* → enter Pay ID \`${BINANCE_PAY_ID}\`.`,
+    '2️⃣ Send any USDT amount.',
+    `3️⃣ Paste the note code \`${noteCode}\` into the *Remark* / *Note* field — without this, your payment cannot be credited.`,
+    '4️⃣ Copy the Binance *Order ID* from the receipt and paste it below.',
+    '',
+    `⏰ Only payments completed within *${BINANCE_TOPUP_WINDOW_MINUTES} minutes* of opening this screen will be credited.`,
+    '⚠️ Up to *2 decimal places* will be credited (USDT amounts are stored to 2 decimals).',
+    '',
+    '*Send your Order ID below.*',
+  ].join('\n');
 }
 
 async function showTopupMenu(ctx: AppCtx, asEdit = false) {

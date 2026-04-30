@@ -27,6 +27,7 @@ import {
   listRecentUsers,
   listUsersForAnnouncement,
   promoteAdmin,
+  setDepositAmount,
   setDepositStatus,
   setProductActive,
 } from '../../db/queries.js';
@@ -309,7 +310,7 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
     .text('💎 Add Binance Pay (auto)', 'adm:pay:add_binance');
   backRow(kb);
   await ctx.editMessageText(
-    '💳 *Payment Methods*\n\n_Use_ *Binance Pay (auto)* _for instant on-chain top-ups via Binance Pay merchant API. Manual methods are reviewed in the Deposits tab._',
+    '💳 *Payment Methods*\n\n_Use_ *Add Binance Pay* _to enable Pay ID top-ups. Users send USDT to your hard-coded Pay ID and submit the Order ID; you verify on the Binance dashboard and approve from the_ Deposits _tab._',
     { parse_mode: 'Markdown', reply_markup: kb },
   );
 });
@@ -317,42 +318,18 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
 adminBot.callbackQuery('adm:pay:add_binance', async (ctx) => {
   await ctx.answerCallbackQuery();
 
-  // If the merchant API isn't configured we re-render the screen with
-  // a clear, copy-pasteable list of env vars to set. The previous
-  // version only showed an alert popup which was easy to miss on
-  // mobile, so the admin saw "nothing happen" when they tapped.
-  if (!(await import('../../services/binance.js')).binanceEnabled()) {
-    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:pay');
-    await ctx.editMessageText(
-      [
-        '⚠️ *Binance Pay isn\'t configured yet*',
-        '',
-        'To enable auto-credit Binance Pay top-ups, set these environment variables on your hosting (Railway → Variables → New Variable) and redeploy the bot:',
-        '',
-        '`BINANCE_PAY_API_KEY=your_merchant_api_key`',
-        '`BINANCE_PAY_API_SECRET=your_merchant_api_secret`',
-        '',
-        'Optional, recommended for the auto-credit webhook:',
-        '`PUBLIC_BASE_URL=https://your-bot.up.railway.app`',
-        '',
-        'Get the keys from https://merchant.binance.com → *Developers → API Management*. Once set and the bot redeploys, tap *Add Binance Pay (auto)* again.',
-      ].join('\n'),
-      { parse_mode: 'Markdown', reply_markup: kb },
-    );
-    return;
-  }
-
   // Don't add a duplicate Binance Pay row if one already exists.
   const existing = (await listPaymentMethods()).find((p) => p.provider === 'binance_pay');
   const m =
     existing ??
     (await addPaymentMethod({
       name: 'Binance Pay',
-      instructions: 'Auto-approved via Binance Pay merchant API.',
+      instructions: 'Send USDT to the Pay ID and submit the Order ID for admin verification.',
       min_amount: 1,
       provider: 'binance_pay',
     }));
 
+  const { BINANCE_PAY_ID, BINANCE_PAY_NAME } = await import('../../services/binance.js');
   const kb = new InlineKeyboard().text('⬅️ Back', 'adm:pay');
   await ctx.editMessageText(
     [
@@ -360,7 +337,9 @@ adminBot.callbackQuery('adm:pay:add_binance', async (ctx) => {
         ? `✅ *Binance Pay already configured* (id ${m.id})`
         : `✅ *Binance Pay added* (id ${m.id})`,
       '',
-      'Users can now top up their wallet via Binance Pay from the *Topup* menu. Wallets are auto-credited within seconds of payment confirmation.',
+      `Pay ID: \`${BINANCE_PAY_ID}\` (${BINANCE_PAY_NAME})`,
+      '',
+      'Users will see this Pay ID + a unique 6-digit note code under *Topup → Binance Pay*. They paste their Binance Order ID back, then you verify the transfer on https://merchant.binance.com / your Binance Pay app and approve from the *Deposits* tab.',
     ].join('\n'),
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -422,10 +401,16 @@ async function showDepositList(ctx: AppCtx): Promise<void> {
   const lines = ['💰 *Pending Deposits*', ''];
   const kb = new InlineKeyboard();
   for (const d of deps) {
+    const amountStr =
+      Number(d.amount) <= 0.01
+        ? `_(amount not set)_`
+        : `$${d.amount}`;
+    const refLine = d.reference ? `\n     note code: \`${d.reference}\`` : '';
+    const noteLine = d.note ? `\n     ${d.note}` : '';
     lines.push(
-      `#${d.id}  user \`${d.user_id}\`  ${d.method}  $${d.amount}` +
-        (d.reference ? `\n     ref: ${d.reference}` : ''),
+      `#${d.id}  user \`${d.user_id}\`  ${d.method}  ${amountStr}` + refLine + noteLine,
     );
+    kb.text(`💲 Set Amount #${d.id}`, `adm:dep:amt:${d.id}`).row();
     kb.text(`✅ Approve #${d.id}`, `adm:dep:ok:${d.id}`)
       .text(`❌ Reject #${d.id}`, `adm:dep:no:${d.id}`)
       .row();
@@ -434,12 +419,53 @@ async function showDepositList(ctx: AppCtx): Promise<void> {
   await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
 }
 
+adminBot.callbackQuery(/^adm:dep:amt:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const dep = await getDeposit(id);
+  if (!dep || dep.status !== 'pending') {
+    await ctx.answerCallbackQuery({ text: 'Deposit no longer pending.' });
+    await showDepositList(ctx);
+    return;
+  }
+  ctx.session.adminFlow = {
+    type: 'set_deposit_amount',
+    step: 'amount',
+    data: { deposit_id: id },
+  };
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(
+    [
+      `💲 *Set amount for deposit #${id}*`,
+      '',
+      `User: \`${dep.user_id}\``,
+      `Method: ${dep.method}`,
+      dep.reference ? `Note code: \`${dep.reference}\`` : '',
+      dep.note ? dep.note : '',
+      '',
+      'Send the *USDT amount you verified on the Binance dashboard* (e.g. `5.12`). The deposit row will be updated, but you still need to tap *Approve* to credit the user.',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:dep'),
+    },
+  );
+});
+
 adminBot.callbackQuery(/^adm:dep:ok:(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   const dep = await getDeposit(id);
   if (!dep || dep.status !== 'pending') {
     await ctx.answerCallbackQuery({ text: 'Deposit no longer pending.' });
     await showDepositList(ctx);
+    return;
+  }
+  if (Number(dep.amount) <= 0.01) {
+    await ctx.answerCallbackQuery({
+      text: 'Set the verified amount first via 💲 Set Amount.',
+      show_alert: true,
+    });
     return;
   }
   await setDepositStatus(id, 'approved');
@@ -1005,6 +1031,24 @@ adminBot.on('message:text', async (ctx, next) => {
       } catch (err) {
         logger.warn({ err }, 'Could not DM user about balance change');
       }
+      return;
+    }
+
+    if (flow.type === 'set_deposit_amount') {
+      const amount = Number(text);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        await ctx.reply('❌ Send a positive number, e.g. `5.12`.');
+        return;
+      }
+      // numeric(14,2) — keep at most 2 decimals.
+      const rounded = Math.floor(amount * 100) / 100;
+      await setDepositAmount(flow.data.deposit_id, rounded);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Deposit *#${flow.data.deposit_id}* amount set to *$${rounded.toFixed(2)}*. Tap Approve to credit the user.`,
+        { parse_mode: 'Markdown' },
+      );
+      await showDepositList(ctx);
       return;
     }
   } catch (err) {
