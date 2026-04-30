@@ -2,6 +2,7 @@ import type { Composer } from 'grammy';
 import { type Lang } from '../../config/index.js';
 import {
   countReferrals,
+  getUserStats,
   listDeposits,
   listOrders,
   setUserLanguage,
@@ -11,9 +12,11 @@ import {
   profileKeyboard,
   notificationsKeyboard,
   languageKeyboard,
+  statsKeyboard,
 } from '../keyboards/profile.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
+import { renderPremium } from '../services/premium.js';
 
 function profileText(ctx: AppCtx): string {
   const joined = new Date(ctx.user.joined_at).toISOString().slice(0, 10);
@@ -59,10 +62,96 @@ async function showNotifications(ctx: AppCtx) {
   });
 }
 
+const MONTHS_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** Format an ISO timestamp as e.g. "30 Apr 2026, 01:29 UTC". */
+function formatAbsoluteUtc(iso: string): string {
+  const d = new Date(iso);
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const mon = MONTHS_SHORT[d.getUTCMonth()];
+  const year = d.getUTCFullYear();
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${day} ${mon} ${year}, ${hh}:${mm} UTC`;
+}
+
+/** "just now" / "5m ago" / "2h ago" / "3d ago" relative to now. */
+function formatRelative(ctx: AppCtx, iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return ctx.t('profile.stats.rel.now');
+  if (min < 60) return ctx.t('profile.stats.rel.minutes', { n: min });
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return ctx.t('profile.stats.rel.hours', { n: hr });
+  const days = Math.floor(hr / 24);
+  return ctx.t('profile.stats.rel.days', { n: days });
+}
+
+async function showStats(ctx: AppCtx): Promise<void> {
+  const s = await getUserStats(ctx.user.telegram_id);
+  const orders = s.orders;
+  const items = s.items;
+  const spent = s.spent.toFixed(2);
+  const deposits = s.deposits.toFixed(2);
+
+  const lastLine =
+    s.lastOrderAt === null
+      ? ctx.t('profile.stats.last_none')
+      : ctx.t('profile.stats.last', {
+          rel: formatRelative(ctx, s.lastOrderAt),
+          abs: formatAbsoluteUtc(s.lastOrderAt),
+        });
+
+  // Each {token} is replaced with the unicode glyph + an attached
+  // custom_emoji entity (premium users see the styled glyph). We
+  // intentionally avoid Markdown bold here because Telegram ignores
+  // entities when parse_mode is set.
+  const template = [
+    `{stats} ${ctx.t('profile.stats.title')}`,
+    '',
+    `{stats_orders} ${ctx.t('profile.stats.orders', { count: orders })}`,
+    `{stats_items} ${ctx.t('profile.stats.items', { count: items })}`,
+    `{stats_spent} ${ctx.t('profile.stats.spent', { amount: spent })}`,
+    `{stats_last} ${lastLine}`,
+    `{stats_deposits} ${ctx.t('profile.stats.deposits', { amount: deposits })}`,
+  ].join('\n');
+
+  const { text, entities } = renderPremium(template);
+  await ctx.editMessageText(text, {
+    entities,
+    parse_mode: entities.length ? undefined : 'Markdown',
+    reply_markup: statsKeyboard(ctx.lang),
+  });
+}
+
 export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     await showProfile(ctx);
+  });
+
+  // ---- Stats ----
+  bot.callbackQuery('profile:stats', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showStats(ctx);
+  });
+
+  bot.callbackQuery('profile:stats:refresh', async (ctx) => {
+    await ctx.answerCallbackQuery({ text: '🔄' });
+    await showStats(ctx);
   });
 
   // ---- Orders ----

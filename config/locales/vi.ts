@@ -35,6 +35,9 @@ export const vi: Record<string, string> = {
   'btn.language': '🌐 Ngôn ngữ',
   'btn.deposit_history': '💳 Lịch sử nạp',
   'btn.channel': '📢 Kênh',
+  'btn.stats': '📊 Thống kê',
+  'btn.stats_refresh': '🔄 Làm mới',
+  'btn.stats_back': '◀️ Quay lại',
 
   'shop.choose_category': '🛒 *Cửa hàng* — chọn danh mục:',
   'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
@@ -77,6 +80,18 @@ export const vi: Record<string, string> = {
   'profile.deposits.title': '💳 *Lịch sử nạp*',
   'profile.deposits.empty': 'Chưa có giao dịch nạp.',
   'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',
+
+  'profile.stats.title': 'Thống kê của bạn',
+  'profile.stats.orders': 'Đơn hàng: {count}',
+  'profile.stats.items': 'Mặt hàng đã mua: {count}',
+  'profile.stats.spent': 'Tổng đã chi: {amount} USDT',
+  'profile.stats.last': 'Đơn cuối: {rel} ({abs})',
+  'profile.stats.last_none': 'Đơn cuối: —',
+  'profile.stats.deposits': 'Nạp tiền: {amount} USDT',
+  'profile.stats.rel.now': 'vừa xong',
+  'profile.stats.rel.minutes': '{n} phút trước',
+  'profile.stats.rel.hours': '{n} giờ trước',
+  'profile.stats.rel.days': '{n} ngày trước',
 
   'topup.title': '👛 *Nạp ví*',
   'topup.choose_method': 'Chọn phương thức thanh toán:',

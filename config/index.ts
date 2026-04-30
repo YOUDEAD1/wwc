@@ -70,6 +70,8 @@ export const BUTTON_KEYS = {
   deposit_history: 'btn.deposit_history',
   channel: 'btn.channel',
   back_to_settings: 'btn.back_to_settings',
+  stats: 'btn.stats',
+  stats_refresh: 'btn.stats_refresh',
 } as const;
 
 /**
@@ -104,6 +106,8 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   deposit_history: 'none',
   channel: 'none',
   back_to_settings: 'none',
+  stats: 'none',
+  stats_refresh: 'none',
 };
 
 /**
@@ -154,6 +158,18 @@ export const EMOJI: Record<string, EmojiSpec> = {
   folder: '🗂',
   check: '✅',
   cross: '❌',
+
+  // Premium emojis used on the Stats screen. Telegram premium users
+  // see the styled/animated glyph; everyone else sees the unicode
+  // fallback declared here.
+  stats: { unicode: '📊', custom_emoji_id: '4958506272551863292' },
+  stats_refresh: { unicode: '🔄', custom_emoji_id: '5346321684574003384' },
+  stats_back: { unicode: '◀️', custom_emoji_id: '5440509136259267820' },
+  stats_orders: { unicode: '🧾', custom_emoji_id: '5377660214096974712' },
+  stats_items: { unicode: '🛍', custom_emoji_id: '5222208236505028301' },
+  stats_spent: { unicode: '💰', custom_emoji_id: '5926961826603472005' },
+  stats_last: { unicode: '⏱', custom_emoji_id: '5226597108965993909' },
+  stats_deposits: { unicode: '💳', custom_emoji_id: '5443127283898405358' },
 };
 
 /**

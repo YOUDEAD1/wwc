@@ -4,15 +4,26 @@ import { btn } from './helpers.js';
 import { t } from '../i18n/index.js';
 
 export function profileKeyboard(lang: Lang): InlineKeyboard {
-  // Core Settings actions on a single row, with a Back button
-  // underneath. "Refer" remains accessible from the main menu.
+  // Stats sits first; remaining Settings actions follow, then Back.
+  // Five buttons don't fit cleanly on one mobile row, so we split
+  // 3 + 2 to keep the labels readable.
   return new InlineKeyboard()
+    .text(btn(lang, 'stats'), 'profile:stats')
     .text(btn(lang, 'my_orders'), 'profile:orders')
     .text(btn(lang, 'notifications'), 'profile:notifications')
+    .row()
     .text(btn(lang, 'language'), 'profile:lang')
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .row()
     .text(btn(lang, 'back'), 'main:open');
+}
+
+/** Stats screen keyboard — Refresh + Back to Settings. */
+export function statsKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(btn(lang, 'stats_refresh'), 'profile:stats:refresh')
+    .row()
+    .text(btn(lang, 'back_to_settings'), 'profile:open');
 }
 
 /**

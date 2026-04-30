@@ -30,6 +30,8 @@ const CALLBACK: Record<keyof typeof BUTTON_KEYS, string> = {
   deposit_history: 'profile:deposits',
   channel: 'channel:open',
   back_to_settings: 'profile:open',
+  stats: 'profile:stats',
+  stats_refresh: 'profile:stats:refresh',
 };
 
 /** Inline keyboard rendered under the welcome message. */
