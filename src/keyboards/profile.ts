@@ -4,13 +4,12 @@ import { btn } from './helpers.js';
 import { t } from '../i18n/index.js';
 
 export function profileKeyboard(lang: Lang): InlineKeyboard {
+  // All Settings actions live on a single row; "Refer" is no longer
+  // duplicated here — it remains accessible from the main menu.
   return new InlineKeyboard()
     .text(btn(lang, 'my_orders'), 'profile:orders')
-    .text(btn(lang, 'refer'), 'profile:refer')
-    .row()
     .text(btn(lang, 'notifications'), 'profile:notifications')
     .text(btn(lang, 'language'), 'profile:lang')
-    .row()
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .text(btn(lang, 'clear_cache'), 'profile:clear_cache')
     .row()
