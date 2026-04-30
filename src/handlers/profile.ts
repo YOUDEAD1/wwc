@@ -7,8 +7,6 @@ import {
   setUserLanguage,
   toggleNotification,
 } from '../db/queries.js';
-import * as cache from '../services/cache.js';
-import { buildDeletable } from '../services/messageTracker.js';
 import {
   profileKeyboard,
   notificationsKeyboard,
@@ -16,7 +14,6 @@ import {
 } from '../keyboards/profile.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
-import { logger } from '../logger.js';
 
 function profileText(ctx: AppCtx): string {
   const joined = new Date(ctx.user.joined_at).toISOString().slice(0, 10);
@@ -180,55 +177,4 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  // ---- Clear cache ----
-  // Wipes the in-memory data cache AND deletes old menu / navigation
-  // messages from the chat to speed it up. Claimed-product (account /
-  // link) delivery messages are flagged protected at send-time and are
-  // never deleted here.
-  bot.callbackQuery('profile:clear_cache', async (ctx) => {
-    cache.clearAll();
-
-    let deleted = 0;
-    const chatId = ctx.chat?.id;
-    const currentMsgId = ctx.callbackQuery?.message?.message_id ?? null;
-    if (chatId) {
-      // Keep the Settings screen we're rendering on so we can edit it
-      // back to the post-clear state instead of vanishing the UI.
-      const exclude = new Set<number>();
-      if (typeof currentMsgId === 'number') exclude.add(currentMsgId);
-      // Look back up to 200 message IDs from the current screen so we
-      // catch messages from before the bot was last restarted (the
-      // in-memory tracker is empty across restarts). Telegram rejects
-      // deletes for messages we didn't send or that are >48h old, so
-      // those errors are silently absorbed.
-      const ids = buildDeletable(chatId, currentMsgId, 200, exclude);
-
-      // Single-message deletes — robust to mixed ownership / age.
-      // Telegram bots are rate-limited to ~30 ops/sec per chat so this
-      // typically finishes in a few seconds for the 200-id window.
-      for (const id of ids) {
-        try {
-          await ctx.api.deleteMessage(chatId, id);
-          deleted++;
-        } catch (err) {
-          // 400 "message can't be deleted" / "message to delete not
-          // found" are expected for messages we didn't send or that
-          // are too old — ignore them.
-          const desc = (err as { description?: string }).description ?? '';
-          if (
-            !desc.includes("can't be deleted") &&
-            !desc.includes('to delete not found') &&
-            !desc.includes('MESSAGE_ID_INVALID')
-          ) {
-            logger.debug({ err, id }, 'deleteMessage failed');
-          }
-        }
-      }
-    }
-
-    await ctx.answerCallbackQuery({
-      text: ctx.t('cache.cleared.user', { count: deleted }),
-    });
-    await showProfile(ctx);
-  });
 }

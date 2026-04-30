@@ -9,7 +9,6 @@ import {
   listProducts,
 } from '../db/queries.js';
 import * as cache from '../services/cache.js';
-import { protectMessage } from '../services/messageTracker.js';
 import { charge } from '../services/wallet.js';
 import {
   categoriesKeyboard,
@@ -159,7 +158,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       });
       delete ctx.session.qty[id];
       await ctx.answerCallbackQuery();
-      const sent = await ctx.reply(
+      await ctx.reply(
         ctx.t('shop.buy.success', {
           name: p.name,
           qty,
@@ -168,8 +167,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
         }),
         { parse_mode: 'Markdown' },
       );
-      // Claimed product (account / link) — never wipe this on Clear Cache.
-      protectMessage(sent.chat.id, sent.message_id);
     } catch (e: unknown) {
       const code = (e as { code?: string }).code;
       if (code === 'INSUFFICIENT_FUNDS') {
