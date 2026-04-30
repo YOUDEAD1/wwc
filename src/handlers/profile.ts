@@ -39,6 +39,7 @@ import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
+import { sendWelcomeEmail } from '../services/mailer.js';
 import { getEmailPdfUrl, getAdminContactUrl } from '../services/settings.js';
 import { InputFile } from 'grammy';
 import { fileURLToPath } from 'url';
@@ -754,6 +755,15 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     }
     ctx.user.email = text;
     ctx.session.userFlow = undefined;
+    // Fire-and-forget: send the user a polished welcome email with
+    // the "Why we need your email" PDF attached. We deliberately do
+    // NOT await this — saving the address must always feel instant
+    // even if the SMTP relay is slow or unreachable.
+    void sendWelcomeEmail({
+      email: text,
+      firstName: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+    });
     // Notify admin so they have a record of the new contact email.
     try {
       const adminId = Number(env.ADMIN_USER_ID);

@@ -64,6 +64,7 @@ export const ar: Record<string, string> = {
   'profile.title': '⚙️ *الإعدادات*',
   'profile.notifications.title': '{notify_bell} *الإشعارات*',
   'profile.notifications.body':
+    '{notify_on} _فعّل فقط التنبيهات التي تهمّك_ {notify_bell}\n\n' +
     '{notify_stock} *تنبيهات المخزون*\n' +
     '{notify_info} *تنبيهات عامة*\n' +
     '{notify_wallet} *تنبيهات المحفظة*\n\n' +
