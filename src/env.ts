@@ -59,6 +59,20 @@ const schema = z.object({
   // as the same mailbox.
   SMTP_FROM: z.string().optional().or(z.literal('')),
   SMTP_FROM_NAME: z.string().default('SafwanTiger Shop'),
+
+  // ----------------------------------------------------------------
+  //  Resend (HTTPS API) — preferred transport on cloud platforms
+  //  that block raw SMTP egress (Railway, Heroku, Fly, Vercel...).
+  // ----------------------------------------------------------------
+  // When RESEND_API_KEY is set, the mailer uses Resend's HTTPS API
+  // instead of nodemailer. This bypasses the SMTP-port firewall on
+  // cloud platforms while preserving the same "From: shopbot@safwantiger.com"
+  // identity (provided the safwantiger.com domain has been verified
+  // in the Resend dashboard via DKIM + SPF DNS records).
+  RESEND_API_KEY: z.string().optional().or(z.literal('')),
+  // Defaults to "shopbot@safwantiger.com" if both this and SMTP_USER
+  // are unset. Must be an address whose domain is verified in Resend.
+  RESEND_FROM: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.
