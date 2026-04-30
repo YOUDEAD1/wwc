@@ -1,17 +1,43 @@
 /**
- * Helpers to render text containing premium emojis.
+ * Helpers for rendering text containing premium emojis.
  *
- * Telegram allows bots to send `MessageEntity` with type
- * `custom_emoji` referencing a `custom_emoji_id` from a Telegram
- * premium emoji pack. Telegram premium subscribers see the animated/
- * styled glyph; non-premium users see the unicode fallback.
+ * Telegram allows bots (whose username was purchased on Fragment) to
+ * send `MessageEntity` of type `custom_emoji` referencing a
+ * `custom_emoji_id` from a Telegram premium emoji pack. Telegram
+ * premium subscribers see the animated/styled glyph; non-premium
+ * users see the unicode fallback.
+ *
+ * This module provides two render paths:
+ *
+ *   1) `renderPremium(template, map?)` — entity-based. Replaces
+ *      `{key}` tokens in the template with the configured unicode
+ *      glyph and attaches `custom_emoji` entities. Plain text only —
+ *      no Markdown / HTML formatting allowed in the template (since
+ *      Telegram ignores `parse_mode` when entities are passed).
+ *
+ *   2) `renderPremiumHtml(template, map?)` — HTML-based. Same `{key}`
+ *      tokens, but emits `<tg-emoji emoji-id="…">unicode</tg-emoji>`
+ *      tags, suitable for `parse_mode: 'HTML'`. Lets you mix premium
+ *      emojis with `<b>bold</b>`, `<code>` etc.
+ *
+ *   3) `renderMdHtml(template, map?)` — convenience: accepts the
+ *      project's existing single-asterisk Markdown style (`*bold*`,
+ *      `_italic_`, `` `code` ``, ``` ```code blocks``` ```), converts
+ *      it to HTML, replaces `{key}` tokens with `<tg-emoji>` tags,
+ *      AND auto-scans any remaining unicode emojis for premium
+ *      mappings. Use this for nearly any user-facing reply that was
+ *      previously sent with `parse_mode: 'Markdown'`.
  *
  * Usage:
  *   const { text, entities } = renderPremium('Hi {fire}!', { fire: 'fire' });
  *   await ctx.reply(text, { entities });
+ *
+ *   const html = renderMdHtml('*Welcome* {tiger}!');
+ *   await ctx.reply(html, { parse_mode: 'HTML' });
  */
 import type { MessageEntity } from 'grammy/types';
 import { getEmoji } from './settings.js';
+import { EMOJI } from '../../config/index.js';
 
 const TOKEN = /\{([\w.]+)\}/g;
 
@@ -53,4 +79,190 @@ export function renderPremium(
   }
   out += template.slice(lastIndex);
   return { text: out, entities };
+}
+
+// ---------------------------------------------------------------------
+// HTML rendering
+// ---------------------------------------------------------------------
+
+const HTML_ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>]/g, (c) => HTML_ESC[c]!);
+}
+
+/**
+ * Wrap an emoji unicode glyph as a `<tg-emoji>` tag if a premium
+ * `custom_emoji_id` is configured for the given key; otherwise just
+ * return the unicode (already HTML-escaped).
+ */
+function tgEmojiTag(unicode: string, customEmojiId?: string): string {
+  const safeUnicode = escapeHtml(unicode);
+  if (!customEmojiId) return safeUnicode;
+  return `<tg-emoji emoji-id="${escapeHtml(customEmojiId)}">${safeUnicode}</tg-emoji>`;
+}
+
+/** Replace `{key}` tokens with their (premium-aware) HTML rendering. */
+function replaceTokensHtml(template: string, map: Record<string, string>): string {
+  return template.replace(TOKEN, (whole, key: string) => {
+    const emojiKey = map[key] ?? key;
+    const spec = getEmoji(emojiKey);
+    if (typeof spec === 'string') return escapeHtml(spec);
+    return tgEmojiTag(spec.unicode, spec.custom_emoji_id);
+  });
+}
+
+/**
+ * Build a reverse map from unicode glyph → custom_emoji_id, taken
+ * from the live settings cache (admin overrides) on top of the
+ * compile-time `EMOJI` config. Computed lazily on every call so any
+ * runtime override takes effect instantly.
+ */
+function buildPremiumIndex(): Map<string, string> {
+  const idx = new Map<string, string>();
+  // First the compile-time defaults — overridden below by any
+  // runtime-stored values via `getEmoji`.
+  for (const key of Object.keys(EMOJI)) {
+    const spec = getEmoji(key);
+    if (typeof spec === 'object' && spec.custom_emoji_id) {
+      idx.set(spec.unicode, spec.custom_emoji_id);
+    }
+  }
+  return idx;
+}
+
+/**
+ * A regex matching ANY emoji-like unicode glyph. Built from a coarse
+ * union of the most common emoji code-point ranges. We don't need
+ * laser precision: any non-emoji char that sneaks in simply won't
+ * match an entry in the premium index and will be left unchanged.
+ *
+ * NOTE: emoji that occupy two code points (e.g. 🇺🇸 country flags
+ * built from regional indicators, or ZWJ-joined sequences like 👨‍👩‍👧)
+ * are matched character-by-character. The reverse-index lookup is
+ * keyed on the *exact* unicode string of each configured emoji, so
+ * single-codepoint glyphs (the vast majority used in this bot) work
+ * out of the box. Multi-codepoint emojis still need to be added
+ * manually as `{token}` placeholders.
+ */
+const EMOJI_LIKE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F1FF}\u{1F200}-\u{1F2FF}]\u{FE0F}?/gu;
+
+/**
+ * Walk an HTML-safe string and wrap any unicode emoji that has a
+ * configured premium custom_emoji_id with a `<tg-emoji>` tag. We must
+ * be careful not to touch text inside existing tags — but because we
+ * only ever insert tags after this scan, the input is plain text +
+ * already-HTML-escaped user content, so a simple "skip inside `<…>`"
+ * state machine is enough.
+ */
+function autoScanPremiumEmojis(html: string): string {
+  const idx = buildPremiumIndex();
+  if (idx.size === 0) return html;
+  let out = '';
+  let i = 0;
+  let inTag = false;
+  while (i < html.length) {
+    const ch = html[i]!;
+    if (inTag) {
+      out += ch;
+      if (ch === '>') inTag = false;
+      i += 1;
+      continue;
+    }
+    if (ch === '<') {
+      inTag = true;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    EMOJI_LIKE.lastIndex = i;
+    const m = EMOJI_LIKE.exec(html);
+    if (m && m.index === i) {
+      const glyph = m[0];
+      // Strip optional VS-16 (U+FE0F) variation selector when looking
+      // up: configured emojis usually omit it.
+      const bare = glyph.replace(/\uFE0F$/, '');
+      const id = idx.get(glyph) ?? idx.get(bare);
+      if (id) {
+        out += `<tg-emoji emoji-id="${escapeHtml(id)}">${glyph}</tg-emoji>`;
+      } else {
+        out += glyph;
+      }
+      i += glyph.length;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * Convert the project's lightweight Markdown to HTML. We only handle
+ * the subset actually used in the locales:
+ *   - ``` ```code blocks``` ``` → `<pre>code</pre>`
+ *   - `` `code` ``               → `<code>code</code>`
+ *   - `*bold*`                   → `<b>bold</b>`
+ *   - `_italic_`                 → `<i>italic</i>`
+ *
+ * The implementation goes in that order so backticks "win" over
+ * `*`/`_`.
+ */
+function mdToHtml(md: string): string {
+  // 1) HTML-escape the whole input first.
+  let s = escapeHtml(md);
+
+  // 2) Triple-backtick code blocks (greedy across newlines).
+  s = s.replace(/```([\s\S]+?)```/g, (_m, body: string) => `<pre>${body}</pre>`);
+
+  // 3) Inline backtick code.
+  s = s.replace(/`([^`\n]+?)`/g, (_m, body: string) => `<code>${body}</code>`);
+
+  // 4) Bold *text* — non-greedy, doesn't span newlines, requires
+  //    at least one non-whitespace char inside.
+  s = s.replace(/(^|[^*\w])\*([^*\n]+?)\*(?=$|[^*\w])/g, (_m, lead: string, body: string) =>
+    `${lead}<b>${body}</b>`,
+  );
+
+  // 5) Italic _text_ — same heuristics as bold.
+  s = s.replace(/(^|[^_\w])_([^_\n]+?)_(?=$|[^_\w])/g, (_m, lead: string, body: string) =>
+    `${lead}<i>${body}</i>`,
+  );
+
+  return s;
+}
+
+/**
+ * Render a template containing `{key}` tokens to HTML, with
+ * `<tg-emoji>` tags for premium-mapped emojis. Plain text only — use
+ * `renderMdHtml` if your template uses Markdown.
+ *
+ * Pipeline:
+ *   1) HTML-escape the input.
+ *   2) Auto-scan and wrap unicode emojis with `<tg-emoji>` tags.
+ *   3) Replace `{key}` tokens (these expand into `<tg-emoji>` tags
+ *      themselves when premium-mapped, but are inserted AFTER the
+ *      scan so we never double-wrap.)
+ */
+export function renderPremiumHtml(
+  template: string,
+  map: Record<string, string> = {},
+): string {
+  const escaped = escapeHtml(template);
+  const scanned = autoScanPremiumEmojis(escaped);
+  return replaceTokensHtml(scanned, map);
+}
+
+/**
+ * Convert a Markdown-flavored template to HTML, auto-scan unicode
+ * emojis for premium mappings, and replace `{key}` tokens with
+ * `<tg-emoji>` tags. Use with `parse_mode: 'HTML'`.
+ *
+ * The auto-scan runs BEFORE token replacement so that the unicode
+ * glyphs inserted by token replacement (already wrapped in their own
+ * `<tg-emoji>` tags) aren't re-scanned and re-wrapped.
+ */
+export function renderMdHtml(template: string, map: Record<string, string> = {}): string {
+  const html = mdToHtml(template);
+  const scanned = autoScanPremiumEmojis(html);
+  return replaceTokensHtml(scanned, map);
 }

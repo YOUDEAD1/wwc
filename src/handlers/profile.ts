@@ -16,7 +16,7 @@ import {
 } from '../keyboards/profile.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
-import { renderPremium } from '../services/premium.js';
+import { renderPremium, renderMdHtml } from '../services/premium.js';
 
 function profileText(ctx: AppCtx): string {
   const joined = new Date(ctx.user.joined_at).toISOString().slice(0, 10);
@@ -34,15 +34,17 @@ function profileText(ctx: AppCtx): string {
 }
 
 async function showProfile(ctx: AppCtx) {
-  const text = profileText(ctx);
+  // HTML render path: keeps `*bold*` formatting AND auto-wraps any
+  // unicode emoji whose key has a configured premium custom_emoji_id.
+  const html = renderMdHtml(profileText(ctx));
   if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, {
-      parse_mode: 'Markdown',
+    await ctx.editMessageText(html, {
+      parse_mode: 'HTML',
       reply_markup: profileKeyboard(ctx.lang),
     });
   } else {
-    await ctx.reply(text, {
-      parse_mode: 'Markdown',
+    await ctx.reply(html, {
+      parse_mode: 'HTML',
       reply_markup: profileKeyboard(ctx.lang),
     });
   }
@@ -53,8 +55,8 @@ function notificationsText(ctx: AppCtx): string {
 }
 
 async function showNotifications(ctx: AppCtx) {
-  await ctx.editMessageText(notificationsText(ctx), {
-    parse_mode: 'Markdown',
+  await ctx.editMessageText(renderMdHtml(notificationsText(ctx)), {
+    parse_mode: 'HTML',
     reply_markup: notificationsKeyboard(ctx.lang, {
       stock_alert: ctx.user.stock_alert,
       announcements: ctx.user.announcements,
@@ -176,8 +178,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         }),
       );
     }
-    await ctx.editMessageText(lines.join('\n'), {
-      parse_mode: 'Markdown',
+    await ctx.editMessageText(renderMdHtml(lines.join('\n')), {
+      parse_mode: 'HTML',
       reply_markup: profileKeyboard(ctx.lang),
     });
   });
@@ -188,13 +190,11 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
     const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
     const count = await countReferrals(ctx.user.telegram_id);
-    await ctx.editMessageText(
-      `${ctx.t('profile.refer.title')}\n\n${ctx.t('profile.refer.body', { link, count })}`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: profileKeyboard(ctx.lang),
-      },
-    );
+    const referText = `${ctx.t('profile.refer.title')}\n\n${ctx.t('profile.refer.body', { link, count })}`;
+    await ctx.editMessageText(renderMdHtml(referText), {
+      parse_mode: 'HTML',
+      reply_markup: profileKeyboard(ctx.lang),
+    });
   });
 
   // ---- Notifications submenu ----
@@ -260,8 +260,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         }),
       );
     }
-    await ctx.editMessageText(lines.join('\n'), {
-      parse_mode: 'Markdown',
+    await ctx.editMessageText(renderMdHtml(lines.join('\n')), {
+      parse_mode: 'HTML',
       reply_markup: profileKeyboard(ctx.lang),
     });
   });

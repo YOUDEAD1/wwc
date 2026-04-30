@@ -40,10 +40,12 @@ import {
   setChannelUrl,
   clearChannelUrl,
   getChannelUrl,
+  getEmoji,
+  getButtonColor,
 } from '../../services/settings.js';
-import { renderPremium } from '../../services/premium.js';
+import { renderMdHtml } from '../../services/premium.js';
 import type { ColorMode } from '../../../config/index.js';
-import { COLOR_PREFIX } from '../../../config/index.js';
+import { BUTTON_KEYS, COLOR_PREFIX, EMOJI } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
 import type { DBUser } from '../../types.js';
@@ -560,30 +562,178 @@ adminBot.callbackQuery('adm:cust:text', async (ctx) => {
   );
 });
 
+// ----- Emoji picker (button-driven, A → Z) -----
+//
+// Lists every emoji key (the EMOJI map + every BUTTON_KEYS entry as
+// `btn.<key>`) sorted alphabetically. Each row is a single button:
+//   "<unicode> <key> — <state>"  where state is one of:
+//   - "premium" (a custom_emoji_id is set)
+//   - "<unicode>" (only the unicode fallback is set)
+//   - "not set" (no override)
+// Tapping any row enters the per-key set-emoji flow.
+const EMOJI_PER_PAGE = 8;
+
+function allEmojiKeys(): string[] {
+  const set = new Set<string>(Object.keys(EMOJI));
+  for (const k of Object.keys(BUTTON_KEYS)) set.add(`btn.${k}`);
+  return [...set].sort();
+}
+
+function emojiStateLabel(key: string): string {
+  // Read raw cached override AND the compile-time default to give the
+  // admin a clear picture: "🐯 + premium" / "🐯 (default)" / "not set".
+  const spec = getEmoji(key);
+  if (typeof spec === 'object' && spec.custom_emoji_id) {
+    return `${spec.unicode} ${key} — premium`;
+  }
+  if (typeof spec === 'string' && spec !== key) {
+    return `${spec} ${key}`;
+  }
+  return `· ${key} — not set`;
+}
+
+function emojiPickerKb(page: number): InlineKeyboard {
+  const keys = allEmojiKeys();
+  const totalPages = Math.max(1, Math.ceil(keys.length / EMOJI_PER_PAGE));
+  const start = page * EMOJI_PER_PAGE;
+  const slice = keys.slice(start, start + EMOJI_PER_PAGE);
+  const kb = new InlineKeyboard();
+  for (const k of slice) {
+    kb.text(emojiStateLabel(k).slice(0, 60), `adm:emoji:pick:${k}`).row();
+  }
+  if (totalPages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:cust:emoji:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, 'adm:noop');
+    if (page + 1 < totalPages) kb.text('Next ▶️', `adm:cust:emoji:${page + 1}`);
+    kb.row();
+  }
+  kb.text('⬅️ Back', 'adm:cust');
+  return kb;
+}
+
+async function showEmojiPicker(ctx: AppCtx, page: number): Promise<void> {
+  const text =
+    '😀 *Set Emoji*\n\n' +
+    'Tap any key to update its emoji. You can either send a plain unicode emoji ' +
+    '(e.g. `🐯`) — or send a *premium emoji message* directly and the bot will ' +
+    'auto-extract its `custom_emoji_id` for you.';
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: emojiPickerKb(page),
+  });
+}
+
 adminBot.callbackQuery('adm:cust:emoji', async (ctx) => {
   await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'set_emoji', step: 'key', data: {} };
+  ctx.session.adminFlow = undefined;
+  await showEmojiPicker(ctx, 0);
+});
+
+adminBot.callbackQuery(/^adm:cust:emoji:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showEmojiPicker(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:emoji:pick:(.+)$/, async (ctx) => {
+  const key = ctx.match[1]!;
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_emoji', step: 'value', data: { key } };
+  const cur = getEmoji(key);
+  const curLine =
+    typeof cur === 'object' && cur.custom_emoji_id
+      ? `Current: ${cur.unicode}  *premium id* \`${cur.custom_emoji_id}\``
+      : typeof cur === 'string' && cur !== key
+        ? `Current: ${cur}`
+        : 'Current: _not set_';
   await ctx.editMessageText(
-    '😀 *Set Emoji*\n\nSend the *emoji key* you want to map (e.g. `tiger`, `fire`, `wallet`).' +
-      '\n\nOr `/cancel`.',
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+    `😀 *Set Emoji* — \`${key}\`\n\n` +
+      `${curLine}\n\n` +
+      'Send any of:\n' +
+      '• A plain unicode emoji — e.g. `🐯`\n' +
+      '• A *premium* emoji message — the bot reads its `custom_emoji_id`\n' +
+      '• Or the raw form: `<unicode> [custom_emoji_id]`\n\n' +
+      'Or `/cancel`.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:cust:emoji'),
+    },
   );
 });
+
+// ----- Color picker (button-driven, blue / green / red / yellow / none) -----
+//
+// Lists every BUTTON_KEYS entry with its current color marker, paginated.
+// Tapping a key opens a 5-button color chooser.
+const COLOR_PER_PAGE = 8;
+
+function buttonKeyList(): string[] {
+  return Object.keys(BUTTON_KEYS).sort();
+}
+
+function buttonColorLabel(key: keyof typeof BUTTON_KEYS): string {
+  const c = getButtonColor(key);
+  const prefix = COLOR_PREFIX[c] || '∅';
+  return `${prefix} ${key} — ${c}`;
+}
+
+function colorPickerKb(page: number): InlineKeyboard {
+  const keys = buttonKeyList();
+  const totalPages = Math.max(1, Math.ceil(keys.length / COLOR_PER_PAGE));
+  const start = page * COLOR_PER_PAGE;
+  const slice = keys.slice(start, start + COLOR_PER_PAGE);
+  const kb = new InlineKeyboard();
+  for (const k of slice) {
+    kb.text(
+      buttonColorLabel(k as keyof typeof BUTTON_KEYS).slice(0, 60),
+      `adm:color:pick:${k}`,
+    ).row();
+  }
+  if (totalPages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:cust:color:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, 'adm:noop');
+    if (page + 1 < totalPages) kb.text('Next ▶️', `adm:cust:color:${page + 1}`);
+    kb.row();
+  }
+  kb.text('⬅️ Back', 'adm:cust');
+  return kb;
+}
+
+async function showColorPicker(ctx: AppCtx, page: number): Promise<void> {
+  await ctx.editMessageText(
+    '🎨 *Set Color*\n\n' +
+      'Inline buttons can be tinted by prefixing them with a colored ' +
+      'square: 🟦 blue, 🟩 green, 🟥 red, 🟨 yellow, or none. Tap a button ' +
+      'key to change its color.',
+    { parse_mode: 'Markdown', reply_markup: colorPickerKb(page) },
+  );
+}
 
 adminBot.callbackQuery('adm:cust:color:pick', async (ctx) => {
   await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'set_text', step: 'key', data: {} };
-  // Reuse the "set_text" flow shape but tag it as set_color via a sentinel:
-  // The user types a key then chooses a color from buttons (handled below).
-  ctx.session.adminFlow = { type: 'set_color', step: 'value', data: { key: '' } };
-  await ctx.editMessageText(
-    '🎨 *Set Color*\n\nSend the *button key* (e.g. `buy_now`, `topup`, `shop`).' +
-      '\n\nOr `/cancel`.',
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-  );
+  ctx.session.adminFlow = undefined;
+  await showColorPicker(ctx, 0);
 });
 
-adminBot.callbackQuery(/^adm:color:set:(.+):(.+)$/, async (ctx) => {
+adminBot.callbackQuery(/^adm:cust:color:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showColorPicker(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:color:pick:(.+)$/, async (ctx) => {
+  const key = ctx.match[1]!;
+  await ctx.answerCallbackQuery();
+  const kb = new InlineKeyboard();
+  for (const c of Object.keys(COLOR_PREFIX) as ColorMode[]) {
+    kb.text(`${COLOR_PREFIX[c] || '∅'} ${c}`, `adm:color:set:${key}:${c}`);
+  }
+  kb.row().text('⬅️ Back', 'adm:cust:color:pick');
+  await ctx.editMessageText(`🎨 *Set Color* — \`${key}\`\n\nPick a color:`, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+adminBot.callbackQuery(/^adm:color:set:([^:]+):([^:]+)$/, async (ctx) => {
   const key = ctx.match[1]!;
   const color = ctx.match[2] as ColorMode;
   if (!(color in COLOR_PREFIX)) {
@@ -592,7 +742,12 @@ adminBot.callbackQuery(/^adm:color:set:(.+):(.+)$/, async (ctx) => {
   }
   await setColor(key, color, ctx.from!.id);
   await ctx.answerCallbackQuery({ text: `Set ${key} → ${color}` });
-  await showRoot(ctx);
+  await showColorPicker(ctx, 0);
+});
+
+// Silent no-op (used for the page indicator in the picker).
+adminBot.callbackQuery('adm:noop', async (ctx) => {
+  await ctx.answerCallbackQuery();
 });
 
 // ---------- Announce ----------
@@ -616,15 +771,14 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
   const body = flow.data.text;
   const recipients = await listUsersForAnnouncement();
   await ctx.editMessageText(`📣 Broadcasting to ${recipients.length} user(s)…`);
+  // Render once: HTML output expands `{tokens}` AND auto-wraps any
+  // unicode emoji that has a configured premium custom_emoji_id.
+  const html = renderMdHtml(body);
   let ok = 0;
   let fail = 0;
   for (const r of recipients) {
     try {
-      const { text, entities } = renderPremium(body);
-      await ctx.api.sendMessage(r.telegram_id, text, {
-        entities: entities.length ? entities : undefined,
-        parse_mode: entities.length ? undefined : 'Markdown',
-      });
+      await ctx.api.sendMessage(r.telegram_id, html, { parse_mode: 'HTML' });
       ok++;
     } catch (err) {
       fail++;
@@ -919,30 +1073,59 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'set_emoji') {
       if (flow.step === 'key') {
+        // Legacy slash-command path: admin typed the key first.
         ctx.session.adminFlow = { type: 'set_emoji', step: 'value', data: { key: text } };
         await ctx.reply(
-          `Send the emoji as \`<unicode> [custom_emoji_id]\` for \`${text}\`. ` +
-            `Example: \`🐯\` or \`🐯 5440733430971678660\` (premium).`,
+          `Send the emoji for \`${text}\`. You can send a *premium* emoji ` +
+            'directly (the bot reads its `custom_emoji_id`), a plain unicode ' +
+            'emoji, or `<unicode> <custom_emoji_id>`.',
           { parse_mode: 'Markdown' },
         );
-      } else if (flow.step === 'value') {
-        const [unicode, customId] = text.split(/\s+/, 2);
-        if (!unicode) {
-          await ctx.reply('❌ Empty value.');
-          return;
-        }
-        await setEmoji(flow.data.key, unicode, customId, ctx.from!.id);
-        ctx.session.adminFlow = undefined;
-        await ctx.reply(`✅ Emoji \`${flow.data.key}\` updated.`, {
-          parse_mode: 'Markdown',
-          reply_markup: rootMenu(),
-        });
+        return;
       }
+      // step === 'value'
+      let unicode: string | undefined;
+      let customId: string | undefined;
+
+      // Preferred path: the admin forwarded / typed a premium emoji
+      // — Telegram surfaces it as a `custom_emoji` MessageEntity
+      // alongside the unicode fallback in the message text.
+      const ce = (ctx.message.entities ?? []).find(
+        (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
+      ) as { offset: number; length: number; custom_emoji_id: string } | undefined;
+      if (ce) {
+        // Slice from the original (un-trimmed) text using the entity
+        // offsets (UTF-16 code units, matching String.prototype.length).
+        const raw = ctx.message.text;
+        unicode = raw.slice(ce.offset, ce.offset + ce.length);
+        customId = ce.custom_emoji_id;
+      } else {
+        // Fallback: parse `<unicode> [custom_emoji_id]` from the text.
+        const parts = text.split(/\s+/, 2);
+        unicode = parts[0];
+        customId = parts[1];
+      }
+
+      if (!unicode) {
+        await ctx.reply('❌ Empty value.');
+        return;
+      }
+      await setEmoji(flow.data.key, unicode, customId, ctx.from!.id);
+      ctx.session.adminFlow = undefined;
+      const idLine = customId
+        ? ` (premium id \`${customId}\`)`
+        : '';
+      await ctx.reply(
+        `✅ Emoji \`${flow.data.key}\` updated → ${unicode}${idLine}.`,
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
       return;
     }
 
     if (flow.type === 'set_color') {
-      // Expecting key
+      // The picker UI uses callback buttons; if we get here, the user
+      // typed text instead of tapping. Treat the text as the button
+      // key and offer a colour chooser.
       if (!flow.data.key) {
         ctx.session.adminFlow = { type: 'set_color', step: 'value', data: { key: text } };
         const kb = new InlineKeyboard();
@@ -965,11 +1148,9 @@ adminBot.on('message:text', async (ctx, next) => {
         const kb = new InlineKeyboard()
           .text(`📣 Send to ${recipients.length}`, 'adm:ann:send')
           .text('❌ Cancel', 'adm:root');
-        const { text: rendered, entities } = renderPremium(text);
-        await ctx.reply(rendered, {
-          entities: entities.length ? entities : undefined,
-          parse_mode: entities.length ? undefined : 'Markdown',
-        });
+        // Preview exactly what users will see: HTML output with
+        // expanded tokens AND auto-wrapped unicode emojis.
+        await ctx.reply(renderMdHtml(text), { parse_mode: 'HTML' });
         await ctx.reply('Confirm sending:', { reply_markup: kb });
       }
       return;

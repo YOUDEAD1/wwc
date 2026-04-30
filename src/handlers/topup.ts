@@ -3,6 +3,7 @@ import { InlineKeyboard } from 'grammy';
 import { createDeposit, listPaymentMethods } from '../db/queries.js';
 import { btn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
+import { renderMdHtml } from '../services/premium.js';
 import {
   BINANCE_PAY_ID,
   BINANCE_PAY_NAME,
@@ -42,27 +43,28 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           opened_at: Date.now(),
         },
       };
-      await ctx.editMessageText(buildPayIdScreen(noteCode), {
-        parse_mode: 'Markdown',
+      await ctx.editMessageText(renderMdHtml(buildPayIdScreen(noteCode)), {
+        parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
       });
       return;
     }
 
-    await ctx.editMessageText(
-      ctx.t('topup.method.body', {
-        name: m.name,
-        instructions: m.instructions,
-        min: m.min_amount,
-      }),
-      {
-        parse_mode: 'Markdown',
-        reply_markup: new InlineKeyboard()
-          .text('💸 ' + m.name, `topup:request:${m.id}`)
-          .row()
-          .text(btn(ctx.lang, 'back'), 'topup:open'),
-      },
-    );
+    // Payment-method body is rendered through HTML so admin-supplied
+    // instructions get auto-premium-emoji treatment for any
+    // unicode emoji whose key has a configured `custom_emoji_id`.
+    const methodBody = ctx.t('topup.method.body', {
+      name: m.name,
+      instructions: m.instructions,
+      min: m.min_amount,
+    });
+    await ctx.editMessageText(renderMdHtml(methodBody), {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard()
+        .text('💸 ' + m.name, `topup:request:${m.id}`)
+        .row()
+        .text(btn(ctx.lang, 'back'), 'topup:open'),
+    });
   });
 
   bot.callbackQuery(/^topup:request:(\d+)$/, async (ctx) => {
@@ -79,8 +81,8 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       amount: m.min_amount,
     });
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(ctx.t('topup.requested', { id: dep.id }), {
-      parse_mode: 'Markdown',
+    await ctx.editMessageText(renderMdHtml(ctx.t('topup.requested', { id: dep.id })), {
+      parse_mode: 'HTML',
     });
   });
 
@@ -100,8 +102,10 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     if (elapsedMs > windowMs) {
       ctx.session.userFlow = undefined;
       await ctx.reply(
-        `⏰ This top-up window expired (${BINANCE_TOPUP_WINDOW_MINUTES} min limit). Please reopen Binance Pay top-up to get a fresh note code.`,
-        { parse_mode: 'Markdown' },
+        renderMdHtml(
+          `⏰ This top-up window expired (${BINANCE_TOPUP_WINDOW_MINUTES} min limit). Please reopen Binance Pay top-up to get a fresh note code.`,
+        ),
+        { parse_mode: 'HTML' },
       );
       return;
     }
@@ -112,8 +116,10 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     const orderId = text.replace(/\s+/g, '');
     if (!/^[A-Za-z0-9]{6,64}$/.test(orderId)) {
       await ctx.reply(
-        '❌ That doesn\'t look like a valid Binance Pay Order ID. Please paste only the order ID (digits/letters, 6–64 chars).',
-        { parse_mode: 'Markdown' },
+        renderMdHtml(
+          '❌ That doesn\'t look like a valid Binance Pay Order ID. Please paste only the order ID (digits/letters, 6–64 chars).',
+        ),
+        { parse_mode: 'HTML' },
       );
       return;
     }
@@ -142,16 +148,18 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     ctx.session.userFlow = undefined;
 
     await ctx.reply(
-      [
-        `✅ *Submitted (#${depId}).*`,
-        '',
-        `Order ID: \`${orderId}\``,
-        `Note code: \`${flow.data.note_code}\``,
-        '',
-        'Admin will verify your payment on the Binance Pay dashboard and credit your wallet shortly. You\'ll get a confirmation message when it\'s done.',
-      ].join('\n'),
+      renderMdHtml(
+        [
+          `✅ *Submitted (#${depId}).*`,
+          '',
+          `Order ID: \`${orderId}\``,
+          `Note code: \`${flow.data.note_code}\``,
+          '',
+          'Admin will verify your payment on the Binance Pay dashboard and credit your wallet shortly. You\'ll get a confirmation message when it\'s done.',
+        ].join('\n'),
+      ),
       {
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
       },
     );
@@ -200,9 +208,10 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
   if (methods.length % 2 === 1) kb.row();
   kb.text(btn(ctx.lang, 'back'), 'main:open');
   const text = `${ctx.t('topup.title')}\n\n${ctx.t('topup.choose_method')}`;
+  const html = renderMdHtml(text);
   if (asEdit) {
-    await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb });
+    await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {
-    await ctx.reply(text, { parse_mode: 'Markdown', reply_markup: kb });
+    await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
 }
