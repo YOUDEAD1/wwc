@@ -68,7 +68,6 @@ export const BUTTON_KEYS = {
   toggle_announcements: 'btn.toggle_announcements',
   language: 'btn.language',
   deposit_history: 'btn.deposit_history',
-  clear_cache: 'btn.clear_cache',
   channel: 'btn.channel',
   back_to_settings: 'btn.back_to_settings',
 } as const;
@@ -103,7 +102,6 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   toggle_announcements: 'none',
   language: 'none',
   deposit_history: 'none',
-  clear_cache: 'none',
   channel: 'none',
   back_to_settings: 'none',
 };

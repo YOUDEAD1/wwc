@@ -28,7 +28,6 @@ const CALLBACK: Record<keyof typeof BUTTON_KEYS, string> = {
   toggle_announcements: 'profile:toggle_ann',
   language: 'profile:lang',
   deposit_history: 'profile:deposits',
-  clear_cache: 'profile:clear_cache',
   channel: 'channel:open',
   back_to_settings: 'profile:open',
 };

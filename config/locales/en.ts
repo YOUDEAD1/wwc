@@ -36,7 +36,6 @@ export const en: Record<string, string> = {
   'btn.back_to_settings': '⬅️ Back to Settings',
   'btn.language': '🌐 Language',
   'btn.deposit_history': '💳 Deposit History',
-  'btn.clear_cache': '🧹 Clear Cache',
   'btn.channel': '📢 Channel',
 
   // ---------- Shop ----------
@@ -110,7 +109,6 @@ export const en: Record<string, string> = {
   'admin.only': '⛔ Admin only.',
   'admin.help.title': '🛠 *Admin Commands*',
   'admin.cache.cleared': '🧹 Cache cleared.',
-  'cache.cleared.user': '🧹 Cleared {count} old message(s). Claimed products are kept.',
 
   'admin.text.set': '✅ Text `{key}` updated.',
   'admin.color.set': '✅ Color for `{key}` set to *{color}*.',

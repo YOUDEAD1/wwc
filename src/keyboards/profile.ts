@@ -4,14 +4,13 @@ import { btn } from './helpers.js';
 import { t } from '../i18n/index.js';
 
 export function profileKeyboard(lang: Lang): InlineKeyboard {
-  // Five core Settings actions on a single row, with a Back button
+  // Core Settings actions on a single row, with a Back button
   // underneath. "Refer" remains accessible from the main menu.
   return new InlineKeyboard()
     .text(btn(lang, 'my_orders'), 'profile:orders')
     .text(btn(lang, 'notifications'), 'profile:notifications')
     .text(btn(lang, 'language'), 'profile:lang')
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
-    .text(btn(lang, 'clear_cache'), 'profile:clear_cache')
     .row()
     .text(btn(lang, 'back'), 'main:open');
 }

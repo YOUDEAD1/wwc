@@ -34,7 +34,6 @@ export const vi: Record<string, string> = {
   'btn.back_to_settings': '⬅️ Quay lại Cài đặt',
   'btn.language': '🌐 Ngôn ngữ',
   'btn.deposit_history': '💳 Lịch sử nạp',
-  'btn.clear_cache': '🧹 Xóa cache',
   'btn.channel': '📢 Kênh',
 
   'shop.choose_category': '🛒 *Cửa hàng* — chọn danh mục:',
@@ -99,7 +98,6 @@ export const vi: Record<string, string> = {
   'admin.only': '⛔ Chỉ dành cho quản trị viên.',
   'admin.help.title': '🛠 *Lệnh quản trị*',
   'admin.cache.cleared': '🧹 Đã xóa cache.',
-  'cache.cleared.user': '🧹 Đã xóa {count} tin nhắn cũ. Các sản phẩm đã mua được giữ lại.',
 
   'admin.text.set': '✅ Đã cập nhật text `{key}`.',
   'admin.color.set': '✅ Màu `{key}` đặt thành *{color}*.',

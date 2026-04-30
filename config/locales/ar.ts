@@ -34,7 +34,6 @@ export const ar: Record<string, string> = {
   'btn.back_to_settings': '⬅️ رجوع للإعدادات',
   'btn.language': '🌐 اللغة',
   'btn.deposit_history': '💳 سجل الإيداعات',
-  'btn.clear_cache': '🧹 مسح الكاش',
   'btn.channel': '📢 القناة',
 
   'shop.choose_category': '🛒 *المتجر* — اختر فئة:',
@@ -97,7 +96,6 @@ export const ar: Record<string, string> = {
   'admin.only': '⛔ للمسؤول فقط.',
   'admin.help.title': '🛠 *أوامر المسؤول*',
   'admin.cache.cleared': '🧹 تم مسح الكاش.',
-  'cache.cleared.user': '🧹 تم حذف {count} رسالة قديمة. تم الاحتفاظ بالمنتجات المشتراة.',
 
   'admin.text.set': '✅ تم تحديث النص `{key}`.',
   'admin.color.set': '✅ تم تعيين لون `{key}` إلى *{color}*.',
