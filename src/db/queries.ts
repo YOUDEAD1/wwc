@@ -437,6 +437,10 @@ export async function setDepositStatus(
   await supabase.from('deposits').update({ status }).eq('id', id);
 }
 
+export async function setDepositAmount(id: number, amount: number): Promise<void> {
+  await supabase.from('deposits').update({ amount }).eq('id', id);
+}
+
 // ---------- User management (admin) ----------
 
 /** List most-recently-active users for the admin Users panel. */

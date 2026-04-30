@@ -18,6 +18,30 @@ import { logger } from '../logger.js';
 
 const BINANCE_PAY_BASE = 'https://bpay.binanceapi.com';
 
+/**
+ * Public, hard-coded Binance Pay identity that users send USDT to.
+ * The bot doesn't use the merchant `createOrder` flow anymore — Binance
+ * was rejecting those requests (error 451) — so users instead send a
+ * direct Pay ID transfer and submit their Order ID for verification.
+ */
+export const BINANCE_PAY_ID = '1225852869';
+export const BINANCE_PAY_NAME = 'SafwanTiger';
+
+/** How long a generated note code is valid for, in minutes. */
+export const BINANCE_TOPUP_WINDOW_MINUTES = 30;
+
+/**
+ * Generate a fresh 6-digit numeric note code for a Pay-ID top-up.
+ * The user types this code into Binance Pay's "Remark" field when
+ * sending USDT so we (and the admin) can match the on-chain transfer
+ * back to a specific top-up request and prevent order-ID stealing.
+ */
+export function generateNoteCode(): string {
+  // 6-digit zero-padded number, range 100000–999999. Avoid leading
+  // zeros so users don't trim them by accident when copying.
+  return String(100000 + crypto.randomInt(0, 900000));
+}
+
 export function binanceEnabled(): boolean {
   return Boolean(env.BINANCE_PAY_API_KEY && env.BINANCE_PAY_API_SECRET);
 }

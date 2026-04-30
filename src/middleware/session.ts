@@ -55,13 +55,28 @@ export type AdminFlow =
   | { type: 'announce'; step: 'confirm'; data: { text: string } }
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
-  | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } };
+  | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
+  | { type: 'set_deposit_amount'; step: 'amount'; data: { deposit_id: number } };
 
-/** Multi-step user-side flow (currently just Binance Pay top-up). */
+/**
+ * Multi-step user-side flow.
+ *
+ * `binance_payid_topup` is the Pay-ID + Order-ID flow. The user is
+ * shown a one-time 6-digit note code which they paste into Binance
+ * Pay's Remark field when sending USDT. They then send their Binance
+ * order ID back to the bot, which records a pending deposit for an
+ * admin to verify.
+ */
 export type UserFlow = {
-  type: 'binance_topup';
-  step: 'amount';
-  data: { method_id: number; method_name: string; min: number };
+  type: 'binance_payid_topup';
+  step: 'order_id';
+  data: {
+    method_id: number;
+    method_name: string;
+    note_code: string;
+    /** ms-since-epoch when the user opened the screen; used to enforce a 30-min window */
+    opened_at: number;
+  };
 };
 
 export type SessionData = {
