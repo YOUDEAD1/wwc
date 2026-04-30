@@ -214,6 +214,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:open', async (ctx) => {
     await ctx.answerCallbackQuery();
+    // Drop any in-flight user flow (e.g. set_email) so subsequent
+    // text messages aren't intercepted by a stale flow handler.
+    ctx.session.userFlow = undefined;
     await showProfile(ctx);
   });
 
