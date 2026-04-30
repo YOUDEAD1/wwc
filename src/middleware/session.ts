@@ -56,7 +56,19 @@ export type AdminFlow =
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
-  | { type: 'set_deposit_amount'; step: 'amount'; data: { deposit_id: number } };
+  | { type: 'set_deposit_amount'; step: 'amount'; data: { deposit_id: number } }
+  | { type: 'add_gift'; step: 'code'; data: Record<string, never> }
+  | { type: 'add_gift'; step: 'amount'; data: { code: string } }
+  | {
+      type: 'add_gift';
+      step: 'per_user_limit';
+      data: { code: string; amount: number };
+    }
+  | {
+      type: 'add_gift';
+      step: 'max_redemptions';
+      data: { code: string; amount: number; per_user_limit: number };
+    };
 
 /**
  * Multi-step user-side flow.
@@ -88,6 +100,24 @@ export type UserFlow =
       type: 'set_email';
       step: 'value';
       data: { mode: 'set' | 'change' };
+    }
+  | {
+      /**
+       * User is on the Redeem Gift Code screen — next plain-text
+       * message they send is treated as a code to redeem.
+       */
+      type: 'redeem_gift';
+      step: 'value';
+      data: Record<string, never>;
+    }
+  | {
+      /**
+       * User is viewing the My Orders list — typing a public order
+       * ID opens the detail screen for that order.
+       */
+      type: 'orders_lookup';
+      step: 'value';
+      data: Record<string, never>;
     };
 
 export type SessionData = {

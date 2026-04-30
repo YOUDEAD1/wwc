@@ -113,3 +113,21 @@ export function getEmailPdfUrl(): string | null {
   const env = process.env.EMAIL_PDF_URL;
   return env && env.length > 0 ? env : null;
 }
+
+/**
+ * Direct-message URL for the admin / shop owner. Used by:
+ *   - Settings → Redeem Gift Code → "Buy Code" button
+ *   - any other screen that wants a 1-tap "contact admin" hop.
+ *
+ * Resolution order:
+ *   1. settings.admin.contact_url (admin-editable via /settext)
+ *   2. env ADMIN_CONTACT_URL
+ *   3. https://t.me/safwantiger as the documented default.
+ */
+export function getAdminContactUrl(): string {
+  const v = cache.get('admin.contact_url');
+  if (typeof v === 'string' && v.length > 0) return v;
+  const env = process.env.ADMIN_CONTACT_URL;
+  if (env && env.length > 0) return env;
+  return 'https://t.me/safwantiger';
+}

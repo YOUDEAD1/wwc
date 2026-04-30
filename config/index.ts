@@ -204,6 +204,31 @@ export const EMOJI: Record<string, EmojiSpec> = {
   deposits_payments: { unicode: '💸', custom_emoji_id: '5375312095346704820' },
   deposits_wallet: { unicode: '👛', custom_emoji_id: '4965219701572503640' },
   deposits_empty: { unicode: '📭', custom_emoji_id: '5798937402789597866' },
+
+  // ---- Language button -----------------------------------------
+  lang_globe: { unicode: '🌐', custom_emoji_id: '5310249748903504323' },
+
+  // ---- Redeem Gift Code screen --------------------------------
+  gift_title: { unicode: '🎁', custom_emoji_id: '4958699241137505132' },
+  gift_send: { unicode: '👇', custom_emoji_id: '5287279155702936525' },
+  gift_usdt: { unicode: '💵', custom_emoji_id: '5463046637842608206' },
+  gift_balance: { unicode: '💰', custom_emoji_id: '4958926882994127612' },
+  gift_expired: { unicode: '⏰', custom_emoji_id: '5280821895711697516' },
+  gift_invalid: { unicode: '❌', custom_emoji_id: '5095957930537124723' },
+  gift_redeemed: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
+
+  // ---- My Orders detail screen --------------------------------
+  orders_title: { unicode: '🧾', custom_emoji_id: '5893255507380014983' },
+  orders_id: { unicode: '🆔', custom_emoji_id: '5818885490065017876' },
+  orders_product: { unicode: '📦', custom_emoji_id: '5069075201950483359' },
+  orders_type: { unicode: '💳', custom_emoji_id: '5438496463044752972' },
+  orders_qty: { unicode: '🔢', custom_emoji_id: '5926964914684957537' },
+  orders_total: { unicode: '💰', custom_emoji_id: '4958926882994127612' },
+  orders_when: { unicode: '🗓', custom_emoji_id: '5800810214689084012' },
+  orders_status: { unicode: '🛡', custom_emoji_id: '6179461085624536942' },
+  orders_note: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
+  orders_warranty: { unicode: '⏰', custom_emoji_id: '5280821895711697516' },
+  orders_received: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
 };
 
 /**

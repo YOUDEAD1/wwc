@@ -31,6 +31,10 @@ import {
   setDepositAmount,
   setDepositStatus,
   setProductActive,
+  createGiftCode,
+  deleteGiftCode,
+  listGiftCodes,
+  countGiftCodeRedemptions,
 } from '../../db/queries.js';
 import * as cache from '../../services/cache.js';
 import { credit } from '../../services/wallet.js';
@@ -81,26 +85,28 @@ adminBot.command(
 );
 
 const PER_PAGE = 8;
-const ROOT_TEXT = '🛠 *Admin Dashboard*\n\nPick a section:';
+const ROOT_TEXT = '🛠 *Admin Panel*\n\nTap a section to manage it.';
 
 function rootMenu(): InlineKeyboard {
   return new InlineKeyboard()
     .text('📦 Products', 'adm:prod')
     .text('🗂 Categories', 'adm:cat')
     .row()
-    .text('💳 Payments', 'adm:pay')
-    .text('💰 Deposits', 'adm:dep')
+    .text('💳 Payment Methods', 'adm:pay')
+    .text('💰 Top-Up Requests', 'adm:dep')
     .row()
     .text('👥 Users', 'adm:usr:0')
-    .text('📣 Announce', 'adm:ann')
+    .text('📣 Broadcast', 'adm:ann')
     .row()
-    .text('✏️ Customize', 'adm:cust')
+    .text('🎨 Customize', 'adm:cust')
+    .text('⚙️ Bot Settings', 'adm:bot')
+    .row()
+    .text('🤖 AI Setup', 'adm:ai')
     .text('📊 Stats', 'adm:stats')
     .row()
-    .text('🔁 Reload', 'adm:reload')
-    .text('🧹 Clear Cache', 'adm:clr')
+    .text('🎁 Gift Codes', 'adm:gift')
     .row()
-    .text('❌ Close', 'adm:close');
+    .text('🏠 Main Menu', 'adm:close');
 }
 
 const backRow = (kb: InlineKeyboard) => kb.row().text('⬅️ Back', 'adm:root');
@@ -128,6 +134,145 @@ adminBot.callbackQuery('adm:close', async (ctx) => {
   } catch {
     /* ignore */
   }
+  // Re-fire /start so the admin lands on the regular Main Menu — that's
+  // the expected behaviour of the new "🏠 Main Menu" button on the
+  // panel root, replacing the old "❌ Close".
+  await ctx.api.sendMessage(ctx.chat?.id ?? ctx.from!.id, '/start');
+});
+
+// ---------- Bot Settings ----------
+// One-stop hub for bot-wide toggles + URLs the admin can edit at
+// runtime: channel link, email PDF URL, admin contact link, plus the
+// reload settings shortcut. We deliberately keep this lean for now —
+// each item edits a single key in the `settings` table.
+adminBot.callbackQuery('adm:bot', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  const kb = new InlineKeyboard()
+    .text('🔗 Set Channel URL', 'adm:cust:channel')
+    .row()
+    .text('📄 Set Email PDF URL', 'adm:bot:emailpdf')
+    .row()
+    .text('💬 Set Admin Contact URL', 'adm:bot:contact')
+    .row()
+    .text('🔁 Reload Settings', 'adm:reload');
+  backRow(kb);
+  await ctx.editMessageText('⚙️ *Bot Settings*\n\nGeneral configuration knobs.', {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+adminBot.callbackQuery('adm:bot:emailpdf', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'email.pdf_url' } };
+  await ctx.editMessageText(
+    '📄 *Set Email PDF URL*\n\nSend a public URL to a PDF (or `-` to clear). The Why Email "Know More" button becomes a URL button when this is set.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:contact', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'admin.contact_url' } };
+  await ctx.editMessageText(
+    '💬 *Set Admin Contact URL*\n\nSend a t.me URL the "Buy Code" / contact-admin buttons should open.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+// ---------- AI Setup (placeholder) ----------
+adminBot.callbackQuery('adm:ai', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  const kb = new InlineKeyboard()
+    .text('🔑 Set AI API Key', 'adm:ai:key')
+    .row()
+    .text('💬 Set AI Prompt', 'adm:ai:prompt');
+  backRow(kb);
+  await ctx.editMessageText(
+    '🤖 *AI Setup*\n\nConfigure the assistant used by the Support flow.',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:ai:key', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'ai.api_key' } };
+  await ctx.editMessageText('🔑 *Set AI API Key*\n\nSend the key (or `-` to clear).', {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
+});
+
+adminBot.callbackQuery('adm:ai:prompt', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'ai.system_prompt' } };
+  await ctx.editMessageText(
+    '💬 *Set AI Prompt*\n\nSend the system prompt (or `-` to clear).',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+// ---------- Gift Codes ----------
+adminBot.callbackQuery('adm:gift', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  const kb = new InlineKeyboard()
+    .text('➕ Create Code', 'adm:gift:add')
+    .text('📋 List & Manage', 'adm:gift:list');
+  backRow(kb);
+  await ctx.editMessageText(
+    '🎁 *Gift Codes*\n\nIssue or manage one-time/limited gift codes that users can redeem from Settings → Redeem Gift Code.',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:gift:add', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'add_gift', step: 'code', data: {} };
+  await ctx.editMessageText(
+    '🎁 *Create Gift Code*\n\nSend the code (3–40 chars, A–Z 0–9 _ -). Or `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery('adm:gift:list', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showGiftCodeList(ctx);
+});
+
+async function showGiftCodeList(ctx: AppCtx): Promise<void> {
+  const codes = await listGiftCodes();
+  if (codes.length === 0) {
+    await ctx.editMessageText('No gift codes yet.', {
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+    return;
+  }
+  const lines = ['🎁 *Gift Codes*', ''];
+  const kb = new InlineKeyboard();
+  for (const c of codes) {
+    const used = await countGiftCodeRedemptions(c.code);
+    const cap = c.max_redemptions != null ? `/${c.max_redemptions}` : '';
+    const exp = c.expires_at
+      ? ` · exp ${new Date(c.expires_at).toISOString().slice(0, 10)}`
+      : '';
+    lines.push(`\`${c.code}\` · ${c.amount} USDT · used ${used}${cap}${exp}`);
+    kb.text(`🗑 ${c.code}`.slice(0, 60), `adm:gift:del:${c.code}`).row();
+  }
+  backRow(kb);
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery(/^adm:gift:del:(.+)$/, async (ctx) => {
+  const code = ctx.match[1] ?? '';
+  if (code) await deleteGiftCode(code);
+  await ctx.answerCallbackQuery({ text: `Deleted ${code}` });
+  await showGiftCodeList(ctx);
 });
 
 // ---------- Stats ----------
@@ -1059,6 +1204,74 @@ adminBot.on('message:text', async (ctx, next) => {
           parse_mode: 'Markdown',
           reply_markup: rootMenu(),
         });
+      }
+      return;
+    }
+
+    if (flow.type === 'add_gift') {
+      if (flow.step === 'code') {
+        if (!/^[A-Z0-9_-]{3,40}$/i.test(text)) {
+          await ctx.reply('⚠️ Code must be 3–40 chars, A–Z, 0–9, `_` or `-`.');
+          return;
+        }
+        const code = text.toUpperCase();
+        ctx.session.adminFlow = { type: 'add_gift', step: 'amount', data: { code } };
+        await ctx.reply(`Send the *amount in USDT* to credit when \`${code}\` is redeemed.`, {
+          parse_mode: 'Markdown',
+        });
+      } else if (flow.step === 'amount') {
+        const amount = Number(text);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          await ctx.reply('⚠️ Send a positive number.');
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_gift',
+          step: 'per_user_limit',
+          data: { code: flow.data.code, amount },
+        };
+        await ctx.reply(
+          'How many times can a *single user* redeem this code? (default `1`, send the number or `1`)',
+          { parse_mode: 'Markdown' },
+        );
+      } else if (flow.step === 'per_user_limit') {
+        const lim = Number(text);
+        if (!Number.isInteger(lim) || lim < 1) {
+          await ctx.reply('⚠️ Send a positive integer (e.g. `1`).');
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_gift',
+          step: 'max_redemptions',
+          data: { code: flow.data.code, amount: flow.data.amount, per_user_limit: lim },
+        };
+        await ctx.reply(
+          'Total redemption *cap* across all users? Send a number, or `-` for unlimited.',
+          { parse_mode: 'Markdown' },
+        );
+      } else if (flow.step === 'max_redemptions') {
+        let max: number | null = null;
+        if (text !== '-' && text !== '') {
+          const n = Number(text);
+          if (!Number.isInteger(n) || n < 1) {
+            await ctx.reply('⚠️ Send a positive integer or `-` for unlimited.');
+            return;
+          }
+          max = n;
+        }
+        const gift = await createGiftCode({
+          code: flow.data.code,
+          amount: flow.data.amount,
+          per_user_limit: flow.data.per_user_limit,
+          max_redemptions: max,
+          created_by: ctx.from!.id,
+        });
+        ctx.session.adminFlow = undefined;
+        await ctx.reply(
+          `✅ Gift code \`${gift.code}\` created — *${gift.amount} USDT*, ` +
+            `per-user ${gift.per_user_limit}, total ${gift.max_redemptions ?? '∞'}.`,
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
       }
       return;
     }

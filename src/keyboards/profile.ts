@@ -22,6 +22,8 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
     .text(t(lang, 'btn.email.settings'), 'profile:email')
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .row()
+    .text(t(lang, 'btn.redeem'), 'profile:redeem')
+    .row()
     .text(btn(lang, 'back'), 'main:open');
 }
 
