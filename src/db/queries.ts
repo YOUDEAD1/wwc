@@ -48,7 +48,13 @@ export async function getOrCreateUser(args: {
         last_seen_at: new Date().toISOString(),
       })
       .eq('telegram_id', args.telegram_id);
-    return existing as DBUser;
+    // Default wallet_alert to true for rows pre-dating migration 0008
+    // so the Notifications screen renders with a sensible default.
+    return {
+      ...(existing as DBUser),
+      wallet_alert:
+        (existing as { wallet_alert?: boolean }).wallet_alert ?? true,
+    };
   }
 
   const ref_code = makeRefCode(args.telegram_id);
@@ -143,20 +149,31 @@ export async function adjustBalance(telegram_id: number, delta: number): Promise
 
 export async function toggleNotification(
   telegram_id: number,
-  field: 'stock_alert' | 'announcements',
+  field: 'stock_alert' | 'announcements' | 'wallet_alert',
 ): Promise<boolean> {
-  const { data: u } = await supabase
+  const { data: u, error: selectErr } = await supabase
     .from('users')
     .select(field)
     .eq('telegram_id', telegram_id)
     .single();
+  if (selectErr) {
+    // Most common cause: the `wallet_alert` column is missing because
+    // migration 0008 was never applied. Surface so the caller can show
+    // a useful message instead of leaving the spinner up.
+    logger.error({ err: selectErr, telegram_id, field }, 'toggleNotification select failed');
+    throw selectErr;
+  }
   // u may be null on race; default to false
   const cur = Boolean((u as Record<string, unknown> | null)?.[field]);
   const next = !cur;
-  await supabase
+  const { error: updateErr } = await supabase
     .from('users')
     .update({ [field]: next })
     .eq('telegram_id', telegram_id);
+  if (updateErr) {
+    logger.error({ err: updateErr, telegram_id, field }, 'toggleNotification update failed');
+    throw updateErr;
+  }
   return next;
 }
 

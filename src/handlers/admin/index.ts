@@ -231,9 +231,12 @@ adminBot.callbackQuery('adm:gift', async (ctx) => {
 adminBot.callbackQuery('adm:gift:add', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = { type: 'add_gift', step: 'code', data: {} };
+  // Use HTML so the (3–40 chars, A–Z 0–9 _ -) hint renders verbatim —
+  // an unmatched `_` under Markdown V1 used to make Telegram reject
+  // editMessageText, leaving the screen stuck on the previous menu.
   await ctx.editMessageText(
-    '🎁 *Create Gift Code*\n\nSend the code (3–40 chars, A–Z 0–9 _ -). Or `/cancel`.',
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+    '🎁 <b>Create Gift Code</b>\n\nSend the code — 3 to 40 chars (letters, digits, <code>_</code> or <code>-</code>). Or <code>/cancel</code>.',
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) },
   );
 });
 

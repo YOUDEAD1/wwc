@@ -163,9 +163,9 @@ async function showEmailHub(ctx: AppCtx) {
   const current = ctx.user.email
     ? `\`${ctx.user.email}\``
     : '_not set_';
+  // Compact two-line layout: title + "Email: <current>".
   const text = [
     ctx.t('profile.email.hub.title'),
-    '',
     ctx.t('profile.email.hub.body', { current }),
   ].join('\n');
   await ctx.editMessageText(renderMdHtml(text), {
@@ -184,6 +184,7 @@ async function showNotifications(ctx: AppCtx) {
     reply_markup: notificationsKeyboard(ctx.lang, {
       stock_alert: ctx.user.stock_alert,
       announcements: ctx.user.announcements,
+      wallet_alert: ctx.user.wallet_alert ?? true,
     }),
   });
 }
@@ -490,21 +491,51 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   bot.callbackQuery('profile:toggle_stock', async (ctx) => {
-    const next = await toggleNotification(ctx.user.telegram_id, 'stock_alert');
-    ctx.user.stock_alert = next;
-    await ctx.answerCallbackQuery({
-      text: next ? ctx.t('profile.notify.stock_on') : ctx.t('profile.notify.stock_off'),
-    });
-    await showNotifications(ctx);
+    try {
+      const next = await toggleNotification(ctx.user.telegram_id, 'stock_alert');
+      ctx.user.stock_alert = next;
+      await ctx.answerCallbackQuery({
+        text: next ? ctx.t('profile.notify.stock_on') : ctx.t('profile.notify.stock_off'),
+      });
+      await showNotifications(ctx);
+    } catch {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.notify.error'),
+        show_alert: true,
+      });
+    }
   });
 
   bot.callbackQuery('profile:toggle_ann', async (ctx) => {
-    const next = await toggleNotification(ctx.user.telegram_id, 'announcements');
-    ctx.user.announcements = next;
-    await ctx.answerCallbackQuery({
-      text: next ? ctx.t('profile.notify.ann_on') : ctx.t('profile.notify.ann_off'),
-    });
-    await showNotifications(ctx);
+    try {
+      const next = await toggleNotification(ctx.user.telegram_id, 'announcements');
+      ctx.user.announcements = next;
+      await ctx.answerCallbackQuery({
+        text: next ? ctx.t('profile.notify.ann_on') : ctx.t('profile.notify.ann_off'),
+      });
+      await showNotifications(ctx);
+    } catch {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.notify.error'),
+        show_alert: true,
+      });
+    }
+  });
+
+  bot.callbackQuery('profile:toggle_wallet', async (ctx) => {
+    try {
+      const next = await toggleNotification(ctx.user.telegram_id, 'wallet_alert');
+      ctx.user.wallet_alert = next;
+      await ctx.answerCallbackQuery({
+        text: next ? ctx.t('profile.notify.wallet_on') : ctx.t('profile.notify.wallet_off'),
+      });
+      await showNotifications(ctx);
+    } catch {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.notify.error'),
+        show_alert: true,
+      });
+    }
   });
 
   // ---- Language ----

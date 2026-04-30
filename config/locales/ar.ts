@@ -25,12 +25,15 @@ export const ar: Record<string, string> = {
   'btn.my_orders': '🧾 طلباتي',
   'btn.refer': '🎁 إحالة',
   'btn.notifications': '🔔 الإشعارات',
-  'btn.toggle_stock': '📦 تنبيهات المخزون',
-  'btn.toggle_announcements': '📣 الإعلانات',
-  'btn.notify.stock.on': '📦 تنبيهات المخزون: مفعلة',
-  'btn.notify.stock.off': '📦 تنبيهات المخزون: معطلة',
-  'btn.notify.ann.on': '📣 الإعلانات: مفعلة',
-  'btn.notify.ann.off': '📣 الإعلانات: معطلة',
+  'btn.toggle_stock': '📢 تنبيهات المخزون',
+  'btn.toggle_announcements': '💬 تنبيهات عامة',
+  'btn.toggle_wallet': '💰 تنبيهات المحفظة',
+  'btn.notify.stock.on': '🟢 تنبيهات المخزون: مفعلة',
+  'btn.notify.stock.off': '🔕 تنبيهات المخزون: معطلة',
+  'btn.notify.ann.on': '🟢 تنبيهات عامة: مفعلة',
+  'btn.notify.ann.off': '🔕 تنبيهات عامة: معطلة',
+  'btn.notify.wallet.on': '🟢 تنبيهات المحفظة: مفعلة',
+  'btn.notify.wallet.off': '🔕 تنبيهات المحفظة: معطلة',
   'btn.back_to_settings': '⬅️ رجوع للإعدادات',
   'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
   'btn.deposit_history': '💳 سجل الإيداعات',
@@ -58,9 +61,14 @@ export const ar: Record<string, string> = {
   'shop.page.header': '🛒 *{category}* — صفحة {page}',
 
   'profile.title': '⚙️ *الإعدادات*',
-  'profile.notifications.title': '🔔 *الإشعارات*',
+  'profile.notifications.title': '{notify_bell} *الإشعارات*',
   'profile.notifications.body':
-    'اختر التنبيهات التي ترغب باستلامها. اضغط على أي زر لتفعيله أو تعطيله.',
+    'فعّل أو عطّل التنبيهات التي تريدها.\n\n' +
+    '{notify_stock} *تنبيهات المخزون*\n' +
+    '{notify_info} *تنبيهات عامة*\n' +
+    '{notify_wallet} *تنبيهات المحفظة*\n\n' +
+    '{notify_on} مفعلة\n' +
+    '{notify_off} معطلة',
   'profile.user_id': 'معرف المستخدم: `{id}`',
   'profile.username': 'اسم المستخدم: @{username}',
   'profile.balance': '👛 الرصيد: *{balance}*',
@@ -74,8 +82,12 @@ export const ar: Record<string, string> = {
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
   'profile.notify.stock_on': 'تنبيهات المخزون: ✅ مفعلة',
   'profile.notify.stock_off': 'تنبيهات المخزون: ⛔ معطلة',
-  'profile.notify.ann_on': 'الإعلانات: ✅ مفعلة',
-  'profile.notify.ann_off': 'الإعلانات: ⛔ معطلة',
+  'profile.notify.ann_on': 'تنبيهات عامة: ✅ مفعلة',
+  'profile.notify.ann_off': 'تنبيهات عامة: ⛔ معطلة',
+  'profile.notify.wallet_on': 'تنبيهات المحفظة: ✅ مفعلة',
+  'profile.notify.wallet_off': 'تنبيهات المحفظة: ⛔ معطلة',
+  'profile.notify.error':
+    '⚠️ تعذر حفظ التبديل — يجب تطبيق `0008_wallet_alert.sql` على قاعدة البيانات.',
   'profile.deposits.title': '💳 *سجل الإيداعات*',
   'profile.deposits.empty': 'لا توجد إيداعات بعد.',
   'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',

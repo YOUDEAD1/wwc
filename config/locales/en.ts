@@ -27,12 +27,15 @@ export const en: Record<string, string> = {
   'btn.my_orders': '🧾 My Orders',
   'btn.refer': '🎁 Refer',
   'btn.notifications': '🔔 Notifications',
-  'btn.toggle_stock': '📦 Stock Alerts',
-  'btn.toggle_announcements': '📣 Announcements',
-  'btn.notify.stock.on': '📦 Stock Alert: ON',
-  'btn.notify.stock.off': '📦 Stock Alert: OFF',
-  'btn.notify.ann.on': '📣 Announcements: ON',
-  'btn.notify.ann.off': '📣 Announcements: OFF',
+  'btn.toggle_stock': '📢 Stock Alerts',
+  'btn.toggle_announcements': '💬 Info Alerts',
+  'btn.toggle_wallet': '💰 Wallet Alerts',
+  'btn.notify.stock.on': '🟢 Stock Alerts: ON',
+  'btn.notify.stock.off': '🔕 Stock Alerts: OFF',
+  'btn.notify.ann.on': '🟢 Info Alerts: ON',
+  'btn.notify.ann.off': '🔕 Info Alerts: OFF',
+  'btn.notify.wallet.on': '🟢 Wallet Alerts: ON',
+  'btn.notify.wallet.off': '🔕 Wallet Alerts: OFF',
   'btn.back_to_settings': '⬅️ Back to Settings',
   // Multi-language label so users see their own language regardless of which
   // locale is currently active. Premium emoji ID 5310249748903504323 wraps
@@ -70,9 +73,14 @@ export const en: Record<string, string> = {
 
   // ---------- Profile ----------
   'profile.title': '*User Profile*',
-  'profile.notifications.title': '🔔 *Notifications*',
+  'profile.notifications.title': '{notify_bell} *Notifications*',
   'profile.notifications.body':
-    'Choose which alerts you want to receive. Tap a toggle to switch it on or off.',
+    'Toggle the alerts you want to receive.\n\n' +
+    '{notify_stock} *Stock Alerts*\n' +
+    '{notify_info} *Info Alerts*\n' +
+    '{notify_wallet} *Wallet Alerts*\n\n' +
+    '{notify_on} ON\n' +
+    '{notify_off} OFF',
   'profile.row.id': 'ID: `{id}`',
   'profile.row.first_name': 'First Name: *{name}*',
   'profile.row.first_name_empty': 'First Name: _not set_',
@@ -115,16 +123,14 @@ export const en: Record<string, string> = {
   'profile.email.bad': '{email_invalid} *Please Enter A Valid Email*',
   // Email Settings hub (the new submenu opened from a single Settings button).
   'profile.email.hub.title': '{email_bracket_l} *Email Settings* {profile_email}',
-  'profile.email.hub.body':
-    'Manage the email used for your invoices and account messages.\n\n' +
-    'Current email: {current}',
+  'profile.email.hub.body': 'Email: {current}',
   // Mobile popup shown when the user taps "Change Email" without one.
   'profile.email.change.no_email_popup': 'Please Set up email first',
   // Buttons used on the Settings screen + email sub-screens.
   'btn.email.settings': '📧 Email Settings',
-  'btn.email.change': '✏️ Change Email',
-  'btn.email.set': '📧 Set Email',
-  'btn.email.why': '❔ Why Email?',
+  'btn.email.change': '✏️ Change',
+  'btn.email.set': '📧 Set',
+  'btn.email.why': '❔ Why Email',
   'btn.email.know_more': '📄 Know More',
   // My Deposits button.
   'btn.my_deposits': '💳 My Deposits',
@@ -181,10 +187,14 @@ export const en: Record<string, string> = {
   'profile.orders.empty': 'You have no orders yet.',
   'profile.orders.title': '🧾 *My Orders*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
-  'profile.notify.stock_on': 'Stock alerts: ✅ ON',
-  'profile.notify.stock_off': 'Stock alerts: ⛔ OFF',
-  'profile.notify.ann_on': 'Announcements: ✅ ON',
-  'profile.notify.ann_off': 'Announcements: ⛔ OFF',
+  'profile.notify.stock_on': 'Stock Alerts: ✅ ON',
+  'profile.notify.stock_off': 'Stock Alerts: ⛔ OFF',
+  'profile.notify.ann_on': 'Info Alerts: ✅ ON',
+  'profile.notify.ann_off': 'Info Alerts: ⛔ OFF',
+  'profile.notify.wallet_on': 'Wallet Alerts: ✅ ON',
+  'profile.notify.wallet_off': 'Wallet Alerts: ⛔ OFF',
+  'profile.notify.error':
+    '⚠️ Could not save your toggle — apply migration `0008_wallet_alert.sql` on the database.',
   // ---------- My Deposits screen (rewritten) ----------
   'profile.deposits.title': '{deposits_title} *My Deposits*',
   'profile.deposits.empty': '{email_bracket_l} No deposits yet. {email_bracket_l}',
