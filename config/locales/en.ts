@@ -30,14 +30,14 @@ export const en: Record<string, string> = {
   'btn.toggle_stock': '📢 Stock Alerts',
   'btn.toggle_announcements': '💬 Info Alerts',
   'btn.toggle_wallet': '💰 Wallet Alerts',
-  // Notification toggle buttons — kept short so all three fit on a
-  // single inline-keyboard row, just like the Email Settings hub.
-  'btn.notify.stock.on': '🟢 Stock',
-  'btn.notify.stock.off': '🔕 Stock',
-  'btn.notify.ann.on': '🟢 Info',
-  'btn.notify.ann.off': '🔕 Info',
-  'btn.notify.wallet.on': '🟢 Wallet',
-  'btn.notify.wallet.off': '🔕 Wallet',
+  // Each toggle now sits on its own full-width row — we can show
+  // the full alert name and ON/OFF state.
+  'btn.notify.stock.on': '🟢 Stock Alerts: ON',
+  'btn.notify.stock.off': '🔕 Stock Alerts: OFF',
+  'btn.notify.ann.on': '🟢 Info Alerts: ON',
+  'btn.notify.ann.off': '🔕 Info Alerts: OFF',
+  'btn.notify.wallet.on': '🟢 Wallet Alerts: ON',
+  'btn.notify.wallet.off': '🔕 Wallet Alerts: OFF',
   'btn.back_to_settings': '⬅️ Back to Settings',
   // Same word in every locale so the inline keyboard layout stays
   // identical regardless of `lang` — the leading globe gets wrapped
@@ -133,8 +133,8 @@ export const en: Record<string, string> = {
   'profile.email.change.no_email_popup': 'Please Set up email first',
   // Buttons used on the Settings screen + email sub-screens.
   'btn.email.settings': '📧 Email Settings',
-  'btn.email.change': '✏️ Change',
-  'btn.email.set': '📧 Set',
+  'btn.email.change': '✏️ Change Email',
+  'btn.email.set': '📧 Set Email',
   'btn.email.why': '❔ Why Email',
   'btn.email.know_more': '📄 Know More',
   // My Deposits button.
