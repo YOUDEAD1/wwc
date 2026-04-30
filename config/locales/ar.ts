@@ -36,7 +36,7 @@ export const ar: Record<string, string> = {
   'btn.notify.wallet.on': '🟢 المحفظة',
   'btn.notify.wallet.off': '🔕 المحفظة',
   'btn.back_to_settings': '⬅️ رجوع للإعدادات',
-  'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
+  'btn.language': '🌐 اللغة',
   'btn.deposit_history': '💳 سجل الإيداعات',
   'btn.channel': '📢 القناة',
   'btn.stats': '📊 إحصائيات',
@@ -89,6 +89,12 @@ export const ar: Record<string, string> = {
     '> حوّل الأرباح إلى المحفظة في أي وقت. للسحب النقدي تواصل مع الدعم (الحد الأدنى 1$).\n\n' +
     '*رابط الإحالة الخاص بك:*\n`{link}`',
   'btn.copy_link': '📋 نسخ الرابط',
+  'btn.redeem': '🎁 رمز هدية',
+  'profile.language.title': '{lang_left} *اختر اللغة* {lang_right}',
+  'profile.email.hub.title': '{email_bracket_l} *إعدادات البريد* {profile_email}',
+  'profile.email.hub.body':
+    '{email_invoice} نستخدم بريدك لإرسال الفواتير واستعادة الحساب فقط — لن نرسل أي رسائل تسويقية.\n\n' +
+    '{profile_email} *البريد الحالي:* `{current}`',
   'profile.orders.empty': 'لا توجد طلبات بعد.',
   'profile.orders.title': '🧾 *طلباتي*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
