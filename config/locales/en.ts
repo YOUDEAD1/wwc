@@ -40,6 +40,8 @@ export const en: Record<string, string> = {
   'btn.stats': '📊 Stats',
   'btn.stats_refresh': '🔄 Refresh',
   'btn.stats_back': '◀️ Back',
+  'btn.set_region': '🗺 Set Region',
+  'btn.set_email': '📧 Set Email',
 
   // ---------- Shop ----------
   'shop.choose_category': '🛒 *Shop* — choose a category:',
@@ -62,15 +64,40 @@ export const en: Record<string, string> = {
   'shop.page.header': '🛒 *{category}* — page {page}',
 
   // ---------- Profile ----------
-  'profile.title': '⚙️ *Settings*',
+  'profile.title': '*User Profile*',
   'profile.notifications.title': '🔔 *Notifications*',
   'profile.notifications.body':
     'Choose which alerts you want to receive. Tap a toggle to switch it on or off.',
-  'profile.user_id': 'User ID: `{id}`',
+  'profile.row.id': 'ID: `{id}`',
+  'profile.row.first_name': 'First Name: *{name}*',
+  'profile.row.first_name_empty': 'First Name: _not set_',
+  'profile.row.username': 'Username: @{username}',
+  'profile.row.username_empty': 'Username: _not set_',
+  'profile.row.link': 'User link: [open]({link})',
+  'profile.row.status': 'Status: *{status}*',
+  'profile.row.email': 'Email: `{email}`',
+  'profile.row.email_empty': 'Email: _not set_ — tap *Set Email* to add one',
+  'profile.row.balance': 'Balance: *{balance} USDT*',
+  'profile.row.language': 'Language: *{language}*',
+  'profile.row.region': 'Region: *{region}* — local time *{time}*',
+  'profile.row.region_empty': 'Region: _not set_ — tap *Set Region*',
+  'profile.row.joined': 'Joined: *{joined}*',
+  // Legacy keys (kept for any callers referencing them via /settext)
+  'profile.user_id': 'ID: `{id}`',
   'profile.username': 'Username: @{username}',
-  'profile.balance': '👛 Balance: *{balance}*',
-  'profile.language': '🌐 Language: *{language}*',
-  'profile.joined': '📅 Joined: *{joined}*',
+  'profile.balance': 'Balance: *{balance}*',
+  'profile.language': 'Language: *{language}*',
+  'profile.joined': 'Joined: *{joined}*',
+  'profile.status.default': 'started bot',
+  'profile.region.title': '🗺 *Set Region*',
+  'profile.region.body':
+    'Pick your country — your local time will then be used in messages and timestamps.',
+  'profile.region.saved': '✅ Region set to *{region}*. Local time: *{time}*.',
+  'profile.email.title': '📧 *Set Email*',
+  'profile.email.body':
+    'Send your contact email — replies and receipts will use this address.\n\nOr `/cancel`.',
+  'profile.email.saved': '✅ Email saved: `{email}`',
+  'profile.email.bad': '❌ That doesn\'t look like a valid email. Please try again.',
   'profile.refer.title': '🎁 *Refer*',
   'profile.refer.body':
     'Share your referral link with friends:\n\n`{link}`\n\nYou\'ve referred *{count}* user(s) so far.',

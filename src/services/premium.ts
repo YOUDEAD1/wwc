@@ -228,6 +228,12 @@ function mdToHtml(md: string): string {
     `${lead}<i>${body}</i>`,
   );
 
+  // 6) Markdown links [label](url) — only http(s) and tg:// URLs.
+  s = s.replace(
+    /\[([^\]\n]+?)\]\(((?:https?:\/\/|tg:\/\/)[^\s)]+)\)/g,
+    (_m, label: string, url: string) => `<a href="${url}">${label}</a>`,
+  );
+
   return s;
 }
 

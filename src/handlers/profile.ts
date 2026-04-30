@@ -1,11 +1,14 @@
 import type { Composer } from 'grammy';
 import { type Lang } from '../../config/index.js';
+import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/regions.js';
 import {
   countReferrals,
   getUserStats,
   listDeposits,
   listOrders,
+  setUserEmail,
   setUserLanguage,
+  setUserRegion,
   toggleNotification,
 } from '../db/queries.js';
 import {
@@ -13,39 +16,116 @@ import {
   notificationsKeyboard,
   languageKeyboard,
   statsKeyboard,
+  backToMainKeyboard,
+  backToSettingsKeyboard,
 } from '../keyboards/profile.js';
+import { regionPickerKeyboard } from '../keyboards/region.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
 
+const MONTHS_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** "25 Apr 2026"-style short date in the user's timezone (UTC fallback). */
+function formatShortDate(iso: string, timezone: string | null): string {
+  const d = new Date(iso);
+  if (timezone) {
+    try {
+      const fmt = new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: timezone,
+      });
+      return fmt.format(d);
+    } catch {
+      // fall through to UTC
+    }
+  }
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${day} ${MONTHS_SHORT[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/**
+ * Build the line-by-line settings/profile screen as a Markdown string.
+ * Each line is prefixed with a `{key}` token that maps to a premium
+ * emoji (see config/index.ts EMOJI map). `renderMdHtml` later expands
+ * these tokens and converts Markdown to HTML.
+ */
 function profileText(ctx: AppCtx): string {
-  const joined = new Date(ctx.user.joined_at).toISOString().slice(0, 10);
-  return [
-    ctx.t('profile.title'),
-    '',
-    ctx.t('profile.user_id', { id: ctx.user.telegram_id }),
-    ctx.user.username ? ctx.t('profile.username', { username: ctx.user.username }) : '',
-    ctx.t('profile.balance', { balance: ctx.user.balance }),
-    ctx.t('profile.language', { language: ctx.lang.toUpperCase() }),
-    ctx.t('profile.joined', { joined }),
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const u = ctx.user;
+  const joined = formatShortDate(u.joined_at, u.timezone);
+  const userLink = u.username ? `https://t.me/${u.username}` : `tg://user?id=${u.telegram_id}`;
+  const status = u.status ?? ctx.t('profile.status.default');
+
+  const lines: string[] = [];
+  lines.push(`{profile_header} ${ctx.t('profile.title')}`);
+  lines.push('');
+  lines.push(`{profile_id} ${ctx.t('profile.row.id', { id: u.telegram_id })}`);
+  lines.push(
+    u.first_name
+      ? `{profile_first_name} ${ctx.t('profile.row.first_name', { name: u.first_name })}`
+      : `{profile_first_name} ${ctx.t('profile.row.first_name_empty')}`,
+  );
+  lines.push(
+    u.username
+      ? `{profile_username} ${ctx.t('profile.row.username', { username: u.username })}`
+      : `{profile_username} ${ctx.t('profile.row.username_empty')}`,
+  );
+  lines.push(`{profile_link} ${ctx.t('profile.row.link', { link: userLink })}`);
+  lines.push(`{profile_status} ${ctx.t('profile.row.status', { status })}`);
+  lines.push(
+    u.email
+      ? `{profile_email} ${ctx.t('profile.row.email', { email: u.email })}`
+      : `{profile_email} ${ctx.t('profile.row.email_empty')}`,
+  );
+  lines.push(
+    `{profile_balance} ${ctx.t('profile.row.balance', { balance: Number(u.balance).toFixed(3) })}`,
+  );
+  lines.push(`{profile_language} ${ctx.t('profile.row.language', { language: ctx.lang.toUpperCase() })}`);
+  if (u.region && u.timezone) {
+    const tz = u.timezone;
+    const reg = getRegion(u.region);
+    const label = reg ? `${reg.flag} ${reg.name}` : u.region;
+    lines.push(
+      `{profile_region} ${ctx.t('profile.row.region', { region: label, time: formatLocalTime(tz) })}`,
+    );
+  } else {
+    lines.push(`{profile_region} ${ctx.t('profile.row.region_empty')}`);
+  }
+  lines.push(`{profile_joined} ${ctx.t('profile.row.joined', { joined })}`);
+
+  return lines.join('\n');
 }
 
 async function showProfile(ctx: AppCtx) {
-  // HTML render path: keeps `*bold*` formatting AND auto-wraps any
-  // unicode emoji whose key has a configured premium custom_emoji_id.
+  // HTML render path: keeps Markdown styling AND auto-wraps any unicode
+  // emoji whose key has a configured premium custom_emoji_id.
   const html = renderMdHtml(profileText(ctx));
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, {
       parse_mode: 'HTML',
       reply_markup: profileKeyboard(ctx.lang),
+      link_preview_options: { is_disabled: true },
     });
   } else {
     await ctx.reply(html, {
       parse_mode: 'HTML',
       reply_markup: profileKeyboard(ctx.lang),
+      link_preview_options: { is_disabled: true },
     });
   }
 }
@@ -63,21 +143,6 @@ async function showNotifications(ctx: AppCtx) {
     }),
   });
 }
-
-const MONTHS_SHORT = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
 
 /** Format an ISO timestamp as e.g. "30 Apr 2026, 01:29 UTC". */
 function formatAbsoluteUtc(iso: string): string {
@@ -117,10 +182,6 @@ async function showStats(ctx: AppCtx): Promise<void> {
           abs: formatAbsoluteUtc(s.lastOrderAt),
         });
 
-  // Each {token} is replaced with the unicode glyph + an attached
-  // custom_emoji entity (premium users see the styled glyph). We
-  // intentionally avoid Markdown bold here because Telegram ignores
-  // entities when parse_mode is set.
   const template = [
     `{stats} ${ctx.t('profile.stats.title')}`,
     '',
@@ -138,6 +199,17 @@ async function showStats(ctx: AppCtx): Promise<void> {
     reply_markup: statsKeyboard(ctx.lang),
   });
 }
+
+/** Show the region picker (page-N). */
+async function showRegionPicker(ctx: AppCtx, page: number) {
+  const text = [ctx.t('profile.region.title'), '', ctx.t('profile.region.body')].join('\n');
+  await ctx.editMessageText(renderMdHtml(text), {
+    parse_mode: 'HTML',
+    reply_markup: regionPickerKeyboard(ctx.lang, page),
+  });
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:open', async (ctx) => {
@@ -162,7 +234,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     const orders = await listOrders(ctx.user.telegram_id);
     if (orders.length === 0) {
       await ctx.editMessageText(ctx.t('profile.orders.empty'), {
-        reply_markup: profileKeyboard(ctx.lang),
+        reply_markup: backToSettingsKeyboard(ctx.lang),
       });
       return;
     }
@@ -180,11 +252,13 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     }
     await ctx.editMessageText(renderMdHtml(lines.join('\n')), {
       parse_mode: 'HTML',
-      reply_markup: profileKeyboard(ctx.lang),
+      reply_markup: backToSettingsKeyboard(ctx.lang),
     });
   });
 
   // ---- Refer ----
+  // Reached from the main menu. Use a dedicated "Back to Main Menu"
+  // keyboard so the Settings buttons don't appear underneath.
   bot.callbackQuery('profile:refer', async (ctx) => {
     await ctx.answerCallbackQuery();
     const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
@@ -193,7 +267,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     const referText = `${ctx.t('profile.refer.title')}\n\n${ctx.t('profile.refer.body', { link, count })}`;
     await ctx.editMessageText(renderMdHtml(referText), {
       parse_mode: 'HTML',
-      reply_markup: profileKeyboard(ctx.lang),
+      reply_markup: backToMainKeyboard(ctx.lang),
+      link_preview_options: { is_disabled: true },
     });
   });
 
@@ -238,13 +313,81 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await showProfile(ctx);
   });
 
+  // ---- Region picker ----
+  bot.callbackQuery('profile:region', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showRegionPicker(ctx, 0);
+  });
+
+  bot.callbackQuery(/^profile:region:p:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showRegionPicker(ctx, Number(ctx.match[1]));
+  });
+
+  bot.callbackQuery(/^profile:region:set:([A-Z]{2})$/, async (ctx) => {
+    const code = ctx.match[1];
+    const reg = POPULAR_REGIONS.find((r) => r.code === code);
+    if (!reg) {
+      await ctx.answerCallbackQuery({ text: 'Unknown region' });
+      return;
+    }
+    await setUserRegion(ctx.user.telegram_id, reg.code, reg.timezone);
+    ctx.user.region = reg.code;
+    ctx.user.timezone = reg.timezone;
+    await ctx.answerCallbackQuery({
+      text: `${reg.flag} ${reg.name}`,
+    });
+    await showProfile(ctx);
+  });
+
+  bot.callbackQuery('profile:region:clear', async (ctx) => {
+    await setUserRegion(ctx.user.telegram_id, null, null);
+    ctx.user.region = null;
+    ctx.user.timezone = null;
+    await ctx.answerCallbackQuery({ text: '🚫 Cleared' });
+    await showProfile(ctx);
+  });
+
+  // ---- Email setter ----
+  bot.callbackQuery('profile:email', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = { type: 'set_email', step: 'value', data: {} };
+    const text = [ctx.t('profile.email.title'), '', ctx.t('profile.email.body')].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: backToSettingsKeyboard(ctx.lang),
+    });
+  });
+
+  // Capture the next text message as the email value.
+  bot.on('message:text', async (ctx, next) => {
+    const flow = ctx.session.userFlow;
+    if (!flow || flow.type !== 'set_email') return next();
+    const text = ctx.message.text.trim();
+    if (text === '/cancel' || text.startsWith('/')) {
+      ctx.session.userFlow = undefined;
+      return next();
+    }
+    if (!EMAIL_RE.test(text)) {
+      await ctx.reply(renderMdHtml(ctx.t('profile.email.bad')), { parse_mode: 'HTML' });
+      return;
+    }
+    await setUserEmail(ctx.user.telegram_id, text);
+    ctx.user.email = text;
+    ctx.session.userFlow = undefined;
+    await ctx.reply(renderMdHtml(ctx.t('profile.email.saved', { email: text })), {
+      parse_mode: 'HTML',
+      reply_markup: backToSettingsKeyboard(ctx.lang),
+    });
+  });
+
   // ---- Deposit history ----
   bot.callbackQuery('profile:deposits', async (ctx) => {
     await ctx.answerCallbackQuery();
     const deposits = await listDeposits(ctx.user.telegram_id);
     if (deposits.length === 0) {
       await ctx.editMessageText(ctx.t('profile.deposits.empty'), {
-        reply_markup: profileKeyboard(ctx.lang),
+        reply_markup: backToSettingsKeyboard(ctx.lang),
       });
       return;
     }
@@ -262,8 +405,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     }
     await ctx.editMessageText(renderMdHtml(lines.join('\n')), {
       parse_mode: 'HTML',
-      reply_markup: profileKeyboard(ctx.lang),
+      reply_markup: backToSettingsKeyboard(ctx.lang),
     });
   });
-
 }

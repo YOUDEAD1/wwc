@@ -4,15 +4,19 @@ import { btn } from './helpers.js';
 import { t } from '../i18n/index.js';
 
 export function profileKeyboard(lang: Lang): InlineKeyboard {
-  // Stats sits first; remaining Settings actions follow, then Back.
-  // Five buttons don't fit cleanly on one mobile row, so we split
-  // 3 + 2 to keep the labels readable.
+  // Row 1 — analytics, history, notifications.
+  // Row 2 — language + region setter.
+  // Row 3 — email setter + deposit history.
+  // Row 4 — back to main menu.
   return new InlineKeyboard()
     .text(btn(lang, 'stats'), 'profile:stats')
     .text(btn(lang, 'my_orders'), 'profile:orders')
     .text(btn(lang, 'notifications'), 'profile:notifications')
     .row()
     .text(btn(lang, 'language'), 'profile:lang')
+    .text(btn(lang, 'set_region'), 'profile:region')
+    .row()
+    .text(btn(lang, 'set_email'), 'profile:email')
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .row()
     .text(btn(lang, 'back'), 'main:open');
@@ -48,4 +52,14 @@ export function languageKeyboard(): InlineKeyboard {
     .text('🇬🇧 English', 'lang:en')
     .text('🇸🇦 العربية', 'lang:ar')
     .text('🇻🇳 Tiếng Việt', 'lang:vi');
+}
+
+/** Plain "Back to Settings" only — used for refer / sub-screens. */
+export function backToSettingsKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard().text(btn(lang, 'back_to_settings'), 'profile:open');
+}
+
+/** "Back to Main Menu" only — used for the Refer screen. */
+export function backToMainKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard().text(btn(lang, 'back'), 'main:open');
 }

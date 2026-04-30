@@ -35,8 +35,11 @@ async function clearOldReplyKeyboard(ctx: AppCtx): Promise<void> {
 function buildWelcomeHtml(ctx: AppCtx): string {
   const title = ctx.t('welcome.title');
   const balance = ctx.t('welcome.balance', { balance: Number(ctx.user.balance).toFixed(2) });
-  const body = `{wave} *${title}*\n\n{wallet} ${balance}`;
-  return renderMdHtml(body, { wave: 'wave', wallet: 'wallet' });
+  const body = `{welcome_banner} *${title}*\n\n{welcome_balance} ${balance}`;
+  return renderMdHtml(body, {
+    welcome_banner: 'welcome_banner',
+    welcome_balance: 'welcome_balance',
+  });
 }
 
 async function showMainMenu(ctx: AppCtx, opts: { fresh?: boolean } = {}): Promise<void> {
