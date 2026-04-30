@@ -8,7 +8,7 @@ import {
   toggleNotification,
 } from '../db/queries.js';
 import * as cache from '../services/cache.js';
-import { takeDeletable } from '../services/messageTracker.js';
+import { buildDeletable } from '../services/messageTracker.js';
 import {
   profileKeyboard,
   notificationsKeyboard,
@@ -190,31 +190,37 @@ export function registerProfile(bot: Composer<AppCtx>): void {
 
     let deleted = 0;
     const chatId = ctx.chat?.id;
-    const currentMsgId = ctx.callbackQuery?.message?.message_id;
+    const currentMsgId = ctx.callbackQuery?.message?.message_id ?? null;
     if (chatId) {
       // Keep the Settings screen we're rendering on so we can edit it
       // back to the post-clear state instead of vanishing the UI.
       const exclude = new Set<number>();
       if (typeof currentMsgId === 'number') exclude.add(currentMsgId);
-      const ids = takeDeletable(chatId, exclude);
+      // Look back up to 200 message IDs from the current screen so we
+      // catch messages from before the bot was last restarted (the
+      // in-memory tracker is empty across restarts). Telegram rejects
+      // deletes for messages we didn't send or that are >48h old, so
+      // those errors are silently absorbed.
+      const ids = buildDeletable(chatId, currentMsgId, 200, exclude);
 
-      // Bulk-delete in chunks of 100 (Telegram API limit). Fall back to
-      // single-message deletes if the bulk call fails (e.g. messages
-      // older than 48h).
-      for (let i = 0; i < ids.length; i += 100) {
-        const chunk = ids.slice(i, i + 100);
+      // Single-message deletes — robust to mixed ownership / age.
+      // Telegram bots are rate-limited to ~30 ops/sec per chat so this
+      // typically finishes in a few seconds for the 200-id window.
+      for (const id of ids) {
         try {
-          await ctx.api.deleteMessages(chatId, chunk);
-          deleted += chunk.length;
+          await ctx.api.deleteMessage(chatId, id);
+          deleted++;
         } catch (err) {
-          logger.debug({ err }, 'deleteMessages bulk failed; retrying per-message');
-          for (const id of chunk) {
-            try {
-              await ctx.api.deleteMessage(chatId, id);
-              deleted++;
-            } catch {
-              /* message may already be gone or too old; ignore */
-            }
+          // 400 "message can't be deleted" / "message to delete not
+          // found" are expected for messages we didn't send or that
+          // are too old — ignore them.
+          const desc = (err as { description?: string }).description ?? '';
+          if (
+            !desc.includes("can't be deleted") &&
+            !desc.includes('to delete not found') &&
+            !desc.includes('MESSAGE_ID_INVALID')
+          ) {
+            logger.debug({ err, id }, 'deleteMessage failed');
           }
         }
       }
