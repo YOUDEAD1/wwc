@@ -31,6 +31,7 @@ const CALLBACK: Record<keyof typeof BUTTON_KEYS, string> = {
   clear_cache: 'profile:clear_cache',
   channel: 'channel:open',
   back_to_settings: 'profile:open',
+  click_sounds: 'profile:click_sound',
 };
 
 /** Inline keyboard rendered under the welcome message. */

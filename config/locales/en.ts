@@ -34,6 +34,7 @@ export const en: Record<string, string> = {
   'btn.notify.ann.on': '📣 Announcements: ON',
   'btn.notify.ann.off': '📣 Announcements: OFF',
   'btn.back_to_settings': '⬅️ Back to Settings',
+  'btn.click_sounds': '🔊 Sounds',
   'btn.language': '🌐 Language',
   'btn.deposit_history': '💳 Deposit History',
   'btn.clear_cache': '🧹 Clear Cache',
@@ -111,6 +112,19 @@ export const en: Record<string, string> = {
   'admin.help.title': '🛠 *Admin Commands*',
   'admin.cache.cleared': '🧹 Cache cleared.',
   'cache.cleared.user': '🧹 Cleared {count} old message(s). Claimed products are kept.',
+
+  // ---------- Click sounds ----------
+  'click_sounds.title': '🔊 *Click Sounds*',
+  'click_sounds.body':
+    'Tap a button below to mute or unmute its click sound. The master switch turns sounds off entirely.',
+  'click_sounds.master.on': '🔊 Master: ON',
+  'click_sounds.master.off': '🔇 Master: OFF',
+  'click_sounds.cat.qty': 'Quantity ±',
+  'click_sounds.cat.other': 'Other buttons',
+  'click_sounds.toast.muted': '🔇 Muted: {label}',
+  'click_sounds.toast.unmuted': '🔊 Unmuted: {label}',
+  'click_sounds.toast.master_on': '🔊 Click sounds turned ON.',
+  'click_sounds.toast.master_off': '🔇 Click sounds turned OFF.',
   'admin.text.set': '✅ Text `{key}` updated.',
   'admin.color.set': '✅ Color for `{key}` set to *{color}*.',
   'admin.emoji.set': '✅ Emoji `{key}` updated.',

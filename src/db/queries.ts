@@ -110,6 +110,47 @@ export async function toggleNotification(
   return next;
 }
 
+/**
+ * Set the master click-sound flag for a user. Returns the new value.
+ */
+export async function setClickSound(telegram_id: number, on: boolean): Promise<boolean> {
+  await supabase.from('users').update({ click_sound: on }).eq('telegram_id', telegram_id);
+  return on;
+}
+
+/**
+ * Toggle a single button-key inside the user's `click_sound_off` mute
+ * list. If the key is currently muted it becomes unmuted, and vice
+ * versa. Returns the new "muted" state for the key.
+ */
+export async function toggleClickSoundButton(
+  telegram_id: number,
+  buttonKey: string,
+): Promise<{ muted: boolean; off: string[] }> {
+  const { data: u } = await supabase
+    .from('users')
+    .select('click_sound_off')
+    .eq('telegram_id', telegram_id)
+    .single();
+  const cur: string[] = Array.isArray(
+    (u as { click_sound_off?: unknown } | null)?.click_sound_off,
+  )
+    ? ((u as { click_sound_off: string[] }).click_sound_off ?? [])
+    : [];
+  const set = new Set(cur);
+  let muted: boolean;
+  if (set.has(buttonKey)) {
+    set.delete(buttonKey);
+    muted = false;
+  } else {
+    set.add(buttonKey);
+    muted = true;
+  }
+  const off = Array.from(set);
+  await supabase.from('users').update({ click_sound_off: off }).eq('telegram_id', telegram_id);
+  return { muted, off };
+}
+
 export async function countReferrals(telegram_id: number): Promise<number> {
   const { count } = await supabase
     .from('referrals')

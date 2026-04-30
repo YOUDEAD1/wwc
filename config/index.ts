@@ -71,6 +71,7 @@ export const BUTTON_KEYS = {
   clear_cache: 'btn.clear_cache',
   channel: 'btn.channel',
   back_to_settings: 'btn.back_to_settings',
+  click_sounds: 'btn.click_sounds',
 } as const;
 
 /**
@@ -106,6 +107,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   clear_cache: 'none',
   channel: 'none',
   back_to_settings: 'none',
+  click_sounds: 'none',
 };
 
 /**
