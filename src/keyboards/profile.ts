@@ -33,15 +33,16 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
 }
 
 /**
- * Email Settings hub — rendered when the user taps "Email Settings"
- * on the main Settings screen. Three short buttons in a single row:
- *   Set | Change | Why Email
- * with a Back row below.
+ * Email Settings hub — Set / Change / Why Email each on their own
+ * full-width row, mirroring the Top-Up Wallet layout, with a Back
+ * row at the bottom.
  */
 export function emailHubKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
     .text(t(lang, 'btn.email.set'), 'profile:email:set')
+    .row()
     .text(t(lang, 'btn.email.change'), 'profile:email:change')
+    .row()
     .text(t(lang, 'btn.email.why'), 'profile:email:why')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
@@ -85,8 +86,8 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
 
 /**
  * Notifications submenu — three independent toggles (Stock / Info /
- * Wallet) on a single row, just like the Email Settings hub. Back
- * button below.
+ * Wallet) each on their own full-width row (like the Top-Up Wallet
+ * layout) so the long ON/OFF labels fit, with a Back row below.
  */
 export function notificationsKeyboard(
   lang: Lang,
@@ -101,16 +102,24 @@ export function notificationsKeyboard(
   const walletKey = state.wallet_alert ? 'btn.notify.wallet.on' : 'btn.notify.wallet.off';
   return new InlineKeyboard()
     .text(t(lang, stockKey), 'profile:toggle_stock')
+    .row()
     .text(t(lang, annKey), 'profile:toggle_ann')
+    .row()
     .text(t(lang, walletKey), 'profile:toggle_wallet')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
 }
 
+/**
+ * Language picker — each language on its own full-width row (mirrors
+ * Top-Up Wallet layout), with a Back to Settings row at the bottom.
+ */
 export function languageKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
     .text('🇬🇧 English', 'lang:en')
+    .row()
     .text('🇸🇦 العربية', 'lang:ar')
+    .row()
     .text('🇻🇳 Tiếng Việt', 'lang:vi')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
