@@ -18,6 +18,10 @@ export type DBUser = {
   region: string | null;
   timezone: string | null;
   status: string | null;
+  referral_earned_total: number;
+  referral_available: number;
+  referral_transferred: number;
+  referral_withdrawn: number;
 };
 
 export type DBCategory = {

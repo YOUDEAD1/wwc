@@ -30,12 +30,14 @@ export const en: Record<string, string> = {
   'btn.toggle_stock': '📢 Stock Alerts',
   'btn.toggle_announcements': '💬 Info Alerts',
   'btn.toggle_wallet': '💰 Wallet Alerts',
-  'btn.notify.stock.on': '🟢 Stock Alerts: ON',
-  'btn.notify.stock.off': '🔕 Stock Alerts: OFF',
-  'btn.notify.ann.on': '🟢 Info Alerts: ON',
-  'btn.notify.ann.off': '🔕 Info Alerts: OFF',
-  'btn.notify.wallet.on': '🟢 Wallet Alerts: ON',
-  'btn.notify.wallet.off': '🔕 Wallet Alerts: OFF',
+  // Notification toggle buttons — kept short so all three fit on a
+  // single inline-keyboard row, just like the Email Settings hub.
+  'btn.notify.stock.on': '🟢 Stock',
+  'btn.notify.stock.off': '🔕 Stock',
+  'btn.notify.ann.on': '🟢 Info',
+  'btn.notify.ann.off': '🔕 Info',
+  'btn.notify.wallet.on': '🟢 Wallet',
+  'btn.notify.wallet.off': '🔕 Wallet',
   'btn.back_to_settings': '⬅️ Back to Settings',
   // Multi-language label so users see their own language regardless of which
   // locale is currently active. Premium emoji ID 5310249748903504323 wraps
@@ -75,7 +77,6 @@ export const en: Record<string, string> = {
   'profile.title': '*User Profile*',
   'profile.notifications.title': '{notify_bell} *Notifications*',
   'profile.notifications.body':
-    'Toggle the alerts you want to receive.\n\n' +
     '{notify_stock} *Stock Alerts*\n' +
     '{notify_info} *Info Alerts*\n' +
     '{notify_wallet} *Wallet Alerts*\n\n' +
@@ -181,9 +182,21 @@ export const en: Record<string, string> = {
   'profile.email.title': '📧 *Set Email*',
   'profile.email.body':
     'Send your contact email — replies and receipts will use this address.\n\nOr `/cancel`.',
-  'profile.refer.title': '🎁 *Refer*',
+  // Refer & Earn screen.
+  'profile.refer.title': '{refer_title} *Refer & Earn*',
   'profile.refer.body':
-    'Share your referral link with friends:\n\n`{link}`\n\nYou\'ve referred *{count}* user(s) so far.',
+    '{refer_user} *Referred (24h):* {ref24h}\n' +
+    '{refer_user} *Referred (7d):* {ref7d}\n' +
+    '{refer_user} *Referred (Total):* {refTotal}\n\n' +
+    '{refer_coin} *Total Earned:* {earnedTotal} USDT\n' +
+    '{refer_coin} *Available:* {available} USDT\n' +
+    '{refer_transferred} *Transferred:* {transferred} USDT\n' +
+    '{refer_withdrawn} *Withdrawn:* {withdrawn} USDT\n\n' +
+    '> Earn 1% of every top-up by your referred users.\n' +
+    '> Max $1.00 per top-up.\n' +
+    '> Transfer earnings to wallet anytime. For cash withdrawal, contact support ($1.00 min).\n\n' +
+    '*Your Referral Link:*\n`{link}`',
+  'btn.copy_link': '📋 Copy Link',
   'profile.orders.empty': 'You have no orders yet.',
   'profile.orders.title': '🧾 *My Orders*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
