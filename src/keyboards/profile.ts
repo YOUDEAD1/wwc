@@ -4,24 +4,29 @@ import { btn } from './helpers.js';
 import { t } from '../i18n/index.js';
 
 /**
- * Settings (profile) keyboard.
+ * Settings (profile) keyboard — eight buttons in a tidy 2×4 grid:
  *
- * The email row is a single "Email Settings" button — it opens a
- * submenu with Set / Change / Why so the main Settings card stays
- * compact regardless of whether an email has been saved yet.
+ *   Stats          | My Orders
+ *   Language       | Notifications
+ *   Email Settings | My Deposits
+ *   Set Region     | Gift Code
+ *
+ * with a Back row at the bottom. Email Settings is a single button
+ * that opens a submenu with Set / Change / Why, so the main grid
+ * stays compact regardless of whether an email has been saved.
  */
 export function profileKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
     .text(btn(lang, 'stats'), 'profile:stats')
     .text(btn(lang, 'my_orders'), 'profile:orders')
-    .text(btn(lang, 'notifications'), 'profile:notifications')
     .row()
     .text(btn(lang, 'language'), 'profile:lang')
-    .text(btn(lang, 'set_region'), 'profile:region')
+    .text(btn(lang, 'notifications'), 'profile:notifications')
     .row()
     .text(t(lang, 'btn.email.settings'), 'profile:email')
     .text(btn(lang, 'deposit_history'), 'profile:deposits')
     .row()
+    .text(btn(lang, 'set_region'), 'profile:region')
     .text(t(lang, 'btn.redeem'), 'profile:redeem')
     .row()
     .text(btn(lang, 'back'), 'main:open');
@@ -102,11 +107,13 @@ export function notificationsKeyboard(
     .text(btn(lang, 'back_to_settings'), 'profile:open');
 }
 
-export function languageKeyboard(): InlineKeyboard {
+export function languageKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
     .text('🇬🇧 English', 'lang:en')
     .text('🇸🇦 العربية', 'lang:ar')
-    .text('🇻🇳 Tiếng Việt', 'lang:vi');
+    .text('🇻🇳 Tiếng Việt', 'lang:vi')
+    .row()
+    .text(btn(lang, 'back_to_settings'), 'profile:open');
 }
 
 /** Plain "Back to Settings" only — used for refer / sub-screens. */

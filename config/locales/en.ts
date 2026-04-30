@@ -39,10 +39,10 @@ export const en: Record<string, string> = {
   'btn.notify.wallet.on': '🟢 Wallet',
   'btn.notify.wallet.off': '🔕 Wallet',
   'btn.back_to_settings': '⬅️ Back to Settings',
-  // Multi-language label so users see their own language regardless of which
-  // locale is currently active. Premium emoji ID 5310249748903504323 wraps
-  // the leading globe.
-  'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
+  // Same word in every locale so the inline keyboard layout stays
+  // identical regardless of `lang` — the leading globe gets wrapped
+  // as a premium emoji at render time.
+  'btn.language': '🌐 Language',
   'btn.deposit_history': '💳 My Deposits',
   'btn.channel': '📢 Channel',
   'btn.stats': '📊 Stats',
@@ -103,6 +103,8 @@ export const en: Record<string, string> = {
   'profile.language': 'Language: *{language}*',
   'profile.joined': 'Joined: *{joined}*',
   'profile.status.default': 'started bot',
+  // Language picker screen — opened from Settings → Language.
+  'profile.language.title': '{lang_left} *Select Language* {lang_right}',
   'profile.region.title': '🗺 *Set Region*',
   'profile.region.body':
     'Pick your country — your local time will then be used in messages and timestamps.',
@@ -124,7 +126,9 @@ export const en: Record<string, string> = {
   'profile.email.bad': '{email_invalid} *Please Enter A Valid Email*',
   // Email Settings hub (the new submenu opened from a single Settings button).
   'profile.email.hub.title': '{email_bracket_l} *Email Settings* {profile_email}',
-  'profile.email.hub.body': 'Email: {current}',
+  'profile.email.hub.body':
+    '{email_invoice} We use your email for purchase receipts and account-recovery only — never for marketing.\n\n' +
+    '{profile_email} *Current email:* `{current}`',
   // Mobile popup shown when the user taps "Change Email" without one.
   'profile.email.change.no_email_popup': 'Please Set up email first',
   // Buttons used on the Settings screen + email sub-screens.
@@ -136,7 +140,7 @@ export const en: Record<string, string> = {
   // My Deposits button.
   'btn.my_deposits': '💳 My Deposits',
   // Redeem Gift Code button (Settings) + screen.
-  'btn.redeem': '🎁 Redeem Gift Code',
+  'btn.redeem': '🎁 Gift Code',
   'btn.buy_code': '🛒 Buy Code',
   // ---------- Redeem Gift Code screen ----------
   'gift.title': '{gift_title} *Redeem Gift Code*',

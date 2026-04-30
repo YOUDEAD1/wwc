@@ -205,6 +205,10 @@ export const EMOJI: Record<string, EmojiSpec> = {
   refer_transferred: { unicode: '🔁', custom_emoji_id: '5832493956503442338' },
   refer_withdrawn: { unicode: '💵', custom_emoji_id: '5841484860652263006' },
 
+  // ---- Language picker -----------------------------------------
+  lang_left: { unicode: '🌐', custom_emoji_id: '5330422213860407355' },
+  lang_right: { unicode: '🗣', custom_emoji_id: '5818984364507139347' },
+
   // ---- Email screens (set / change / why) -----------------------
   email_saved_check: { unicode: '✨', custom_emoji_id: '5098088779776787441' },
   email_bracket_l: { unicode: '📩', custom_emoji_id: '6008233706039284019' },

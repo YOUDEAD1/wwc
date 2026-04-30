@@ -559,10 +559,14 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   // ---- Language ----
+  // The picker title is rendered through `renderMdHtml` so the
+  // wrapping premium emojis (`{lang_left}` / `{lang_right}`) and
+  // the bold "Select Language" mid-text all show up correctly.
   bot.callbackQuery('profile:lang', async (ctx) => {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText('🌐 Language / اللغة / Ngôn ngữ', {
-      reply_markup: languageKeyboard(),
+    await ctx.editMessageText(renderMdHtml(ctx.t('profile.language.title')), {
+      parse_mode: 'HTML',
+      reply_markup: languageKeyboard(ctx.lang),
     });
   });
 

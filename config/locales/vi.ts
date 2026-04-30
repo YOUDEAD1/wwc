@@ -36,7 +36,7 @@ export const vi: Record<string, string> = {
   'btn.notify.wallet.on': '🟢 Ví',
   'btn.notify.wallet.off': '🔕 Ví',
   'btn.back_to_settings': '⬅️ Quay lại Cài đặt',
-  'btn.language': '🌐 Language / اللغة / Ngôn ngữ',
+  'btn.language': '🌐 Ngôn ngữ',
   'btn.deposit_history': '💳 Lịch sử nạp',
   'btn.channel': '📢 Kênh',
   'btn.stats': '📊 Thống kê',
@@ -90,6 +90,12 @@ export const vi: Record<string, string> = {
     '> Chuyển lợi nhuận vào ví bất kỳ lúc nào. Rút tiền mặt liên hệ hỗ trợ (tối thiểu $1.00).\n\n' +
     '*Liên kết giới thiệu của bạn:*\n`{link}`',
   'btn.copy_link': '📋 Sao chép',
+  'btn.redeem': '🎁 Mã quà tặng',
+  'profile.language.title': '{lang_left} *Chọn ngôn ngữ* {lang_right}',
+  'profile.email.hub.title': '{email_bracket_l} *Cài đặt Email* {profile_email}',
+  'profile.email.hub.body':
+    '{email_invoice} Chúng tôi chỉ dùng email cho biên lai mua hàng và khôi phục tài khoản — không quảng cáo.\n\n' +
+    '{profile_email} *Email hiện tại:* `{current}`',
   'profile.orders.empty': 'Bạn chưa có đơn hàng nào.',
   'profile.orders.title': '🧾 *Đơn hàng của tôi*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
