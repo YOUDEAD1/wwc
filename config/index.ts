@@ -223,7 +223,10 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // here for readability in the locale templates).
   email_in_use: { unicode: '🚫', custom_emoji_id: '5098231965396501587' },
   // "PDF sent to mail" success ribbon shown after Send-PDF buttons.
+  // Two slot emojis frame the bold copy on either side.
   pdf_sent: { unicode: '📬', custom_emoji_id: '5096035317257864249' },
+  pdf_sent_l: { unicode: '📤', custom_emoji_id: '5926964914684957537' },
+  pdf_sent_r: { unicode: '📬', custom_emoji_id: '6179461085624536942' },
 
   // ---- My Deposits screen --------------------------------------
   deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },

@@ -169,7 +169,7 @@ export const en: Record<string, string> = {
   // Chat-message ribbon shown right after a Send-PDF tap succeeds.
   // Uses the premium 📬 emoji so the success lands as a custom-emoji
   // entity rather than a plain toast.
-  'pdf.sent_message': '{pdf_sent} *Pdf has been sended to your mail* {pdf_sent}',
+  'pdf.sent_message': '{pdf_sent_l} *Pdf has been sended to mail* {pdf_sent_r}',
   'pdf.failed_popup':
     '❌ Could not send PDF to {email}. Please try again in a moment — if it keeps failing, contact support.',
   // My Deposits button.
