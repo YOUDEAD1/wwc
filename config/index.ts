@@ -222,6 +222,8 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // this group; the others below were already mapped (re-aliased
   // here for readability in the locale templates).
   email_in_use: { unicode: '🚫', custom_emoji_id: '5098231965396501587' },
+  // "PDF sent to mail" success ribbon shown after Send-PDF buttons.
+  pdf_sent: { unicode: '📬', custom_emoji_id: '5096035317257864249' },
 
   // ---- My Deposits screen --------------------------------------
   deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },

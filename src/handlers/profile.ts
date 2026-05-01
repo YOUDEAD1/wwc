@@ -41,7 +41,6 @@ import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../key
 import { redeemKeyboard } from '../keyboards/redeem.js';
 import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
 import type { AppCtx } from '../middleware/user.js';
-import type { DBOrder } from '../types.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
 import { sendWelcomeEmail, sendReportEmail, type ReportKind } from '../services/mailer.js';
@@ -322,12 +321,19 @@ async function sendReportPdfFromCallback(
       firstName: ctx.user.first_name ?? null,
       username: ctx.user.username ?? null,
     });
-    await ctx.answerCallbackQuery({
-      text: ok
-        ? ctx.t('pdf.sent_popup', { email })
-        : ctx.t('pdf.failed_popup', { email }),
-      show_alert: true,
-    });
+    if (ok) {
+      // Surface success as a real chat message so the premium 📬
+      // custom emoji renders as a `<tg-emoji>` entity rather than a
+      // plain toast (Telegram strips custom_emoji from popup text).
+      await ctx.reply(renderMdHtml(ctx.t('pdf.sent_message')), {
+        parse_mode: 'HTML',
+      });
+    } else {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('pdf.failed_popup', { email }),
+        show_alert: true,
+      });
+    }
   } catch (err) {
     logger.error({ err, kind, telegram_id: ctx.user.telegram_id }, 'send-pdf flow failed');
     await ctx.answerCallbackQuery({
@@ -398,85 +404,10 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   }
 
-  /**
-   * Build a plain-text dump of every order on the user's account.
-   * Used as the body of the `.txt` document we send alongside the My
-   * Orders screen so the user has an offline copy of the full
-   * receipt — Telegram doesn't expose a native "export" UI, so a
-   * chat document is the closest equivalent.
-   */
-  function buildOrdersTextFile(ctx: AppCtx, orders: DBOrder[]): string {
-    const header = [
-      'SafwanTiger Shop — My Orders',
-      `User: ${ctx.user.first_name ?? ''} (@${ctx.user.username ?? '—'})`,
-      `Telegram ID: ${ctx.user.telegram_id}`,
-      `Generated: ${new Date().toISOString()}`,
-      `Total orders: ${orders.length}`,
-      ''.padEnd(60, '='),
-      '',
-    ].join('\n');
-    if (orders.length === 0) {
-      return header + 'No orders yet.\n';
-    }
-    const lines: string[] = [];
-    for (const o of orders) {
-      const pubId = publicOrderId(o);
-      const total = Number(o.total).toFixed(o.total % 1 === 0 ? 0 : 2);
-      const when = formatAbsoluteUtc(o.created_at);
-      const status =
-        o.status === 'paid'
-          ? 'Active'
-          : o.status === 'refunded'
-            ? 'Refunded'
-            : 'Cancelled';
-      lines.push(
-        `Order ID#  : ${pubId}`,
-        `Product    : ${o.product_name}`,
-        `Quantity   : ${o.qty}`,
-        `Unit Price : ${Number(o.unit_price).toFixed(2)} USDT`,
-        `Total      : ${total} USDT`,
-        `Status     : ${status}`,
-        `Placed     : ${when}`,
-      );
-      if (o.delivery) {
-        lines.push(`Delivery   : ${o.delivery.replace(/\n/g, ' ').slice(0, 1000)}`);
-      }
-      lines.push(''.padEnd(60, '-'), '');
-    }
-    return header + lines.join('\n');
-  }
-
-  /**
-   * Send the full order-history `.txt` file as a chat document. Best
-   * effort — failures are logged but never bubble up because the
-   * caller has already rendered the orders list and we don't want to
-   * abort that flow on a transient `sendDocument` glitch.
-   */
-  async function sendOrdersFile(ctx: AppCtx): Promise<void> {
-    try {
-      const orders = await listOrders(ctx.user.telegram_id, 500);
-      const body = buildOrdersTextFile(ctx, orders);
-      const filename = `safwantiger-orders-${ctx.user.telegram_id}.txt`;
-      const captionKey = orders.length === 0 ? 'orders.file.empty_caption' : 'orders.file.caption';
-      await ctx.replyWithDocument(
-        new InputFile(Buffer.from(body, 'utf8'), filename),
-        {
-          caption: renderMdHtml(ctx.t(captionKey)),
-          parse_mode: 'HTML',
-        },
-      );
-    } catch (err) {
-      console.error('sendOrdersFile failed', err);
-    }
-  }
-
   bot.callbackQuery('profile:orders', async (ctx) => {
     await ctx.answerCallbackQuery();
     ctx.session.userFlow = { type: 'orders_lookup', step: 'value', data: {} };
     await showOrdersPage(ctx, 0);
-    // Fire after the list renders so users always get an offline
-    // copy of every order on their account.
-    await sendOrdersFile(ctx);
   });
 
   bot.callbackQuery(/^orders:p:(\d+)$/, async (ctx) => {
