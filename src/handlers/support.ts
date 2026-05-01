@@ -26,7 +26,9 @@ const aiArmed = new Set<number>();
 let liveUser: { telegram_id: number; first_name: string; username: string | null } | null = null;
 
 function liveKeyboardForUser(t: (k: string) => string): InlineKeyboard {
-  return new InlineKeyboard().text(t('support.btn.end_session'), 'support:live:end:user');
+  // User taps Cancel → we delete the panel and re-render the Support
+  // section. Admin still gets the standard End Session control.
+  return new InlineKeyboard().text(t('support.btn.cancel'), 'support:live:cancel:user');
 }
 
 function liveKeyboardForAdmin(t: (k: string) => string): InlineKeyboard {
@@ -123,14 +125,29 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     });
   });
 
-  bot.callbackQuery('support:live:end:user', async (ctx) => {
+  // User cancels their own Live Support panel — we delete the panel
+  // message entirely and post a fresh Support screen so they can
+  // start over (or pick Contact Admin instead).
+  bot.callbackQuery('support:live:cancel:user', async (ctx) => {
     await ctx.answerCallbackQuery();
-    if (liveUser?.telegram_id !== ctx.user.telegram_id) {
-      // Stale button — session already ended.
+    const wasActive = liveUser?.telegram_id === ctx.user.telegram_id;
+    if (wasActive) {
+      await endSession(ctx, 'user');
+    } else {
       ctx.session.userFlow = undefined;
-      return;
     }
-    await endSession(ctx, 'user');
+    // Best-effort delete of the Live Support panel message itself.
+    try {
+      await ctx.deleteMessage();
+    } catch (err) {
+      logger.warn({ err }, 'live-support: failed to delete cancelled panel');
+    }
+    // Re-open the Support section as a brand-new chat message.
+    const text = `${ctx.t('support.title')}\n\n${ctx.t('support.body')}`;
+    await ctx.reply(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: supportKeyboard((k) => ctx.t(k), getAdminContactUrl(), ctx.lang),
+    });
   });
 
   bot.callbackQuery('support:live:end:admin', async (ctx) => {
@@ -201,25 +218,15 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const text = ctx.message?.text;
     if (typeof text === 'string' && text.startsWith('/')) return next();
 
+    // No `[Admin]` tag on the user-facing side — the relay forwards
+    // the admin's text and media verbatim so it reads like a normal
+    // chat message rather than a tagged forward.
     try {
-      if (typeof text === 'string') {
-        await ctx.api.sendMessage(
-          liveUser.telegram_id,
-          renderMdHtml(ctx.t('support.live.user_relay', { text })),
-          { parse_mode: 'HTML' },
-        );
-      } else {
-        await ctx.api.sendMessage(
-          liveUser.telegram_id,
-          renderMdHtml(ctx.t('support.live.user_media_header')),
-          { parse_mode: 'HTML' },
-        );
-        await ctx.api.copyMessage(
-          liveUser.telegram_id,
-          ctx.chat!.id,
-          ctx.message!.message_id,
-        );
-      }
+      await ctx.api.copyMessage(
+        liveUser.telegram_id,
+        ctx.chat!.id,
+        ctx.message!.message_id,
+      );
     } catch (err) {
       logger.error({ err }, 'live-support: failed to relay admin→user');
     }
