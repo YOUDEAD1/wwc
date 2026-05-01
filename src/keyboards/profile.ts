@@ -89,10 +89,20 @@ export function whyEmailKeyboard(lang: Lang, pdfUrl: string | null): InlineKeybo
   return kb;
 }
 
-/** Stats screen keyboard — Refresh + Back to Settings. */
+/** Stats screen keyboard — Refresh + Send PDF + Back to Settings. */
 export function statsKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
     .text(btn(lang, 'stats_refresh'), 'profile:stats:refresh')
+    .row()
+    .text(t(lang, 'btn.send_pdf.stats'), 'profile:stats:pdf')
+    .row()
+    .text(btn(lang, 'back_to_settings'), 'profile:open');
+}
+
+/** Stand-alone Send-PDF row used at the bottom of My Deposits. */
+export function depositsActionsKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(t(lang, 'btn.send_pdf.deposits'), 'profile:deposits:pdf')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
 }

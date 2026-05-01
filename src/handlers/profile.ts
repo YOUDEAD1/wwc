@@ -29,6 +29,7 @@ import {
   languageKeyboard,
   statsKeyboard,
   backToSettingsKeyboard,
+  depositsActionsKeyboard,
   emailDeleteConfirmKeyboard,
   emailHubKeyboard,
   emailScreenKeyboard,
@@ -43,7 +44,13 @@ import type { AppCtx } from '../middleware/user.js';
 import type { DBOrder } from '../types.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
-import { sendWelcomeEmail } from '../services/mailer.js';
+import { sendWelcomeEmail, sendReportEmail, type ReportKind } from '../services/mailer.js';
+import {
+  buildOrdersPdf,
+  buildDepositsPdf,
+  buildStatsPdf,
+} from '../services/pdfReport.js';
+import { logger } from '../logger.js';
 import { getEmailPdfUrl, getAdminContactUrl } from '../services/settings.js';
 import { InputFile } from 'grammy';
 import { fileURLToPath } from 'url';
@@ -263,6 +270,73 @@ async function showRegionPicker(ctx: AppCtx, page: number) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Shared body for the three "Send PDF to Email" callbacks. We answer
+ * the callback query twice: once with a "sending..." toast (so the
+ * user sees feedback while we render the PDF + hit Resend) and once
+ * with the final success / failure popup. The screen the user
+ * triggered the action from is never edited — they remain on the
+ * same orders / deposits / stats list.
+ */
+async function sendReportPdfFromCallback(
+  ctx: AppCtx,
+  kind: ReportKind,
+): Promise<void> {
+  const email = ctx.user.email;
+  if (!email) {
+    await ctx.answerCallbackQuery({
+      text: ctx.t('pdf.no_email_popup'),
+      show_alert: true,
+    });
+    return;
+  }
+  await ctx.answerCallbackQuery({
+    text: ctx.t('pdf.sending_popup', { email }),
+    show_alert: false,
+  });
+  try {
+    const reportUser = {
+      telegram_id: ctx.user.telegram_id,
+      first_name: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+      email,
+    };
+    let pdf: Buffer;
+    if (kind === 'orders') {
+      const orders = await listOrders(ctx.user.telegram_id, 500);
+      pdf = await buildOrdersPdf({ user: reportUser, orders });
+    } else if (kind === 'deposits') {
+      const [deposits, ledger] = await Promise.all([
+        listDeposits(ctx.user.telegram_id, 500),
+        listWalletLedger(ctx.user.telegram_id, 500).catch(() => []),
+      ]);
+      pdf = await buildDepositsPdf({ user: reportUser, deposits, ledger });
+    } else {
+      const stats = await getUserStats(ctx.user.telegram_id);
+      pdf = await buildStatsPdf({ user: reportUser, stats });
+    }
+    const ok = await sendReportEmail({
+      email,
+      kind,
+      pdf,
+      firstName: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+    });
+    await ctx.answerCallbackQuery({
+      text: ok
+        ? ctx.t('pdf.sent_popup', { email })
+        : ctx.t('pdf.failed_popup', { email }),
+      show_alert: true,
+    });
+  } catch (err) {
+    logger.error({ err, kind, telegram_id: ctx.user.telegram_id }, 'send-pdf flow failed');
+    await ctx.answerCallbackQuery({
+      text: ctx.t('pdf.failed_popup', { email }),
+      show_alert: true,
+    });
+  }
+}
+
 export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:open', async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -281,6 +355,23 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:stats:refresh', async (ctx) => {
     await ctx.answerCallbackQuery({ text: '🔄' });
     await showStats(ctx);
+  });
+
+  // ---- Send-PDF buttons (My Orders / Deposits / Stats screens) ----
+  // Each callback re-uses the same flow:
+  //   1. Bail with a popup if the user hasn't set their email yet.
+  //   2. Show a "sending" popup, generate the PDF, hand it to the
+  //      mailer, then update the popup with success / failure text.
+  // The list / detail message is not touched so the user can keep
+  // scrolling while the email is on its way.
+  bot.callbackQuery('profile:orders:pdf', async (ctx) => {
+    await sendReportPdfFromCallback(ctx, 'orders');
+  });
+  bot.callbackQuery('profile:deposits:pdf', async (ctx) => {
+    await sendReportPdfFromCallback(ctx, 'deposits');
+  });
+  bot.callbackQuery('profile:stats:pdf', async (ctx) => {
+    await sendReportPdfFromCallback(ctx, 'stats');
   });
 
   // ---- My Orders (list) ----
@@ -1033,7 +1124,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
 
     await ctx.editMessageText(renderMdHtml(lines.join('\n')), {
       parse_mode: 'HTML',
-      reply_markup: backToSettingsKeyboard(ctx.lang),
+      reply_markup: depositsActionsKeyboard(ctx.lang),
     });
   });
 }

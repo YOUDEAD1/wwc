@@ -110,6 +110,16 @@ export const ar: Record<string, string> = {
   'btn.email.delete': '🗑 حذف البريد',
   'btn.email.delete.confirm': '🗑 تأكيد الحذف',
   'btn.email.delete.cancel': '⬅️ إلغاء',
+  // أزرار "إرسال PDF" في شاشات الطلبات / الإيداعات / الإحصائيات.
+  'btn.send_pdf.orders': '📤 إرسال PDF الطلبات إلى البريد',
+  'btn.send_pdf.deposits': '📤 إرسال PDF الإيداعات إلى البريد',
+  'btn.send_pdf.stats': '📤 إرسال PDF الإحصائيات إلى البريد',
+  'pdf.no_email_popup':
+    '⚠️ يرجى ضبط البريد الإلكتروني أولًا. الإعدادات → إعدادات البريد → ضبط البريد، ثم عُد واضغط "إرسال PDF".',
+  'pdf.sending_popup': '⏳ جارٍ إنشاء PDF وإرساله إلى {email}…',
+  'pdf.sent_popup': '✅ تم إرسال PDF إلى {email}. تحقّق من البريد الوارد (وملف الرسائل غير المرغوب فيها).',
+  'pdf.failed_popup':
+    '❌ تعذّر إرسال PDF إلى {email}. حاول مرة أخرى بعد قليل — وتواصل مع الدعم إذا تكرّر الخطأ.',
   'orders.empty':
     '{orders_title} *طلباتي*\n\n' +
     '🪄 لا توجد طلبات بعد.\n\n' +
