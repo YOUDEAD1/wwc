@@ -33,9 +33,9 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
 }
 
 /**
- * Email Settings hub — Set / Change / Why Email each on their own
- * full-width row, mirroring the Top-Up Wallet layout, with a Back
- * row at the bottom.
+ * Email Settings hub — Set / Change / Delete / Why Email each on
+ * their own full-width row, mirroring the Top-Up Wallet layout, with
+ * a Back row at the bottom.
  */
 export function emailHubKeyboard(lang: Lang): InlineKeyboard {
   return new InlineKeyboard()
@@ -43,9 +43,22 @@ export function emailHubKeyboard(lang: Lang): InlineKeyboard {
     .row()
     .text(t(lang, 'btn.email.change'), 'profile:email:change')
     .row()
+    .text(t(lang, 'btn.email.delete'), 'profile:email:delete')
+    .row()
     .text(t(lang, 'btn.email.why'), 'profile:email:why')
     .row()
     .text(btn(lang, 'back_to_settings'), 'profile:open');
+}
+
+/**
+ * Delete-Email confirmation keyboard — Confirm Delete (destructive)
+ * on top, Cancel below to bounce back to the Email Settings hub.
+ */
+export function emailDeleteConfirmKeyboard(lang: Lang): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(t(lang, 'btn.email.delete.confirm'), 'profile:email:delete:confirm')
+    .row()
+    .text(t(lang, 'btn.email.delete.cancel'), 'profile:email');
 }
 
 /** Email sub-screen footer — Why + Back to Email Settings. */

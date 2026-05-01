@@ -7,11 +7,13 @@ import {
   countReferralsSince,
   countGiftCodeRedemptions,
   countGiftCodeRedemptionsByUser,
+  findUserByEmail,
   getGiftCode,
   getOrder,
   getReferralEarnings,
   getUserStats,
   listDeposits,
+  listOrders,
   listOrdersPaginated,
   listWalletLedger,
   recordGiftCodeRedemption,
@@ -27,6 +29,7 @@ import {
   languageKeyboard,
   statsKeyboard,
   backToSettingsKeyboard,
+  emailDeleteConfirmKeyboard,
   emailHubKeyboard,
   emailScreenKeyboard,
   referKeyboard,
@@ -37,6 +40,7 @@ import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../key
 import { redeemKeyboard } from '../keyboards/redeem.js';
 import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
 import type { AppCtx } from '../middleware/user.js';
+import type { DBOrder } from '../types.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
 import { sendWelcomeEmail } from '../services/mailer.js';
@@ -303,10 +307,85 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   }
 
+  /**
+   * Build a plain-text dump of every order on the user's account.
+   * Used as the body of the `.txt` document we send alongside the My
+   * Orders screen so the user has an offline copy of the full
+   * receipt — Telegram doesn't expose a native "export" UI, so a
+   * chat document is the closest equivalent.
+   */
+  function buildOrdersTextFile(ctx: AppCtx, orders: DBOrder[]): string {
+    const header = [
+      'SafwanTiger Shop — My Orders',
+      `User: ${ctx.user.first_name ?? ''} (@${ctx.user.username ?? '—'})`,
+      `Telegram ID: ${ctx.user.telegram_id}`,
+      `Generated: ${new Date().toISOString()}`,
+      `Total orders: ${orders.length}`,
+      ''.padEnd(60, '='),
+      '',
+    ].join('\n');
+    if (orders.length === 0) {
+      return header + 'No orders yet.\n';
+    }
+    const lines: string[] = [];
+    for (const o of orders) {
+      const pubId = publicOrderId(o);
+      const total = Number(o.total).toFixed(o.total % 1 === 0 ? 0 : 2);
+      const when = formatAbsoluteUtc(o.created_at);
+      const status =
+        o.status === 'paid'
+          ? 'Active'
+          : o.status === 'refunded'
+            ? 'Refunded'
+            : 'Cancelled';
+      lines.push(
+        `Order ID#  : ${pubId}`,
+        `Product    : ${o.product_name}`,
+        `Quantity   : ${o.qty}`,
+        `Unit Price : ${Number(o.unit_price).toFixed(2)} USDT`,
+        `Total      : ${total} USDT`,
+        `Status     : ${status}`,
+        `Placed     : ${when}`,
+      );
+      if (o.delivery) {
+        lines.push(`Delivery   : ${o.delivery.replace(/\n/g, ' ').slice(0, 1000)}`);
+      }
+      lines.push(''.padEnd(60, '-'), '');
+    }
+    return header + lines.join('\n');
+  }
+
+  /**
+   * Send the full order-history `.txt` file as a chat document. Best
+   * effort — failures are logged but never bubble up because the
+   * caller has already rendered the orders list and we don't want to
+   * abort that flow on a transient `sendDocument` glitch.
+   */
+  async function sendOrdersFile(ctx: AppCtx): Promise<void> {
+    try {
+      const orders = await listOrders(ctx.user.telegram_id, 500);
+      const body = buildOrdersTextFile(ctx, orders);
+      const filename = `safwantiger-orders-${ctx.user.telegram_id}.txt`;
+      const captionKey = orders.length === 0 ? 'orders.file.empty_caption' : 'orders.file.caption';
+      await ctx.replyWithDocument(
+        new InputFile(Buffer.from(body, 'utf8'), filename),
+        {
+          caption: renderMdHtml(ctx.t(captionKey)),
+          parse_mode: 'HTML',
+        },
+      );
+    } catch (err) {
+      console.error('sendOrdersFile failed', err);
+    }
+  }
+
   bot.callbackQuery('profile:orders', async (ctx) => {
     await ctx.answerCallbackQuery();
     ctx.session.userFlow = { type: 'orders_lookup', step: 'value', data: {} };
     await showOrdersPage(ctx, 0);
+    // Fire after the list renders so users always get an offline
+    // copy of every order on their account.
+    await sendOrdersFile(ctx);
   });
 
   bot.callbackQuery(/^orders:p:(\d+)$/, async (ctx) => {
@@ -679,6 +758,59 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
+  // Delete Email confirmation screen — only reachable when an email
+  // is on file. Hitting Confirm Delete clears the row; Cancel
+  // bounces back to the Email Settings hub.
+  bot.callbackQuery('profile:email:delete', async (ctx) => {
+    if (!ctx.user.email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.email.delete.no_email_popup'),
+        show_alert: true,
+      });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = undefined;
+    const text = [
+      ctx.t('profile.email.delete.title'),
+      '',
+      ctx.t('profile.email.delete.body', { current: ctx.user.email }),
+    ].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: emailDeleteConfirmKeyboard(ctx.lang),
+    });
+  });
+
+  // Confirmed delete — null out the column, refresh the in-memory
+  // user, and drop the user back on the Email Settings hub so they
+  // immediately see "Current email: _not set_".
+  bot.callbackQuery('profile:email:delete:confirm', async (ctx) => {
+    if (!ctx.user.email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.email.delete.no_email_popup'),
+        show_alert: true,
+      });
+      await showEmailHub(ctx);
+      return;
+    }
+    try {
+      await setUserEmail(ctx.user.telegram_id, null);
+    } catch (err) {
+      console.error('setUserEmail(null) failed', err);
+      await ctx.answerCallbackQuery({
+        text: ctx.t('err.generic'),
+        show_alert: true,
+      });
+      return;
+    }
+    ctx.user.email = null;
+    await ctx.answerCallbackQuery({
+      text: ctx.t('profile.email.delete.success'),
+    });
+    await showEmailHub(ctx);
+  });
+
   // Why Email — explanatory screen with a "Know More" PDF button.
   bot.callbackQuery('profile:email:why', async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -723,6 +855,16 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     }
     if (!EMAIL_RE.test(text)) {
       await ctx.reply(renderMdHtml(ctx.t('profile.email.bad')), { parse_mode: 'HTML' });
+      return;
+    }
+    // Reject any email already saved against a *different* telegram
+    // user. A user re-saving their own address still passes — that
+    // path is exercised by `mode='change'` and idempotent re-saves.
+    const existingOwner = await findUserByEmail(text);
+    if (existingOwner && existingOwner !== ctx.user.telegram_id) {
+      await ctx.reply(renderMdHtml(ctx.t('profile.email.in_use')), {
+        parse_mode: 'HTML',
+      });
       return;
     }
     try {

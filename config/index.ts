@@ -218,6 +218,10 @@ export const EMOJI: Record<string, EmojiSpec> = {
   email_secure: { unicode: '🔒', custom_emoji_id: '5463413771647069835' },
   email_thanks: { unicode: '🙏', custom_emoji_id: '5465262274031659421' },
   email_invalid: { unicode: '⚠️', custom_emoji_id: '5974083768233760323' },
+  // "Email already in use" warning — the only genuinely new id in
+  // this group; the others below were already mapped (re-aliased
+  // here for readability in the locale templates).
+  email_in_use: { unicode: '🚫', custom_emoji_id: '5098231965396501587' },
 
   // ---- My Deposits screen --------------------------------------
   deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },

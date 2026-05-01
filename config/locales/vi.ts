@@ -97,6 +97,24 @@ export const vi: Record<string, string> = {
   'profile.email.hub.body':
     '{email_invoice} Chúng tôi chỉ dùng email cho biên lai mua hàng và khôi phục tài khoản — không quảng cáo.\n\n' +
     '{profile_email} *Email hiện tại:* `{current}`',
+  'profile.email.delete.no_email_popup': 'Chưa có email — không có gì để xóa.',
+  'profile.email.delete.title': '{email_bracket_l} *Xóa Email* {email_bracket_l}',
+  'profile.email.delete.body':
+    '{email_invalid} _Vui lòng xác nhận xóa email_\n\n' +
+    '{profile_email} *Email hiện tại:* `{current}`',
+  'profile.email.delete.success': '✅ Đã xóa email.',
+  'profile.email.in_use':
+    '{email_in_use} Email đã được *sử dụng*\n\n' +
+    '{email_arrow} *_Vui lòng nhập một email khác_*',
+  'btn.email.delete': '🗑 Xóa Email',
+  'btn.email.delete.confirm': '🗑 Xác nhận xóa',
+  'btn.email.delete.cancel': '⬅️ Hủy',
+  'orders.empty':
+    '{orders_title} *Đơn hàng của tôi*\n\n' +
+    '🪄 Chưa có đơn hàng nào.\n\n' +
+    '✨ 🛍️ 🚀 Bắt đầu mua sắm và đơn hàng sẽ xuất hiện ở đây!',
+  'orders.file.caption': '{orders_title} Tất cả chi tiết đơn hàng — đính kèm dạng tệp.',
+  'orders.file.empty_caption': '{orders_title} Chưa có đơn hàng — đã đính kèm tệp rỗng.',
   'profile.orders.empty': 'Bạn chưa có đơn hàng nào.',
   'profile.orders.title': '🧾 *Đơn hàng của tôi*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',

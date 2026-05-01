@@ -127,6 +127,29 @@ export async function setUserEmail(telegram_id: number, email: string | null): P
   }
 }
 
+/**
+ * Look up the telegram_id of any user that already has the given
+ * email saved. Returns `null` when no row matches. Comparison is
+ * case-insensitive (Postgres `ilike` with no wildcards) so
+ * `Foo@Bar.com` and `foo@bar.com` collide as expected. Used by the
+ * Set / Change Email flows to enforce one-email-per-user.
+ */
+export async function findUserByEmail(email: string): Promise<number | null> {
+  const trimmed = email.trim();
+  if (!trimmed) return null;
+  const { data, error } = await supabase
+    .from('users')
+    .select('telegram_id')
+    .ilike('email', trimmed)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, email: trimmed }, 'findUserByEmail failed');
+    return null;
+  }
+  return (data as { telegram_id: number } | null)?.telegram_id ?? null;
+}
+
 /** Set the user's status string (`null` clears it). */
 export async function setUserStatus(telegram_id: number, status: string | null): Promise<void> {
   await supabase.from('users').update({ status }).eq('telegram_id', telegram_id);

@@ -96,6 +96,24 @@ export const ar: Record<string, string> = {
   'profile.email.hub.body':
     '{email_invoice} نستخدم بريدك لإرسال الفواتير واستعادة الحساب فقط — لن نرسل أي رسائل تسويقية.\n\n' +
     '{profile_email} *البريد الحالي:* `{current}`',
+  'profile.email.delete.no_email_popup': 'لا يوجد بريد محفوظ — لا شيء لحذفه.',
+  'profile.email.delete.title': '{email_bracket_l} *حذف البريد* {email_bracket_l}',
+  'profile.email.delete.body':
+    '{email_invalid} _يرجى التأكيد لحذف البريد_\n\n' +
+    '{profile_email} *البريد الحالي:* `{current}`',
+  'profile.email.delete.success': '✅ تم حذف البريد.',
+  'profile.email.in_use':
+    '{email_in_use} هذا البريد *مستخدم* بالفعل\n\n' +
+    '{email_arrow} *_يرجى إدخال بريد إلكتروني آخر_*',
+  'btn.email.delete': '🗑 حذف البريد',
+  'btn.email.delete.confirm': '🗑 تأكيد الحذف',
+  'btn.email.delete.cancel': '⬅️ إلغاء',
+  'orders.empty':
+    '{orders_title} *طلباتي*\n\n' +
+    '🪄 لا توجد طلبات بعد.\n\n' +
+    '✨ 🛍️ 🚀 ابدأ التسوق وستظهر طلباتك هنا!',
+  'orders.file.caption': '{orders_title} كل تفاصيل طلباتك — مرفقة كملف.',
+  'orders.file.empty_caption': '{orders_title} لا توجد طلبات بعد — تم إرفاق ملف فارغ.',
   'profile.orders.empty': 'لا توجد طلبات بعد.',
   'profile.orders.title': '🧾 *طلباتي*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
