@@ -296,24 +296,25 @@ export const en: Record<string, string> = {
     '✅ Topup request submitted (#{id}).\nAdmin will verify and credit your wallet shortly.',
 
   // ---------- Support ----------
-  'support.title': '{support_title} *_Support_*',
+  'support.title': '{support_title} Support',
   'support.body':
     '_*If you\'re unable to send a message or have an issue, use Live Support to connect directly with an admin.*_',
-  'support.btn.contact': '📩 Contact Support',
+  'support.btn.contact': '📩 Contact Admin',
+  'support.btn.cancel': '❌ Cancel',
   'support.btn.live': '🟢 Live Support',
   'support.btn.end_session': '🔴 End Session',
   // Live-Support relay copy.
   'support.live.busy_popup':
     '⏳ The admin is currently helping another user. Please try again in a moment.',
   'support.live.user_active':
-    '🟢 *Live Support active.*\n\n' +
-    'Send any message and the admin will reply right here. Tap *End Session* when you\'re done.',
+    '🟢 Live Support active.\n\n' +
+    '_*Please message us via the Live Support tab created above in this chat.*_',
   'support.live.admin_started':
     '🟢 *Live Support started*\n\n' +
     'User: *{name}* (@{username})\nID: `{id}`\n\nReply here to chat with them. Send /end to close.',
-  'support.live.user_relay': '*[Admin]:* {text}',
+  // No [Admin] tag on the user-facing side — the relay just forwards
+  // the admin's raw text or media so it reads like a normal chat.
   'support.live.admin_relay': '*[{name}]:* {text}',
-  'support.live.user_media_header': '*[Admin]* sent media:',
   'support.live.admin_media_header': '*[{name}]* sent media:',
   'support.live.user_ended': '🔴 *Live Support ended.*',
   'support.live.admin_ended': '🔴 *Live Support session closed.*',
