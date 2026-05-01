@@ -132,6 +132,9 @@ export const en: Record<string, string> = {
     '{profile_email} *Current email:* `{current}`',
   // Mobile popup shown when the user taps "Change Email" without one.
   'profile.email.change.no_email_popup': 'Please Set up email first',
+  // Mobile popup shown when the user taps "Set Email" but already has one.
+  'profile.email.set.already_set_popup':
+    'Email has already been set ({current}). Use Change Email or Delete Email to update it.',
   // Mobile popup shown when the user taps "Delete Email" without one.
   'profile.email.delete.no_email_popup': 'No email is set yet — nothing to delete.',
   // Delete Email confirmation screen.

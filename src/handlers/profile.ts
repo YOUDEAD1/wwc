@@ -721,6 +721,17 @@ export function registerProfile(bot: Composer<AppCtx>): void {
 
   // Set Email screen.
   bot.callbackQuery('profile:email:set', async (ctx) => {
+    // If the user already has an email on file, "Set Email" doesn't
+    // make sense — bounce them with a mobile popup pointing at
+    // Change / Delete instead so we never silently overwrite a saved
+    // address.
+    if (ctx.user.email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.email.set.already_set_popup', { current: ctx.user.email }),
+        show_alert: true,
+      });
+      return;
+    }
     await ctx.answerCallbackQuery();
     ctx.session.userFlow = { type: 'set_email', step: 'value', data: { mode: 'set' } };
     const text = [
@@ -794,6 +805,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       await showEmailHub(ctx);
       return;
     }
+    const oldEmail = ctx.user.email;
     try {
       await setUserEmail(ctx.user.telegram_id, null);
     } catch (err) {
@@ -805,6 +817,17 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       return;
     }
     ctx.user.email = null;
+    // Fire-and-forget the deletion confirmation email to the address
+    // we just removed so the (human) owner sees evidence of the
+    // change — important for the "I never deleted this" recovery
+    // path. No PDF attachment for this mode.
+    void sendWelcomeEmail({
+      email: oldEmail,
+      previousEmail: oldEmail,
+      firstName: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+      mode: 'delete',
+    });
     await ctx.answerCallbackQuery({
       text: ctx.t('profile.email.delete.success'),
     });

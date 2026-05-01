@@ -96,6 +96,8 @@ export const ar: Record<string, string> = {
   'profile.email.hub.body':
     '{email_invoice} نستخدم بريدك لإرسال الفواتير واستعادة الحساب فقط — لن نرسل أي رسائل تسويقية.\n\n' +
     '{profile_email} *البريد الحالي:* `{current}`',
+  'profile.email.set.already_set_popup':
+    'تم تعيين البريد بالفعل ({current}). استخدم تغيير البريد أو حذف البريد لتحديثه.',
   'profile.email.delete.no_email_popup': 'لا يوجد بريد محفوظ — لا شيء لحذفه.',
   'profile.email.delete.title': '{email_bracket_l} *حذف البريد* {email_bracket_l}',
   'profile.email.delete.body':

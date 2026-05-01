@@ -97,6 +97,8 @@ export const vi: Record<string, string> = {
   'profile.email.hub.body':
     '{email_invoice} Chúng tôi chỉ dùng email cho biên lai mua hàng và khôi phục tài khoản — không quảng cáo.\n\n' +
     '{profile_email} *Email hiện tại:* `{current}`',
+  'profile.email.set.already_set_popup':
+    'Email đã được thiết lập ({current}). Vui lòng dùng Đổi Email hoặc Xóa Email để cập nhật.',
   'profile.email.delete.no_email_popup': 'Chưa có email — không có gì để xóa.',
   'profile.email.delete.title': '{email_bracket_l} *Xóa Email* {email_bracket_l}',
   'profile.email.delete.body':

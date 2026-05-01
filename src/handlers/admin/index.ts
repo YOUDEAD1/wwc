@@ -50,6 +50,7 @@ import {
   getButtonColor,
 } from '../../services/settings.js';
 import { renderMdHtml } from '../../services/premium.js';
+import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
@@ -79,7 +80,7 @@ const requireAdmin: MiddlewareFn<AppCtx> = async (ctx, next) => {
 // Apply requireAdmin only to admin entry points.
 adminBot.callbackQuery(/^adm:/, requireAdmin, async (_ctx, next) => next());
 adminBot.command(
-  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload'],
+  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload', 'mailerstatus', 'testemail'],
   requireAdmin,
   async (_ctx, next) => next(),
 );
@@ -1627,4 +1628,43 @@ adminBot.command('reload', async (ctx) => {
   await refreshSettings();
   cache.clearAll();
   await ctx.reply('🔁 Settings reloaded.');
+});
+
+// Diagnostic: show whether the welcome / change / delete emails will
+// actually leave the bot. Useful when "no emails are arriving" — it
+// answers the first question (transport configured?) without
+// requiring shell access to the Railway env vars.
+adminBot.command('mailerstatus', async (ctx) => {
+  const status = describeMailerStatus();
+  await ctx.reply(`📬 *Mailer status*\n\n\`\`\`\n${status}\n\`\`\``, {
+    parse_mode: 'Markdown',
+  });
+});
+
+// Diagnostic: send a real "set"-mode welcome email to the admin's
+// chosen address so they can verify the transport / domain / DNS
+// end-to-end. Usage: /testemail you@example.com [set|change|delete]
+adminBot.command('testemail', async (ctx) => {
+  const [, target, modeRaw] = (ctx.message?.text ?? '').split(/\s+/);
+  if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+    await ctx.reply('Usage: /testemail <email> [set|change|delete]');
+    return;
+  }
+  const mode = (modeRaw === 'change' || modeRaw === 'delete' ? modeRaw : 'set') as
+    | 'set'
+    | 'change'
+    | 'delete';
+  await ctx.reply(`Sending ${mode} test email to ${target}…`);
+  const ok = await sendWelcomeEmail({
+    email: target,
+    previousEmail: mode === 'change' || mode === 'delete' ? target : null,
+    firstName: ctx.from?.first_name ?? null,
+    username: ctx.from?.username ?? null,
+    mode,
+  });
+  await ctx.reply(
+    ok
+      ? `✅ Sent. Check ${target}'s inbox (and spam). If nothing arrives, run /mailerstatus and check the bot logs for the Resend / SMTP error.`
+      : `❌ Send failed. Run /mailerstatus and check the logs — usually missing RESEND_API_KEY or unverified domain.`,
+  );
 });

@@ -121,7 +121,7 @@ function fromAddress(): string {
 //  HTML / plain-text body
 // ---------------------------------------------------------------------------
 
-type Mode = 'set' | 'change';
+type Mode = 'set' | 'change' | 'delete';
 
 /**
  * Render the welcome / confirmation email body (HTML + plain-text).
@@ -142,44 +142,67 @@ function welcomeBody(args: {
       : 'Hello,';
 
   const subject =
-    args.mode === 'change'
-      ? '🐯 SafwanTiger Shop — your email has been updated'
-      : '🐯 Welcome to SafwanTiger Shop — your email is connected';
+    args.mode === 'delete'
+      ? '🐯 SafwanTiger Shop — your email has been removed'
+      : args.mode === 'change'
+        ? '🐯 SafwanTiger Shop — your email has been updated'
+        : '🐯 Welcome to SafwanTiger Shop — your email is connected';
 
   const headlineEyebrow =
-    args.mode === 'change' ? 'Email updated' : 'Welcome aboard';
+    args.mode === 'delete'
+      ? 'Email removed'
+      : args.mode === 'change'
+        ? 'Email updated'
+        : 'Welcome aboard';
   const headlineTitle =
-    args.mode === 'change' ? 'Your email was updated' : 'Your email is connected';
+    args.mode === 'delete'
+      ? 'Your email was removed'
+      : args.mode === 'change'
+        ? 'Your email was updated'
+        : 'Your email is connected';
 
   // ---------- plain-text alternative ----------
-  const lines: string[] = [
-    greeting,
-    '',
-    args.mode === 'change'
-      ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to ${args.email}.`
-      : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked ${args.email} to your Telegram account.`,
-  ];
+  const introText =
+    args.mode === 'delete'
+      ? `Just confirming: the email on file for your SafwanTiger Shop account (${args.email}) has been deleted from the bot successfully. You will no longer receive receipts at this address.`
+      : args.mode === 'change'
+        ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to ${args.email}.`
+        : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked ${args.email} to your Telegram account.`;
+  const lines: string[] = [greeting, '', introText];
   if (args.mode === 'change' && args.previousEmail) {
     lines.push('', `Previous email on file: ${args.previousEmail}`);
   }
-  lines.push(
-    '',
-    'What this email is used for:',
-    '  • Order receipts and delivery confirmations',
-    '  • Account recovery if you lose access to Telegram',
-    '  • Critical security notices',
-    '',
-    'We will never use this address for marketing, share it with',
-    'third parties, or send unsolicited messages. The attached PDF',
-    '"Why we need your email" goes into more detail.',
-    '',
-    args.mode === 'change'
-      ? "If you didn't just update this address yourself, reply to this email immediately so we can secure your account."
-      : 'If you did not just save this address in our bot, please reply to this email and we will remove it from your account.',
-    '',
-    '— SafwanTiger Shop',
-    'https://t.me/safwantigershopbot',
-  );
+  if (args.mode === 'delete') {
+    lines.push(
+      '',
+      'You can re-link an email anytime from the bot:',
+      'Settings → Email Settings → Set Email.',
+      '',
+      "If you didn't just delete this address yourself, reply to this email immediately so we can secure your account.",
+      '',
+      '— SafwanTiger Shop',
+      'https://t.me/safwantigershopbot',
+    );
+  } else {
+    lines.push(
+      '',
+      'What this email is used for:',
+      '  • Order receipts and delivery confirmations',
+      '  • Account recovery if you lose access to Telegram',
+      '  • Critical security notices',
+      '',
+      'We will never use this address for marketing, share it with',
+      'third parties, or send unsolicited messages. The attached PDF',
+      '"Why we need your email" goes into more detail.',
+      '',
+      args.mode === 'change'
+        ? "If you didn't just update this address yourself, reply to this email immediately so we can secure your account."
+        : 'If you did not just save this address in our bot, please reply to this email and we will remove it from your account.',
+      '',
+      '— SafwanTiger Shop',
+      'https://t.me/safwantigershopbot',
+    );
+  }
   const text = lines.join('\n');
 
   // ---------- HTML body ----------
@@ -193,14 +216,18 @@ function welcomeBody(args: {
       : '';
 
   const securityNote =
-    args.mode === 'change'
-      ? "If you didn't just update this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20change\" style=\"color:#fbbf24;text-decoration:underline;\">reply to this email immediately</a> so we can secure your account."
-      : "Didn't just save this address? <a href=\"mailto:shopbot@safwantiger.com?subject=Remove%20my%20email\" style=\"color:#fbbf24;text-decoration:underline;\">Reply to this email</a> and we'll remove it from your account.";
+    args.mode === 'delete'
+      ? "If you didn't just delete this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20deletion\" style=\"color:#fbbf24;text-decoration:underline;\">reply to this email immediately</a> so we can secure your account."
+      : args.mode === 'change'
+        ? "If you didn't just update this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20change\" style=\"color:#fbbf24;text-decoration:underline;\">reply to this email immediately</a> so we can secure your account."
+        : "Didn't just save this address? <a href=\"mailto:shopbot@safwantiger.com?subject=Remove%20my%20email\" style=\"color:#fbbf24;text-decoration:underline;\">Reply to this email</a> and we'll remove it from your account.";
 
   const introCopy =
-    args.mode === 'change'
-      ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong>.`
-      : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> to your Telegram account.`;
+    args.mode === 'delete'
+      ? `Just confirming: <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> has been deleted from the bot successfully. You will no longer receive receipts at this address.`
+      : args.mode === 'change'
+        ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong>.`
+        : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> to your Telegram account.`;
 
   const html = `<!doctype html>
 <html lang="en"><head>
@@ -210,7 +237,13 @@ function welcomeBody(args: {
 </head>
 <body style="margin:0;padding:0;background:#0d1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#c9d1d9;-webkit-font-smoothing:antialiased;">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#0d1117;">
-    ${escapeHtml(args.mode === 'change' ? `Email on file changed to ${args.email}.` : `Welcome aboard — ${args.email} is now linked to your account.`)}
+    ${escapeHtml(
+      args.mode === 'delete'
+        ? `Email ${args.email} has been removed from your account.`
+        : args.mode === 'change'
+          ? `Email on file changed to ${args.email}.`
+          : `Welcome aboard — ${args.email} is now linked to your account.`,
+    )}
   </div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0d1117;padding:32px 16px;">
     <tr><td align="center">
@@ -237,24 +270,33 @@ function welcomeBody(args: {
 
         ${previousEmailBlock}
 
-        <tr><td style="padding:0 32px 18px 32px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:12px;background:#0d1117;border:1px solid #30363d;">
-            <tr><td style="padding:18px 22px;">
-              <div style="font-size:11px;color:#7d8590;text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;font-weight:600;">What this email is used for</div>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;line-height:1.7;color:#c9d1d9;">
-                <tr><td style="padding:4px 0;width:28px;vertical-align:top;">📦</td><td style="padding:4px 0;">Order receipts &amp; delivery confirmations</td></tr>
-                <tr><td style="padding:4px 0;width:28px;vertical-align:top;">🔐</td><td style="padding:4px 0;">Account recovery if you lose Telegram access</td></tr>
-                <tr><td style="padding:4px 0;width:28px;vertical-align:top;">⚠️</td><td style="padding:4px 0;">Critical security notices</td></tr>
-              </table>
-            </td></tr>
-          </table>
-        </td></tr>
+        ${
+          args.mode === 'delete'
+            ? `<tr><td style="padding:0 32px 18px 32px;">
+                <p style="margin:0;font-size:14px;line-height:1.7;color:#c9d1d9;">
+                  Need to re-link an email later? Open the bot any time and head to
+                  <strong style="color:#fbbf24;">Settings → Email Settings → Set Email</strong>.
+                </p>
+              </td></tr>`
+            : `<tr><td style="padding:0 32px 18px 32px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:12px;background:#0d1117;border:1px solid #30363d;">
+                  <tr><td style="padding:18px 22px;">
+                    <div style="font-size:11px;color:#7d8590;text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;font-weight:600;">What this email is used for</div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;line-height:1.7;color:#c9d1d9;">
+                      <tr><td style="padding:4px 0;width:28px;vertical-align:top;">📦</td><td style="padding:4px 0;">Order receipts &amp; delivery confirmations</td></tr>
+                      <tr><td style="padding:4px 0;width:28px;vertical-align:top;">🔐</td><td style="padding:4px 0;">Account recovery if you lose Telegram access</td></tr>
+                      <tr><td style="padding:4px 0;width:28px;vertical-align:top;">⚠️</td><td style="padding:4px 0;">Critical security notices</td></tr>
+                    </table>
+                  </td></tr>
+                </table>
+              </td></tr>
 
-        <tr><td style="padding:0 32px 18px 32px;">
-          <p style="margin:0;font-size:14px;line-height:1.7;color:#c9d1d9;">
-            We will <strong style="color:#fbbf24;">never</strong> use this address for marketing or share it with anyone. The attached PDF goes into more detail.
-          </p>
-        </td></tr>
+              <tr><td style="padding:0 32px 18px 32px;">
+                <p style="margin:0;font-size:14px;line-height:1.7;color:#c9d1d9;">
+                  We will <strong style="color:#fbbf24;">never</strong> use this address for marketing or share it with anyone. The attached PDF goes into more detail.
+                </p>
+              </td></tr>`
+        }
 
         <tr><td style="padding:0 32px 24px 32px;">
           <div style="padding:14px 16px;border-radius:8px;background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.35);font-size:13px;color:#fde6c7;line-height:1.6;">
@@ -307,7 +349,9 @@ async function sendViaResend(args: {
 }): Promise<boolean> {
   const client = resendClient();
   if (!client) return false;
-  const pdfB64 = readPdfBase64();
+  // Only set / change emails attach the explanatory PDF — a deletion
+  // confirmation should NOT carry it (the user just opted out).
+  const pdfB64 = args.mode === 'delete' ? null : readPdfBase64();
   try {
     const { data, error } = await client.emails.send({
       from: fromAddress(),
@@ -378,13 +422,18 @@ async function sendViaSmtp(args: {
       subject: args.subject,
       text: args.text,
       html: args.html,
-      attachments: [
-        {
-          filename: PDF_FILENAME,
-          path: WHY_EMAIL_PDF_PATH,
-          contentType: 'application/pdf',
-        },
-      ],
+      // Skip the explanatory PDF for delete confirmations — see
+      // sendViaResend() for the rationale.
+      attachments:
+        args.mode === 'delete'
+          ? undefined
+          : [
+              {
+                filename: PDF_FILENAME,
+                path: WHY_EMAIL_PDF_PATH,
+                contentType: 'application/pdf',
+              },
+            ],
     });
     logger.info(
       {
@@ -471,6 +520,40 @@ export async function sendWelcomeEmail(args: {
  * flow. For SMTP it also runs a `verify()` probe so auth/connection
  * problems surface at boot rather than only on the first send.
  */
+/**
+ * Plain-text snapshot of the active mail transport, suitable for the
+ * admin `/mailerstatus` command. Mirrors the diagnostic output that
+ * `logMailerStatus()` writes to the logs at boot.
+ */
+export function describeMailerStatus(): string {
+  const lines: string[] = [`From: ${fromAddress()}`];
+  if (resendConfigured()) {
+    lines.push(
+      'Transport: Resend (HTTPS API)',
+      'RESEND_API_KEY: set',
+      `RESEND_FROM: ${env.RESEND_FROM ? 'set' : 'unset (using fallback)'}`,
+      'Welcome emails: enabled',
+    );
+    return lines.join('\n');
+  }
+  if (smtpConfigured()) {
+    lines.push(
+      'Transport: SMTP',
+      `SMTP_HOST: ${env.SMTP_HOST}`,
+      `SMTP_PORT: ${env.SMTP_PORT}`,
+      `SMTP_USER: ${env.SMTP_USER}`,
+      'SMTP_PASS: set',
+      'Welcome emails: enabled (note: raw SMTP is blocked by Railway / Heroku / Fly / Vercel — set RESEND_API_KEY instead)',
+    );
+    return lines.join('\n');
+  }
+  lines.push(
+    'Transport: NONE — welcome emails are disabled',
+    'Set RESEND_API_KEY (preferred) or SMTP_HOST/PORT/USER/PASS in your environment to enable delivery from shopbot@safwantiger.com.',
+  );
+  return lines.join('\n');
+}
+
 export function logMailerStatus(): void {
   if (resendConfigured()) {
     logger.info(
