@@ -118,14 +118,14 @@ export const ar: Record<string, string> = {
     '⚠️ يرجى ضبط البريد الإلكتروني أولًا. الإعدادات → إعدادات البريد → ضبط البريد، ثم عُد واضغط "إرسال PDF".',
   'pdf.sending_popup': '⏳ جارٍ إنشاء PDF وإرساله إلى {email}…',
   'pdf.sent_popup': '✅ تم إرسال PDF إلى {email}. تحقّق من البريد الوارد (وملف الرسائل غير المرغوب فيها).',
+  // رسالة دردشة تظهر عند نجاح إرسال PDF.
+  'pdf.sent_message': '{pdf_sent} *تم إرسال PDF إلى بريدك* {pdf_sent}',
   'pdf.failed_popup':
     '❌ تعذّر إرسال PDF إلى {email}. حاول مرة أخرى بعد قليل — وتواصل مع الدعم إذا تكرّر الخطأ.',
   'orders.empty':
     '{orders_title} *طلباتي*\n\n' +
     '🪄 لا توجد طلبات بعد.\n\n' +
     '✨ 🛍️ 🚀 ابدأ التسوق وستظهر طلباتك هنا!',
-  'orders.file.caption': '{orders_title} كل تفاصيل طلباتك — مرفقة كملف.',
-  'orders.file.empty_caption': '{orders_title} لا توجد طلبات بعد — تم إرفاق ملف فارغ.',
   'profile.orders.empty': 'لا توجد طلبات بعد.',
   'profile.orders.title': '🧾 *طلباتي*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',

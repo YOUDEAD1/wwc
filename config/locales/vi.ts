@@ -119,14 +119,14 @@ export const vi: Record<string, string> = {
     '⚠️ Vui lòng đặt email trước. Cài đặt → Cài đặt email → Đặt email, sau đó quay lại và nhấn Gửi PDF.',
   'pdf.sending_popup': '⏳ Đang tạo PDF và gửi đến {email}…',
   'pdf.sent_popup': '✅ Đã gửi PDF đến {email}. Vui lòng kiểm tra hộp thư (và mục Spam).',
+  // Tin nhắn xác nhận khi gửi PDF thành công.
+  'pdf.sent_message': '{pdf_sent} *PDF đã được gửi tới email của bạn* {pdf_sent}',
   'pdf.failed_popup':
     '❌ Không gửi được PDF đến {email}. Vui lòng thử lại sau ít phút — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
   'orders.empty':
     '{orders_title} *Đơn hàng của tôi*\n\n' +
     '🪄 Chưa có đơn hàng nào.\n\n' +
     '✨ 🛍️ 🚀 Bắt đầu mua sắm và đơn hàng sẽ xuất hiện ở đây!',
-  'orders.file.caption': '{orders_title} Tất cả chi tiết đơn hàng — đính kèm dạng tệp.',
-  'orders.file.empty_caption': '{orders_title} Chưa có đơn hàng — đã đính kèm tệp rỗng.',
   'profile.orders.empty': 'Bạn chưa có đơn hàng nào.',
   'profile.orders.title': '🧾 *Đơn hàng của tôi*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',

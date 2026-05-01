@@ -166,6 +166,10 @@ export const en: Record<string, string> = {
     '⚠️ Set your email first. Open Settings → Email Settings → Set Email to add one, then come back and tap Send PDF.',
   'pdf.sending_popup': '⏳ Generating your PDF and sending it to {email}…',
   'pdf.sent_popup': '✅ PDF sent to {email}. Check your inbox (and spam folder).',
+  // Chat-message ribbon shown right after a Send-PDF tap succeeds.
+  // Uses the premium 📬 emoji so the success lands as a custom-emoji
+  // entity rather than a plain toast.
+  'pdf.sent_message': '{pdf_sent} *Pdf has been sended to your mail* {pdf_sent}',
   'pdf.failed_popup':
     '❌ Could not send PDF to {email}. Please try again in a moment — if it keeps failing, contact support.',
   // My Deposits button.
@@ -192,8 +196,6 @@ export const en: Record<string, string> = {
     '{orders_title} *My Orders*\n\n' +
     '🪄 No orders yet.\n\n' +
     '✨ 🛍️ 🚀 Start shopping and your orders will appear here!',
-  'orders.file.caption': '{orders_title} All your order details — attached as a file.',
-  'orders.file.empty_caption': '{orders_title} No orders yet — placeholder file attached.',
   'orders.page': 'Page {page}/{pages}',
   'orders.status.active': '🛡 Active',
   'orders.status.refunded': '↩️ Refunded',
