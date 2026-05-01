@@ -228,6 +228,9 @@ export const EMOJI: Record<string, EmojiSpec> = {
   pdf_sent_l: { unicode: '📤', custom_emoji_id: '5926964914684957537' },
   pdf_sent_r: { unicode: '📬', custom_emoji_id: '6179461085624536942' },
 
+  // ---- Support screen header -----------------------------------
+  support_title: { unicode: '📞', custom_emoji_id: '6247041691652461368' },
+
   // ---- My Deposits screen --------------------------------------
   deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },
   deposits_payments: { unicode: '💸', custom_emoji_id: '5375312095346704820' },
