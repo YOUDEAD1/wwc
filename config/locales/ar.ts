@@ -159,8 +159,25 @@ export const ar: Record<string, string> = {
   'topup.method.body': '*{name}*\n\n{instructions}\n\nالحد الأدنى: *{min}*',
   'topup.requested': '✅ تم تقديم طلب الشحن (#{id}).\nسيتم التحقق وإضافة الرصيد قريبًا.',
 
-  'support.title': '💬 *الدعم*',
-  'support.body': 'هل تحتاج مساعدة؟ تواصل معنا: @safwantiger',
+  'support.title': '{support_title} *_الدعم_*',
+  'support.body':
+    '_*إذا تعذّر عليك إرسال رسالة أو واجهتك مشكلة، استخدم الدعم المباشر للتواصل مع المسؤول مباشرة.*_',
+  'support.btn.contact': '📩 تواصل مع الدعم',
+  'support.btn.live': '🟢 الدعم المباشر',
+  'support.btn.end_session': '🔴 إنهاء الجلسة',
+  'support.live.busy_popup': '⏳ المسؤول مشغول حاليًا مع مستخدم آخر. حاول مرة أخرى بعد قليل.',
+  'support.live.user_active':
+    '🟢 *الدعم المباشر مفعّل.*\n\n' +
+    'أرسل أي رسالة وسيردّ عليك المسؤول هنا. اضغط *إنهاء الجلسة* عند الانتهاء.',
+  'support.live.admin_started':
+    '🟢 *بدأ الدعم المباشر*\n\n' +
+    'المستخدم: *{name}* (@{username})\nID: `{id}`\n\nردّ هنا للدردشة. أرسل /end لإنهاء الجلسة.',
+  'support.live.user_relay': '*[المسؤول]:* {text}',
+  'support.live.admin_relay': '*[{name}]:* {text}',
+  'support.live.user_media_header': '*[المسؤول]* أرسل ملفًا:',
+  'support.live.admin_media_header': '*[{name}]* أرسل ملفًا:',
+  'support.live.user_ended': '🔴 *تم إنهاء الدعم المباشر.*',
+  'support.live.admin_ended': '🔴 *تم إغلاق جلسة الدعم المباشر.*',
   'support.ai.title': '🤖 *مساعد الدعم الآلي*',
   'support.ai.prompt': 'اشرح مشكلتك وسأبذل قصارى جهدي للمساعدة.',
   'support.ai.fallback': 'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',

@@ -118,6 +118,16 @@ export type UserFlow =
       type: 'orders_lookup';
       step: 'value';
       data: Record<string, never>;
+    }
+  | {
+      /**
+       * User is in a Live Support relay session. While this flow is
+       * active, every non-command message they send is forwarded to
+       * the admin (and admin's replies come back here).
+       */
+      type: 'live_support';
+      step: 'connected';
+      data: { startedAt: number };
     };
 
 export type SessionData = {

@@ -161,8 +161,26 @@ export const vi: Record<string, string> = {
   'topup.requested':
     '✅ Yêu cầu nạp đã gửi (#{id}).\nQuản trị viên sẽ xác nhận và cộng tiền sớm.',
 
-  'support.title': '💬 *Hỗ trợ*',
-  'support.body': 'Cần giúp đỡ? Liên hệ: @safwantiger',
+  'support.title': '{support_title} *_Hỗ trợ_*',
+  'support.body':
+    '_*Nếu bạn không thể gửi tin nhắn hoặc gặp sự cố, hãy sử dụng Hỗ trợ trực tiếp để kết nối ngay với quản trị viên.*_',
+  'support.btn.contact': '📩 Liên hệ hỗ trợ',
+  'support.btn.live': '🟢 Hỗ trợ trực tiếp',
+  'support.btn.end_session': '🔴 Kết thúc phiên',
+  'support.live.busy_popup':
+    '⏳ Quản trị viên đang hỗ trợ người khác. Vui lòng thử lại sau ít phút.',
+  'support.live.user_active':
+    '🟢 *Hỗ trợ trực tiếp đang hoạt động.*\n\n' +
+    'Gửi bất kỳ tin nhắn nào và quản trị viên sẽ trả lời ngay tại đây. Nhấn *Kết thúc phiên* khi xong.',
+  'support.live.admin_started':
+    '🟢 *Bắt đầu Hỗ trợ trực tiếp*\n\n' +
+    'Người dùng: *{name}* (@{username})\nID: `{id}`\n\nTrả lời tại đây để chat. Gửi /end để đóng phiên.',
+  'support.live.user_relay': '*[Quản trị]:* {text}',
+  'support.live.admin_relay': '*[{name}]:* {text}',
+  'support.live.user_media_header': '*[Quản trị]* đã gửi tệp:',
+  'support.live.admin_media_header': '*[{name}]* đã gửi tệp:',
+  'support.live.user_ended': '🔴 *Đã kết thúc Hỗ trợ trực tiếp.*',
+  'support.live.admin_ended': '🔴 *Phiên Hỗ trợ trực tiếp đã đóng.*',
   'support.ai.title': '🤖 *Trợ lý hỗ trợ tự động*',
   'support.ai.prompt': 'Mô tả vấn đề và tôi sẽ cố gắng hỗ trợ.',
   'support.ai.fallback': 'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
