@@ -120,7 +120,7 @@ export const vi: Record<string, string> = {
   'pdf.sending_popup': '⏳ Đang tạo PDF và gửi đến {email}…',
   'pdf.sent_popup': '✅ Đã gửi PDF đến {email}. Vui lòng kiểm tra hộp thư (và mục Spam).',
   // Tin nhắn xác nhận khi gửi PDF thành công.
-  'pdf.sent_message': '{pdf_sent} *PDF đã được gửi tới email của bạn* {pdf_sent}',
+  'pdf.sent_message': '{pdf_sent_l} *PDF đã được gửi tới email* {pdf_sent_r}',
   'pdf.failed_popup':
     '❌ Không gửi được PDF đến {email}. Vui lòng thử lại sau ít phút — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
   'orders.empty':

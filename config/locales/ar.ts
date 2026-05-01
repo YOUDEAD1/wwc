@@ -119,7 +119,7 @@ export const ar: Record<string, string> = {
   'pdf.sending_popup': '⏳ جارٍ إنشاء PDF وإرساله إلى {email}…',
   'pdf.sent_popup': '✅ تم إرسال PDF إلى {email}. تحقّق من البريد الوارد (وملف الرسائل غير المرغوب فيها).',
   // رسالة دردشة تظهر عند نجاح إرسال PDF.
-  'pdf.sent_message': '{pdf_sent} *تم إرسال PDF إلى بريدك* {pdf_sent}',
+  'pdf.sent_message': '{pdf_sent_l} *تم إرسال PDF إلى البريد* {pdf_sent_r}',
   'pdf.failed_popup':
     '❌ تعذّر إرسال PDF إلى {email}. حاول مرة أخرى بعد قليل — وتواصل مع الدعم إذا تكرّر الخطأ.',
   'orders.empty':
