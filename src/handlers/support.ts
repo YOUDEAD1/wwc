@@ -40,8 +40,11 @@ function supportKeyboard(
   contactUrl: string,
   lang: Lang,
 ): InlineKeyboard {
+  // Stack each action on its own full-width row, matching the look
+  // of the Notifications submenu.
   return new InlineKeyboard()
     .url(t('support.btn.contact'), contactUrl)
+    .row()
     .text(t('support.btn.live'), 'support:live:start')
     .row()
     .text(btn(lang, 'back'), 'main:open');
