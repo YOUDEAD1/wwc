@@ -43,8 +43,16 @@ export const WHY_EMAIL_PDF_PATH = path.resolve(
   __dirname,
   '../../../assets/email-explanation.pdf',
 );
+/** Path to the SafwanTiger Shop logo shown in the email header. */
+export const EMAIL_LOGO_PATH = path.resolve(
+  __dirname,
+  '../../../assets/email-logo.png',
+);
 
 const PDF_FILENAME = 'why-we-need-your-email.pdf';
+const LOGO_FILENAME = 'safwantiger-logo.png';
+/** CID used by the inline logo in the HTML body. */
+const LOGO_CID = 'safwantiger-logo';
 
 let pdfBase64Cache: string | null = null;
 function readPdfBase64(): string | null {
@@ -54,6 +62,21 @@ function readPdfBase64(): string | null {
     return pdfBase64Cache;
   } catch (err) {
     logger.error({ err, path: WHY_EMAIL_PDF_PATH }, 'mailer: could not read Why-Email PDF — sending without attachment');
+    return null;
+  }
+}
+
+let logoBase64Cache: string | null = null;
+function readLogoBase64(): string | null {
+  if (logoBase64Cache) return logoBase64Cache;
+  try {
+    logoBase64Cache = fs.readFileSync(EMAIL_LOGO_PATH).toString('base64');
+    return logoBase64Cache;
+  } catch (err) {
+    logger.error(
+      { err, path: EMAIL_LOGO_PATH },
+      'mailer: could not read header logo — falling back to plain header',
+    );
     return null;
   }
 }
@@ -143,10 +166,10 @@ function welcomeBody(args: {
 
   const subject =
     args.mode === 'delete'
-      ? '🐯 SafwanTiger Shop — your email has been removed'
+      ? 'SafwanTiger Shop — your email has been removed'
       : args.mode === 'change'
-        ? '🐯 SafwanTiger Shop — your email has been updated'
-        : '🐯 Welcome to SafwanTiger Shop — your email is connected';
+        ? 'SafwanTiger Shop — your email has been updated'
+        : 'Welcome to SafwanTiger Shop — your email is connected';
 
   const headlineEyebrow =
     args.mode === 'delete'
@@ -256,7 +279,7 @@ function welcomeBody(args: {
                 <div style="font-size:13px;color:#1c1917;font-weight:600;margin-top:2px;opacity:.7;">${escapeHtml(headlineEyebrow)}</div>
               </td>
               <td align="right" style="vertical-align:middle;">
-                <div style="font-size:34px;line-height:1;">🐯</div>
+                <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="64" height="64" style="display:block;width:64px;height:64px;border:0;border-radius:14px;background:#ffffff;padding:4px;box-shadow:0 4px 10px rgba(0,0,0,0.18);">
               </td>
             </tr>
           </table>
@@ -352,6 +375,30 @@ async function sendViaResend(args: {
   // Only set / change emails attach the explanatory PDF — a deletion
   // confirmation should NOT carry it (the user just opted out).
   const pdfB64 = args.mode === 'delete' ? null : readPdfBase64();
+  // Inline header logo, referenced as `cid:safwantiger-logo` from the
+  // HTML. Falls back gracefully if the file is missing.
+  const logoB64 = readLogoBase64();
+  const attachments: Array<{
+    filename: string;
+    content: string;
+    contentType: string;
+    contentId?: string;
+  }> = [];
+  if (pdfB64) {
+    attachments.push({
+      filename: PDF_FILENAME,
+      content: pdfB64,
+      contentType: 'application/pdf',
+    });
+  }
+  if (logoB64) {
+    attachments.push({
+      filename: LOGO_FILENAME,
+      content: logoB64,
+      contentType: 'image/png',
+      contentId: LOGO_CID,
+    });
+  }
   try {
     const { data, error } = await client.emails.send({
       from: fromAddress(),
@@ -359,15 +406,7 @@ async function sendViaResend(args: {
       subject: args.subject,
       html: args.html,
       text: args.text,
-      attachments: pdfB64
-        ? [
-            {
-              filename: PDF_FILENAME,
-              content: pdfB64,
-              contentType: 'application/pdf',
-            },
-          ]
-        : undefined,
+      attachments: attachments.length ? attachments : undefined,
     });
     if (error) {
       const e = error as { name?: string; message?: string; statusCode?: number };
@@ -415,6 +454,27 @@ async function sendViaSmtp(args: {
 }): Promise<boolean> {
   const tx = smtpTransporter();
   if (!tx) return false;
+  // Always inline the header logo; only include the PDF for set/change.
+  const smtpAttachments: Array<{
+    filename: string;
+    path: string;
+    contentType: string;
+    cid?: string;
+  }> = [
+    {
+      filename: LOGO_FILENAME,
+      path: EMAIL_LOGO_PATH,
+      contentType: 'image/png',
+      cid: LOGO_CID,
+    },
+  ];
+  if (args.mode !== 'delete') {
+    smtpAttachments.push({
+      filename: PDF_FILENAME,
+      path: WHY_EMAIL_PDF_PATH,
+      contentType: 'application/pdf',
+    });
+  }
   try {
     const info = await tx.sendMail({
       from: fromAddress(),
@@ -422,18 +482,7 @@ async function sendViaSmtp(args: {
       subject: args.subject,
       text: args.text,
       html: args.html,
-      // Skip the explanatory PDF for delete confirmations — see
-      // sendViaResend() for the rationale.
-      attachments:
-        args.mode === 'delete'
-          ? undefined
-          : [
-              {
-                filename: PDF_FILENAME,
-                path: WHY_EMAIL_PDF_PATH,
-                contentType: 'application/pdf',
-              },
-            ],
+      attachments: smtpAttachments,
     });
     logger.info(
       {
