@@ -132,11 +132,27 @@ export const en: Record<string, string> = {
     '{profile_email} *Current email:* `{current}`',
   // Mobile popup shown when the user taps "Change Email" without one.
   'profile.email.change.no_email_popup': 'Please Set up email first',
+  // Mobile popup shown when the user taps "Delete Email" without one.
+  'profile.email.delete.no_email_popup': 'No email is set yet — nothing to delete.',
+  // Delete Email confirmation screen.
+  'profile.email.delete.title': '{email_bracket_l} *Delete Email* {email_bracket_l}',
+  'profile.email.delete.body':
+    '{email_invalid} _Please confirm to delete email_\n\n' +
+    '{profile_email} *Current email:* `{current}`',
+  // Toast shown after the email is removed.
+  'profile.email.delete.success': '✅ Email removed.',
+  // Shown when another user already has this email.
+  'profile.email.in_use':
+    '{email_in_use} Email already in *use*\n\n' +
+    '{email_arrow} *_Please enter a new verified email_*',
   // Buttons used on the Settings screen + email sub-screens.
   'btn.email.settings': '📧 Email Settings',
   'btn.email.change': '✏️ Change Email',
   'btn.email.set': '📧 Set Email',
   'btn.email.why': '❔ Why Email',
+  'btn.email.delete': '🗑 Delete Email',
+  'btn.email.delete.confirm': '🗑 Confirm Delete',
+  'btn.email.delete.cancel': '⬅️ Cancel',
   'btn.email.know_more': '📄 Know More',
   // My Deposits button.
   'btn.my_deposits': '💳 My Deposits',
@@ -158,7 +174,12 @@ export const en: Record<string, string> = {
   // ---------- My Orders screen ----------
   'orders.title': '{orders_title} *My Orders*',
   'orders.body': 'Tap any order below to open details, or send the public Order ID shown in your receipt.',
-  'orders.empty': 'You haven\'t placed any orders yet.',
+  'orders.empty':
+    '{orders_title} *My Orders*\n\n' +
+    '🪄 No orders yet.\n\n' +
+    '✨ 🛍️ 🚀 Start shopping and your orders will appear here!',
+  'orders.file.caption': '{orders_title} All your order details — attached as a file.',
+  'orders.file.empty_caption': '{orders_title} No orders yet — placeholder file attached.',
   'orders.page': 'Page {page}/{pages}',
   'orders.status.active': '🛡 Active',
   'orders.status.refunded': '↩️ Refunded',
