@@ -157,6 +157,17 @@ export const en: Record<string, string> = {
   'btn.email.delete.confirm': '🗑 Confirm Delete',
   'btn.email.delete.cancel': '⬅️ Cancel',
   'btn.email.know_more': '📄 Know More',
+  // Send-PDF buttons (My Orders / My Deposits / My Stats screens).
+  'btn.send_pdf.orders': '📤 Send Orders PDF to Email',
+  'btn.send_pdf.deposits': '📤 Send Deposits PDF to Email',
+  'btn.send_pdf.stats': '📤 Send Stats PDF to Email',
+  // Pop-ups for the Send-PDF buttons.
+  'pdf.no_email_popup':
+    '⚠️ Set your email first. Open Settings → Email Settings → Set Email to add one, then come back and tap Send PDF.',
+  'pdf.sending_popup': '⏳ Generating your PDF and sending it to {email}…',
+  'pdf.sent_popup': '✅ PDF sent to {email}. Check your inbox (and spam folder).',
+  'pdf.failed_popup':
+    '❌ Could not send PDF to {email}. Please try again in a moment — if it keeps failing, contact support.',
   // My Deposits button.
   'btn.my_deposits': '💳 My Deposits',
   // Redeem Gift Code button (Settings) + screen.

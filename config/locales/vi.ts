@@ -111,6 +111,16 @@ export const vi: Record<string, string> = {
   'btn.email.delete': '🗑 Xóa Email',
   'btn.email.delete.confirm': '🗑 Xác nhận xóa',
   'btn.email.delete.cancel': '⬅️ Hủy',
+  // Nút "Gửi PDF" cho màn hình Đơn hàng / Nạp tiền / Thống kê.
+  'btn.send_pdf.orders': '📤 Gửi PDF đơn hàng đến email',
+  'btn.send_pdf.deposits': '📤 Gửi PDF nạp tiền đến email',
+  'btn.send_pdf.stats': '📤 Gửi PDF thống kê đến email',
+  'pdf.no_email_popup':
+    '⚠️ Vui lòng đặt email trước. Cài đặt → Cài đặt email → Đặt email, sau đó quay lại và nhấn Gửi PDF.',
+  'pdf.sending_popup': '⏳ Đang tạo PDF và gửi đến {email}…',
+  'pdf.sent_popup': '✅ Đã gửi PDF đến {email}. Vui lòng kiểm tra hộp thư (và mục Spam).',
+  'pdf.failed_popup':
+    '❌ Không gửi được PDF đến {email}. Vui lòng thử lại sau ít phút — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
   'orders.empty':
     '{orders_title} *Đơn hàng của tôi*\n\n' +
     '🪄 Chưa có đơn hàng nào.\n\n' +

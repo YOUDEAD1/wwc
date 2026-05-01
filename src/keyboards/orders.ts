@@ -48,6 +48,7 @@ export function ordersListKeyboard(
     for (const [label, cb] of navRow) kb.text(label, cb);
     kb.row();
   }
+  kb.text(t(lang, 'btn.send_pdf.orders'), 'profile:orders:pdf').row();
   kb.text(btn(lang, 'back_to_settings'), 'profile:open');
   return kb;
 }

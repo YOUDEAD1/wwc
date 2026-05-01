@@ -49,22 +49,9 @@ export const EMAIL_LOGO_PATH = path.resolve(
   '../../../assets/email-logo.png',
 );
 
-const PDF_FILENAME = 'why-we-need-your-email.pdf';
 const LOGO_FILENAME = 'safwantiger-logo.png';
 /** CID used by the inline logo in the HTML body. */
 const LOGO_CID = 'safwantiger-logo';
-
-let pdfBase64Cache: string | null = null;
-function readPdfBase64(): string | null {
-  if (pdfBase64Cache) return pdfBase64Cache;
-  try {
-    pdfBase64Cache = fs.readFileSync(WHY_EMAIL_PDF_PATH).toString('base64');
-    return pdfBase64Cache;
-  } catch (err) {
-    logger.error({ err, path: WHY_EMAIL_PDF_PATH }, 'mailer: could not read Why-Email PDF — sending without attachment');
-    return null;
-  }
-}
 
 let logoBase64Cache: string | null = null;
 function readLogoBase64(): string | null {
@@ -215,8 +202,7 @@ function welcomeBody(args: {
       '  • Critical security notices',
       '',
       'We will never use this address for marketing, share it with',
-      'third parties, or send unsolicited messages. The attached PDF',
-      '"Why we need your email" goes into more detail.',
+      'third parties, or send unsolicited messages.',
       '',
       args.mode === 'change'
         ? "If you didn't just update this address yourself, reply to this email immediately so we can secure your account."
@@ -341,7 +327,7 @@ function welcomeBody(args: {
 
               <tr><td style="padding:0 36px 22px 36px;">
                 <p style="margin:0;font-size:13px;line-height:1.7;color:#8a8378;">
-                  We will <strong style="color:#e6c08c;font-weight:500;">never</strong> use this address for marketing or share it with anyone. The attached PDF goes into more detail.
+                  We will <strong style="color:#e6c08c;font-weight:500;">never</strong> use this address for marketing or share it with anyone.
                 </p>
               </td></tr>`
         }
@@ -396,9 +382,6 @@ async function sendViaResend(args: {
 }): Promise<boolean> {
   const client = resendClient();
   if (!client) return false;
-  // Only set / change emails attach the explanatory PDF — a deletion
-  // confirmation should NOT carry it (the user just opted out).
-  const pdfB64 = args.mode === 'delete' ? null : readPdfBase64();
   // Inline header logo, referenced as `cid:safwantiger-logo` from the
   // HTML. Falls back gracefully if the file is missing.
   const logoB64 = readLogoBase64();
@@ -408,13 +391,6 @@ async function sendViaResend(args: {
     contentType: string;
     contentId?: string;
   }> = [];
-  if (pdfB64) {
-    attachments.push({
-      filename: PDF_FILENAME,
-      content: pdfB64,
-      contentType: 'application/pdf',
-    });
-  }
   if (logoB64) {
     attachments.push({
       filename: LOGO_FILENAME,
@@ -478,7 +454,9 @@ async function sendViaSmtp(args: {
 }): Promise<boolean> {
   const tx = smtpTransporter();
   if (!tx) return false;
-  // Always inline the header logo; only include the PDF for set/change.
+  // Inline the header logo only — confirmation emails no longer carry
+  // an explanatory PDF (users now request reports on demand from the
+  // bot's My Orders / My Deposits / Stats screens).
   const smtpAttachments: Array<{
     filename: string;
     path: string;
@@ -492,13 +470,6 @@ async function sendViaSmtp(args: {
       cid: LOGO_CID,
     },
   ];
-  if (args.mode !== 'delete') {
-    smtpAttachments.push({
-      filename: PDF_FILENAME,
-      path: WHY_EMAIL_PDF_PATH,
-      contentType: 'application/pdf',
-    });
-  }
   try {
     const info = await tx.sendMail({
       from: fromAddress(),
@@ -625,6 +596,246 @@ export function describeMailerStatus(): string {
     'Set RESEND_API_KEY (preferred) or SMTP_HOST/PORT/USER/PASS in your environment to enable delivery from shopbot@safwantiger.com.',
   );
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+//  On-demand report emails (My Orders / My Deposits / My Stats PDFs)
+// ---------------------------------------------------------------------------
+
+export type ReportKind = 'orders' | 'deposits' | 'stats';
+
+const REPORT_TITLES: Record<ReportKind, string> = {
+  orders: 'My Orders',
+  deposits: 'My Deposits',
+  stats: 'My Stats',
+};
+
+const REPORT_INTROS: Record<ReportKind, string> = {
+  orders:
+    "Here's a full PDF copy of every order on your SafwanTiger Shop account. Each order includes its product, quantity, total, status and timestamp.",
+  deposits:
+    "Here's a full PDF copy of every deposit and wallet ledger entry on your SafwanTiger Shop account. Approved totals are summarised on the cover page.",
+  stats:
+    "Here's a PDF snapshot of your SafwanTiger Shop account stats — total orders, items, spend, deposits and last-order timestamp.",
+};
+
+function reportBody(args: {
+  kind: ReportKind;
+  email: string;
+  firstName: string | null;
+  username: string | null;
+  generatedAt: string;
+}): { html: string; text: string; subject: string } {
+  const title = REPORT_TITLES[args.kind];
+  const intro = REPORT_INTROS[args.kind];
+  const subject = `SafwanTiger Shop — your ${title} report`;
+  const greeting = args.firstName
+    ? `Hi ${args.firstName},`
+    : args.username
+      ? `Hi @${args.username},`
+      : 'Hello,';
+
+  const lines = [
+    greeting,
+    '',
+    intro,
+    '',
+    `Generated: ${args.generatedAt}`,
+    '',
+    'You requested this PDF from the SafwanTiger Shop Telegram bot. If',
+    "this wasn't you, reply to this email so we can secure your account.",
+    '',
+    '— SafwanTiger Shop',
+    'https://t.me/safwantigershopbot',
+  ];
+  const text = lines.join('\n');
+
+  const logoBlock = `
+    <!--[if mso]>
+    <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:56pt;height:56pt;" stroked="t" strokeweight="1.5pt" strokecolor="#d4a574" fillcolor="#0a0a0a"><v:fill type="frame" src="cid:${LOGO_CID}"/></v:oval>
+    <![endif]-->
+    <!--[if !mso]><!-- -->
+    <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
+    <!--<![endif]-->`;
+
+  const html = `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background:#070707;font-family:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#d8d3c8;-webkit-font-smoothing:antialiased;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#070707;">
+    ${escapeHtml(`Your ${title} PDF report is attached.`)}
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#070707;padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#0f0f10;border:1px solid rgba(212,165,116,0.20);border-radius:18px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.55);">
+        <tr><td style="height:2px;line-height:2px;font-size:0;background:linear-gradient(90deg,rgba(212,165,116,0) 0%,#d4a574 50%,rgba(212,165,116,0) 100%);">&nbsp;</td></tr>
+        <tr><td align="center" style="padding:40px 36px 28px 36px;background:#0a0a0a;">
+          ${logoBlock}
+          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">SafwanTiger Shop</div>
+          <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a8378;margin-top:4px;font-weight:500;">Report ready</div>
+          <div style="font-size:26px;color:#f5f1e8;font-weight:600;margin-top:18px;letter-spacing:-0.015em;line-height:1.25;">Your ${escapeHtml(title)} report</div>
+        </td></tr>
+        <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(212,165,116,0.16);">&nbsp;</td></tr>
+        <tr><td style="padding:32px 36px 10px 36px;">
+          <p style="margin:0 0 16px 0;color:#f5f1e8;font-size:15px;line-height:1.6;font-weight:500;">${escapeHtml(greeting)}</p>
+          <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;color:#d8d3c8;">${escapeHtml(intro)}</p>
+        </td></tr>
+        <tr><td style="padding:0 36px 22px 36px;">
+          <div style="padding:16px 20px;border-radius:10px;background:#16151a;border:1px solid rgba(255,255,255,0.06);font-size:13px;color:#8a8378;line-height:1.7;">
+            <span style="color:#d4a574;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:10px;">Attached</span><br>
+            <span style="color:#f5f1e8;font-weight:500;">SafwanTiger-Shop-${escapeHtml(args.kind)}.pdf</span>
+            <span style="color:#5a5550;"> · generated ${escapeHtml(args.generatedAt)}</span>
+          </div>
+        </td></tr>
+        <tr><td style="padding:0 36px 28px 36px;">
+          <div style="padding:16px 20px;border-radius:10px;background:rgba(212,165,116,0.06);border:1px solid rgba(212,165,116,0.22);font-size:13px;color:#d8d3c8;line-height:1.7;">
+            <strong style="color:#e6c08c;font-weight:600;letter-spacing:.02em;">Heads up.</strong> You requested this PDF from the SafwanTiger Shop Telegram bot. If this wasn't you, <a href="mailto:shopbot@safwantiger.com?subject=Report%20I%20did%20not%20request" style="color:#e6c08c;text-decoration:underline;text-underline-offset:2px;">reply to this email</a> so we can secure your account.
+          </div>
+        </td></tr>
+        <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(255,255,255,0.06);">&nbsp;</td></tr>
+        <tr><td align="center" style="padding:24px 36px 28px 36px;background:#0a0a0a;">
+          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">SafwanTiger Shop Team</div>
+          <div style="margin-top:6px;font-size:13px;color:#8a8378;line-height:1.6;">
+            <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:none;">@safwantigershopbot</a>
+            <span style="color:#3a3631;">&nbsp;·&nbsp;</span>
+            <a href="mailto:shopbot@safwantiger.com" style="color:#8a8378;text-decoration:none;">shopbot@safwantiger.com</a>
+          </div>
+          <p style="margin:16px 0 0 0;font-size:11px;color:#5a5550;line-height:1.6;letter-spacing:.01em;">
+            This is an automated message confirming a report you requested through the SafwanTiger Shop Telegram bot. Please don't share this email with anyone.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  return { html, text, subject };
+}
+
+/**
+ * Send a generated PDF report (orders / deposits / stats) to the
+ * user's email. Returns true on send success, false otherwise — never
+ * throws. The caller (Telegram callback handler) decides what to show
+ * the user.
+ */
+export async function sendReportEmail(args: {
+  email: string;
+  kind: ReportKind;
+  pdf: Buffer;
+  firstName: string | null;
+  username: string | null;
+}): Promise<boolean> {
+  if (!resendConfigured() && !smtpConfigured()) {
+    logger.warn(
+      { email: args.email, kind: args.kind },
+      'sendReportEmail: no transport configured — set RESEND_API_KEY (preferred) or SMTP_HOST/PORT/USER/PASS',
+    );
+    return false;
+  }
+  const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  const { html, text, subject } = reportBody({
+    kind: args.kind,
+    email: args.email,
+    firstName: args.firstName,
+    username: args.username,
+    generatedAt,
+  });
+  const filename = `SafwanTiger-Shop-${args.kind}.pdf`;
+
+  if (resendConfigured()) {
+    const client = resendClient();
+    if (!client) return false;
+    const logoB64 = readLogoBase64();
+    const attachments: Array<{
+      filename: string;
+      content: string;
+      contentType: string;
+      contentId?: string;
+    }> = [
+      {
+        filename,
+        content: args.pdf.toString('base64'),
+        contentType: 'application/pdf',
+      },
+    ];
+    if (logoB64) {
+      attachments.push({
+        filename: LOGO_FILENAME,
+        content: logoB64,
+        contentType: 'image/png',
+        contentId: LOGO_CID,
+      });
+    }
+    try {
+      const { data, error } = await client.emails.send({
+        from: fromAddress(),
+        to: args.email,
+        subject,
+        html,
+        text,
+        attachments,
+      });
+      if (error) {
+        const e = error as { name?: string; message?: string; statusCode?: number };
+        logger.error(
+          { err: error, to: args.email, kind: args.kind, transport: 'resend' },
+          `sendReportEmail: Resend rejected — statusCode=${e.statusCode} message="${e.message}"`,
+        );
+        return false;
+      }
+      logger.info(
+        { id: data?.id, to: args.email, kind: args.kind, transport: 'resend' },
+        `sendReportEmail: delivered via Resend (id=${data?.id ?? 'unknown'})`,
+      );
+      return true;
+    } catch (err) {
+      logger.error(
+        { err, to: args.email, kind: args.kind, transport: 'resend' },
+        'sendReportEmail: Resend send threw',
+      );
+      return false;
+    }
+  }
+
+  // SMTP fallback
+  const tx = smtpTransporter();
+  if (!tx) return false;
+  try {
+    const info = await tx.sendMail({
+      from: fromAddress(),
+      to: args.email,
+      subject,
+      html,
+      text,
+      attachments: [
+        {
+          filename,
+          content: args.pdf,
+          contentType: 'application/pdf',
+        },
+        {
+          filename: LOGO_FILENAME,
+          path: EMAIL_LOGO_PATH,
+          contentType: 'image/png',
+          cid: LOGO_CID,
+        },
+      ],
+    });
+    logger.info(
+      { messageId: info.messageId, to: args.email, kind: args.kind, transport: 'smtp' },
+      'sendReportEmail: delivered via SMTP',
+    );
+    return true;
+  } catch (err) {
+    logger.error(
+      { err, to: args.email, kind: args.kind, transport: 'smtp' },
+      'sendReportEmail: SMTP send failed',
+    );
+    return false;
+  }
 }
 
 export function logMailerStatus(): void {
