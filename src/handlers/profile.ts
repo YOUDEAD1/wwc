@@ -325,9 +325,18 @@ async function sendReportPdfFromCallback(
       // Surface success as a real chat message so the premium 📬
       // custom emoji renders as a `<tg-emoji>` entity rather than a
       // plain toast (Telegram strips custom_emoji from popup text).
-      await ctx.reply(renderMdHtml(ctx.t('pdf.sent_message')), {
+      // Auto-deleted 5 s later so the chat doesn't fill up with
+      // confirmations after multiple Send-PDF taps.
+      const sent = await ctx.reply(renderMdHtml(ctx.t('pdf.sent_message')), {
         parse_mode: 'HTML',
       });
+      const chatId = sent.chat.id;
+      const messageId = sent.message_id;
+      setTimeout(() => {
+        ctx.api.deleteMessage(chatId, messageId).catch((err) => {
+          logger.warn({ err, chatId, messageId }, 'pdf.sent_message auto-delete failed');
+        });
+      }, 5_000);
     } else {
       await ctx.answerCallbackQuery({
         text: ctx.t('pdf.failed_popup', { email }),
