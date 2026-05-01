@@ -229,28 +229,53 @@ function welcomeBody(args: {
   const text = lines.join('\n');
 
   // ---------- HTML body ----------
+  // Premium ink + champagne-gold palette. Tokens are inlined into
+  // each style attribute below (email clients ignore <style> blocks
+  // and CSS variables).
+  //   Page bg     : #070707   (near-black ink)
+  //   Card bg     : #0f0f10
+  //   Card border : rgba(212,165,116,.20)  (subtle gold ring)
+  //   Inner card  : #16151a
+  //   Inner border: rgba(255,255,255,.06)
+  //   Accent gold : #d4a574   (champagne)
+  //   Accent hi   : #e6c08c
+  //   Headline    : #f5f1e8   (warm cream)
+  //   Body        : #d8d3c8
+  //   Muted       : #8a8378
   const previousEmailBlock =
     args.mode === 'change' && args.previousEmail
-      ? `<tr><td style="padding:0 28px 14px 28px;">
-          <div style="padding:14px 16px;border-radius:8px;background:#0d1117;border:1px solid #30363d;font-size:13px;color:#7d8590;line-height:1.6;">
-            Previous address on file: <span style="color:#c9d1d9;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.previousEmail)}</span>
+      ? `<tr><td style="padding:0 36px 18px 36px;">
+          <div style="padding:14px 18px;border-radius:10px;background:#16151a;border:1px solid rgba(255,255,255,0.06);font-size:13px;color:#8a8378;line-height:1.6;">
+            <span style="color:#8a8378;">Previous address on file: </span><span style="color:#d8d3c8;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.previousEmail)}</span>
           </div>
         </td></tr>`
       : '';
 
   const securityNote =
     args.mode === 'delete'
-      ? "If you didn't just delete this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20deletion\" style=\"color:#fbbf24;text-decoration:underline;\">reply to this email immediately</a> so we can secure your account."
+      ? "If you didn't just delete this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20deletion\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">reply to this email immediately</a> so we can secure your account."
       : args.mode === 'change'
-        ? "If you didn't just update this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20change\" style=\"color:#fbbf24;text-decoration:underline;\">reply to this email immediately</a> so we can secure your account."
-        : "Didn't just save this address? <a href=\"mailto:shopbot@safwantiger.com?subject=Remove%20my%20email\" style=\"color:#fbbf24;text-decoration:underline;\">Reply to this email</a> and we'll remove it from your account.";
+        ? "If you didn't just update this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20change\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">reply to this email immediately</a> so we can secure your account."
+        : "Didn't just save this address? <a href=\"mailto:shopbot@safwantiger.com?subject=Remove%20my%20email\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">Reply to this email</a> and we'll remove it from your account.";
 
   const introCopy =
     args.mode === 'delete'
-      ? `Just confirming: <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> has been deleted from the bot successfully. You will no longer receive receipts at this address.`
+      ? `Just confirming: <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> has been deleted from the bot successfully. You will no longer receive receipts at this address.`
       : args.mode === 'change'
-        ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong>.`
-        : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked <strong style="color:#fbbf24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> to your Telegram account.`;
+        ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong>.`
+        : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> to your Telegram account.`;
+
+  // Circular logo with a thin champagne ring. 56×56 — small enough
+  // to feel refined, large enough to read on retina displays. The
+  // VML fallback covers Outlook desktop, which ignores
+  // border-radius.
+  const logoBlock = `
+    <!--[if mso]>
+    <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:56pt;height:56pt;" stroked="t" strokeweight="1.5pt" strokecolor="#d4a574" fillcolor="#0a0a0a"><v:fill type="frame" src="cid:${LOGO_CID}"/></v:oval>
+    <![endif]-->
+    <!--[if !mso]><!-- -->
+    <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
+    <!--<![endif]-->`;
 
   const html = `<!doctype html>
 <html lang="en"><head>
@@ -258,8 +283,8 @@ function welcomeBody(args: {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#c9d1d9;-webkit-font-smoothing:antialiased;">
-  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#0d1117;">
+<body style="margin:0;padding:0;background:#070707;font-family:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#d8d3c8;-webkit-font-smoothing:antialiased;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#070707;">
     ${escapeHtml(
       args.mode === 'delete'
         ? `Email ${args.email} has been removed from your account.`
@@ -268,77 +293,76 @@ function welcomeBody(args: {
           : `Welcome aboard — ${args.email} is now linked to your account.`,
     )}
   </div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0d1117;padding:32px 16px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#070707;padding:40px 16px;">
     <tr><td align="center">
-      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#161b22;border:1px solid #30363d;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.45);">
-        <tr><td style="background:linear-gradient(135deg,#f97316 0%,#fbbf24 100%);padding:28px 32px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-            <tr>
-              <td style="vertical-align:middle;">
-                <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#1c1917;font-weight:700;opacity:.85;">SafwanTiger Shop</div>
-                <div style="font-size:13px;color:#1c1917;font-weight:600;margin-top:2px;opacity:.7;">${escapeHtml(headlineEyebrow)}</div>
-              </td>
-              <td align="right" style="vertical-align:middle;">
-                <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="64" height="64" style="display:block;width:64px;height:64px;border:0;border-radius:14px;background:#ffffff;padding:4px;box-shadow:0 4px 10px rgba(0,0,0,0.18);">
-              </td>
-            </tr>
-          </table>
-          <div style="font-size:26px;color:#1c1917;font-weight:800;margin-top:14px;letter-spacing:-0.01em;">${escapeHtml(headlineTitle)}</div>
+      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#0f0f10;border:1px solid rgba(212,165,116,0.20);border-radius:18px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.55);">
+
+        <!-- Hairline gold accent at the very top -->
+        <tr><td style="height:2px;line-height:2px;font-size:0;background:linear-gradient(90deg,rgba(212,165,116,0) 0%,#d4a574 50%,rgba(212,165,116,0) 100%);">&nbsp;</td></tr>
+
+        <!-- Header: centred logo + eyebrow + title on deep ink -->
+        <tr><td align="center" style="padding:40px 36px 28px 36px;background:#0a0a0a;">
+          ${logoBlock}
+          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">SafwanTiger Shop</div>
+          <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a8378;margin-top:4px;font-weight:500;">${escapeHtml(headlineEyebrow)}</div>
+          <div style="font-size:26px;color:#f5f1e8;font-weight:600;margin-top:18px;letter-spacing:-0.015em;line-height:1.25;">${escapeHtml(headlineTitle)}</div>
         </td></tr>
 
-        <tr><td style="padding:28px 32px 8px 32px;">
-          <p style="margin:0 0 14px 0;color:#e6edf3;font-size:15px;line-height:1.6;">${escapeHtml(greeting)}</p>
-          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#c9d1d9;">${introCopy}</p>
+        <!-- Hairline divider -->
+        <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(212,165,116,0.16);">&nbsp;</td></tr>
+
+        <tr><td style="padding:32px 36px 10px 36px;">
+          <p style="margin:0 0 16px 0;color:#f5f1e8;font-size:15px;line-height:1.6;font-weight:500;">${escapeHtml(greeting)}</p>
+          <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;color:#d8d3c8;">${introCopy}</p>
         </td></tr>
 
         ${previousEmailBlock}
 
         ${
           args.mode === 'delete'
-            ? `<tr><td style="padding:0 32px 18px 32px;">
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c9d1d9;">
+            ? `<tr><td style="padding:0 36px 22px 36px;">
+                <p style="margin:0;font-size:14px;line-height:1.7;color:#d8d3c8;">
                   Need to re-link an email later? Open the bot any time and head to
-                  <strong style="color:#fbbf24;">Settings → Email Settings → Set Email</strong>.
+                  <span style="color:#e6c08c;font-weight:500;">Settings → Email Settings → Set Email</span>.
                 </p>
               </td></tr>`
-            : `<tr><td style="padding:0 32px 18px 32px;">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:12px;background:#0d1117;border:1px solid #30363d;">
-                  <tr><td style="padding:18px 22px;">
-                    <div style="font-size:11px;color:#7d8590;text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;font-weight:600;">What this email is used for</div>
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;line-height:1.7;color:#c9d1d9;">
-                      <tr><td style="padding:4px 0;width:28px;vertical-align:top;">📦</td><td style="padding:4px 0;">Order receipts &amp; delivery confirmations</td></tr>
-                      <tr><td style="padding:4px 0;width:28px;vertical-align:top;">🔐</td><td style="padding:4px 0;">Account recovery if you lose Telegram access</td></tr>
-                      <tr><td style="padding:4px 0;width:28px;vertical-align:top;">⚠️</td><td style="padding:4px 0;">Critical security notices</td></tr>
+            : `<tr><td style="padding:0 36px 22px 36px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:12px;background:#16151a;border:1px solid rgba(255,255,255,0.06);">
+                  <tr><td style="padding:22px 24px;">
+                    <div style="font-size:10px;color:#d4a574;text-transform:uppercase;letter-spacing:.22em;margin-bottom:14px;font-weight:600;">What this email is used for</div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;line-height:1.7;color:#d8d3c8;">
+                      <tr><td style="padding:5px 0;width:28px;vertical-align:top;color:#d4a574;">●</td><td style="padding:5px 0;">Order receipts &amp; delivery confirmations</td></tr>
+                      <tr><td style="padding:5px 0;width:28px;vertical-align:top;color:#d4a574;">●</td><td style="padding:5px 0;">Account recovery if you lose Telegram access</td></tr>
+                      <tr><td style="padding:5px 0;width:28px;vertical-align:top;color:#d4a574;">●</td><td style="padding:5px 0;">Critical security notices</td></tr>
                     </table>
                   </td></tr>
                 </table>
               </td></tr>
 
-              <tr><td style="padding:0 32px 18px 32px;">
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c9d1d9;">
-                  We will <strong style="color:#fbbf24;">never</strong> use this address for marketing or share it with anyone. The attached PDF goes into more detail.
+              <tr><td style="padding:0 36px 22px 36px;">
+                <p style="margin:0;font-size:13px;line-height:1.7;color:#8a8378;">
+                  We will <strong style="color:#e6c08c;font-weight:500;">never</strong> use this address for marketing or share it with anyone. The attached PDF goes into more detail.
                 </p>
               </td></tr>`
         }
 
-        <tr><td style="padding:0 32px 24px 32px;">
-          <div style="padding:14px 16px;border-radius:8px;background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.35);font-size:13px;color:#fde6c7;line-height:1.6;">
-            <strong style="color:#fbbf24;">Security notice.</strong> ${securityNote}
+        <tr><td style="padding:0 36px 28px 36px;">
+          <div style="padding:16px 20px;border-radius:10px;background:rgba(212,165,116,0.06);border:1px solid rgba(212,165,116,0.22);font-size:13px;color:#d8d3c8;line-height:1.7;">
+            <strong style="color:#e6c08c;font-weight:600;letter-spacing:.02em;">Security notice.</strong> ${securityNote}
           </div>
         </td></tr>
 
-        <tr><td style="padding:18px 32px 24px 32px;border-top:1px solid #30363d;background:#0d1117;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-            <tr>
-              <td style="font-size:13px;color:#7d8590;line-height:1.6;">
-                <span style="color:#c9d1d9;font-weight:600;">SafwanTiger Shop Team</span><br>
-                <a href="https://t.me/safwantigershopbot" style="color:#fbbf24;text-decoration:none;">@safwantigershopbot</a>
-                &nbsp;·&nbsp;
-                <a href="mailto:shopbot@safwantiger.com" style="color:#7d8590;text-decoration:none;">shopbot@safwantiger.com</a>
-              </td>
-            </tr>
-          </table>
-          <p style="margin:14px 0 0 0;font-size:11px;color:#484f58;line-height:1.5;">
+        <!-- Hairline divider -->
+        <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(255,255,255,0.06);">&nbsp;</td></tr>
+
+        <tr><td align="center" style="padding:24px 36px 28px 36px;background:#0a0a0a;">
+          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">SafwanTiger Shop Team</div>
+          <div style="margin-top:6px;font-size:13px;color:#8a8378;line-height:1.6;">
+            <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:none;">@safwantigershopbot</a>
+            <span style="color:#3a3631;">&nbsp;·&nbsp;</span>
+            <a href="mailto:shopbot@safwantiger.com" style="color:#8a8378;text-decoration:none;">shopbot@safwantiger.com</a>
+          </div>
+          <p style="margin:16px 0 0 0;font-size:11px;color:#5a5550;line-height:1.6;letter-spacing:.01em;">
             This is an automated message confirming a change you made through the SafwanTiger Shop Telegram bot. Please don't share this email with anyone.
           </p>
         </td></tr>
