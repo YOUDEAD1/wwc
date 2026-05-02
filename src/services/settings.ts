@@ -3,7 +3,7 @@
  * (texts, colors, emojis) from this in-memory cache. Reload after
  * changes by calling `refreshSettings()`.
  */
-import { getAllSettings, setSetting } from '../db/queries.js';
+import { deleteSetting, getAllSettings, setSetting } from '../db/queries.js';
 import type { ColorMode, EmojiSpec } from '../../config/index.js';
 import { COLOR_PREFIX, DEFAULT_BUTTON_COLORS, EMOJI } from '../../config/index.js';
 
@@ -76,6 +76,12 @@ export async function setEmoji(
   const value: EmojiSpec = custom_emoji_id ? { unicode, custom_emoji_id } : unicode;
   await setSetting(`emoji.${key}`, value, updated_by);
   cache.set(`emoji.${key}`, value);
+}
+
+/** Drop an emoji override so the key falls back to its default. */
+export async function clearEmoji(key: string): Promise<void> {
+  await deleteSetting(`emoji.${key}`);
+  cache.delete(`emoji.${key}`);
 }
 
 export function clearLocalCache(): void {
