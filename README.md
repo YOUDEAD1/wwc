@@ -160,6 +160,18 @@ npm run lint
    the `Cancel Support` pinned panel + tab UX). If Threaded Mode
    isn't available or stays off, Live Support silently falls back to
    the legacy single-pinned-panel relay.
+9. **Disable user-created topics** so the bot is the only thing that
+   ever spawns a topic. In the same @BotFather Mini App page where
+   Threaded Mode lives, turn **Users can create topics** (a.k.a.
+   `allows_users_to_create_topics`) **OFF**. Without this, every
+   plain message a user types in their main "New Chat" tab is
+   silently turned by Telegram into a brand-new topic named after
+   that message (e.g. typing `hi` makes a `hi` thread), and the
+   `New Thread — Type any message to create a new thread.` overlay
+   appears as the empty-state of the main tab. The bot also has a
+   runtime safety net that auto-deletes any user-created topic, but
+   flipping this BotFather toggle off is what removes the overlay
+   itself.
 
 ---
 

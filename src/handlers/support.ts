@@ -183,6 +183,37 @@ async function endSession(
 }
 
 export function registerSupport(bot: Composer<AppCtx>): void {
+  // ------------------------------ Stray topic auto-delete ----------
+  // With Threaded Mode on, Telegram silently spawns a new forum
+  // topic named after every plain message a user types in their main
+  // "New Chat" tab — so without this guard a user typing "hi" in the
+  // bot's chat would clutter the tab bar with a stray "hi" thread.
+  //
+  // The proper Telegram-side fix is for the bot owner to turn off
+  // the "users can create topics" toggle in the @BotFather Mini App
+  // (see README §4 step 8). This handler is the runtime safety net:
+  // it deletes any forum topic that wasn't created by the bot itself,
+  // so the only thread the user ever sees is the bot-managed Live
+  // Support one.
+  //
+  // Lives outside the Live Support flow on purpose — we never want
+  // stray user-created topics in this chat, regardless of whether a
+  // session is currently active.
+  bot.on('message:forum_topic_created', async (ctx, next) => {
+    if (ctx.chat?.type !== 'private') return next();
+    if (ctx.from?.id === ctx.me.id) return next();
+    const threadId = ctx.message?.message_thread_id;
+    if (!threadId) return next();
+    try {
+      await ctx.api.deleteForumTopic(ctx.chat.id, threadId);
+    } catch (err) {
+      logger.warn(
+        { err, threadId, chatId: ctx.chat.id },
+        'live-support: failed to auto-delete stray user-created topic',
+      );
+    }
+  });
+
   bot.callbackQuery('support:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     const text = `${ctx.t('support.title')}\n\n${ctx.t('support.body')}`;
@@ -384,6 +415,17 @@ export function registerSupport(bot: Composer<AppCtx>): void {
       ctx.session.userFlow = undefined;
       return next();
     }
+    // Forum service messages (topic created/edited/closed/reopened)
+    // can't be relayed — copyMessage refuses them and they'd carry
+    // no user content anyway.
+    if (
+      ctx.message?.forum_topic_created ||
+      ctx.message?.forum_topic_edited ||
+      ctx.message?.forum_topic_closed ||
+      ctx.message?.forum_topic_reopened
+    ) {
+      return next();
+    }
     const text = ctx.message?.text;
     if (typeof text === 'string' && text.startsWith('/')) return next();
 
@@ -437,6 +479,14 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     if (ctx.from?.id !== env.ADMIN_USER_ID) return next();
     if (liveUser === null) return next();
     if (ctx.session?.adminFlow) return next();
+    if (
+      ctx.message?.forum_topic_created ||
+      ctx.message?.forum_topic_edited ||
+      ctx.message?.forum_topic_closed ||
+      ctx.message?.forum_topic_reopened
+    ) {
+      return next();
+    }
     const text = ctx.message?.text;
     if (typeof text === 'string' && text.startsWith('/')) return next();
 
