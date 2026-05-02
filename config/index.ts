@@ -101,6 +101,54 @@ export const BUTTON_KEYS = {
   stats_refresh: 'btn.stats_refresh',
   set_region: 'btn.set_region',
   set_email: 'btn.set_email',
+
+  // ---- Email hub & sub-screens ---------------------------------
+  email_settings: 'btn.email.settings',
+  email_set: 'btn.email.set',
+  email_change: 'btn.email.change',
+  email_delete: 'btn.email.delete',
+  email_delete_confirm: 'btn.email.delete.confirm',
+  email_delete_cancel: 'btn.email.delete.cancel',
+  email_why: 'btn.email.why',
+  email_know_more: 'btn.email.know_more',
+
+  // ---- Notifications toggles (state-aware labels) --------------
+  notify_stock_on: 'btn.notify.stock.on',
+  notify_stock_off: 'btn.notify.stock.off',
+  notify_ann_on: 'btn.notify.ann.on',
+  notify_ann_off: 'btn.notify.ann.off',
+  notify_wallet_on: 'btn.notify.wallet.on',
+  notify_wallet_off: 'btn.notify.wallet.off',
+
+  // ---- Send-PDF buttons ---------------------------------------
+  send_pdf_stats: 'btn.send_pdf.stats',
+  send_pdf_deposits: 'btn.send_pdf.deposits',
+  send_pdf_orders: 'btn.send_pdf.orders',
+
+  // ---- Refer screen --------------------------------------------
+  copy_link: 'btn.copy_link',
+
+  // ---- Redeem Gift Code ---------------------------------------
+  redeem: 'btn.redeem',
+  buy_code: 'btn.buy_code',
+
+  // ---- Order-detail screen ------------------------------------
+  orders_open_link: 'btn.orders_open_link',
+  orders_back_list: 'btn.orders_back_list',
+
+  // ---- Support section ----------------------------------------
+  support_contact: 'support.btn.contact',
+  support_live: 'support.btn.live',
+  support_cancel: 'support.btn.cancel',
+  support_end_session: 'support.btn.end_session',
+
+  // ---- Language picker ---------------------------------------
+  language_en: 'btn.language.english',
+  language_ar: 'btn.language.arabic',
+  language_vi: 'btn.language.vietnamese',
+
+  // ---- Region picker -----------------------------------------
+  region_clear: 'btn.region.clear',
 } as const;
 
 /**
@@ -139,6 +187,54 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   stats_refresh: 'none',
   set_region: 'none',
   set_email: 'none',
+
+  // Email hub: Set/Change blue, Delete red, Why neutral.
+  email_settings: 'none',
+  email_set: 'green',
+  email_change: 'blue',
+  email_delete: 'red',
+  email_delete_confirm: 'red',
+  email_delete_cancel: 'none',
+  email_why: 'none',
+  email_know_more: 'blue',
+
+  // Notification toggles: ON green, OFF neutral so the difference reads at a glance.
+  notify_stock_on: 'green',
+  notify_stock_off: 'none',
+  notify_ann_on: 'green',
+  notify_ann_off: 'none',
+  notify_wallet_on: 'green',
+  notify_wallet_off: 'none',
+
+  // Send-PDF buttons: blue (matches the existing .primary() styling).
+  send_pdf_stats: 'blue',
+  send_pdf_deposits: 'blue',
+  send_pdf_orders: 'blue',
+
+  // Refer copy-link: green (positive action).
+  copy_link: 'green',
+
+  // Redeem flow.
+  redeem: 'none',
+  buy_code: 'blue',
+
+  // Order detail.
+  orders_open_link: 'blue',
+  orders_back_list: 'none',
+
+  // Support section.
+  support_contact: 'blue',
+  support_live: 'green',
+  support_cancel: 'red',
+  support_end_session: 'red',
+
+  // Language picker — neutral (admin can colour them per language).
+  language_en: 'none',
+  language_ar: 'none',
+  language_vi: 'none',
+
+  // Region clear: destructive.
+  region_clear: 'red',
 };
 
 /**
@@ -336,6 +432,44 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   stats_refresh: 'stats_refresh',
   set_region: 'profile_region',
   set_email: 'profile_email',
+
+  // Email hub & sub-screens
+  email_settings: 'profile_email',
+  email_set: 'profile_email',
+  email_change: 'email_bracket_r',
+  email_delete: 'gift_invalid',
+  email_delete_confirm: 'gift_invalid',
+  email_know_more: 'email_invoice',
+
+  // Notification toggles (ON uses green dot, OFF uses bell-off)
+  notify_stock_on: 'notify_on',
+  notify_stock_off: 'notify_off',
+  notify_ann_on: 'notify_on',
+  notify_ann_off: 'notify_off',
+  notify_wallet_on: 'notify_on',
+  notify_wallet_off: 'notify_off',
+
+  // Send-PDF buttons (paper-plane / outbox icons)
+  send_pdf_stats: 'pdf_sent_l',
+  send_pdf_deposits: 'pdf_sent_l',
+  send_pdf_orders: 'pdf_sent_l',
+
+  // Refer copy-link
+  copy_link: 'refer_transferred',
+
+  // Redeem
+  redeem: 'gift_title',
+  buy_code: 'gift_usdt',
+
+  // Order detail
+  orders_open_link: 'profile_link',
+  orders_back_list: 'stats_back',
+
+  // Support section
+  support_contact: 'support_title',
+  support_live: 'support_live_active',
+  support_cancel: 'support_live_closed',
+  support_end_session: 'support_live_closed',
 };
 
 /**

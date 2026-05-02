@@ -1,7 +1,7 @@
 import { Composer, InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
-import { inlineBtn } from '../keyboards/helpers.js';
+import { inlineBtn, inlineUrl } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { getAdminContactUrlWithPrefill } from '../services/settings.js';
@@ -125,32 +125,32 @@ const TOPIC_NAME_USER = 'Live Support';
 /** Light-blue topic icon (Telegram's default for new topics). */
 const TOPIC_ICON_COLOR = 0x6fb9f0;
 
-function liveKeyboardForUser(t: (k: string) => string): InlineKeyboard {
+function liveKeyboardForUser(lang: Lang): InlineKeyboard {
   // User taps Cancel → we delete the topic + pinned panel and
   // re-render the Support section. Admin still gets the standard End
   // Session control.
-  return new InlineKeyboard()
-    .text(t('support.btn.cancel'), 'support:live:cancel:user')
-    .danger();
+  return inlineBtn(new InlineKeyboard(), lang, 'support_cancel', 'support:live:cancel:user');
 }
 
-function liveKeyboardForAdmin(t: (k: string) => string): InlineKeyboard {
-  return new InlineKeyboard()
-    .text(t('support.btn.end_session'), 'support:live:end:admin')
-    .danger();
+function liveKeyboardForAdmin(lang: Lang): InlineKeyboard {
+  return inlineBtn(
+    new InlineKeyboard(),
+    lang,
+    'support_end_session',
+    'support:live:end:admin',
+  );
 }
 
 function supportKeyboard(
-  t: (k: string) => string,
   contactUrl: string,
   lang: Lang,
 ): InlineKeyboard {
   // Stack each action on its own full-width row, matching the look
   // of the Notifications submenu.
   const kb = new InlineKeyboard();
-  kb.url(t('support.btn.contact'), contactUrl).primary();
+  inlineUrl(kb, lang, 'support_contact', contactUrl);
   kb.row();
-  kb.text(t('support.btn.live'), 'support:live:start').success();
+  inlineBtn(kb, lang, 'support_live', 'support:live:start');
   kb.row();
   inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
@@ -324,7 +324,6 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
       reply_markup: supportKeyboard(
-        (k) => ctx.t(k),
         getAdminContactUrlWithPrefill(ctx.t('support.contact_prefill')),
         ctx.lang,
       ),
@@ -417,7 +416,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         {
           parse_mode: 'HTML',
           ...(userTopicId ? { message_thread_id: userTopicId } : {}),
-          reply_markup: liveKeyboardForUser((k) => ctx.t(k)),
+          reply_markup: liveKeyboardForUser(ctx.lang),
         },
       );
       panelMessageId = panel.message_id;
@@ -450,7 +449,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
       await ctx.api.sendMessage(env.ADMIN_USER_ID, renderMdHtml(adminMsg), {
         parse_mode: 'HTML',
         ...(adminTopicId ? { message_thread_id: adminTopicId } : {}),
-        reply_markup: liveKeyboardForAdmin((k) => ctx.t(k)),
+        reply_markup: liveKeyboardForAdmin(ctx.lang),
       });
     } catch (err) {
       logger.error({ err }, 'live-support: failed to notify admin on session start');

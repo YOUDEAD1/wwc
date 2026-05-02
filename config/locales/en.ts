@@ -43,6 +43,10 @@ export const en: Record<string, string> = {
   // identical regardless of `lang` — the leading globe gets wrapped
   // as a premium emoji at render time.
   'btn.language': '🌐 Language',
+  'btn.language.english': '🇬🇧 English',
+  'btn.language.arabic': '🇸🇦 العربية',
+  'btn.language.vietnamese': '🇻🇳 Tiếng Việt',
+  'btn.region.clear': '🚫 Clear',
   'btn.deposit_history': '💳 My Deposits',
   'btn.channel': '📢 Channel',
   'btn.stats': '📊 Stats',

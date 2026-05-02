@@ -1,7 +1,7 @@
 import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { createDeposit, listPaymentMethods } from '../db/queries.js';
-import { btn } from '../keyboards/helpers.js';
+import { btn, inlineBtn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import {
@@ -206,7 +206,7 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     if (i % 2 === 1) kb.row();
   });
   if (methods.length % 2 === 1) kb.row();
-  kb.text(btn(ctx.lang, 'back'), 'main:open');
+  inlineBtn(kb, ctx.lang, 'back', 'main:open');
   const text = `${ctx.t('topup.title')}\n\n${ctx.t('topup.choose_method')}`;
   const html = renderMdHtml(text);
   if (asEdit) {

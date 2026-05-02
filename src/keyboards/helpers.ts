@@ -134,6 +134,22 @@ export function inlineUrl(
   return applyButtonChrome(kb, key, override);
 }
 
+/**
+ * Add a `copy_text` button (Bot API 9.4) with the configured premium
+ * icon + style. Tapping it copies `text` to the user's clipboard
+ * client-side; the button is non-callback.
+ */
+export function inlineCopyText(
+  kb: InlineKeyboard,
+  lang: Lang,
+  key: keyof typeof BUTTON_KEYS,
+  text: string,
+  override?: ColorMode,
+): InlineKeyboard {
+  kb.copyText(btn(lang, key, override), text);
+  return applyButtonChrome(kb, key, override);
+}
+
 /** Build a reply keyboard from a 2D array of button-keys. */
 export function makeReplyKeyboard(
   lang: Lang,
