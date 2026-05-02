@@ -262,16 +262,6 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     );
     if (liveUser) liveUser.adminTopicId = adminTopicId;
 
-    // Replace the original Support screen with a small status line so
-    // chat history shows when the session was opened.
-    try {
-      await ctx.editMessageText(renderMdHtml(ctx.t('support.live.session_created')), {
-        parse_mode: 'HTML',
-      });
-    } catch (err) {
-      logger.warn({ err }, 'live-support: failed to convert support screen to status line');
-    }
-
     // Send the user-facing panel into the General chat (no
     // message_thread_id) and pin it so it sits in the top "Pinned
     // Message" bar — that's the "Cancel Support" affordance the
@@ -298,24 +288,6 @@ export function registerSupport(bot: Composer<AppCtx>): void {
       logger.error({ err }, 'live-support: failed to send panel message');
     }
     if (liveUser) liveUser.panelMessageId = panelMessageId;
-
-    // Seed the user's Live Support topic with the same panel so the
-    // tab isn't empty when they open it for the first time.
-    if (userTopicId) {
-      try {
-        await ctx.api.sendMessage(
-          ctx.user.telegram_id,
-          renderMdHtml(ctx.t('support.live.user_active')),
-          {
-            parse_mode: 'HTML',
-            message_thread_id: userTopicId,
-            reply_markup: liveKeyboardForUser((k) => ctx.t(k)),
-          },
-        );
-      } catch (err) {
-        logger.warn({ err }, 'live-support: failed to seed user topic');
-      }
-    }
 
     // Notify the admin and seed their topic. When `adminTopicId` is
     // undefined (forum topics not available on the admin's side) the
@@ -399,12 +371,12 @@ export function registerSupport(bot: Composer<AppCtx>): void {
 
   // ------------------------------ Relay handlers --------------------
   // User-side: forward every non-command message to the admin while
-  // the user's flow is `live_support`. When forum topics are active
-  // we only relay messages sent inside the user's Live Support topic
-  // (matching the panel's "message us via the Live Support tab"
-  // instruction), and we deliver them into the admin's mirrored
-  // topic. Runs before the AI Support catch-all so relay text isn't
-  // accidentally fed into OpenAI.
+  // the user's flow is `live_support`. We relay messages from any
+  // tab (General + Live Support topic) so the admin never misses
+  // anything during a session, AND we mirror General-chat messages
+  // into the user's Live Support topic so the topic page shows the
+  // full conversation. Runs before the AI Support catch-all so relay
+  // text isn't accidentally fed into OpenAI.
   bot.on('message', async (ctx, next) => {
     const flow = ctx.session?.userFlow;
     if (!flow || flow.type !== 'live_support') return next();
@@ -429,13 +401,30 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const text = ctx.message?.text;
     if (typeof text === 'string' && text.startsWith('/')) return next();
 
-    // When the user has a forum topic, only relay messages from
-    // inside that topic — General-chat messages should still flow
-    // through the normal handlers so the user can keep using the
-    // shop while a session is open.
+    // Relay every user message regardless of which topic they typed
+    // it in: if the user is on the General tab and types there, we
+    // still want admin to see it AND the message to land in the Live
+    // Support topic ("All chats in any thread while the support need
+    // to auto come in support thread page" — user feedback).
     const messageThreadId = ctx.message?.message_thread_id;
-    if (liveUser.userTopicId && messageThreadId !== liveUser.userTopicId) {
-      return next();
+    if (
+      liveUser.userTopicId &&
+      messageThreadId !== liveUser.userTopicId &&
+      ctx.chat
+    ) {
+      try {
+        await ctx.api.copyMessage(
+          ctx.chat.id,
+          ctx.chat.id,
+          ctx.message!.message_id,
+          { message_thread_id: liveUser.userTopicId },
+        );
+      } catch (err) {
+        logger.warn(
+          { err },
+          'live-support: failed to mirror user message into Live Support topic',
+        );
+      }
     }
 
     const senderName = liveUser.first_name;
