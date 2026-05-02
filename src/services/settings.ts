@@ -131,3 +131,14 @@ export function getAdminContactUrl(): string {
   if (env && env.length > 0) return env;
   return 'https://t.me/safwantiger';
 }
+
+/**
+ * Same as `getAdminContactUrl` but with a `?text=...` param appended
+ * so Telegram pre-fills the admin DM's input bar with the given text
+ * the moment the user lands in the chat.
+ */
+export function getAdminContactUrlWithPrefill(text: string): string {
+  const base = getAdminContactUrl();
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}text=${encodeURIComponent(text)}`;
+}

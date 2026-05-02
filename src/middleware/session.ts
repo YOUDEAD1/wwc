@@ -124,10 +124,14 @@ export type UserFlow =
        * User is in a Live Support relay session. While this flow is
        * active, every non-command message they send is forwarded to
        * the admin (and admin's replies come back here).
+       *
+       * `panelMessageId` is the id of the pinned "Live Support" panel
+       * message — we keep it so the cancel callback can unpin and
+       * delete the same message instead of guessing from `ctx`.
        */
       type: 'live_support';
       step: 'connected';
-      data: { startedAt: number };
+      data: { startedAt: number; panelMessageId?: number };
     };
 
 export type SessionData = {

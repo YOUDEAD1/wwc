@@ -4,7 +4,7 @@ import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
 import { btn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getAdminContactUrl } from '../services/settings.js';
+import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 import { logger } from '../logger.js';
 import type { Lang } from '../../config/index.js';
 
@@ -23,7 +23,17 @@ const aiArmed = new Set<number>();
  * are asked to retry. Kept in-memory because sessions are short and
  * we don't want to persist relay metadata across redeploys.
  */
-let liveUser: { telegram_id: number; first_name: string; username: string | null } | null = null;
+let liveUser: {
+  telegram_id: number;
+  first_name: string;
+  username: string | null;
+  /**
+   * id of the pinned "Live Support" panel message in the user's chat.
+   * Set after the panel is sent; tracked here (rather than only in
+   * the user's session) so admin-side teardown can also clean it up.
+   */
+  panelMessageId?: number;
+} | null = null;
 
 function liveKeyboardForUser(t: (k: string) => string): InlineKeyboard {
   // User taps Cancel → we delete the panel and re-render the Support
@@ -50,6 +60,29 @@ function supportKeyboard(
     .text(btn(lang, 'back'), 'main:open');
 }
 
+/**
+ * Best-effort unpin + delete of the pinned Live Support panel message
+ * for the given user. Used both when the user cancels themselves and
+ * when the admin closes the session from their side.
+ */
+async function teardownPanel(
+  ctx: AppCtx,
+  userTelegramId: number,
+  panelMessageId: number | undefined,
+): Promise<void> {
+  if (!panelMessageId) return;
+  try {
+    await ctx.api.unpinChatMessage(userTelegramId, panelMessageId);
+  } catch (err) {
+    logger.warn({ err }, 'live-support: failed to unpin panel');
+  }
+  try {
+    await ctx.api.deleteMessage(userTelegramId, panelMessageId);
+  } catch (err) {
+    logger.warn({ err }, 'live-support: failed to delete panel');
+  }
+}
+
 async function endSession(
   ctx: AppCtx,
   endedBy: 'user' | 'admin',
@@ -57,10 +90,15 @@ async function endSession(
   const target = liveUser;
   liveUser = null;
   if (!target) return;
-  // Clear the user's flow so subsequent messages stop being relayed.
+  // Clear the user's session flow so subsequent messages stop being
+  // relayed (only reachable when the user themselves ended).
   if (endedBy === 'user' && ctx.session?.userFlow?.type === 'live_support') {
     ctx.session.userFlow = undefined;
   }
+  // Tear down the pinned Live Support panel on the user's side. The
+  // panel id is on the in-memory slot so this works for both
+  // user-initiated cancels and admin-initiated ends.
+  await teardownPanel(ctx, target.telegram_id, target.panelMessageId);
   // Notify both sides; failures are logged but don't break the flow.
   try {
     await ctx.api.sendMessage(target.telegram_id, renderMdHtml(ctx.t('support.live.user_ended')), {
@@ -84,7 +122,11 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const text = `${ctx.t('support.title')}\n\n${ctx.t('support.body')}`;
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: supportKeyboard((k) => ctx.t(k), getAdminContactUrl(), ctx.lang),
+      reply_markup: supportKeyboard(
+        (k) => ctx.t(k),
+        getAdminContactUrlWithPrefill(ctx.t('support.contact_prefill')),
+        ctx.lang,
+      ),
     });
   });
 
@@ -103,11 +145,6 @@ export function registerSupport(bot: Composer<AppCtx>): void {
       first_name: ctx.user.first_name ?? '—',
       username: ctx.user.username ?? null,
     };
-    ctx.session.userFlow = {
-      type: 'live_support',
-      step: 'connected',
-      data: { startedAt: Date.now() },
-    };
     // Notify admin first so they know who's incoming.
     try {
       const adminMsg = ctx.t('support.live.admin_started', {
@@ -122,34 +159,71 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     } catch (err) {
       logger.error({ err }, 'live-support: failed to notify admin on session start');
     }
-    await ctx.editMessageText(renderMdHtml(ctx.t('support.live.user_active')), {
-      parse_mode: 'HTML',
-      reply_markup: liveKeyboardForUser((k) => ctx.t(k)),
-    });
+    // Replace the original Support screen with a small status line so
+    // chat history shows when the session was opened.
+    try {
+      await ctx.editMessageText(renderMdHtml(ctx.t('support.live.session_created')), {
+        parse_mode: 'HTML',
+      });
+    } catch (err) {
+      logger.warn({ err }, 'live-support: failed to convert support screen to status line');
+    }
+    // Send a fresh "Live Support" panel below the status line, then
+    // pin it so it shows up in the chat's Pinned Message bar.
+    let panelMessageId: number | undefined;
+    try {
+      const panel = await ctx.reply(renderMdHtml(ctx.t('support.live.user_active')), {
+        parse_mode: 'HTML',
+        reply_markup: liveKeyboardForUser((k) => ctx.t(k)),
+      });
+      panelMessageId = panel.message_id;
+      try {
+        await ctx.api.pinChatMessage(ctx.chat!.id, panelMessageId, {
+          disable_notification: true,
+        });
+      } catch (err) {
+        logger.warn({ err }, 'live-support: failed to pin panel');
+      }
+    } catch (err) {
+      logger.error({ err }, 'live-support: failed to send panel message');
+    }
+    // Track the panel id both in the user's session (for cancel) and
+    // alongside the in-memory liveUser slot (so admin-side teardown
+    // can also unpin/delete it).
+    if (liveUser) liveUser.panelMessageId = panelMessageId;
+    ctx.session.userFlow = {
+      type: 'live_support',
+      step: 'connected',
+      data: { startedAt: Date.now(), panelMessageId },
+    };
   });
 
-  // User cancels their own Live Support panel — we delete the panel
-  // message entirely and post a fresh Support screen so they can
-  // start over (or pick Contact Admin instead).
+  // User cancels their own Live Support panel. `endSession` handles
+  // unpinning + deleting the pinned panel and posting the closure
+  // message, so we just delegate to it.
   bot.callbackQuery('support:live:cancel:user', async (ctx) => {
     await ctx.answerCallbackQuery();
     const wasActive = liveUser?.telegram_id === ctx.user.telegram_id;
     if (wasActive) {
       await endSession(ctx, 'user');
-    } else {
-      ctx.session.userFlow = undefined;
+      return;
     }
-    // Best-effort delete of the Live Support panel message itself.
+    // Stale Cancel tap (session already torn down). Best-effort
+    // delete + clear flow so the chat doesn't get stuck.
+    const flow = ctx.session?.userFlow;
+    const panelMessageId =
+      flow?.type === 'live_support' ? flow.data.panelMessageId : undefined;
+    ctx.session.userFlow = undefined;
+    if (ctx.chat) {
+      await teardownPanel(ctx, ctx.chat.id, panelMessageId);
+    }
     try {
       await ctx.deleteMessage();
     } catch (err) {
-      logger.warn({ err }, 'live-support: failed to delete cancelled panel');
+      logger.warn({ err }, 'live-support: failed to delete stale cancel button');
     }
-    // Re-open the Support section as a brand-new chat message.
-    const text = `${ctx.t('support.title')}\n\n${ctx.t('support.body')}`;
-    await ctx.reply(renderMdHtml(text), {
+    await ctx.reply(renderMdHtml(ctx.t('support.live.user_ended')), {
       parse_mode: 'HTML',
-      reply_markup: supportKeyboard((k) => ctx.t(k), getAdminContactUrl(), ctx.lang),
     });
   });
 

@@ -163,19 +163,24 @@ export const ar: Record<string, string> = {
   'support.body':
     '_*إذا تعذّر عليك إرسال رسالة أو واجهتك مشكلة، استخدم الدعم المباشر للتواصل مع المسؤول مباشرة.*_',
   'support.btn.contact': '📩 تواصل مع المسؤول',
-  'support.btn.cancel': '❌ إلغاء',
+  'support.contact_prefill': 'مرحبًا، أحتاج مساعدة بخصوص ShopBot SafwanTiger، الرجاء المساعدة بشأن: ',
+  'support.btn.cancel': '❌ إلغاء الدعم',
   'support.btn.live': '🟢 الدعم المباشر',
   'support.btn.end_session': '🔴 إنهاء الجلسة',
   'support.live.busy_popup': '⏳ المسؤول مشغول حاليًا مع مستخدم آخر. حاول مرة أخرى بعد قليل.',
   'support.live.user_active':
-    '🟢 الدعم المباشر مفعّل.\n\n' +
+    '💬 *الدعم المباشر*\n\n' +
+    'جلسة الدعم فعّالة.\n\n' +
     '_*الرجاء إرسال رسالتك عبر لوحة الدعم المباشر أعلاه في هذه المحادثة.*_',
+  'support.live.session_created': '🟢 *تم إنشاء جلسة دعم مباشر*',
   'support.live.admin_started':
     '🟢 *بدأ الدعم المباشر*\n\n' +
     'المستخدم: *{name}* (@{username})\nID: `{id}`\n\nردّ هنا للدردشة. أرسل /end لإنهاء الجلسة.',
   'support.live.admin_relay': '*[{name}]:* {text}',
   'support.live.admin_media_header': '*[{name}]* أرسل ملفًا:',
-  'support.live.user_ended': '🔴 *تم إنهاء الدعم المباشر.*',
+  'support.live.user_ended':
+    '🔴 *تم إغلاق الدعم المباشر.*\n\n' +
+    'افتح الدعم مرّة أخرى من القائمة عند حاجتك للمساعدة.',
   'support.live.admin_ended': '🔴 *تم إغلاق جلسة الدعم المباشر.*',
   'support.ai.title': '🤖 *مساعد الدعم الآلي*',
   'support.ai.prompt': 'اشرح مشكلتك وسأبذل قصارى جهدي للمساعدة.',
