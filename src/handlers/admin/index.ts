@@ -41,6 +41,7 @@ import { credit } from '../../services/wallet.js';
 import {
   setColor,
   setEmoji,
+  clearEmoji,
   setText,
   refreshSettings,
   setChannelUrl,
@@ -678,8 +679,9 @@ adminBot.callbackQuery('adm:cust', async (ctx) => {
     .text('🎨 Set Color', 'adm:cust:color:pick')
     .row()
     .text('😀 Set Emoji', 'adm:cust:emoji')
-    .text('🔗 Set Channel URL', 'adm:cust:channel')
+    .text('🎯 Set Button Icon', 'adm:cust:btnicon')
     .row()
+    .text('🔗 Set Channel URL', 'adm:cust:channel')
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
   const channelLine = channelUrl
@@ -904,6 +906,110 @@ adminBot.callbackQuery(/^adm:color:set:([^:]+):([^:]+)$/, async (ctx) => {
   await setColor(key, color, ctx.from!.id);
   await ctx.answerCallbackQuery({ text: `Set ${key} → ${color}` });
   await showColorPicker(ctx, 0);
+});
+
+// ----- Button-icon picker (button-driven, A → Z) -----
+//
+// Lists every BUTTON_KEYS entry with its current icon state. Tapping
+// a key opens the standard set-emoji flow but stores the value under
+// `btn.<key>` so it ONLY affects that button (not any shared emoji
+// elsewhere in the bot). The lookup happens in
+// `src/keyboards/helpers.ts → resolveIconId`.
+const BTN_ICON_PER_PAGE = 8;
+
+function buttonIconLabel(key: keyof typeof BUTTON_KEYS): string {
+  const spec = getEmoji(`btn.${key}`);
+  if (typeof spec === 'object' && spec.custom_emoji_id) {
+    return `${spec.unicode} ${key} — premium`;
+  }
+  if (typeof spec === 'string' && spec !== `btn.${key}`) {
+    return `${spec} ${key}`;
+  }
+  return `· ${key} — default`;
+}
+
+function buttonIconPickerKb(page: number): InlineKeyboard {
+  const keys = buttonKeyList();
+  const totalPages = Math.max(1, Math.ceil(keys.length / BTN_ICON_PER_PAGE));
+  const start = page * BTN_ICON_PER_PAGE;
+  const slice = keys.slice(start, start + BTN_ICON_PER_PAGE);
+  const kb = new InlineKeyboard();
+  for (const k of slice) {
+    kb.text(
+      buttonIconLabel(k as keyof typeof BUTTON_KEYS).slice(0, 60),
+      `adm:btnicon:pick:${k}`,
+    ).row();
+  }
+  if (totalPages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:cust:btnicon:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, 'adm:noop');
+    if (page + 1 < totalPages) kb.text('Next ▶️', `adm:cust:btnicon:${page + 1}`);
+    kb.row();
+  }
+  kb.text('⬅️ Back', 'adm:cust');
+  return kb;
+}
+
+async function showButtonIconPicker(ctx: AppCtx, page: number): Promise<void> {
+  await ctx.editMessageText(
+    '🎯 *Set Button Icon*\n\n' +
+      'Pick a button to assign your own *premium emoji* icon to it. ' +
+      'Send a premium emoji message and the bot will read its ' +
+      '`custom_emoji_id` automatically. Each override is per-button — ' +
+      "changing one button's icon won't affect anything else.",
+    { parse_mode: 'Markdown', reply_markup: buttonIconPickerKb(page) },
+  );
+}
+
+adminBot.callbackQuery('adm:cust:btnicon', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showButtonIconPicker(ctx, 0);
+});
+
+adminBot.callbackQuery(/^adm:cust:btnicon:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showButtonIconPicker(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:btnicon:pick:(.+)$/, async (ctx) => {
+  const key = ctx.match[1]!;
+  if (!(key in BUTTON_KEYS)) {
+    await ctx.answerCallbackQuery({ text: 'Unknown button.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  const settingsKey = `btn.${key}`;
+  ctx.session.adminFlow = { type: 'set_emoji', step: 'value', data: { key: settingsKey } };
+  const cur = getEmoji(settingsKey);
+  const curLine =
+    typeof cur === 'object' && cur.custom_emoji_id
+      ? `Current: ${cur.unicode}  *premium id* \`${cur.custom_emoji_id}\``
+      : 'Current: _default (none set)_';
+  const kb = new InlineKeyboard()
+    .text('🗑 Clear icon', `adm:btnicon:clear:${key}`)
+    .row()
+    .text('⬅️ Back', 'adm:cust:btnicon');
+  await ctx.editMessageText(
+    `🎯 *Set Button Icon* — \`${key}\`\n\n` +
+      `${curLine}\n\n` +
+      'Send a *premium emoji message* — the bot reads its ' +
+      '`custom_emoji_id` and uses it as the icon for this button.\n\n' +
+      'Or `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:btnicon:clear:(.+)$/, async (ctx) => {
+  const key = ctx.match[1]!;
+  if (!(key in BUTTON_KEYS)) {
+    await ctx.answerCallbackQuery({ text: 'Unknown button.' });
+    return;
+  }
+  await clearEmoji(`btn.${key}`);
+  ctx.session.adminFlow = undefined;
+  await ctx.answerCallbackQuery({ text: `Cleared icon for ${key}.` });
+  await showButtonIconPicker(ctx, 0);
 });
 
 // Silent no-op (used for the page indicator in the picker).
