@@ -4,7 +4,7 @@
 import { InlineKeyboard } from 'grammy';
 import type { DBOrder } from '../types.js';
 import { type Lang } from '../../config/index.js';
-import { inlineBtn } from './helpers.js';
+import { inlineBtn, inlineUrl } from './helpers.js';
 import { t } from '../i18n/index.js';
 
 export const ORDERS_PER_PAGE = 6;
@@ -50,7 +50,7 @@ export function ordersListKeyboard(
     for (const [label, cb] of navRow) kb.text(label, cb);
     kb.row();
   }
-  kb.text(t(lang, 'btn.send_pdf.orders'), 'profile:orders:pdf').primary();
+  inlineBtn(kb, lang, 'send_pdf_orders', 'profile:orders:pdf');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
@@ -60,9 +60,9 @@ export function ordersListKeyboard(
 export function orderDetailKeyboard(lang: Lang, openUrl: string | null): InlineKeyboard {
   const kb = new InlineKeyboard();
   if (openUrl) {
-    kb.url(t(lang, 'btn.orders_open_link'), openUrl).primary();
+    inlineUrl(kb, lang, 'orders_open_link', openUrl);
     kb.row();
   }
-  kb.text(t(lang, 'btn.orders_back_list'), 'profile:orders');
+  inlineBtn(kb, lang, 'orders_back_list', 'profile:orders');
   return kb;
 }

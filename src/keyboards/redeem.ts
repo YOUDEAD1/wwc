@@ -6,12 +6,11 @@
  */
 import { InlineKeyboard } from 'grammy';
 import { type Lang } from '../../config/index.js';
-import { inlineBtn } from './helpers.js';
-import { t } from '../i18n/index.js';
+import { inlineBtn, inlineUrl } from './helpers.js';
 
 export function redeemKeyboard(lang: Lang, adminContactUrl: string): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
-  kb.url(t(lang, 'btn.buy_code'), adminContactUrl).primary();
+  inlineUrl(kb, lang, 'buy_code', adminContactUrl);
   return kb;
 }

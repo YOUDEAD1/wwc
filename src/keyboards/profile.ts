@@ -1,7 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { type Lang } from '../../config/index.js';
-import { inlineBtn } from './helpers.js';
-import { t } from '../i18n/index.js';
+import { inlineBtn, inlineCopyText, inlineUrl } from './helpers.js';
 
 /**
  * Settings (profile) keyboard — eight buttons in a tidy 2×4 grid:
@@ -23,11 +22,11 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
   inlineBtn(kb, lang, 'language', 'profile:lang');
   inlineBtn(kb, lang, 'notifications', 'profile:notifications');
   kb.row();
-  kb.text(t(lang, 'btn.email.settings'), 'profile:email');
+  inlineBtn(kb, lang, 'email_settings', 'profile:email');
   inlineBtn(kb, lang, 'deposit_history', 'profile:deposits');
   kb.row();
   inlineBtn(kb, lang, 'set_region', 'profile:region');
-  kb.text(t(lang, 'btn.redeem'), 'profile:redeem');
+  inlineBtn(kb, lang, 'redeem', 'profile:redeem');
   kb.row();
   inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
@@ -40,13 +39,13 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
  */
 export function emailHubKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  kb.text(t(lang, 'btn.email.set'), 'profile:email:set').success();
+  inlineBtn(kb, lang, 'email_set', 'profile:email:set');
   kb.row();
-  kb.text(t(lang, 'btn.email.change'), 'profile:email:change').primary();
+  inlineBtn(kb, lang, 'email_change', 'profile:email:change');
   kb.row();
-  kb.text(t(lang, 'btn.email.delete'), 'profile:email:delete').danger();
+  inlineBtn(kb, lang, 'email_delete', 'profile:email:delete');
   kb.row();
-  kb.text(t(lang, 'btn.email.why'), 'profile:email:why');
+  inlineBtn(kb, lang, 'email_why', 'profile:email:why');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
@@ -58,16 +57,16 @@ export function emailHubKeyboard(lang: Lang): InlineKeyboard {
  */
 export function emailDeleteConfirmKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  kb.text(t(lang, 'btn.email.delete.confirm'), 'profile:email:delete:confirm').danger();
+  inlineBtn(kb, lang, 'email_delete_confirm', 'profile:email:delete:confirm');
   kb.row();
-  kb.text(t(lang, 'btn.email.delete.cancel'), 'profile:email');
+  inlineBtn(kb, lang, 'email_delete_cancel', 'profile:email');
   return kb;
 }
 
 /** Email sub-screen footer — Why + Back to Email Settings. */
 export function emailScreenKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  kb.text(t(lang, 'btn.email.why'), 'profile:email:why');
+  inlineBtn(kb, lang, 'email_why', 'profile:email:why');
   inlineBtn(kb, lang, 'back_to_settings', 'profile:email');
   return kb;
 }
@@ -85,9 +84,9 @@ export function emailScreenKeyboard(lang: Lang): InlineKeyboard {
 export function whyEmailKeyboard(lang: Lang, pdfUrl: string | null): InlineKeyboard {
   const kb = new InlineKeyboard();
   if (pdfUrl) {
-    kb.url(t(lang, 'btn.email.know_more'), pdfUrl).primary();
+    inlineUrl(kb, lang, 'email_know_more', pdfUrl);
   } else {
-    kb.text(t(lang, 'btn.email.know_more'), 'profile:email:why:more').primary();
+    inlineBtn(kb, lang, 'email_know_more', 'profile:email:why:more');
   }
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:email');
@@ -99,7 +98,7 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'stats_refresh', 'profile:stats:refresh');
   kb.row();
-  kb.text(t(lang, 'btn.send_pdf.stats'), 'profile:stats:pdf').primary();
+  inlineBtn(kb, lang, 'send_pdf_stats', 'profile:stats:pdf');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
@@ -108,7 +107,7 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
 /** Stand-alone Send-PDF row used at the bottom of My Deposits. */
 export function depositsActionsKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  kb.text(t(lang, 'btn.send_pdf.deposits'), 'profile:deposits:pdf').primary();
+  inlineBtn(kb, lang, 'send_pdf_deposits', 'profile:deposits:pdf');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
@@ -127,18 +126,15 @@ export function notificationsKeyboard(
     wallet_alert: boolean;
   },
 ): InlineKeyboard {
-  const stockKey = state.stock_alert ? 'btn.notify.stock.on' : 'btn.notify.stock.off';
-  const annKey = state.announcements ? 'btn.notify.ann.on' : 'btn.notify.ann.off';
-  const walletKey = state.wallet_alert ? 'btn.notify.wallet.on' : 'btn.notify.wallet.off';
+  const stockKey = state.stock_alert ? 'notify_stock_on' : 'notify_stock_off';
+  const annKey = state.announcements ? 'notify_ann_on' : 'notify_ann_off';
+  const walletKey = state.wallet_alert ? 'notify_wallet_on' : 'notify_wallet_off';
   const kb = new InlineKeyboard();
-  kb.text(t(lang, stockKey), 'profile:toggle_stock');
-  if (state.stock_alert) kb.success();
+  inlineBtn(kb, lang, stockKey, 'profile:toggle_stock');
   kb.row();
-  kb.text(t(lang, annKey), 'profile:toggle_ann');
-  if (state.announcements) kb.success();
+  inlineBtn(kb, lang, annKey, 'profile:toggle_ann');
   kb.row();
-  kb.text(t(lang, walletKey), 'profile:toggle_wallet');
-  if (state.wallet_alert) kb.success();
+  inlineBtn(kb, lang, walletKey, 'profile:toggle_wallet');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
@@ -150,11 +146,11 @@ export function notificationsKeyboard(
  */
 export function languageKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  kb.text('🇬🇧 English', 'lang:en');
+  inlineBtn(kb, lang, 'language_en', 'lang:en');
   kb.row();
-  kb.text('🇸🇦 العربية', 'lang:ar');
+  inlineBtn(kb, lang, 'language_ar', 'lang:ar');
   kb.row();
-  kb.text('🇻🇳 Tiếng Việt', 'lang:vi');
+  inlineBtn(kb, lang, 'language_vi', 'lang:vi');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
@@ -177,7 +173,7 @@ export function backToMainKeyboard(lang: Lang): InlineKeyboard {
  */
 export function referKeyboard(lang: Lang, link: string): InlineKeyboard {
   const kb = new InlineKeyboard();
-  kb.copyText(t(lang, 'btn.copy_link'), link).success();
+  inlineCopyText(kb, lang, 'copy_link', link);
   kb.row();
   inlineBtn(kb, lang, 'back', 'main:open');
   return kb;

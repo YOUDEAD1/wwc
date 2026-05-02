@@ -35,7 +35,7 @@ export function regionPickerKeyboard(lang: Lang, page: number): InlineKeyboard {
   }
 
   // Clear + Back row.
-  kb.text('🚫 Clear', 'profile:region:clear').danger();
+  inlineBtn(kb, lang, 'region_clear', 'profile:region:clear');
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }
