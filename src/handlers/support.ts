@@ -7,6 +7,7 @@ import { renderMdHtml } from '../services/premium.js';
 import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 import { logger } from '../logger.js';
 import type { Lang } from '../../config/index.js';
+import { deleteSetting, readSetting, setSetting } from '../db/queries.js';
 
 /**
  * Set of users currently waiting for a one-shot AI Support reply.
@@ -20,10 +21,15 @@ const aiArmed = new Set<number>();
 /**
  * Single-slot Live Support state. Only one user can be in an active
  * relay session at a time — additional users get a "busy" popup and
- * are asked to retry. Kept in-memory because sessions are short and
- * we don't want to persist relay metadata across redeploys.
+ * are asked to retry.
+ *
+ * Persisted to the `settings` table under key `live_support.session`
+ * so the relay survives bot restarts. Render redeploys (one per merge)
+ * would otherwise wipe this in-memory slot, leaving the user's panel +
+ * topics in place but the bot unaware that a session is active —
+ * which is exactly the bug that caused admin-not-receiving-messages.
  */
-let liveUser: {
+type LiveUser = {
   telegram_id: number;
   first_name: string;
   username: string | null;
@@ -47,7 +53,73 @@ let liveUser: {
    * session) so admin-side teardown can also clean it up.
    */
   panelMessageId?: number;
-} | null = null;
+};
+
+let liveUser: LiveUser | null = null;
+
+const LIVE_SUPPORT_KEY = 'live_support.session';
+
+/**
+ * Persist the current `liveUser` slot to the `settings` table so the
+ * next bot lifecycle can pick the session back up. Best-effort — a
+ * failed write only affects relay survival across the next restart,
+ * never the current session.
+ */
+async function persistLiveUser(): Promise<void> {
+  try {
+    if (liveUser === null) {
+      await deleteSetting(LIVE_SUPPORT_KEY);
+      return;
+    }
+    await setSetting(LIVE_SUPPORT_KEY, {
+      telegram_id: liveUser.telegram_id,
+      first_name: liveUser.first_name,
+      username: liveUser.username,
+      user_topic_id: liveUser.userTopicId ?? null,
+      admin_topic_id: liveUser.adminTopicId ?? null,
+      panel_message_id: liveUser.panelMessageId ?? null,
+    });
+  } catch (err) {
+    logger.warn({ err }, 'live-support: failed to persist session');
+  }
+}
+
+/**
+ * Restore the persisted Live Support slot into memory. Called once at
+ * bot startup from `bot.ts`. Without this, every Render redeploy
+ * would silently break any in-progress session because the relay
+ * handlers would see `liveUser === null`.
+ */
+export async function restoreLiveSupportSession(): Promise<void> {
+  try {
+    const raw = await readSetting(LIVE_SUPPORT_KEY);
+    if (!raw || typeof raw !== 'object') return;
+    const obj = raw as Record<string, unknown>;
+    const telegramId = Number(obj.telegram_id);
+    if (!Number.isFinite(telegramId) || telegramId <= 0) return;
+    liveUser = {
+      telegram_id: telegramId,
+      first_name: typeof obj.first_name === 'string' ? obj.first_name : '—',
+      username: typeof obj.username === 'string' ? obj.username : null,
+      userTopicId:
+        obj.user_topic_id != null ? Number(obj.user_topic_id) : undefined,
+      adminTopicId:
+        obj.admin_topic_id != null ? Number(obj.admin_topic_id) : undefined,
+      panelMessageId:
+        obj.panel_message_id != null ? Number(obj.panel_message_id) : undefined,
+    };
+    logger.info(
+      {
+        telegramId,
+        userTopicId: liveUser.userTopicId,
+        adminTopicId: liveUser.adminTopicId,
+      },
+      'live-support: restored persisted session from DB',
+    );
+  } catch (err) {
+    logger.warn({ err }, 'live-support: failed to restore persisted session');
+  }
+}
 
 const TOPIC_NAME_USER = 'Live Support';
 /** Light-blue topic icon (Telegram's default for new topics). */
@@ -149,6 +221,7 @@ async function endSession(
 ): Promise<void> {
   const target = liveUser;
   liveUser = null;
+  await persistLiveUser();
   if (!target) return;
   // Clear the user's session flow so subsequent messages stop being
   // relayed (only reachable when the user themselves ended).
@@ -316,6 +389,11 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     }
     if (liveUser) liveUser.panelMessageId = panelInTopic ? undefined : panelMessageId;
 
+    // Persist the fully-populated session row so the next bot
+    // lifecycle (Render redeploy, OOM restart, etc.) can pick the
+    // relay back up without the user having to cancel + re-open.
+    await persistLiveUser();
+
     // Notify the admin and seed their topic. When `adminTopicId` is
     // undefined (forum topics not available on the admin's side) the
     // message lands in the admin's main chat as before.
@@ -408,13 +486,15 @@ export function registerSupport(bot: Composer<AppCtx>): void {
   // full conversation. Runs before the AI Support catch-all so relay
   // text isn't accidentally fed into OpenAI.
   bot.on('message', async (ctx, next) => {
-    const flow = ctx.session?.userFlow;
-    if (!flow || flow.type !== 'live_support') return next();
+    // The relay state (`liveUser`) is the source of truth, NOT
+    // `ctx.session.userFlow`. The session is in-memory and is wiped
+    // on every Render redeploy, so we'd otherwise miss every message
+    // the user typed after a redeploy until they cancel + re-open
+    // Live Support. `liveUser` is rehydrated from the `settings` table
+    // on bot startup (see `restoreLiveSupportSession`), so checking
+    // it directly survives restarts.
     if (ctx.from?.id === env.ADMIN_USER_ID) return next();
     if (liveUser === null || liveUser.telegram_id !== ctx.from?.id) {
-      // Session was cleared from the other side — drop the flow and
-      // let the message fall through to normal handlers.
-      ctx.session.userFlow = undefined;
       return next();
     }
     // Forum service messages (topic created/edited/closed/reopened)

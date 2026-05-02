@@ -6,7 +6,7 @@ import { userMiddleware, type AppCtx } from './middleware/user.js';
 import { registerStart } from './handlers/start.js';
 import { registerShop } from './handlers/shop.js';
 import { registerProfile } from './handlers/profile.js';
-import { registerSupport } from './handlers/support.js';
+import { registerSupport, restoreLiveSupportSession } from './handlers/support.js';
 import { registerTopup } from './handlers/topup.js';
 import { adminBot } from './handlers/admin/index.js';
 import { refreshSettings } from './services/settings.js';
@@ -35,6 +35,10 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
 
   // Pre-load admin-editable settings into memory.
   await refreshSettings();
+
+  // Rehydrate any in-flight Live Support session from the DB so a
+  // Render redeploy mid-session doesn't break the user→admin relay.
+  await restoreLiveSupportSession();
 
   // Slash-menu shows only /start to everyone. /admin and /menu still
   // work as typed commands but are intentionally hidden.
