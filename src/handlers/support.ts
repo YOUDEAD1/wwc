@@ -28,16 +28,35 @@ let liveUser: {
   first_name: string;
   username: string | null;
   /**
-   * id of the pinned "Live Support" panel message in the user's chat.
-   * Set after the panel is sent; tracked here (rather than only in
-   * the user's session) so admin-side teardown can also clean it up.
+   * Forum-topic thread id created in the user's chat. Set when the
+   * bot has forum topics enabled in @BotFather (Bot API ≥ 9.4) — the
+   * user then sees a dedicated "Live Support" tab at the top of the
+   * chat. Falls back to `undefined` if topic creation isn't allowed,
+   * in which case we keep the legacy pinned-panel-only flow.
+   */
+  userTopicId?: number;
+  /**
+   * Mirrored forum-topic thread id in the admin's chat with the bot,
+   * named "Live Support — <user>". Lets the admin keep each support
+   * session isolated in its own tab instead of mixed into one stream.
+   */
+  adminTopicId?: number;
+  /**
+   * Id of the pinned "Live Support" panel message in the user's
+   * General chat. Tracked here (rather than only in the user's
+   * session) so admin-side teardown can also clean it up.
    */
   panelMessageId?: number;
 } | null = null;
 
+const TOPIC_NAME_USER = 'Live Support';
+/** Light-blue topic icon (Telegram's default for new topics). */
+const TOPIC_ICON_COLOR = 0x6fb9f0;
+
 function liveKeyboardForUser(t: (k: string) => string): InlineKeyboard {
-  // User taps Cancel → we delete the panel and re-render the Support
-  // section. Admin still gets the standard End Session control.
+  // User taps Cancel → we delete the topic + pinned panel and
+  // re-render the Support section. Admin still gets the standard End
+  // Session control.
   return new InlineKeyboard().text(t('support.btn.cancel'), 'support:live:cancel:user');
 }
 
@@ -58,6 +77,47 @@ function supportKeyboard(
     .text(t('support.btn.live'), 'support:live:start')
     .row()
     .text(btn(lang, 'back'), 'main:open');
+}
+
+/**
+ * Best-effort wrapper around `createForumTopic` for a private bot
+ * chat. Requires the bot owner to have enabled forum topics in
+ * @BotFather (Bot Settings → Configure Mini App → Topics). When the
+ * call fails (older bot, owner hasn't enabled it, etc.) we fall back
+ * to the legacy pinned-panel-only relay so Live Support keeps
+ * working.
+ */
+async function tryCreateTopic(
+  ctx: AppCtx,
+  chatId: number,
+  name: string,
+): Promise<number | undefined> {
+  try {
+    const topic = await ctx.api.createForumTopic(chatId, name, {
+      icon_color: TOPIC_ICON_COLOR,
+    });
+    return topic.message_thread_id;
+  } catch (err) {
+    logger.warn(
+      { err, chatId, name },
+      'live-support: createForumTopic failed (falling back to pinned-panel relay)',
+    );
+    return undefined;
+  }
+}
+
+/** Best-effort delete of a forum topic + every message inside it. */
+async function tryDeleteTopic(
+  ctx: AppCtx,
+  chatId: number,
+  threadId: number | undefined,
+): Promise<void> {
+  if (!threadId) return;
+  try {
+    await ctx.api.deleteForumTopic(chatId, threadId);
+  } catch (err) {
+    logger.warn({ err, chatId, threadId }, 'live-support: deleteForumTopic failed');
+  }
 }
 
 /**
@@ -95,11 +155,17 @@ async function endSession(
   if (endedBy === 'user' && ctx.session?.userFlow?.type === 'live_support') {
     ctx.session.userFlow = undefined;
   }
+  // Tear down the forum topics first — deleting a topic removes every
+  // message inside it, which is exactly the "all del when the user
+  // cancel the support" behavior we want on both sides.
+  await tryDeleteTopic(ctx, target.telegram_id, target.userTopicId);
+  await tryDeleteTopic(ctx, env.ADMIN_USER_ID, target.adminTopicId);
   // Tear down the pinned Live Support panel on the user's side. The
   // panel id is on the in-memory slot so this works for both
   // user-initiated cancels and admin-initiated ends.
   await teardownPanel(ctx, target.telegram_id, target.panelMessageId);
-  // Notify both sides; failures are logged but don't break the flow.
+  // Notify both sides via their main (General) chats; failures are
+  // logged but don't break the flow.
   try {
     await ctx.api.sendMessage(target.telegram_id, renderMdHtml(ctx.t('support.live.user_ended')), {
       parse_mode: 'HTML',
@@ -145,20 +211,26 @@ export function registerSupport(bot: Composer<AppCtx>): void {
       first_name: ctx.user.first_name ?? '—',
       username: ctx.user.username ?? null,
     };
-    // Notify admin first so they know who's incoming.
-    try {
-      const adminMsg = ctx.t('support.live.admin_started', {
-        name: liveUser.first_name,
-        username: liveUser.username ?? '—',
-        id: String(liveUser.telegram_id),
-      });
-      await ctx.api.sendMessage(env.ADMIN_USER_ID, renderMdHtml(adminMsg), {
-        parse_mode: 'HTML',
-        reply_markup: liveKeyboardForAdmin((k) => ctx.t(k)),
-      });
-    } catch (err) {
-      logger.error({ err }, 'live-support: failed to notify admin on session start');
-    }
+
+    // Create a "Live Support" forum topic in the user's chat so they
+    // get the dedicated tab at the top of the chat (matching the
+    // photo). Mirrors a per-session topic in the admin's chat too so
+    // each session lives in its own thread on both sides.
+    const userTopicId = await tryCreateTopic(
+      ctx,
+      ctx.user.telegram_id,
+      TOPIC_NAME_USER,
+    );
+    if (liveUser) liveUser.userTopicId = userTopicId;
+
+    const adminTopicLabel = `${TOPIC_NAME_USER} — ${liveUser.first_name}`;
+    const adminTopicId = await tryCreateTopic(
+      ctx,
+      env.ADMIN_USER_ID,
+      adminTopicLabel,
+    );
+    if (liveUser) liveUser.adminTopicId = adminTopicId;
+
     // Replace the original Support screen with a small status line so
     // chat history shows when the session was opened.
     try {
@@ -168,17 +240,24 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     } catch (err) {
       logger.warn({ err }, 'live-support: failed to convert support screen to status line');
     }
-    // Send a fresh "Live Support" panel below the status line, then
-    // pin it so it shows up in the chat's Pinned Message bar.
+
+    // Send the user-facing panel into the General chat (no
+    // message_thread_id) and pin it so it sits in the top "Pinned
+    // Message" bar — that's the "Cancel Support" affordance the
+    // photo shows above the chat regardless of which tab is active.
     let panelMessageId: number | undefined;
     try {
-      const panel = await ctx.reply(renderMdHtml(ctx.t('support.live.user_active')), {
-        parse_mode: 'HTML',
-        reply_markup: liveKeyboardForUser((k) => ctx.t(k)),
-      });
+      const panel = await ctx.api.sendMessage(
+        ctx.user.telegram_id,
+        renderMdHtml(ctx.t('support.live.user_active')),
+        {
+          parse_mode: 'HTML',
+          reply_markup: liveKeyboardForUser((k) => ctx.t(k)),
+        },
+      );
       panelMessageId = panel.message_id;
       try {
-        await ctx.api.pinChatMessage(ctx.chat!.id, panelMessageId, {
+        await ctx.api.pinChatMessage(ctx.user.telegram_id, panelMessageId, {
           disable_notification: true,
         });
       } catch (err) {
@@ -187,19 +266,60 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     } catch (err) {
       logger.error({ err }, 'live-support: failed to send panel message');
     }
-    // Track the panel id both in the user's session (for cancel) and
-    // alongside the in-memory liveUser slot (so admin-side teardown
-    // can also unpin/delete it).
     if (liveUser) liveUser.panelMessageId = panelMessageId;
+
+    // Seed the user's Live Support topic with the same panel so the
+    // tab isn't empty when they open it for the first time.
+    if (userTopicId) {
+      try {
+        await ctx.api.sendMessage(
+          ctx.user.telegram_id,
+          renderMdHtml(ctx.t('support.live.user_active')),
+          {
+            parse_mode: 'HTML',
+            message_thread_id: userTopicId,
+            reply_markup: liveKeyboardForUser((k) => ctx.t(k)),
+          },
+        );
+      } catch (err) {
+        logger.warn({ err }, 'live-support: failed to seed user topic');
+      }
+    }
+
+    // Notify the admin and seed their topic. When `adminTopicId` is
+    // undefined (forum topics not available on the admin's side) the
+    // message lands in the admin's main chat as before.
+    try {
+      const adminMsg = ctx.t('support.live.admin_started', {
+        name: liveUser.first_name,
+        username: liveUser.username ?? '—',
+        id: String(liveUser.telegram_id),
+      });
+      await ctx.api.sendMessage(env.ADMIN_USER_ID, renderMdHtml(adminMsg), {
+        parse_mode: 'HTML',
+        ...(adminTopicId ? { message_thread_id: adminTopicId } : {}),
+        reply_markup: liveKeyboardForAdmin((k) => ctx.t(k)),
+      });
+    } catch (err) {
+      logger.error({ err }, 'live-support: failed to notify admin on session start');
+    }
+
+    // Track the panel + topic ids on the user's session so cancel +
+    // stale-tap handlers can clean everything up.
     ctx.session.userFlow = {
       type: 'live_support',
       step: 'connected',
-      data: { startedAt: Date.now(), panelMessageId },
+      data: {
+        startedAt: Date.now(),
+        panelMessageId,
+        userTopicId,
+        adminTopicId,
+      },
     };
   });
 
   // User cancels their own Live Support panel. `endSession` handles
-  // unpinning + deleting the pinned panel and posting the closure
+  // deleting the topics + unpinning the panel and posting the closure
   // message, so we just delegate to it.
   bot.callbackQuery('support:live:cancel:user', async (ctx) => {
     await ctx.answerCallbackQuery();
@@ -209,13 +329,19 @@ export function registerSupport(bot: Composer<AppCtx>): void {
       return;
     }
     // Stale Cancel tap (session already torn down). Best-effort
-    // delete + clear flow so the chat doesn't get stuck.
+    // cleanup using whatever ids we still have on the session, then
+    // clear the flow so the chat doesn't get stuck.
     const flow = ctx.session?.userFlow;
-    const panelMessageId =
-      flow?.type === 'live_support' ? flow.data.panelMessageId : undefined;
-    ctx.session.userFlow = undefined;
-    if (ctx.chat) {
-      await teardownPanel(ctx, ctx.chat.id, panelMessageId);
+    if (flow?.type === 'live_support') {
+      const { panelMessageId, userTopicId, adminTopicId } = flow.data;
+      ctx.session.userFlow = undefined;
+      if (ctx.chat) {
+        await tryDeleteTopic(ctx, ctx.chat.id, userTopicId);
+        await teardownPanel(ctx, ctx.chat.id, panelMessageId);
+      }
+      await tryDeleteTopic(ctx, env.ADMIN_USER_ID, adminTopicId);
+    } else {
+      ctx.session.userFlow = undefined;
     }
     try {
       await ctx.deleteMessage();
@@ -242,8 +368,12 @@ export function registerSupport(bot: Composer<AppCtx>): void {
 
   // ------------------------------ Relay handlers --------------------
   // User-side: forward every non-command message to the admin while
-  // the user's flow is `live_support`. Runs before the AI Support
-  // catch-all so relay text isn't accidentally fed into OpenAI.
+  // the user's flow is `live_support`. When forum topics are active
+  // we only relay messages sent inside the user's Live Support topic
+  // (matching the panel's "message us via the Live Support tab"
+  // instruction), and we deliver them into the admin's mirrored
+  // topic. Runs before the AI Support catch-all so relay text isn't
+  // accidentally fed into OpenAI.
   bot.on('message', async (ctx, next) => {
     const flow = ctx.session?.userFlow;
     if (!flow || flow.type !== 'live_support') return next();
@@ -257,13 +387,25 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const text = ctx.message?.text;
     if (typeof text === 'string' && text.startsWith('/')) return next();
 
+    // When the user has a forum topic, only relay messages from
+    // inside that topic — General-chat messages should still flow
+    // through the normal handlers so the user can keep using the
+    // shop while a session is open.
+    const messageThreadId = ctx.message?.message_thread_id;
+    if (liveUser.userTopicId && messageThreadId !== liveUser.userTopicId) {
+      return next();
+    }
+
     const senderName = liveUser.first_name;
+    const adminThreadOpt = liveUser.adminTopicId
+      ? { message_thread_id: liveUser.adminTopicId }
+      : {};
     try {
       if (typeof text === 'string') {
         await ctx.api.sendMessage(
           env.ADMIN_USER_ID,
           renderMdHtml(ctx.t('support.live.admin_relay', { name: senderName, text })),
-          { parse_mode: 'HTML' },
+          { parse_mode: 'HTML', ...adminThreadOpt },
         );
       } else {
         // Forward media (photo / video / document / voice) by copying
@@ -272,12 +414,13 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         await ctx.api.sendMessage(
           env.ADMIN_USER_ID,
           renderMdHtml(ctx.t('support.live.admin_media_header', { name: senderName })),
-          { parse_mode: 'HTML' },
+          { parse_mode: 'HTML', ...adminThreadOpt },
         );
         await ctx.api.copyMessage(
           env.ADMIN_USER_ID,
           ctx.chat!.id,
           ctx.message!.message_id,
+          adminThreadOpt,
         );
       }
     } catch (err) {
@@ -288,6 +431,8 @@ export function registerSupport(bot: Composer<AppCtx>): void {
   // Admin-side: forward admin's plain messages to the connected user.
   // Skips slash-commands and any message dispatched while an admin
   // input flow is active so we don't hijack /find, /announce, etc.
+  // When an admin-side topic exists we only relay messages from
+  // inside it — admin's General chat keeps behaving normally.
   bot.on('message', async (ctx, next) => {
     if (ctx.from?.id !== env.ADMIN_USER_ID) return next();
     if (liveUser === null) return next();
@@ -295,14 +440,23 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const text = ctx.message?.text;
     if (typeof text === 'string' && text.startsWith('/')) return next();
 
+    const messageThreadId = ctx.message?.message_thread_id;
+    if (liveUser.adminTopicId && messageThreadId !== liveUser.adminTopicId) {
+      return next();
+    }
+
     // No `[Admin]` tag on the user-facing side — the relay forwards
     // the admin's text and media verbatim so it reads like a normal
     // chat message rather than a tagged forward.
+    const userThreadOpt = liveUser.userTopicId
+      ? { message_thread_id: liveUser.userTopicId }
+      : {};
     try {
       await ctx.api.copyMessage(
         liveUser.telegram_id,
         ctx.chat!.id,
         ctx.message!.message_id,
+        userThreadOpt,
       );
     } catch (err) {
       logger.error({ err }, 'live-support: failed to relay admin→user');

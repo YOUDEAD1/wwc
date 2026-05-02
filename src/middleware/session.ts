@@ -126,12 +126,24 @@ export type UserFlow =
        * the admin (and admin's replies come back here).
        *
        * `panelMessageId` is the id of the pinned "Live Support" panel
-       * message — we keep it so the cancel callback can unpin and
-       * delete the same message instead of guessing from `ctx`.
+       * message in the user's General chat — we keep it so the cancel
+       * callback can unpin and delete the same message instead of
+       * guessing from `ctx`.
+       *
+       * `userTopicId` / `adminTopicId` are the forum-topic message
+       * thread ids on the user's and admin's side respectively, when
+       * the bot has forum topics enabled in @BotFather. Cancel/end
+       * deletes both topics, which removes every relayed message
+       * inside them in one shot.
        */
       type: 'live_support';
       step: 'connected';
-      data: { startedAt: number; panelMessageId?: number };
+      data: {
+        startedAt: number;
+        panelMessageId?: number;
+        userTopicId?: number;
+        adminTopicId?: number;
+      };
     };
 
 export type SessionData = {

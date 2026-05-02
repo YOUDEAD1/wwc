@@ -151,6 +151,15 @@ npm run lint
    copy its `custom_emoji_id`s (they appear in the message as
    `tg://emoji?id=…`). Then run inside your bot:
    `/setemoji fire 🔥 5440123412341234567`.
+8. **Enable Threaded Mode** so Live Support can spawn its own chat
+   tab. Open [@BotFather](https://t.me/BotFather), pick this bot,
+   then **Bot Settings → Configure → Threaded Mode → Enable**. Once
+   on, every user's DM with the bot becomes a forum-style chat with
+   topic tabs at the top, and the Live Support button creates /
+   deletes a dedicated `Live Support` topic for each session (matching
+   the `Cancel Support` pinned panel + tab UX). If Threaded Mode
+   isn't available or stays off, Live Support silently falls back to
+   the legacy single-pinned-panel relay.
 
 ---
 
