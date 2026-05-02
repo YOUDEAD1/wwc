@@ -1,7 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import { type Lang } from '../../config/index.js';
 import { POPULAR_REGIONS, REGIONS_PER_PAGE } from '../../config/regions.js';
-import { btn } from './helpers.js';
+import { inlineBtn } from './helpers.js';
 
 /**
  * Paginated region picker. Each tile shows the country flag + name;
@@ -28,14 +28,14 @@ export function regionPickerKeyboard(lang: Lang, page: number): InlineKeyboard {
 
   // Pagination controls (only when needed).
   if (pages > 1) {
-    if (safePage > 0) kb.text(btn(lang, 'prev'), `profile:region:p:${safePage - 1}`);
+    if (safePage > 0) inlineBtn(kb, lang, 'prev', `profile:region:p:${safePage - 1}`);
     kb.text(`${safePage + 1}/${pages}`, 'noop:page');
-    if (safePage < pages - 1) kb.text(btn(lang, 'next'), `profile:region:p:${safePage + 1}`);
+    if (safePage < pages - 1) inlineBtn(kb, lang, 'next', `profile:region:p:${safePage + 1}`);
     kb.row();
   }
 
   // Clear + Back row.
-  kb.text('🚫 Clear', 'profile:region:clear');
-  kb.text(btn(lang, 'back_to_settings'), 'profile:open');
+  kb.text('🚫 Clear', 'profile:region:clear').danger();
+  inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }

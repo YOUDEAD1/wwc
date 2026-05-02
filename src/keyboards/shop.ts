@@ -1,6 +1,7 @@
 import { InlineKeyboard } from 'grammy';
-import { type Lang } from '../../config/index.js';
-import { btn } from './helpers.js';
+import { colorModeToStyle, type Lang } from '../../config/index.js';
+import { inlineBtn } from './helpers.js';
+import { getStateColor } from '../services/settings.js';
 import type { DBCategory, DBProduct } from '../types.js';
 
 /** Categories list — one button per category, two per row. */
@@ -11,13 +12,14 @@ export function categoriesKeyboard(lang: Lang, categories: DBCategory[]): Inline
     if (i % 2 === 1) kb.row();
   });
   if (categories.length % 2 === 1) kb.row();
-  kb.text(btn(lang, 'back'), 'main:open');
+  inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
 }
 
 /**
- * Product listing for a category, with state-coloured buttons (blue
- * for in-stock, red for out-of-stock) and Next / Refresh footer.
+ * Product listing for a category, with state-coloured buttons (Bot
+ * API 9.4 styles: success for in-stock, danger for out-of-stock)
+ * and Next / Refresh footer.
  */
 export function productsKeyboard(
   lang: Lang,
@@ -33,19 +35,22 @@ export function productsKeyboard(
     // Clean dot indicator instead of coloured square prefix
     const dot = inStock ? '🟢' : '🔴';
     const label = `${dot} ${p.emoji ?? ''} ${p.name} — ${p.price}`.trim();
-    kb.text(label, inStock ? `prod:${p.id}` : 'noop:oos').row();
+    kb.text(label, inStock ? `prod:${p.id}` : 'noop:oos');
+    const style = colorModeToStyle(getStateColor(inStock ? 'in_stock' : 'out_of_stock'));
+    if (style !== undefined) kb.style(style);
+    kb.row();
   });
 
   // Footer: Prev | Refresh | Next
   if (page > 0) {
-    kb.text(btn(lang, 'prev'), `cat:${categoryId}:${page - 1}`);
+    inlineBtn(kb, lang, 'prev', `cat:${categoryId}:${page - 1}`);
   }
-  kb.text(btn(lang, 'refresh'), `cat:${categoryId}:${page}`);
+  inlineBtn(kb, lang, 'refresh', `cat:${categoryId}:${page}`);
   if (page + 1 < totalPages) {
-    kb.text(btn(lang, 'next'), `cat:${categoryId}:${page + 1}`);
+    inlineBtn(kb, lang, 'next', `cat:${categoryId}:${page + 1}`);
   }
   kb.row();
-  kb.text(btn(lang, 'back'), 'shop:home');
+  inlineBtn(kb, lang, 'back', 'shop:home');
   return kb;
 }
 
@@ -57,26 +62,28 @@ export function productKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   if (product.stock <= 0) {
-    kb.text(btn(lang, 'out_of_stock'), 'noop:oos').row();
+    inlineBtn(kb, lang, 'out_of_stock', 'noop:oos');
+    kb.row();
   } else {
-    kb.text(btn(lang, 'qty_minus'), `qty:${product.id}:-`)
-      .text(`${qty}`, 'noop:qty')
-      .text(btn(lang, 'qty_plus'), `qty:${product.id}:+`)
-      .row();
-    kb.text(btn(lang, 'buy_now'), `buy:${product.id}`).row();
+    inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:-`);
+    kb.text(`${qty}`, 'noop:qty');
+    inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:+`);
+    kb.row();
+    inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
+    kb.row();
   }
-  kb.text(btn(lang, 'topup_wallet'), 'topup:open')
-    .text(btn(lang, 'view_note'), `note:${product.id}`)
-    .row();
-  kb.text(
-    btn(lang, 'back'),
+  inlineBtn(kb, lang, 'topup_wallet', 'topup:open');
+  inlineBtn(kb, lang, 'view_note', `note:${product.id}`);
+  kb.row();
+  inlineBtn(
+    kb,
+    lang,
+    'back',
     product.category_id ? `cat:${product.category_id}:0` : 'shop:home',
   );
   return kb;
 }
 
 export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
-  return new InlineKeyboard().text(btn(lang, 'back'), 'shop:home');
+  return inlineBtn(new InlineKeyboard(), lang, 'back', 'shop:home');
 }
-
-
