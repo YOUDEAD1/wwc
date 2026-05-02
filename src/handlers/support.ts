@@ -1,7 +1,7 @@
 import { Composer, InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
-import { btn } from '../keyboards/helpers.js';
+import { inlineBtn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { getAdminContactUrlWithPrefill } from '../services/settings.js';
@@ -129,11 +129,15 @@ function liveKeyboardForUser(t: (k: string) => string): InlineKeyboard {
   // User taps Cancel → we delete the topic + pinned panel and
   // re-render the Support section. Admin still gets the standard End
   // Session control.
-  return new InlineKeyboard().text(t('support.btn.cancel'), 'support:live:cancel:user');
+  return new InlineKeyboard()
+    .text(t('support.btn.cancel'), 'support:live:cancel:user')
+    .danger();
 }
 
 function liveKeyboardForAdmin(t: (k: string) => string): InlineKeyboard {
-  return new InlineKeyboard().text(t('support.btn.end_session'), 'support:live:end:admin');
+  return new InlineKeyboard()
+    .text(t('support.btn.end_session'), 'support:live:end:admin')
+    .danger();
 }
 
 function supportKeyboard(
@@ -143,12 +147,13 @@ function supportKeyboard(
 ): InlineKeyboard {
   // Stack each action on its own full-width row, matching the look
   // of the Notifications submenu.
-  return new InlineKeyboard()
-    .url(t('support.btn.contact'), contactUrl)
-    .row()
-    .text(t('support.btn.live'), 'support:live:start')
-    .row()
-    .text(btn(lang, 'back'), 'main:open');
+  const kb = new InlineKeyboard();
+  kb.url(t('support.btn.contact'), contactUrl).primary();
+  kb.row();
+  kb.text(t('support.btn.live'), 'support:live:start').success();
+  kb.row();
+  inlineBtn(kb, lang, 'back', 'main:open');
+  return kb;
 }
 
 /**

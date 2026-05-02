@@ -1,6 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { MAIN_MENU_LAYOUT, BUTTON_KEYS, type Lang } from '../../config/index.js';
-import { btn } from './helpers.js';
+import { applyButtonChrome, btn, inlineBtn } from './helpers.js';
 import { getChannelUrl } from '../services/settings.js';
 
 /** Map main-menu button keys to their callback data. */
@@ -46,8 +46,9 @@ export function mainMenuKeyboard(lang: Lang): InlineKeyboard {
       // the user is sent straight to Telegram's join screen.
       if (k === 'channel' && channelUrl) {
         kb.url(btn(lang, 'channel'), channelUrl);
+        applyButtonChrome(kb, 'channel');
       } else {
-        kb.text(btn(lang, k), CALLBACK[k]);
+        inlineBtn(kb, lang, k, CALLBACK[k]);
       }
     });
     if (i < MAIN_MENU_LAYOUT.length - 1) kb.row();
@@ -57,5 +58,5 @@ export function mainMenuKeyboard(lang: Lang): InlineKeyboard {
 
 /** "⬅️ Back" button used at the bottom of sub-screens. Returns to main menu. */
 export function backToMenuKeyboard(lang: Lang): InlineKeyboard {
-  return new InlineKeyboard().text(btn(lang, 'back'), 'main:open');
+  return inlineBtn(new InlineKeyboard(), lang, 'back', 'main:open');
 }

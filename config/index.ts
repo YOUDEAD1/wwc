@@ -20,11 +20,19 @@ export type Lang = 'en' | 'ar' | 'vi';
 /**
  * BUTTON COLOR MODE
  * ------------------------------------------------------------------
- * Telegram's Bot API does NOT expose a true "color" property on
- * inline-keyboard buttons. The legacy modes below are kept as labels
- * for the admin colour-picker, but the *prefix* is now empty for all
- * of them — the previous coloured-square indicators (🟦🟩🟥🟨) were
- * removed because they cluttered the UI.
+ * Bot API 9.4 (Feb 2026) introduced a real `style` field on
+ * `InlineKeyboardButton` / `KeyboardButton`. We map the legacy
+ * config modes to those style values:
+ *
+ *   blue   → 'primary'   (Telegram's accent / blue)
+ *   green  → 'success'   (green)
+ *   red    → 'danger'    (red)
+ *   yellow → no equivalent — falls back to the app default
+ *   none   → no style    (app default)
+ *
+ * The prefix strings remain empty so older keyboards that still
+ * call the `colored()` helper don't add stray glyphs in front of
+ * labels — the colouring is now done at the button level instead.
  */
 export const COLOR_PREFIX = {
   blue: '',
@@ -34,6 +42,28 @@ export const COLOR_PREFIX = {
   none: '',
 } as const;
 export type ColorMode = keyof typeof COLOR_PREFIX;
+
+/**
+ * Bot API 9.4 button `style` values, returned by
+ * `colorModeToStyle()`. Returning `undefined` means "leave the
+ * style off" (the app default is used).
+ */
+export type ButtonStyle = 'primary' | 'success' | 'danger';
+
+export function colorModeToStyle(mode: ColorMode): ButtonStyle | undefined {
+  switch (mode) {
+    case 'blue':
+      return 'primary';
+    case 'green':
+      return 'success';
+    case 'red':
+      return 'danger';
+    case 'yellow':
+    case 'none':
+    default:
+      return undefined;
+  }
+}
 
 /**
  * BUTTON LABELS
@@ -75,35 +105,35 @@ export const BUTTON_KEYS = {
 
 /**
  * COLOR ASSIGNMENTS PER BUTTON
- * The admin can override these via /setcolor <key> <mode>.
- * Default is 'none' for clean, professional buttons. Re-enable with
- * /setcolor <key> <mode> if you want coloured-square indicators.
+ * Maps to Bot API 9.4 button styles via `colorModeToStyle()`:
+ *   blue → primary, green → success, red → danger, yellow/none → app default.
+ * The admin can override these at runtime via /setcolor <key> <mode>.
  */
 export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> = {
-  shop: 'none',
-  topup: 'none',
+  shop: 'green',
+  topup: 'blue',
   profile: 'none',
-  support: 'none',
-  ai_support: 'none',
+  support: 'blue',
+  ai_support: 'blue',
   main_menu: 'none',
   back: 'none',
   next: 'none',
   prev: 'none',
   refresh: 'none',
-  buy_now: 'none',
-  topup_wallet: 'none',
+  buy_now: 'green',
+  topup_wallet: 'blue',
   view_note: 'none',
   qty_plus: 'none',
   qty_minus: 'none',
-  out_of_stock: 'none',
+  out_of_stock: 'red',
   my_orders: 'none',
-  refer: 'none',
+  refer: 'green',
   notifications: 'none',
   toggle_stock: 'none',
   toggle_announcements: 'none',
   language: 'none',
   deposit_history: 'none',
-  channel: 'none',
+  channel: 'blue',
   back_to_settings: 'none',
   stats: 'none',
   stats_refresh: 'none',
@@ -267,6 +297,45 @@ export const EMOJI: Record<string, EmojiSpec> = {
   orders_note: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
   orders_warranty: { unicode: '⏰', custom_emoji_id: '5280821895711697516' },
   orders_received: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
+};
+
+/**
+ * BUTTON ICON MAP (Bot API 9.4)
+ * ------------------------------------------------------------------
+ * Maps button keys to an `EMOJI` map key whose value MUST be a
+ * `{ unicode, custom_emoji_id }` object. The button's
+ * `icon_custom_emoji_id` is set to that id, and the leading unicode
+ * emoji in the locale label is stripped at render time so the icon
+ * doesn't render twice.
+ *
+ * `icon_custom_emoji_id` requires either:
+ *   - the bot was bought on Fragment, OR
+ *   - the bot's owner has a Telegram Premium subscription
+ *     (which is already required by all the `<tg-emoji>` premium
+ *     emojis used elsewhere in this codebase, so if the bot's
+ *     working today, button icons will work too).
+ */
+export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
+  // Each value below MUST point to an EMOJI key whose value is a
+  // `{ unicode, custom_emoji_id }` object whose `unicode` matches the
+  // emoji prefix in the locale label — that way the button shows the
+  // SAME glyph (just the premium animated version for premium
+  // viewers). Keys whose locale emoji has no exact premium twin are
+  // left out so the original unicode emoji stays in the label.
+  profile: 'profile_header',
+  buy_now: 'orders_received',
+  topup_wallet: 'deposits_wallet',
+  view_note: 'orders_note',
+  my_orders: 'orders_title',
+  refer: 'refer_title',
+  notifications: 'notify_bell',
+  language: 'lang_globe',
+  deposit_history: 'deposits_title',
+  channel: 'notify_stock',
+  stats: 'stats',
+  stats_refresh: 'stats_refresh',
+  set_region: 'profile_region',
+  set_email: 'profile_email',
 };
 
 /**

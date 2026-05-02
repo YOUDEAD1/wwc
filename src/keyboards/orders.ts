@@ -4,7 +4,7 @@
 import { InlineKeyboard } from 'grammy';
 import type { DBOrder } from '../types.js';
 import { type Lang } from '../../config/index.js';
-import { btn } from './helpers.js';
+import { inlineBtn } from './helpers.js';
 import { t } from '../i18n/index.js';
 
 export const ORDERS_PER_PAGE = 6;
@@ -31,9 +31,11 @@ export function ordersListKeyboard(
         : row.status === 'refunded'
         ? 'orders.status.refunded'
         : 'orders.status.cancelled';
-    kb.text(name, `orders:open:${row.id}`)
-      .text(t(lang, statusKey), `orders:open:${row.id}`)
-      .row();
+    kb.text(name, `orders:open:${row.id}`);
+    kb.text(t(lang, statusKey), `orders:open:${row.id}`);
+    if (row.status === 'paid') kb.success();
+    else if (row.status === 'refunded') kb.danger();
+    kb.row();
   }
   // Pagination row: `Page X/Y` is purely informational; we put it on
   // the same callback as the current page so taps are cheap no-ops.
@@ -48,15 +50,19 @@ export function ordersListKeyboard(
     for (const [label, cb] of navRow) kb.text(label, cb);
     kb.row();
   }
-  kb.text(t(lang, 'btn.send_pdf.orders'), 'profile:orders:pdf').row();
-  kb.text(btn(lang, 'back_to_settings'), 'profile:open');
+  kb.text(t(lang, 'btn.send_pdf.orders'), 'profile:orders:pdf').primary();
+  kb.row();
+  inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }
 
 /** Order-detail keyboard — `Open Link` (when delivery contains a URL) + Back. */
 export function orderDetailKeyboard(lang: Lang, openUrl: string | null): InlineKeyboard {
   const kb = new InlineKeyboard();
-  if (openUrl) kb.url(t(lang, 'btn.orders_open_link'), openUrl).row();
+  if (openUrl) {
+    kb.url(t(lang, 'btn.orders_open_link'), openUrl).primary();
+    kb.row();
+  }
   kb.text(t(lang, 'btn.orders_back_list'), 'profile:orders');
   return kb;
 }
