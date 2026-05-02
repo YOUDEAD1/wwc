@@ -507,6 +507,25 @@ export async function setSetting(
   });
 }
 
+/**
+ * Read a single setting row directly (bypassing the in-memory cache
+ * in `services/settings.ts`). Used for state we need to read fresh
+ * from the DB on bot startup, before the cache is populated.
+ */
+export async function readSetting(key: string): Promise<unknown> {
+  const { data } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle();
+  return (data as { value: unknown } | null)?.value ?? null;
+}
+
+/** Hard-delete a settings row (for clearing state like Live Support). */
+export async function deleteSetting(key: string): Promise<void> {
+  await supabase.from('settings').delete().eq('key', key);
+}
+
 // ---------- Announcements ----------
 
 export async function listUsersForAnnouncement(): Promise<{ telegram_id: number }[]> {
