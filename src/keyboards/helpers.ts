@@ -8,7 +8,7 @@ import {
   type ColorMode,
   type Lang,
 } from '../../config/index.js';
-import { getButtonColor, getEmoji } from '../services/settings.js';
+import { getButtonColor, getButtonIcon, getEmoji } from '../services/settings.js';
 import { t } from '../i18n/index.js';
 
 /**
@@ -57,21 +57,19 @@ export function btn(lang: Lang, key: keyof typeof BUTTON_KEYS, override?: ColorM
  * key.
  *
  * Resolution order:
- *   1. Per-button override under `btn.<key>` in the settings cache —
- *      written by the admin "Set Emoji" picker. This is the recommended
- *      path: any admin can pick any button and assign their own
- *      premium emoji to it without affecting other parts of the bot.
- *   2. Compile-time `BUTTON_ICONS` mapping (for sensible defaults).
+ *   1. Per-button override stored under the dedicated `btnicon.<key>`
+ *      namespace (admin opted-in via the "Set Button Icon" picker).
+ *      Stored separately from the shared `emoji.<key>` map so a bad
+ *      value can't ripple anywhere else.
+ *   2. Compile-time `BUTTON_ICONS` mapping (sensible defaults).
  *
  * Returns `undefined` when neither has a `custom_emoji_id` set
  * (icons in Bot API 9.4 require a real premium emoji id — plain
  * unicode can't be used in the icon slot).
  */
 export function resolveIconId(key: keyof typeof BUTTON_KEYS): string | undefined {
-  const override = getEmoji(`btn.${key}`);
-  if (typeof override === 'object' && override.custom_emoji_id) {
-    return override.custom_emoji_id;
-  }
+  const override = getButtonIcon(key);
+  if (override) return override.custom_emoji_id;
   const emojiKey = BUTTON_ICONS[key];
   if (!emojiKey) return undefined;
   const spec = getEmoji(emojiKey);
