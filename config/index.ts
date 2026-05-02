@@ -231,6 +231,12 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // ---- Support screen header -----------------------------------
   support_title: { unicode: '📞', custom_emoji_id: '6247041691652461368' },
 
+  // ---- Live Support panel + closure messages -------------------
+  // Premium glyphs requested by the bot owner; non-premium users
+  // see the unicode fallback.
+  support_live_active: { unicode: '💬', custom_emoji_id: '5456580414254619349' },
+  support_live_closed: { unicode: '🔴', custom_emoji_id: '5803151379887297481' },
+
   // ---- My Deposits screen --------------------------------------
   deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },
   deposits_payments: { unicode: '💸', custom_emoji_id: '5375312095346704820' },

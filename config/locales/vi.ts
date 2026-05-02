@@ -166,15 +166,15 @@ export const vi: Record<string, string> = {
     '_*Nếu bạn không thể gửi tin nhắn hoặc gặp sự cố, hãy sử dụng Hỗ trợ trực tiếp để kết nối ngay với quản trị viên.*_',
   'support.btn.contact': '📩 Liên hệ quản trị',
   'support.contact_prefill': 'Chào, tôi cần trợ giúp về ShopBot SafwanTiger. Vui lòng giúp tôi về: ',
-  'support.btn.cancel': '❌ Hủy hỗ trợ',
+  'support.btn.cancel': 'Hủy hỗ trợ',
   'support.btn.live': '🟢 Hỗ trợ trực tiếp',
   'support.btn.end_session': '🔴 Kết thúc phiên',
   'support.live.busy_popup':
     '⏳ Quản trị viên đang hỗ trợ người khác. Vui lòng thử lại sau ít phút.',
   'support.live.user_active':
-    '💬 *Hỗ trợ trực tiếp*\n\n' +
+    '{support_live_active} Hỗ trợ trực tiếp\n\n' +
     'Phiên hỗ trợ đang hoạt động.\n\n' +
-    '_*Vui lòng nhắn tin cho chúng tôi qua thẻ Hỗ trợ trực tiếp được tạo phía trên trong cuộc trò chuyện này.*_',
+    'Vui lòng nhắn tin cho chúng tôi qua thẻ Hỗ trợ trực tiếp được tạo phía trên trong cuộc trò chuyện này.',
   'support.live.session_created': '🟢 *Đã tạo phiên Hỗ trợ trực tiếp*',
   'support.live.admin_started':
     '🟢 *Bắt đầu Hỗ trợ trực tiếp*\n\n' +
@@ -182,7 +182,7 @@ export const vi: Record<string, string> = {
   'support.live.admin_relay': '*[{name}]:* {text}',
   'support.live.admin_media_header': '*[{name}]* đã gửi tệp:',
   'support.live.user_ended':
-    '🔴 *Đã đóng Hỗ trợ trực tiếp.*\n\n' +
+    '{support_live_closed} Đã đóng Hỗ trợ trực tiếp.\n\n' +
     'Mở lại Hỗ trợ từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
   'support.live.admin_ended': '🔴 *Phiên Hỗ trợ trực tiếp đã đóng.*',
   'support.ai.title': '🤖 *Trợ lý hỗ trợ tự động*',

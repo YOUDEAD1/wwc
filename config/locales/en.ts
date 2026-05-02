@@ -303,16 +303,16 @@ export const en: Record<string, string> = {
   // Pre-filled into the admin DM's input bar when the user taps
   // Contact Admin (via t.me/<admin>?text=...).
   'support.contact_prefill': 'Hi i need help about ShopBot SafwanTiger Please Help me about : ',
-  'support.btn.cancel': '❌ Cancel Support',
+  'support.btn.cancel': 'Cancel Support',
   'support.btn.live': '🟢 Live Support',
   'support.btn.end_session': '🔴 End Session',
   // Live-Support relay copy.
   'support.live.busy_popup':
     '⏳ The admin is currently helping another user. Please try again in a moment.',
   'support.live.user_active':
-    '💬 *Live Support*\n\n' +
+    '{support_live_active} Live Support\n\n' +
     'Support session active.\n\n' +
-    '_*Please message us via the Live Support tab created above in this chat.*_',
+    'Please message us via the Live Support tab created above in this chat.',
   // Small status line edited into the original Support screen so chat
   // history shows when each session was opened.
   'support.live.session_created': '🟢 *Live Support session created*',
@@ -324,7 +324,7 @@ export const en: Record<string, string> = {
   'support.live.admin_relay': '*[{name}]:* {text}',
   'support.live.admin_media_header': '*[{name}]* sent media:',
   'support.live.user_ended':
-    '🔴 *Live Support closed.*\n\n' +
+    '{support_live_closed} Live Support closed.\n\n' +
     'Open Support again from the menu whenever you need help.',
   'support.live.admin_ended': '🔴 *Live Support session closed.*',
   'support.ai.title': '🤖 *Automated Support Assistant*',
