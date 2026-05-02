@@ -178,7 +178,16 @@ async function tryCreateTopic(
   }
 }
 
-/** Best-effort delete of a forum topic + every message inside it. */
+/**
+ * Best-effort delete of a forum topic + every message inside it.
+ *
+ * Retried once on failure: when the API returns a transient error
+ * (rate limit, briefly-unavailable chat) the second call usually
+ * succeeds. If the second call also fails we log at `error` level so
+ * the orphaned topic is visible in production logs and we can chase
+ * it down manually instead of leaving a stale thread on the user's
+ * side after Cancel.
+ */
 async function tryDeleteTopic(
   ctx: AppCtx,
   chatId: number,
@@ -187,8 +196,20 @@ async function tryDeleteTopic(
   if (!threadId) return;
   try {
     await ctx.api.deleteForumTopic(chatId, threadId);
+    return;
   } catch (err) {
-    logger.warn({ err, chatId, threadId }, 'live-support: deleteForumTopic failed');
+    logger.warn(
+      { err, chatId, threadId },
+      'live-support: deleteForumTopic failed, retrying once',
+    );
+  }
+  try {
+    await ctx.api.deleteForumTopic(chatId, threadId);
+  } catch (err) {
+    logger.error(
+      { err, chatId, threadId },
+      'live-support: deleteForumTopic failed after retry — topic may persist as orphan',
+    );
   }
 }
 
@@ -313,6 +334,24 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         show_alert: true,
       });
       return;
+    }
+    // Same user re-clicking Live Support while their own session is
+    // still active: don't tear down + recreate (which would orphan
+    // the previous topics and panel). Tear down the old session
+    // first, then fall through to create a fresh one. This handles
+    // the case where the user's panel got lost in scrollback or the
+    // previous cancel left some Telegram state behind.
+    if (liveUser !== null && liveUser.telegram_id === ctx.user.telegram_id) {
+      logger.info(
+        { telegram_id: liveUser.telegram_id },
+        'live-support: re-start by same user, tearing down previous topics first',
+      );
+      const prev = liveUser;
+      liveUser = null;
+      await persistLiveUser();
+      await tryDeleteTopic(ctx, prev.telegram_id, prev.userTopicId);
+      await tryDeleteTopic(ctx, env.ADMIN_USER_ID, prev.adminTopicId);
+      await teardownPanel(ctx, prev.telegram_id, prev.panelMessageId);
     }
     await ctx.answerCallbackQuery();
     liveUser = {
@@ -511,31 +550,18 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const text = ctx.message?.text;
     if (typeof text === 'string' && text.startsWith('/')) return next();
 
-    // Relay every user message regardless of which topic they typed
-    // it in: if the user is on the General tab and types there, we
-    // still want admin to see it AND the message to land in the Live
-    // Support topic ("All chats in any thread while the support need
-    // to auto come in support thread page" — user feedback).
-    const messageThreadId = ctx.message?.message_thread_id;
-    if (
-      liveUser.userTopicId &&
-      messageThreadId !== liveUser.userTopicId &&
-      ctx.chat
-    ) {
-      try {
-        await ctx.api.copyMessage(
-          ctx.chat.id,
-          ctx.chat.id,
-          ctx.message!.message_id,
-          { message_thread_id: liveUser.userTopicId },
-        );
-      } catch (err) {
-        logger.warn(
-          { err },
-          'live-support: failed to mirror user message into Live Support topic',
-        );
-      }
-    }
+    // We used to mirror General-tab messages into the Live Support
+    // topic via `copyMessage(chat.id → chat.id, ..., message_thread_id)`
+    // so the topic page showed the full conversation no matter which
+    // tab the user typed in. That mirror is gone now: `copyMessage`
+    // produces a NEW message authored by the bot, which Telegram
+    // renders on the LEFT (incoming) side in the All view. The user
+    // already sees their own message on the RIGHT in General, so the
+    // mirror duplicated every outgoing message in the All feed and
+    // also made the Live Support topic look one-sided (every message
+    // appeared as a bot/incoming message instead of as the user's).
+    // For the cleanest UX users should type inside the Live Support
+    // tab — the panel copy already says exactly that.
 
     const senderName = liveUser.first_name;
     // When the admin-side topic exists we deliver into it. If the
