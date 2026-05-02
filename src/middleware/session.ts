@@ -50,6 +50,7 @@ export type AdminFlow =
   | { type: 'set_text'; step: 'value'; data: { key: string } }
   | { type: 'set_emoji'; step: 'key'; data: Record<string, never> }
   | { type: 'set_emoji'; step: 'value'; data: { key: string } }
+  | { type: 'set_btnicon'; step: 'value'; data: { btnKey: string } }
   | { type: 'set_color'; step: 'value'; data: { key: string } }
   | { type: 'announce'; step: 'text'; data: Record<string, never> }
   | { type: 'announce'; step: 'confirm'; data: { text: string } }

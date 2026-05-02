@@ -41,7 +41,6 @@ import { credit } from '../../services/wallet.js';
 import {
   setColor,
   setEmoji,
-  clearEmoji,
   setText,
   refreshSettings,
   setChannelUrl,
@@ -49,6 +48,9 @@ import {
   getChannelUrl,
   getEmoji,
   getButtonColor,
+  getButtonIcon,
+  setButtonIcon,
+  clearButtonIcon,
 } from '../../services/settings.js';
 import { renderMdHtml } from '../../services/premium.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
@@ -918,13 +920,8 @@ adminBot.callbackQuery(/^adm:color:set:([^:]+):([^:]+)$/, async (ctx) => {
 const BTN_ICON_PER_PAGE = 8;
 
 function buttonIconLabel(key: keyof typeof BUTTON_KEYS): string {
-  const spec = getEmoji(`btn.${key}`);
-  if (typeof spec === 'object' && spec.custom_emoji_id) {
-    return `${spec.unicode} ${key} — premium`;
-  }
-  if (typeof spec === 'string' && spec !== `btn.${key}`) {
-    return `${spec} ${key}`;
-  }
+  const spec = getButtonIcon(key);
+  if (spec) return `${spec.unicode} ${key} — premium`;
   return `· ${key} — default`;
 }
 
@@ -979,13 +976,11 @@ adminBot.callbackQuery(/^adm:btnicon:pick:(.+)$/, async (ctx) => {
     return;
   }
   await ctx.answerCallbackQuery();
-  const settingsKey = `btn.${key}`;
-  ctx.session.adminFlow = { type: 'set_emoji', step: 'value', data: { key: settingsKey } };
-  const cur = getEmoji(settingsKey);
-  const curLine =
-    typeof cur === 'object' && cur.custom_emoji_id
-      ? `Current: ${cur.unicode}  *premium id* \`${cur.custom_emoji_id}\``
-      : 'Current: _default (none set)_';
+  ctx.session.adminFlow = { type: 'set_btnicon', step: 'value', data: { btnKey: key } };
+  const cur = getButtonIcon(key);
+  const curLine = cur
+    ? `Current: ${cur.unicode}  *premium id* \`${cur.custom_emoji_id}\``
+    : 'Current: _default (none set)_';
   const kb = new InlineKeyboard()
     .text('🗑 Clear icon', `adm:btnicon:clear:${key}`)
     .row()
@@ -995,6 +990,9 @@ adminBot.callbackQuery(/^adm:btnicon:pick:(.+)$/, async (ctx) => {
       `${curLine}\n\n` +
       'Send a *premium emoji message* — the bot reads its ' +
       '`custom_emoji_id` and uses it as the icon for this button.\n\n' +
+      'The emoji must be one your bot owner has access to (any premium ' +
+      'emoji visible to the owner). Plain unicode emojis without a ' +
+      'premium id can\'t be used as button icons.\n\n' +
       'Or `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -1006,7 +1004,7 @@ adminBot.callbackQuery(/^adm:btnicon:clear:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery({ text: 'Unknown button.' });
     return;
   }
-  await clearEmoji(`btn.${key}`);
+  await clearButtonIcon(key);
   ctx.session.adminFlow = undefined;
   await ctx.answerCallbackQuery({ text: `Cleared icon for ${key}.` });
   await showButtonIconPicker(ctx, 0);
@@ -1485,6 +1483,44 @@ adminBot.on('message:text', async (ctx, next) => {
         : '';
       await ctx.reply(
         `✅ Emoji \`${flow.data.key}\` updated → ${unicode}${idLine}.`,
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+
+    if (flow.type === 'set_btnicon') {
+      // Per-button icon override → stored under `btnicon.<key>`,
+      // separate from the shared `emoji.<key>` map. Requires a real
+      // premium emoji (custom_emoji_id) — plain unicode can't be used
+      // in `icon_custom_emoji_id` per Bot API 9.4.
+      const ce = (ctx.message.entities ?? []).find(
+        (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
+      ) as { offset: number; length: number; custom_emoji_id: string } | undefined;
+      let unicode: string | undefined;
+      let customId: string | undefined;
+      if (ce) {
+        const raw = ctx.message.text;
+        unicode = raw.slice(ce.offset, ce.offset + ce.length);
+        customId = ce.custom_emoji_id;
+      } else {
+        const parts = text.split(/\s+/, 2);
+        unicode = parts[0];
+        customId = parts[1];
+      }
+      if (!unicode || !customId || !/^\d{8,}$/.test(customId)) {
+        await ctx.reply(
+          '❌ This needs a *premium* emoji. Send a premium emoji message ' +
+            'directly (the bot will read its `custom_emoji_id`), or type ' +
+            '`<unicode> <custom_emoji_id>` with a numeric id.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      await setButtonIcon(flow.data.btnKey, unicode, customId, ctx.from!.id);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Button \`${flow.data.btnKey}\` icon updated → ${unicode} ` +
+          `(premium id \`${customId}\`).`,
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;

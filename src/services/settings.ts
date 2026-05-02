@@ -84,6 +84,46 @@ export async function clearEmoji(key: string): Promise<void> {
   cache.delete(`emoji.${key}`);
 }
 
+/**
+ * Per-BUTTON premium-emoji icon override (Bot API 9.4
+ * `icon_custom_emoji_id`). Stored under its own `btnicon.<key>`
+ * namespace — separate from the shared `emoji.<key>` map — so
+ * accidentally-bad `custom_emoji_id` values (e.g. emoji not owned by
+ * the bot's owner) can't break the keyboard render path globally.
+ *
+ * Returns `undefined` when no override is set or the stored value
+ * has no premium id (icons require a real `custom_emoji_id`).
+ */
+export function getButtonIcon(key: string): { unicode: string; custom_emoji_id: string } | undefined {
+  const v = cache.get(`btnicon.${key}`);
+  if (
+    v &&
+    typeof v === 'object' &&
+    'unicode' in (v as Record<string, unknown>) &&
+    'custom_emoji_id' in (v as Record<string, unknown>)
+  ) {
+    const obj = v as { unicode: string; custom_emoji_id: string };
+    if (obj.custom_emoji_id && obj.custom_emoji_id.length > 0) return obj;
+  }
+  return undefined;
+}
+
+export async function setButtonIcon(
+  key: string,
+  unicode: string,
+  custom_emoji_id: string,
+  updated_by?: number,
+): Promise<void> {
+  const value = { unicode, custom_emoji_id };
+  await setSetting(`btnicon.${key}`, value, updated_by);
+  cache.set(`btnicon.${key}`, value);
+}
+
+export async function clearButtonIcon(key: string): Promise<void> {
+  await deleteSetting(`btnicon.${key}`);
+  cache.delete(`btnicon.${key}`);
+}
+
 export function clearLocalCache(): void {
   cache.clear();
   loaded = false;
