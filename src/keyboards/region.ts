@@ -4,11 +4,17 @@ import { POPULAR_REGIONS, REGIONS_PER_PAGE } from '../../config/regions.js';
 import { inlineBtn } from './helpers.js';
 
 /**
- * Paginated region picker. Each tile shows the country flag + name;
- * tapping it commits the selection (callback `profile:region:set:CC`).
+ * Paginated region picker. Each tile shows the country name only —
+ * the unicode flag prefix was dropped per UX request. Tapping
+ * commits the selection (callback `profile:region:set:CC`).
  *
  * Pages are 0-indexed. We render two columns to keep labels readable
  * on mobile.
+ *
+ * The Prev / Next pagination buttons use plain text instead of the
+ * shared `prev` / `next` button keys so the global ▶️ / ◀️ arrows
+ * don't appear here (the rest of the bot still uses the arrowed
+ * versions on Shop / My Orders / etc.).
  */
 export function regionPickerKeyboard(lang: Lang, page: number): InlineKeyboard {
   const kb = new InlineKeyboard();
@@ -20,17 +26,18 @@ export function regionPickerKeyboard(lang: Lang, page: number): InlineKeyboard {
 
   for (let i = 0; i < slice.length; i += 2) {
     const a = slice[i]!;
-    kb.text(`${a.flag} ${a.name}`, `profile:region:set:${a.code}`);
+    kb.text(a.name, `profile:region:set:${a.code}`);
     const b = slice[i + 1];
-    if (b) kb.text(`${b.flag} ${b.name}`, `profile:region:set:${b.code}`);
+    if (b) kb.text(b.name, `profile:region:set:${b.code}`);
     kb.row();
   }
 
-  // Pagination controls (only when needed).
+  // Pagination controls (only when needed). Plain text — no arrow
+  // glyph — so the Region screen stays emoji-free.
   if (pages > 1) {
-    if (safePage > 0) inlineBtn(kb, lang, 'prev', `profile:region:p:${safePage - 1}`);
+    if (safePage > 0) kb.text('Prev', `profile:region:p:${safePage - 1}`);
     kb.text(`${safePage + 1}/${pages}`, 'noop:page');
-    if (safePage < pages - 1) inlineBtn(kb, lang, 'next', `profile:region:p:${safePage + 1}`);
+    if (safePage < pages - 1) kb.text('Next', `profile:region:p:${safePage + 1}`);
     kb.row();
   }
 

@@ -42,12 +42,13 @@ export const ar: Record<string, string> = {
   'btn.language.vietnamese': '🇻🇳 Tiếng Việt',
   'btn.region.clear': '🚫 مسح',
   'btn.deposit_history': '💳 سجل الإيداعات',
-  'btn.channel': '📢 القناة',
+  'btn.channel': 'القناة',
   'btn.stats': '📊 إحصائيات',
   'btn.stats_refresh': '🔄 تحديث',
   'btn.stats_back': '◀️ رجوع',
 
-  'shop.choose_category': '🛒 *المتجر*\n\n*المنتجات المتاحة:*\n_{total} فئة — صفحة {page}/{pages}_',
+  'shop.home.header': '*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
+  'shop.choose_category': '*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
   'shop.qty.prompt': '🔢 اكتب الكمية (1–{max}) وأرسل.',
   'shop.qty.invalid': '❌ رقم غير صالح — أرسل قيمة بين 1 و {max}.',
   'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
@@ -117,7 +118,7 @@ export const ar: Record<string, string> = {
   'btn.email.delete.confirm': '🗑 تأكيد الحذف',
   'btn.email.delete.cancel': '⬅️ إلغاء',
   // أزرار "إرسال PDF" في شاشات الطلبات / الإيداعات / الإحصائيات.
-  'btn.send_pdf.orders': '📤 إرسال PDF الطلبات إلى البريد',
+  'btn.send_pdf.orders': 'إرسال PDF الطلبات إلى البريد',
   'btn.send_pdf.deposits': '📤 إرسال PDF الإيداعات إلى البريد',
   'btn.send_pdf.stats': '📤 إرسال PDF الإحصائيات إلى البريد',
   'pdf.no_email_popup':

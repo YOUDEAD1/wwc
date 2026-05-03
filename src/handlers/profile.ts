@@ -50,7 +50,10 @@ import {
   buildStatsPdf,
 } from '../services/pdfReport.js';
 import { logger } from '../logger.js';
-import { getEmailPdfUrl, getAdminContactUrl } from '../services/settings.js';
+import {
+  getEmailPdfUrl,
+  getAdminContactUrlWithPrefill,
+} from '../services/settings.js';
 import { InputFile } from 'grammy';
 import { fileURLToPath } from 'url';
 import { dirname, resolve as pathResolve } from 'path';
@@ -513,7 +516,12 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     ].join('\n');
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: redeemKeyboard(ctx.lang, getAdminContactUrl()),
+      reply_markup: redeemKeyboard(
+        ctx.lang,
+        getAdminContactUrlWithPrefill(
+          'Hi sir i wanna buy gift coupon code money: ',
+        ),
+      ),
     });
   }
 

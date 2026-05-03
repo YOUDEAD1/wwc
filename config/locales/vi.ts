@@ -42,12 +42,13 @@ export const vi: Record<string, string> = {
   'btn.language.vietnamese': '🇻🇳 Tiếng Việt',
   'btn.region.clear': '🚫 Xóa',
   'btn.deposit_history': '💳 Lịch sử nạp',
-  'btn.channel': '📢 Kênh',
+  'btn.channel': 'Kênh',
   'btn.stats': '📊 Thống kê',
   'btn.stats_refresh': '🔄 Làm mới',
   'btn.stats_back': '◀️ Quay lại',
 
-  'shop.choose_category': '🛒 *Cửa hàng*\n\n*Sản phẩm có sẵn:*\n_{total} danh mục — trang {page}/{pages}_',
+  'shop.home.header': '*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
+  'shop.choose_category': '*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
   'shop.qty.prompt': '🔢 Nhập số lượng (1–{max}) và gửi.',
   'shop.qty.invalid': '❌ Số không hợp lệ — vui lòng gửi giá trị từ 1 đến {max}.',
   'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
@@ -118,7 +119,7 @@ export const vi: Record<string, string> = {
   'btn.email.delete.confirm': '🗑 Xác nhận xóa',
   'btn.email.delete.cancel': '⬅️ Hủy',
   // Nút "Gửi PDF" cho màn hình Đơn hàng / Nạp tiền / Thống kê.
-  'btn.send_pdf.orders': '📤 Gửi PDF đơn hàng đến email',
+  'btn.send_pdf.orders': 'Gửi PDF đơn hàng đến email',
   'btn.send_pdf.deposits': '📤 Gửi PDF nạp tiền đến email',
   'btn.send_pdf.stats': '📤 Gửi PDF thống kê đến email',
   'pdf.no_email_popup':

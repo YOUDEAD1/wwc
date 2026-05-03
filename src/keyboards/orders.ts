@@ -41,12 +41,12 @@ export function ordersListKeyboard(
   // the same callback as the current page so taps are cheap no-ops.
   const navRow: Array<[string, string]> = [];
   if (totalPages > 1) {
-    if (page > 0) navRow.push(['◀️ Prev', `orders:p:${page - 1}`]);
+    if (page > 0) navRow.push(['Prev', `orders:p:${page - 1}`]);
     navRow.push([
       t(lang, 'orders.page', { page: page + 1, pages: totalPages }),
       `orders:p:${page}`,
     ]);
-    if (page < totalPages - 1) navRow.push(['Next ▶️', `orders:p:${page + 1}`]);
+    if (page < totalPages - 1) navRow.push(['Next', `orders:p:${page + 1}`]);
     for (const [label, cb] of navRow) kb.text(label, cb);
     kb.row();
   }

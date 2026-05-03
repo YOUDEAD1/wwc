@@ -1,83 +1,49 @@
 import type { Composer } from 'grammy';
-import {
-  CATEGORIES_PER_PAGE,
-  PRODUCTS_PER_PAGE,
-  QTY_MAX,
-  QTY_MIN,
-} from '../../config/index.js';
+import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   createOrder,
   decrementProductStock,
-  getCategory,
   getProduct,
-  listCategories,
-  listProducts,
+  listActiveProducts,
 } from '../db/queries.js';
-import * as cache from '../services/cache.js';
 import { charge } from '../services/wallet.js';
-import {
-  categoriesKeyboard,
-  productKeyboard,
-  productsKeyboard,
-  shopHomeBackKeyboard,
-} from '../keyboards/shop.js';
+import { productKeyboard, shopProductsKeyboard } from '../keyboards/shop.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 
-async function showCategories(ctx: AppCtx, page = 0) {
-  let cats = cache.get<Awaited<ReturnType<typeof listCategories>>>('cats');
-  if (!cats) {
-    cats = await listCategories();
-    cache.set('cats', cats, 60_000);
-  }
-  if (cats.length === 0) {
-    await ctx.reply(ctx.t('shop.empty_categories'));
+/**
+ * Top-level Shop home — paginated all-products list. The categories
+ * step has been removed per UX request: tapping the Shop button
+ * now drops the user directly onto this screen with the bold
+ * `Available Products:` header and a Prev / Refresh / Next / Back
+ * footer.
+ */
+async function showShopHome(ctx: AppCtx, page = 0) {
+  const { rows, total } = await listActiveProducts(page, PRODUCTS_PER_PAGE);
+  if (total === 0) {
+    const empty = renderMdHtml(ctx.t('shop.empty_products'));
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(empty, { parse_mode: 'HTML' });
+    } else {
+      await ctx.reply(empty, { parse_mode: 'HTML' });
+    }
     return;
   }
-  const total = cats.length;
-  const totalPages = Math.max(1, Math.ceil(total / CATEGORIES_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PER_PAGE));
   const safePage = Math.min(Math.max(0, page), totalPages - 1);
-  const start = safePage * CATEGORIES_PER_PAGE;
-  const slice = cats.slice(start, start + CATEGORIES_PER_PAGE);
   const html = renderMdHtml(
-    ctx.t('shop.choose_category', {
+    ctx.t('shop.home.header', {
       total,
       page: safePage + 1,
       pages: totalPages,
     }),
   );
-  const kb = categoriesKeyboard(ctx.lang, slice, safePage, totalPages);
+  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages);
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {
     await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
-}
-
-async function showCategoryPage(ctx: AppCtx, categoryId: number, page: number) {
-  const cat = await getCategory(categoryId);
-  if (!cat) {
-    await ctx.reply(ctx.t('err.unknown_action'));
-    return;
-  }
-  const { rows, total } = await listProducts(categoryId, page, PRODUCTS_PER_PAGE);
-  const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PER_PAGE));
-  if (rows.length === 0) {
-    await ctx.editMessageText(ctx.t('shop.empty_products'), {
-      reply_markup: shopHomeBackKeyboard(ctx.lang),
-    });
-    return;
-  }
-  const header = ctx.t('shop.page.header', {
-    category: cat.name,
-    total,
-    page: page + 1,
-    pages: totalPages,
-  });
-  await ctx.editMessageText(renderMdHtml(header), {
-    parse_mode: 'HTML',
-    reply_markup: productsKeyboard(ctx.lang, categoryId, rows, page, totalPages),
-  });
 }
 
 function productPageText(ctx: AppCtx, p: NonNullable<Awaited<ReturnType<typeof getProduct>>>, qty: number) {
@@ -113,20 +79,22 @@ export function registerShop(bot: Composer<AppCtx>): void {
   // ----- Inline callbacks -----
   bot.callbackQuery('shop:home', async (ctx) => {
     await ctx.answerCallbackQuery();
-    await showCategories(ctx);
+    await showShopHome(ctx);
   });
 
-  // Paginated categories list — `shop:p:<page>` is emitted by the
+  // Paginated all-products list — `shop:p:<page>` is emitted by the
   // Prev / Refresh / Next buttons on the Shop home keyboard.
   bot.callbackQuery(/^shop:p:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    await showCategories(ctx, Number(ctx.match[1]));
+    await showShopHome(ctx, Number(ctx.match[1]));
   });
 
+  // Legacy category callbacks (`cat:<id>:<page>`) from older
+  // messages still in users' chat histories — redirect to the new
+  // all-products home so taps don't appear hung.
   bot.callbackQuery(/^cat:(\d+):(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const [, idStr, pageStr] = ctx.match;
-    await showCategoryPage(ctx, Number(idStr), Number(pageStr));
+    await showShopHome(ctx, 0);
   });
 
   bot.callbackQuery(/^prod:(\d+)$/, async (ctx) => {

@@ -2,7 +2,7 @@ import { InlineKeyboard } from 'grammy';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
 import { inlineBtn } from './helpers.js';
 import { getStateColor } from '../services/settings.js';
-import type { DBCategory, DBProduct } from '../types.js';
+import type { DBProduct } from '../types.js';
 
 /**
  * Resolve the premium `custom_emoji_id` for the given EMOJI key.
@@ -15,52 +15,17 @@ function premiumIconId(key: string): string | undefined {
 }
 
 /**
- * Categories list — paginated 9 per page (CATEGORIES_PER_PAGE), one
- * category per row to keep the names readable on mobile. Footer
- * mirrors the products list: optional Prev, Refresh, page indicator,
- * optional Next, then a Back row.
+ * Top-level Shop home — paginated all-products list. The categories
+ * step has been removed; tapping the Shop button drops the user
+ * straight onto this screen.
+ *
+ * Each in-stock product gets a premium 📦 icon (state colour: blue);
+ * out-of-stock items get a red ❌ icon (state colour: red). Footer is
+ * an optional Prev, a Refresh that re-fetches the current page, an
+ * optional Next, and a Back row that returns to the main menu.
  */
-export function categoriesKeyboard(
+export function shopProductsKeyboard(
   lang: Lang,
-  categories: DBCategory[],
-  page: number,
-  totalPages: number,
-): InlineKeyboard {
-  const kb = new InlineKeyboard();
-  // Premium icon used as the leading glyph on every category button.
-  // Falls back to the `c.emoji` unicode set in admin if the bot
-  // owner ever loses Telegram Premium (Telegram silently drops
-  // `icon_custom_emoji_id` in that case).
-  const catIcon = premiumIconId('orders_product');
-  categories.forEach((c) => {
-    const label = `${c.emoji ?? '📁'} ${c.name}`;
-    kb.text(label, `cat:${c.id}:0`);
-    if (catIcon) kb.icon(catIcon);
-    kb.row();
-  });
-
-  // Footer: Prev | Refresh | page X/Y | Next
-  if (page > 0) {
-    inlineBtn(kb, lang, 'prev', `shop:p:${page - 1}`);
-  }
-  inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
-  kb.text(`${page + 1}/${totalPages}`, 'noop:page');
-  if (page + 1 < totalPages) {
-    inlineBtn(kb, lang, 'next', `shop:p:${page + 1}`);
-  }
-  kb.row();
-  inlineBtn(kb, lang, 'back', 'main:open');
-  return kb;
-}
-
-/**
- * Product listing for a category, with state-coloured buttons (Bot
- * API 9.4 styles via `getStateColor` — in_stock = blue, out_of_stock
- * = red by default) plus a premium icon per row.
- */
-export function productsKeyboard(
-  lang: Lang,
-  categoryId: number,
   products: DBProduct[],
   page: number,
   totalPages: number,
@@ -73,9 +38,8 @@ export function productsKeyboard(
   products.forEach((p) => {
     const inStock = p.stock > 0;
     // Quantity is shown right next to the product name as
-    // `(qty: N)` — for OOS items N is 0, which is reinforced by the
-    // red button colour + red icon, so no extra English string is
-    // baked into the label.
+    // `(qty: N)` — for OOS items N is 0, reinforced by the red
+    // colour + red icon.
     const label = `${p.emoji ?? ''} ${p.name} — ${p.price} (qty: ${p.stock})`.trim();
     kb.text(label, inStock ? `prod:${p.id}` : 'noop:oos');
     const iconId = inStock ? inStockIcon : oosIcon;
@@ -85,16 +49,17 @@ export function productsKeyboard(
     kb.row();
   });
 
-  // Footer: Prev | Refresh | Next
+  // Footer: Prev | Refresh | Next | (page indicator)
   if (page > 0) {
-    inlineBtn(kb, lang, 'prev', `cat:${categoryId}:${page - 1}`);
+    inlineBtn(kb, lang, 'prev', `shop:p:${page - 1}`);
   }
-  inlineBtn(kb, lang, 'refresh', `cat:${categoryId}:${page}`);
+  inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
   if (page + 1 < totalPages) {
-    inlineBtn(kb, lang, 'next', `cat:${categoryId}:${page + 1}`);
+    inlineBtn(kb, lang, 'next', `shop:p:${page + 1}`);
   }
+  kb.text(`${page + 1}/${totalPages}`, 'noop:page');
   kb.row();
-  inlineBtn(kb, lang, 'back', 'shop:home');
+  inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
 }
 
@@ -103,6 +68,9 @@ export function productsKeyboard(
  * back). Tapping the qty digit opens the custom-qty entry flow
  * (`qty:<id>:custom`) so the user can type any number 1..QTY_MAX
  * directly instead of mashing +/-.
+ *
+ * Back returns to the Shop home (page 0) since the categories step
+ * has been removed.
  */
 export function productKeyboard(
   lang: Lang,
@@ -124,12 +92,7 @@ export function productKeyboard(
   inlineBtn(kb, lang, 'topup_wallet', 'topup:open');
   inlineBtn(kb, lang, 'view_note', `note:${product.id}`);
   kb.row();
-  inlineBtn(
-    kb,
-    lang,
-    'back',
-    product.category_id ? `cat:${product.category_id}:0` : 'shop:home',
-  );
+  inlineBtn(kb, lang, 'back', 'shop:home');
   return kb;
 }
 

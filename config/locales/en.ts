@@ -48,7 +48,7 @@ export const en: Record<string, string> = {
   'btn.language.vietnamese': '🇻🇳 Tiếng Việt',
   'btn.region.clear': '🚫 Clear',
   'btn.deposit_history': '💳 My Deposits',
-  'btn.channel': '📢 Channel',
+  'btn.channel': 'Channel',
   'btn.stats': '📊 Stats',
   'btn.stats_refresh': '🔄 Refresh',
   'btn.stats_back': '◀️ Back',
@@ -56,7 +56,11 @@ export const en: Record<string, string> = {
   'btn.set_email': '📧 Set Email',
 
   // ---------- Shop ----------
-  'shop.choose_category': '🛒 *Shop*\n\n*Available Products:*\n_{total} categories — page {page}/{pages}_',
+  // Shop home — single all-products list (categories step removed).
+  'shop.home.header': '*Available Products:*\n_{total} products — page {page}/{pages}_',
+  // Legacy key, kept for any callsite still on the old categories
+  // flow. Same shape as `shop.home.header` so output is consistent.
+  'shop.choose_category': '*Available Products:*\n_{total} products — page {page}/{pages}_',
   'shop.qty.prompt': '🔢 Type a quantity (1–{max}) and send.',
   'shop.qty.invalid': '❌ Invalid number — please send a value between 1 and {max}.',
   'shop.empty_categories': 'No categories yet. Please check back later.',
@@ -164,7 +168,7 @@ export const en: Record<string, string> = {
   'btn.email.delete.cancel': '⬅️ Cancel',
   'btn.email.know_more': '📄 Know More',
   // Send-PDF buttons (My Orders / My Deposits / My Stats screens).
-  'btn.send_pdf.orders': '📤 Send Orders PDF to Email',
+  'btn.send_pdf.orders': 'Send Orders PDF to Email',
   'btn.send_pdf.deposits': '📤 Send Deposits PDF to Email',
   'btn.send_pdf.stats': '📤 Send Stats PDF to Email',
   // Pop-ups for the Send-PDF buttons.
@@ -203,9 +207,9 @@ export const en: Record<string, string> = {
     '🪄 No orders yet.\n\n' +
     '✨ 🛍️ 🚀 Start shopping and your orders will appear here!',
   'orders.page': 'Page {page}/{pages}',
-  'orders.status.active': '🛡 Active',
-  'orders.status.refunded': '↩️ Refunded',
-  'orders.status.cancelled': '⛔ Cancelled',
+  'orders.status.active': 'Active',
+  'orders.status.refunded': 'Refunded',
+  'orders.status.cancelled': 'Cancelled',
   // Order detail screen.
   'orders.detail.title': '{orders_title} *My Orders*',
   'orders.detail.id': '{orders_id} *Order ID#* : `{id}`',
@@ -224,8 +228,8 @@ export const en: Record<string, string> = {
   'orders.detail.type.wallet': 'Wallet balance',
   'orders.detail.type.direct': 'Direct payment',
   // Buttons used on the Order detail screen.
-  'btn.orders_back_list': '⬅️ Back to Orders',
-  'btn.orders_open_link': '🔗 Open Link',
+  'btn.orders_back_list': 'Back to Orders',
+  'btn.orders_open_link': 'Open Link',
   // Legacy keys kept so anything still calling them won't break.
   'profile.email.title': '📧 *Set Email*',
   'profile.email.body':
