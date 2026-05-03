@@ -240,12 +240,13 @@ export const vi: Record<string, string> = {
   'support.transcript.expired_popup':
     '⌛ Bản ghi này không còn khả dụng. Bắt đầu phiên Hỗ trợ trực tiếp mới khi bạn cần giúp đỡ.',
   'support.ai.session_open':
-    '{kiwi_ai} *Xin chào! Tôi là Kiwi, trợ lý hỗ trợ tự động.*\n' +
-    '*Tôi có thể giúp gì cho bạn hôm nay?*\n\n' +
-    'Hỏi tôi bất cứ điều gì về cửa hàng — sản phẩm, giá, phương thức ' +
-    'thanh toán, nạp tiền, giới thiệu, ví của bạn — tôi có toàn bộ ' +
-    'danh mục. Nhấn *Huỷ* khi xong và tôi sẽ lưu hội thoại thành PDF ' +
-    'để gửi qua email.',
+    '{kiwi_ai} *Kiwi Ai*\n' +
+    '🥝 *Xin chào!*\n' +
+    '*Tôi là Kiwi, trợ lý hỗ trợ tự động.*\n\n' +
+    'Bạn có thể hỏi bất kỳ câu hỏi nào bằng bất kỳ ngôn ngữ nào ' +
+    'hoặc được hỗ trợ về sản phẩm, giá, kho hàng, nạp tiền, mã ' +
+    'giảm giá, đơn hàng và giao hàng. Thông tin nội bộ hệ thống ' +
+    'không được tiết lộ.',
   'support.ai.user_ended':
     '{support_live_closed} Đã đóng AI Support.\n\n' +
     'Mở lại AI Support từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
