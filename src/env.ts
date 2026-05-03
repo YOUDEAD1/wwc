@@ -77,20 +77,37 @@ const schema = z.object({
   // ----------------------------------------------------------------
   //  Deep-detail log channel
   // ----------------------------------------------------------------
-  // Numeric Telegram chat id of a private channel (or supergroup)
-  // the admin owns. When set, every "deep details" notification
+  // Telegram chat to receive every "deep details" notification
   // emitted by `services/adminLog.ts` (orders, top-ups, support
   // sessions, support transcripts, PDF sends, language /
-  // notification toggles, etc.) is sent there instead of the
-  // admin's DM. Falls back to `ADMIN_USER_ID` when unset so existing
-  // deployments keep working with no migration needed.
+  // notification toggles, etc.). Accepts either:
   //
-  // Channel ids are negative and start with `-100…` (e.g.
-  // `-1002145678901`). Add the bot to the channel as an admin with
-  // "Post Messages" + "Manage Topics" permission, then forward any
-  // message from the channel to @userinfobot or @RawDataBot to read
-  // the id.
-  LOG_CHAT_ID: z.coerce.number().int().optional(),
+  //   - `@channelusername` for a public channel (e.g.
+  //     `@safwantigershopsales`), OR
+  //   - a numeric chat id starting with `-100…` for a private
+  //     channel/supergroup (forward any message from it to
+  //     @userinfobot to read the id).
+  //
+  // Falls back to `ADMIN_USER_ID` (admin DM) when unset so existing
+  // deployments keep working with no migration needed. The bot must
+  // be added to the channel as an admin with "Post Messages" +
+  // "Manage Topics" permission for documents (transcripts) to land.
+  LOG_CHAT_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value === '') return undefined;
+      // Strip a leading `=` accidentally pasted from the env file
+      // and any surrounding quotes.
+      const cleaned = value.replace(/^["']|["']$/g, '').trim();
+      if (cleaned === '') return undefined;
+      // Numeric id (`-1001234567890`) — coerce to number so the
+      // grammY API can use the integer fast-path.
+      if (/^-?\d+$/.test(cleaned)) return Number(cleaned);
+      // Otherwise treat as @channelusername (with or without the @).
+      return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
+    }),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

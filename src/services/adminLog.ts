@@ -124,9 +124,12 @@ function compose(args: {
  * separate "shop log" channel (the use case the bot owner asked
  * for — "all details on this channel, no on admin chat"). When it
  * isn't set we fall back to the admin's DM so existing deployments
- * keep working with zero migration.
+ * keep working with zero migration. The configured value can be a
+ * numeric chat id (`-1001234567890`) or a public channel username
+ * (`@safwantigershopsales`); both forms are accepted by the
+ * Telegram bot API directly.
  */
-function logChatId(): number {
+function logChatId(): number | string {
   return env.LOG_CHAT_ID ?? env.ADMIN_USER_ID;
 }
 
