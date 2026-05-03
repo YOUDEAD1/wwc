@@ -404,10 +404,27 @@ export const en: Record<string, string> = {
     '❌ Could not send the transcript to {email}. Please try again — if it keeps failing, contact support.',
   'support.transcript.expired_popup':
     '⌛ This transcript is no longer available. Start a new Live Support session whenever you need help.',
-  'support.ai.title': '🤖 *Automated Support Assistant*',
-  'support.ai.prompt': 'Describe your issue and I\'ll do my best to help.',
+  // AI Support — premium-formatted prompt screen. The header reuses
+  // the same `support_live_active` premium emoji as Live Support so
+  // both flows look visually consistent. The footer hint tells the
+  // user the chat is multi-turn and that tapping Cancel closes the
+  // session and saves it as a PDF (mirrors Live Support behaviour).
+  'support.ai.session_open':
+    '{support_live_active} *Automated Support Assistant*\n\n' +
+    'Describe your issue and I\'ll keep answering until you tap *Cancel*.\n' +
+    'When you cancel I\'ll save the chat as a PDF you can email to yourself.',
+  // Closure message shown when the user taps Cancel. Mirrors
+  // `support.live.user_ended` so the two flows feel identical.
+  'support.ai.user_ended':
+    '{support_live_closed} AI chat closed.\n\n' +
+    'Open AI Support again from the menu whenever you need help.',
   'support.ai.fallback':
     'I couldn\'t answer that automatically. A human will reach out shortly.',
+  'support.ai.empty_popup':
+    '💬 Send at least one question first — there\'s nothing to save yet.',
+  // Legacy keys kept for any code path still referencing them.
+  'support.ai.title': '🤖 *Automated Support Assistant*',
+  'support.ai.prompt': 'Describe your issue and I\'ll do my best to help.',
 
   // ---------- Channel ----------
   'channel.not_set': '📢 The channel link hasn\'t been set yet. Ask the admin to configure it.',

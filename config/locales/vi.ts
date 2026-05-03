@@ -239,9 +239,19 @@ export const vi: Record<string, string> = {
     '❌ Không gửi được bản ghi đến {email}. Vui lòng thử lại — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
   'support.transcript.expired_popup':
     '⌛ Bản ghi này không còn khả dụng. Bắt đầu phiên Hỗ trợ trực tiếp mới khi bạn cần giúp đỡ.',
+  'support.ai.session_open':
+    '{support_live_active} *Trợ lý hỗ trợ tự động*\n\n' +
+    'Mô tả vấn đề và tôi sẽ tiếp tục trả lời đến khi bạn nhấn *Huỷ*.\n' +
+    'Khi bạn huỷ, tôi sẽ lưu hội thoại thành PDF để bạn gửi qua email.',
+  'support.ai.user_ended':
+    '{support_live_closed} Đã đóng AI Support.\n\n' +
+    'Mở lại AI Support từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
+  'support.ai.fallback':
+    'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
+  'support.ai.empty_popup':
+    '💬 Hãy gửi ít nhất một câu hỏi trước — chưa có gì để lưu.',
   'support.ai.title': '🤖 *Trợ lý hỗ trợ tự động*',
   'support.ai.prompt': 'Mô tả vấn đề và tôi sẽ cố gắng hỗ trợ.',
-  'support.ai.fallback': 'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
   'channel.not_set': '📢 Liên kết kênh chưa được cài đặt.',
   'channel.subscribe.title': '📢 *Tham gia kênh* để tiếp tục',
   'channel.subscribe.body': 'Vui lòng tham gia kênh bên dưới rồi nhấn *Tôi đã tham gia*.',
