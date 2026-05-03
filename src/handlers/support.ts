@@ -1091,18 +1091,72 @@ export function registerSupport(bot: Composer<AppCtx>): void {
 
   // Cancel button on the AI Support screen. Wipes the entire AI
   // Support exchange (every bot prompt + reply and every user
-  // question tracked on the session) from the user's chat, then
-  // drops them back onto a fresh main menu — same effect as
-  // hitting `/start`.
+  // question tracked on the session) from the user's chat, drops
+  // them back onto a fresh main menu, and — if the conversation
+  // had any Q&A — posts a tiny follow-up message holding just the
+  // "📧 Send chat PDF to email" button so the user can still grab
+  // a copy without seeing the noisy "AI chat closed" panel.
   bot.callbackQuery('support:ai:end', async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!ctx.from || !ctx.chat) return;
     const session = aiSessions.get(ctx.from.id);
     aiSessions.delete(ctx.from.id);
     const chatId = ctx.chat.id;
+
+    // Build + cache the transcript BEFORE we delete the chat
+    // bubbles so the post-cancel email button has something to
+    // attach to. Best-effort — if the PDF can't be built (no
+    // entries, renderer error, etc.) we just skip the follow-up.
+    const endedAt = new Date();
+    let pdfBuilt = false;
+    if (session && session.entries.length > 0) {
+      try {
+        const pdfBuffer = await buildSupportTranscriptPdf({
+          sessionStartedAt: session.startedAt,
+          sessionEndedAt: endedAt,
+          user: {
+            telegram_id: ctx.from.id,
+            first_name: session.firstName,
+            username: session.username,
+          },
+          endedBy: 'user',
+          entries: session.entries.map((e) => ({
+            at: e.at,
+            side: e.side,
+            // Reuse the Live Support renderer; relabel the admin
+            // side as "Kiwi Ai" since that's who actually replied.
+            author: e.side === 'user' ? session.firstName : 'Kiwi Ai',
+            text: e.text,
+          })),
+        });
+        const safeName = (session.username ?? `user_${ctx.from.id}`).replace(
+          /[^A-Za-z0-9_-]/g,
+          '_',
+        );
+        const pdfFilename = `kiwi_ai_${safeName}_${session.startedAt
+          .toISOString()
+          .slice(0, 19)
+          .replace(/[:T]/g, '-')}.pdf`;
+        cacheTranscript(ctx.from.id, {
+          buffer: pdfBuffer,
+          filename: pdfFilename,
+          durationSeconds: Math.max(
+            0,
+            Math.floor(
+              (endedAt.getTime() - session.startedAt.getTime()) / 1000,
+            ),
+          ),
+          messageCount: session.entries.length,
+        });
+        pdfBuilt = true;
+      } catch (err) {
+        logger.warn({ err }, 'ai-support: failed to build transcript PDF on cancel');
+      }
+    }
+
+    // Delete every tracked Q&A bubble plus the Cancel-button
+    // message itself so the chat is fully wiped.
     const ids = new Set<number>(session?.messageIds ?? []);
-    // Make sure the message that owned the Cancel button itself is
-    // deleted, even if it somehow wasn't tracked in the session.
     const cancelMsgId = ctx.callbackQuery.message?.message_id;
     if (cancelMsgId !== undefined) ids.add(cancelMsgId);
     await Promise.all(
@@ -1115,7 +1169,23 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         }),
       ),
     );
+
     await showMainMenu(ctx, { fresh: true });
+
+    if (pdfBuilt) {
+      try {
+        await ctx.api.sendMessage(
+          chatId,
+          renderMdHtml(ctx.t('support.ai.pdf_prompt')),
+          {
+            parse_mode: 'HTML',
+            reply_markup: userClosureKeyboard(ctx.lang),
+          },
+        );
+      } catch (err) {
+        logger.warn({ err }, 'ai-support: failed to send post-cancel PDF prompt');
+      }
+    }
   });
 
   // Multi-turn message handler. While the user has an active AI

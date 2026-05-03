@@ -422,6 +422,12 @@ export const en: Record<string, string> = {
     'Open Kiwi Ai again from the menu whenever you need help.',
   'support.ai.fallback':
     'I couldn\'t answer that automatically. A human will reach out shortly.',
+  // Tiny prompt sent right after the AI chat is wiped on Cancel,
+  // attached to the “📧 Send chat PDF to email” button so the user
+  // can still save the conversation if they want to.
+  'support.ai.pdf_prompt':
+    '{kiwi_ai} *Kiwi Ai chat saved.*\n' +
+    'Tap below to email the transcript as a PDF.',
   'support.ai.empty_popup':
     '💬 Send at least one question first — there\'s nothing to save yet.',
   // Legacy keys kept for any code path still referencing them.

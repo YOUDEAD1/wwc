@@ -246,6 +246,9 @@ export const ar: Record<string, string> = {
     'افتح Kiwi Ai مرة أخرى من القائمة عند الحاجة.',
   'support.ai.fallback':
     'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',
+  'support.ai.pdf_prompt':
+    '{kiwi_ai} *تم حفظ محادثة Kiwi Ai.*\n' +
+    'اضغط أدناه لإرسال سجل المحادثة إلى بريدك الإلكتروني كـ PDF.',
   'support.ai.empty_popup':
     '💬 أرسل سؤالاً واحداً على الأقل أولاً — لا يوجد شيء لحفظه بعد.',
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',

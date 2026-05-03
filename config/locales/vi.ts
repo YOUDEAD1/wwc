@@ -251,6 +251,9 @@ export const vi: Record<string, string> = {
     'Mở lại Kiwi Ai từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
   'support.ai.fallback':
     'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
+  'support.ai.pdf_prompt':
+    '{kiwi_ai} *Đã lưu hội thoại Kiwi Ai.*\n' +
+    'Nhấn bên dưới để gửi bản ghi về email của bạn dưới dạng PDF.',
   'support.ai.empty_popup':
     '💬 Hãy gửi ít nhất một câu hỏi trước — chưa có gì để lưu.',
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
