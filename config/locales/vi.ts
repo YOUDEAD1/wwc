@@ -32,7 +32,7 @@ export const vi: Record<string, string> = {
   'btn.qty.inc_10': '⏩ 10',
   'btn.qty.inc_100': '⏭ 100',
   'btn.qty.display': '📦 {qty} / {stock}',
-  'btn.share_product': '🔗 Sao chép / Chia sẻ',
+  'btn.share_product': '🔗 Sao chép liên kết',
   'btn.view_note_file': '📥 Lưu ghi chú dạng TXT',
   'btn.send_note_txt': '📥 Lưu dạng TXT',
   'btn.out_of_stock': '❌ Hết hàng',
@@ -81,6 +81,8 @@ export const vi: Record<string, string> = {
   'shop.product.line.qty': '🔢 Số lượng: *{qty}*',
   'shop.product.line.total': '🧮 Tổng: *{total}*',
   'shop.product.line.balance': '👛 Ví: *{balance}*',
+  'shop.product.out_of_stock_popup':
+    '❌ Sản phẩm này hiện đã hết hàng. Vui lòng liên hệ quản trị viên để bổ sung kho hoặc chọn sản phẩm tương tự.',
   'shop.note.title': '📝 *Ghi chú sản phẩm*',
   'shop.note.empty': 'Sản phẩm này không có ghi chú.',
   'shop.note.full': [

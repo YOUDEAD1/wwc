@@ -69,16 +69,15 @@ function productPageText(ctx: AppCtx, p: NonNullable<Awaited<ReturnType<typeof g
 }
 
 /**
- * Build the t.me share URL that deep-links anyone who taps it back
- * into THIS bot on the given product page. We prefer Telegram's
- * native share sheet (`share?url=`) so the user gets a chip-list of
- * recent contacts instead of just copying. Falls back to the plain
- * `?start=prod_<id>` URL when share is unavailable.
+ * Build the deep-link URL that lands anyone who opens it back on
+ * this product page inside the bot. The product keyboard wires
+ * this URL straight into a Telegram `copy_text` button so tapping
+ * it copies the link to the user's clipboard with a "Copied" toast
+ * — no share dialog, no auto-forward to a chat. The receiver still
+ * lands on the product page when they paste the link anywhere.
  */
-function buildProductShareUrl(productId: number, productName: string): string {
-  const target = `https://t.me/${env.BOT_USERNAME}?start=prod_${productId}`;
-  const text = `${productName} — SafwanTiger Shop`;
-  return `https://t.me/share/url?url=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`;
+function buildProductShareUrl(productId: number): string {
+  return `https://t.me/${env.BOT_USERNAME}?start=prod_${productId}`;
 }
 
 async function showProduct(ctx: AppCtx, productId: number) {
@@ -88,7 +87,7 @@ async function showProduct(ctx: AppCtx, productId: number) {
     return;
   }
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
-  const shareUrl = buildProductShareUrl(p.id, p.name);
+  const shareUrl = buildProductShareUrl(p.id);
   await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty)), {
     parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
@@ -393,6 +392,19 @@ export function registerShop(bot: Composer<AppCtx>): void {
       }
       throw e;
     }
+  });
+
+  // Tapping an out-of-stock product (either the row in the catalog
+  // list or the disabled "Out of Stock" button on the product page)
+  // pops up a localized "Please contact admin to restock" alert
+  // instead of silently acking — gives the customer a clear next
+  // step instead of a non-response. Must be registered BEFORE the
+  // catch-all `noop:` handler below or the regex would swallow it.
+  bot.callbackQuery('noop:oos', async (ctx) => {
+    await ctx.answerCallbackQuery({
+      text: ctx.t('shop.product.out_of_stock_popup'),
+      show_alert: true,
+    });
   });
 
   bot.callbackQuery(/^noop:/, async (ctx) => {

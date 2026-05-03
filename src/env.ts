@@ -23,6 +23,33 @@ if (!process.env.SMTP_PASS && process.env.SAFWANTIGER_SMTP_PASS) {
  */
 const DEFAULT_LOG_CHAT = '@safwantigershopsales';
 
+/**
+ * Default Telegram chat for `ORDER_LOG_CHAT_ID` — the dedicated
+ * "Orders" feed the bot owner asked to keep separate from the
+ * generic shop-sales channel. Only `logOrderCreated` events flow
+ * here; everything else (top-ups, support, settings, PDFs, etc.)
+ * still goes to the main `LOG_CHAT_ID` channel.
+ */
+const DEFAULT_ORDER_LOG_CHAT = '@SafwanTigerShopBotInfo';
+
+/**
+ * Shared transformer for the `LOG_CHAT_ID` family of env vars. Each
+ * one accepts the same input shapes — `@channelusername` (with or
+ * without `@`), numeric `-100…` id, or an opt-out marker — and
+ * resolves to a value the grammY API can use directly, falling back
+ * to the supplied default when the env var is unset or blank.
+ */
+function logChannelTransformer(defaultValue: string) {
+  return (value: string | undefined): number | string | undefined => {
+    if (value === undefined) return defaultValue;
+    const cleaned = value.replace(/^["']|["']$/g, '').trim();
+    if (cleaned === '') return defaultValue;
+    if (/^(0|off|none|disabled)$/i.test(cleaned)) return undefined;
+    if (/^-?\d+$/.test(cleaned)) return Number(cleaned);
+    return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
+  };
+}
+
 const schema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(10, 'TELEGRAM_BOT_TOKEN (or BOT_TOKEN) missing'),
   ADMIN_USER_ID: z.coerce.number().int().positive(),
@@ -108,21 +135,24 @@ const schema = z.object({
     .string()
     .trim()
     .optional()
-    .transform((value) => {
-      if (value === undefined) return DEFAULT_LOG_CHAT;
-      const cleaned = value.replace(/^["']|["']$/g, '').trim();
-      if (cleaned === '') return DEFAULT_LOG_CHAT;
-      // Special opt-out values — `0`, `off`, `none`, `disabled`
-      // — fall through to `undefined` so adminLog uses the admin
-      // DM. Useful for staging deployments that should not spam the
-      // production channel.
-      if (/^(0|off|none|disabled)$/i.test(cleaned)) return undefined;
-      // Numeric id (`-1001234567890`) — coerce to number so the
-      // grammY API can use the integer fast-path.
-      if (/^-?\d+$/.test(cleaned)) return Number(cleaned);
-      // Otherwise treat as @channelusername (with or without the @).
-      return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
-    }),
+    .transform(logChannelTransformer(DEFAULT_LOG_CHAT)),
+
+  // ----------------------------------------------------------------
+  //  Orders log channel
+  // ----------------------------------------------------------------
+  // Telegram chat that receives only product-order notifications
+  // (`logOrderCreated`). Kept separate from `LOG_CHAT_ID` so the
+  // owner can pin the orders channel for at-a-glance "what just
+  // sold" visibility while leaving the noisier sales / support /
+  // settings feed elsewhere. Same input shapes as `LOG_CHAT_ID`
+  // (`@username`, numeric `-100…`, or `0` to opt out). When
+  // `ORDER_LOG_CHAT_ID` is opted out, orders fall back to the main
+  // `LOG_CHAT_ID` channel — and only after that, the admin DM.
+  ORDER_LOG_CHAT_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform(logChannelTransformer(DEFAULT_ORDER_LOG_CHAT)),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

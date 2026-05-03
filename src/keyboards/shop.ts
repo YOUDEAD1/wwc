@@ -1,6 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
-import { applyButtonChrome, inlineBtn, inlineUrl, btn } from './helpers.js';
+import { applyButtonChrome, inlineBtn, inlineCopyText, btn } from './helpers.js';
 import { getStateColor } from '../services/settings.js';
 import type { DBProduct } from '../types.js';
 
@@ -90,10 +90,12 @@ export function productKeyboard(
     inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
     kb.row();
   }
-  // Topup Wallet removed; replaced with a 1-tap copy/share link to
-  // this product. The URL deep-links straight back into the bot's
-  // product page so anyone who opens it lands on the same screen.
-  inlineUrl(kb, lang, 'share_product', shareUrl);
+  // Topup Wallet removed; replaced with a 1-tap *copy* link to
+  // this product. Tapping copies the deep-link URL to the user's
+  // clipboard with a "Copied" toast — no share-to-chat dialog, no
+  // auto-forward. The receiver lands on this product page when they
+  // paste the link anywhere.
+  inlineCopyText(kb, lang, 'share_product', shareUrl);
   inlineBtn(kb, lang, 'view_note', `note:${product.id}`);
   kb.row();
   inlineBtn(kb, lang, 'back', 'shop:home');
