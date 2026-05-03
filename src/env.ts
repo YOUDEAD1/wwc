@@ -14,6 +14,15 @@ if (!process.env.SMTP_PASS && process.env.SAFWANTIGER_SMTP_PASS) {
   process.env.SMTP_PASS = process.env.SAFWANTIGER_SMTP_PASS;
 }
 
+/**
+ * Default Telegram chat for `LOG_CHAT_ID` when the env var is unset
+ * or blank. Hard-coded to the bot owner's public sales channel so
+ * fresh deployments route deep-detail notifications correctly with
+ * zero configuration. Override per-deployment by setting
+ * `LOG_CHAT_ID` explicitly (use `LOG_CHAT_ID=0` to opt out).
+ */
+const DEFAULT_LOG_CHAT = '@safwantigershopsales';
+
 const schema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(10, 'TELEGRAM_BOT_TOKEN (or BOT_TOKEN) missing'),
   ADMIN_USER_ID: z.coerce.number().int().positive(),
@@ -88,20 +97,26 @@ const schema = z.object({
   //     channel/supergroup (forward any message from it to
   //     @userinfobot to read the id).
   //
-  // Falls back to `ADMIN_USER_ID` (admin DM) when unset so existing
-  // deployments keep working with no migration needed. The bot must
-  // be added to the channel as an admin with "Post Messages" +
-  // "Manage Topics" permission for documents (transcripts) to land.
+  // Defaults to `@safwantigershopsales` (the bot owner's public log
+  // channel) so a fresh deployment routes deep-detail notifications
+  // to the channel without needing any env wiring. Set
+  // `LOG_CHAT_ID=0` (or `off` / `none` / `disabled`) to opt out and
+  // fall back to the admin DM. The bot must be added to the
+  // channel as an admin with "Post Messages" + "Send Documents"
+  // permission for transcripts to land.
   LOG_CHAT_ID: z
     .string()
     .trim()
     .optional()
     .transform((value) => {
-      if (value === undefined || value === '') return undefined;
-      // Strip a leading `=` accidentally pasted from the env file
-      // and any surrounding quotes.
+      if (value === undefined) return DEFAULT_LOG_CHAT;
       const cleaned = value.replace(/^["']|["']$/g, '').trim();
-      if (cleaned === '') return undefined;
+      if (cleaned === '') return DEFAULT_LOG_CHAT;
+      // Special opt-out values — `0`, `off`, `none`, `disabled`
+      // — fall through to `undefined` so adminLog uses the admin
+      // DM. Useful for staging deployments that should not spam the
+      // production channel.
+      if (/^(0|off|none|disabled)$/i.test(cleaned)) return undefined;
       // Numeric id (`-1001234567890`) — coerce to number so the
       // grammY API can use the integer fast-path.
       if (/^-?\d+$/.test(cleaned)) return Number(cleaned);
