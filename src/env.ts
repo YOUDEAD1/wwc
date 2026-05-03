@@ -73,6 +73,41 @@ const schema = z.object({
   // Defaults to "shopbot@safwantiger.com" if both this and SMTP_USER
   // are unset. Must be an address whose domain is verified in Resend.
   RESEND_FROM: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  Deep-detail log channel
+  // ----------------------------------------------------------------
+  // Telegram chat to receive every "deep details" notification
+  // emitted by `services/adminLog.ts` (orders, top-ups, support
+  // sessions, support transcripts, PDF sends, language /
+  // notification toggles, etc.). Accepts either:
+  //
+  //   - `@channelusername` for a public channel (e.g.
+  //     `@safwantigershopsales`), OR
+  //   - a numeric chat id starting with `-100…` for a private
+  //     channel/supergroup (forward any message from it to
+  //     @userinfobot to read the id).
+  //
+  // Falls back to `ADMIN_USER_ID` (admin DM) when unset so existing
+  // deployments keep working with no migration needed. The bot must
+  // be added to the channel as an admin with "Post Messages" +
+  // "Manage Topics" permission for documents (transcripts) to land.
+  LOG_CHAT_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value === '') return undefined;
+      // Strip a leading `=` accidentally pasted from the env file
+      // and any surrounding quotes.
+      const cleaned = value.replace(/^["']|["']$/g, '').trim();
+      if (cleaned === '') return undefined;
+      // Numeric id (`-1001234567890`) — coerce to number so the
+      // grammY API can use the integer fast-path.
+      if (/^-?\d+$/.test(cleaned)) return Number(cleaned);
+      // Otherwise treat as @channelusername (with or without the @).
+      return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
+    }),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

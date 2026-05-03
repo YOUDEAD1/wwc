@@ -7,9 +7,10 @@ import { renderMdHtml } from '../services/premium.js';
 import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 import { logger } from '../logger.js';
 import type { Lang } from '../../config/index.js';
-import { deleteSetting, readSetting, setSetting } from '../db/queries.js';
+import { deleteSetting, readSetting, setSetting, findUserById } from '../db/queries.js';
 import * as adminLog from '../services/adminLog.js';
 import { buildSupportTranscriptPdf } from '../services/pdfReport.js';
+import { sendReportEmail } from '../services/mailer.js';
 
 /**
  * Set of users currently waiting for a one-shot AI Support reply.
@@ -84,6 +85,40 @@ function pushTranscript(entry: TranscriptEntry): void {
   // Cap so a runaway / huge conversation doesn't OOM the bot.
   if (transcript.length >= 5000) return;
   transcript.push(entry);
+}
+
+/**
+ * Per-user cache of the latest Live Support PDF, keyed by Telegram
+ * user id. Populated when a session ends so the user can request an
+ * emailed copy via the inline button posted under the closure
+ * message. Buffers expire after `TRANSCRIPT_CACHE_TTL_MS` so we
+ * don't keep large PDFs in memory indefinitely.
+ */
+type CachedTranscript = {
+  buffer: Buffer;
+  filename: string;
+  expiresAt: number;
+  durationSeconds: number;
+  messageCount: number;
+};
+const transcriptCache = new Map<number, CachedTranscript>();
+const TRANSCRIPT_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function cacheTranscript(userId: number, entry: Omit<CachedTranscript, 'expiresAt'>): void {
+  transcriptCache.set(userId, {
+    ...entry,
+    expiresAt: Date.now() + TRANSCRIPT_CACHE_TTL_MS,
+  });
+}
+
+function readCachedTranscript(userId: number): CachedTranscript | null {
+  const hit = transcriptCache.get(userId);
+  if (!hit) return null;
+  if (hit.expiresAt < Date.now()) {
+    transcriptCache.delete(userId);
+    return null;
+  }
+  return hit;
 }
 
 const LIVE_SUPPORT_KEY = 'live_support.session';
@@ -270,6 +305,20 @@ async function teardownPanel(
   }
 }
 
+/**
+ * Inline keyboard rendered under the user-facing "Live Support
+ * closed" message. The single button arms an email-the-PDF flow
+ * that pulls the cached transcript built during `endSession`.
+ */
+function userClosureKeyboard(lang: Lang): InlineKeyboard {
+  return inlineBtn(
+    new InlineKeyboard(),
+    lang,
+    'support_email_transcript',
+    'support:transcript:email',
+  );
+}
+
 async function endSession(
   ctx: AppCtx,
   endedBy: 'user' | 'admin',
@@ -296,45 +345,20 @@ async function endSession(
   // panel id is on the in-memory slot so this works for both
   // user-initiated cancels and admin-initiated ends.
   await teardownPanel(ctx, target.telegram_id, target.panelMessageId);
-  // Notify both sides via their main (General) chats; failures are
-  // logged but don't break the flow.
-  try {
-    await ctx.api.sendMessage(target.telegram_id, renderMdHtml(ctx.t('support.live.user_ended')), {
-      parse_mode: 'HTML',
-    });
-  } catch (err) {
-    logger.warn({ err, target: target.telegram_id }, 'live-support: failed to notify user of end');
-  }
-  try {
-    await ctx.api.sendMessage(env.ADMIN_USER_ID, renderMdHtml(ctx.t('support.live.admin_ended')), {
-      parse_mode: 'HTML',
-    });
-  } catch (err) {
-    logger.warn({ err }, 'live-support: failed to notify admin of end');
-  }
 
-  // Deep-detail end log + PDF transcript. Best-effort — failures
-  // logged but don't break the user-facing flow.
   const endedAt = new Date();
   const durationSec = Math.max(
     0,
     Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000),
   );
-  void adminLog.logSupportEnd(ctx.api, {
-    user: {
-      telegram_id: target.telegram_id,
-      username: target.username,
-      first_name: target.first_name,
-      email: null,
-    },
-    endedBy,
-    durationSeconds: durationSec,
-    messageCount: messagesSnapshot.length,
-  });
 
-  // Generate and send the chat-style PDF transcript to admin.
+  // Build the chat-style PDF transcript first so the user-facing
+  // closure message can include the "Send chat PDF to email" button
+  // only when we actually have a buffer to email.
+  let pdfBuffer: Buffer | null = null;
+  let pdfFilename = '';
   try {
-    const buffer = await buildSupportTranscriptPdf({
+    pdfBuffer = await buildSupportTranscriptPdf({
       sessionStartedAt: startedAt,
       sessionEndedAt: endedAt,
       user: {
@@ -354,23 +378,82 @@ async function endSession(
       /[^A-Za-z0-9_-]/g,
       '_',
     );
-    const filename = `live_support_${safeName}_${startedAt
+    pdfFilename = `live_support_${safeName}_${startedAt
       .toISOString()
       .slice(0, 19)
       .replace(/[:T]/g, '-')}.pdf`;
-    await adminLog.logSupportTranscript(ctx.api, {
-      user: {
-        telegram_id: target.telegram_id,
-        username: target.username,
-        first_name: target.first_name,
-        email: null,
-      },
+    cacheTranscript(target.telegram_id, {
+      buffer: pdfBuffer,
+      filename: pdfFilename,
       durationSeconds: durationSec,
       messageCount: messagesSnapshot.length,
-      pdf: new InputFile(buffer, filename),
     });
   } catch (err) {
-    logger.warn({ err }, 'live-support: failed to build/send transcript PDF');
+    logger.warn({ err }, 'live-support: failed to build transcript PDF');
+  }
+
+  // Notify both sides via their main (General) chats; failures are
+  // logged but don't break the flow. The user gets an inline
+  // "Send chat PDF to email" button below the closure message when
+  // the PDF was built successfully.
+  //
+  // Resolve the user's UI language so the email-transcript button
+  // label is rendered in their locale. Falls back to the lang of
+  // whoever triggered endSession (admin-side `/end` defaults to the
+  // admin's lang) when the DB lookup fails.
+  let userLang: Lang = ctx.lang;
+  try {
+    const userRow = await findUserById(target.telegram_id);
+    if (userRow?.language) userLang = userRow.language;
+  } catch (err) {
+    logger.warn({ err, target: target.telegram_id }, 'live-support: failed to load user lang for closure msg');
+  }
+  try {
+    await ctx.api.sendMessage(target.telegram_id, renderMdHtml(ctx.t('support.live.user_ended')), {
+      parse_mode: 'HTML',
+      reply_markup: pdfBuffer ? userClosureKeyboard(userLang) : undefined,
+    });
+  } catch (err) {
+    logger.warn({ err, target: target.telegram_id }, 'live-support: failed to notify user of end');
+  }
+  try {
+    await ctx.api.sendMessage(env.ADMIN_USER_ID, renderMdHtml(ctx.t('support.live.admin_ended')), {
+      parse_mode: 'HTML',
+    });
+  } catch (err) {
+    logger.warn({ err }, 'live-support: failed to notify admin of end');
+  }
+
+  // Deep-detail end log + PDF transcript. Best-effort — failures
+  // logged but don't break the user-facing flow.
+  void adminLog.logSupportEnd(ctx.api, {
+    user: {
+      telegram_id: target.telegram_id,
+      username: target.username,
+      first_name: target.first_name,
+      email: null,
+    },
+    endedBy,
+    durationSeconds: durationSec,
+    messageCount: messagesSnapshot.length,
+  });
+
+  if (pdfBuffer) {
+    try {
+      await adminLog.logSupportTranscript(ctx.api, {
+        user: {
+          telegram_id: target.telegram_id,
+          username: target.username,
+          first_name: target.first_name,
+          email: null,
+        },
+        durationSeconds: durationSec,
+        messageCount: messagesSnapshot.length,
+        pdf: new InputFile(pdfBuffer, pdfFilename),
+      });
+    } catch (err) {
+      logger.warn({ err }, 'live-support: failed to send transcript PDF to log channel');
+    }
   }
 }
 
@@ -621,6 +704,89 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
     if (ctx.from?.id !== env.ADMIN_USER_ID) return;
     await endSession(ctx, 'admin');
+  });
+
+  // Email-the-transcript button posted under the user-facing "Live
+  // Support closed" message. Looks up the cached PDF buffer
+  // produced when the session ended, mails it via the same Resend
+  // / SMTP pipeline My Orders / My Deposits / My Stats use, and
+  // confirms with an auto-deleting "Pdf has been sended to mail"
+  // chat message (rendered with premium emojis when the user has a
+  // Telegram Premium subscription).
+  bot.callbackQuery('support:transcript:email', async (ctx) => {
+    const email = ctx.user.email;
+    if (!email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('support.transcript.no_email_popup'),
+        show_alert: true,
+      });
+      return;
+    }
+    const cached = readCachedTranscript(ctx.user.telegram_id);
+    if (!cached) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('support.transcript.expired_popup'),
+        show_alert: true,
+      });
+      return;
+    }
+    await ctx.answerCallbackQuery({
+      text: ctx.t('support.transcript.sending_popup', { email }),
+      show_alert: false,
+    });
+    try {
+      const ok = await sendReportEmail({
+        email,
+        kind: 'support',
+        pdf: cached.buffer,
+        firstName: ctx.user.first_name ?? null,
+        username: ctx.user.username ?? null,
+      });
+      if (!ok) {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('support.transcript.failed_popup', { email }),
+          show_alert: true,
+        });
+        return;
+      }
+      void adminLog.logPdfSent(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email,
+        },
+        kind: 'support',
+        destinationEmail: email,
+        rowCount: cached.messageCount,
+      });
+      // Auto-delete the confirmation 5 s later so the chat doesn't
+      // accumulate "Pdf sent" lines on repeated taps. Mirrors the
+      // exact pattern used by My Orders / My Deposits / My Stats.
+      const sent = await ctx.reply(
+        renderMdHtml(ctx.t('support.transcript.sent_message')),
+        { parse_mode: 'HTML' },
+      );
+      const chatId = sent.chat.id;
+      const messageId = sent.message_id;
+      setTimeout(() => {
+        ctx.api.deleteMessage(chatId, messageId).catch((err) => {
+          logger.warn(
+            { err, chatId, messageId },
+            'support.transcript.sent_message auto-delete failed',
+          );
+        });
+      }, 5_000);
+    } catch (err) {
+      logger.error(
+        { err, telegram_id: ctx.user.telegram_id },
+        'support: send-transcript email flow failed',
+      );
+      await ctx.answerCallbackQuery({
+        text: ctx.t('support.transcript.failed_popup', { email }),
+        show_alert: true,
+      });
+    }
   });
 
   // /end command — admin shortcut to close the current relay session.

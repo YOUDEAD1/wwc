@@ -223,6 +223,16 @@ export const ar: Record<string, string> = {
     '{support_live_closed} تم إغلاق الدعم المباشر.\n\n' +
     'افتح الدعم مرّة أخرى من القائمة عند حاجتك للمساعدة.',
   'support.live.admin_ended': '🔴 *تم إغلاق جلسة الدعم المباشر.*',
+  'support.btn.email_transcript': '📧 إرسال ملف PDF للدردشة عبر البريد',
+  'support.transcript.sent_message':
+    '{pdf_sent_l} *تم إرسال PDF إلى البريد* {pdf_sent_r}',
+  'support.transcript.no_email_popup':
+    '⚠️ أضف بريدك الإلكتروني أولًا من الإعدادات → إعدادات البريد → ضبط البريد، ثم عُد واضغط على إرسال PDF.',
+  'support.transcript.sending_popup': '⏳ جارٍ إنشاء سجل الدعم وإرساله إلى {email}…',
+  'support.transcript.failed_popup':
+    '❌ تعذّر إرسال السجل إلى {email}. حاول مرة أخرى — تواصل مع الدعم إذا تكرّر الخطأ.',
+  'support.transcript.expired_popup':
+    '⌛ لم يعد هذا السجل متاحًا. ابدأ جلسة دعم مباشر جديدة عند الحاجة للمساعدة.',
   'support.ai.title': '🤖 *مساعد الدعم الآلي*',
   'support.ai.prompt': 'اشرح مشكلتك وسأبذل قصارى جهدي للمساعدة.',
   'support.ai.fallback': 'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',

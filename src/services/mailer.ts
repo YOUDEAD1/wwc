@@ -602,12 +602,15 @@ export function describeMailerStatus(): string {
 //  On-demand report emails (My Orders / My Deposits / My Stats PDFs)
 // ---------------------------------------------------------------------------
 
-export type ReportKind = 'orders' | 'deposits' | 'stats';
+export type ReportKind = 'orders' | 'deposits' | 'stats' | 'support';
 
 const REPORT_TITLES: Record<ReportKind, string> = {
   orders: 'My Orders',
   deposits: 'My Deposits',
   stats: 'My Stats',
+  // "Live Support" reads more naturally than "Support" in the
+  // subject line and the email body header.
+  support: 'Live Support Transcript',
 };
 
 const REPORT_INTROS: Record<ReportKind, string> = {
@@ -617,6 +620,8 @@ const REPORT_INTROS: Record<ReportKind, string> = {
     "Here's a full PDF copy of every deposit and wallet ledger entry on your SafwanTiger Shop account. Approved totals are summarised on the cover page.",
   stats:
     "Here's a PDF snapshot of your SafwanTiger Shop account stats — total orders, items, spend, deposits and last-order timestamp.",
+  support:
+    "Here's a chat-style PDF transcript of your most recent SafwanTiger Shop Live Support session. Every message exchanged with the admin is preserved exactly as it was sent, with timestamps, so you have a permanent record.",
 };
 
 function reportBody(args: {
