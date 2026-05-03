@@ -327,6 +327,7 @@ export async function listProducts(
     .select('*', { count: 'exact' })
     .eq('category_id', categoryId)
     .eq('active', true)
+    .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);
   return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
@@ -705,16 +706,112 @@ export async function listAllProducts(
   const { data, count } = await supabase
     .from('products')
     .select('*', { count: 'exact' })
-    .order('id', { ascending: false })
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
     .range(from, to);
   return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
 }
 
 /**
+ * Find the row immediately above (`direction='up'`) or below
+ * (`direction='down'`) the given product id in the global admin
+ * sort order. Returns `null` when the product is already at the
+ * boundary (top of page 0 going up, or last row of the last page
+ * going down). Used by the admin reorder buttons to figure out
+ * which neighbour to swap with — works across page boundaries.
+ */
+export async function findAdjacentProduct(
+  productId: number,
+  direction: 'up' | 'down',
+): Promise<DBProduct | null> {
+  const { data: cur } = await supabase
+    .from('products')
+    .select('sort_order')
+    .eq('id', productId)
+    .single();
+  if (!cur) return null;
+  const sort = Number(cur.sort_order);
+  // Find the strict neighbour on the requested side. We compare on
+  // the lexicographic (sort_order, id) tuple so ties on sort_order
+  // (very common for legacy rows that all default to 0) still
+  // produce a deterministic adjacency by id.
+  if (direction === 'up') {
+    const { data: tied } = await supabase
+      .from('products')
+      .select('*')
+      .eq('sort_order', sort)
+      .lt('id', productId)
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (tied) return tied as DBProduct;
+    const { data: above } = await supabase
+      .from('products')
+      .select('*')
+      .lt('sort_order', sort)
+      .order('sort_order', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return (above as DBProduct | null) ?? null;
+  }
+  const { data: tied } = await supabase
+    .from('products')
+    .select('*')
+    .eq('sort_order', sort)
+    .gt('id', productId)
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (tied) return tied as DBProduct;
+  const { data: below } = await supabase
+    .from('products')
+    .select('*')
+    .gt('sort_order', sort)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return (below as DBProduct | null) ?? null;
+}
+
+/**
+ * Swap the `sort_order` of two products. When both rows currently
+ * share the same sort_order (the common case for legacy rows that
+ * default to 0), bumps the lower-id row to `sort_order + 1` so the
+ * tuple ordering inverts on the next list render.
+ */
+export async function swapProductOrder(
+  a: { id: number; sort_order: number },
+  b: { id: number; sort_order: number },
+): Promise<void> {
+  if (a.sort_order === b.sort_order) {
+    // Tie-break on id — the row with the *lower* id appears first
+    // under the (sort_order, id) ordering, so to swap we bump
+    // whichever row should now appear later to `sort_order + 1`.
+    const earlier = a.id < b.id ? a : b;
+    const later = a.id < b.id ? b : a;
+    await supabase
+      .from('products')
+      .update({ sort_order: earlier.sort_order + 1 })
+      .eq('id', earlier.id);
+    await supabase
+      .from('products')
+      .update({ sort_order: later.sort_order })
+      .eq('id', later.id);
+    return;
+  }
+  await supabase.from('products').update({ sort_order: b.sort_order }).eq('id', a.id);
+  await supabase.from('products').update({ sort_order: a.sort_order }).eq('id', b.id);
+}
+
+/**
  * Customer-facing all-products list. Filters on `active=true` so
  * the shop shopfront never surfaces hidden / draft products. Order
- * is `id ASC` so the list is stable across pages (newest products
- * land at the back, like the per-category list).
+ * is `(sort_order ASC, id ASC)` so the admin's manual reordering
+ * (PR #58) flows through to the customer-facing catalog, with
+ * `id ASC` as the deterministic tie-breaker for legacy rows that
+ * still share the default sort_order=0.
  */
 export async function listActiveProducts(
   page: number,
@@ -726,6 +823,7 @@ export async function listActiveProducts(
     .from('products')
     .select('*', { count: 'exact' })
     .eq('active', true)
+    .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);
   return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };

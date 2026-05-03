@@ -15,6 +15,7 @@ import {
   deletePaymentMethod,
   deleteProduct,
   demoteAdmin,
+  findAdjacentProduct,
   findUserById,
   findUserByUsername,
   getDailyRevenue,
@@ -33,6 +34,7 @@ import {
   setDepositAmount,
   setDepositStatus,
   setProductActive,
+  swapProductOrder,
   createGiftCode,
   deleteGiftCode,
   listGiftCodes,
@@ -500,11 +502,19 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
     });
     return;
   }
-  const lines = [`📦 *Products* — page ${page + 1}/${totalPages}`, ''];
+  const lines = [
+    `📦 *Products* — page ${page + 1}/${totalPages}`,
+    '',
+    '_Tap ↑ / ↓ to reorder. Reordering works across page boundaries._',
+    '',
+  ];
   const kb = new InlineKeyboard();
   for (const p of rows) {
     const flag = p.active ? '🟢' : '⚪️';
     lines.push(`${flag} #${p.id}  ${p.name} — $${p.price}  (stock ${p.stock})`);
+    kb.text(`↑ #${p.id}`, `adm:prod:up:${p.id}:${page}`)
+      .text(`↓ #${p.id}`, `adm:prod:dn:${p.id}:${page}`)
+      .row();
     kb.text(p.active ? `👁 Hide #${p.id}` : `👁 Show #${p.id}`, `adm:prod:tog:${p.id}:${page}`)
       .text(`🗑 #${p.id}`, `adm:prod:del:${p.id}:${page}`)
       .row();
@@ -530,6 +540,42 @@ adminBot.callbackQuery(/^adm:prod:tog:(\d+):(\d+)$/, async (ctx) => {
   if (p) await setProductActive(id, !p.active);
   await ctx.answerCallbackQuery({ text: 'Visibility toggled' });
   await showProductList(ctx, Number(ctx.match[2]));
+});
+
+// Move a product up / down in the admin sort order. Works across
+// page boundaries — swapping with a row on a different page just
+// changes the (sort_order, id) tuple so the affected rows shift
+// when the list is re-rendered. The swap is silently a no-op when
+// the product is already at the boundary (top of page 0 going up,
+// or last row of the last page going down).
+adminBot.callbackQuery(/^adm:prod:(up|dn):(\d+):(\d+)$/, async (ctx) => {
+  const direction: 'up' | 'down' = ctx.match[1] === 'up' ? 'up' : 'down';
+  const id = Number(ctx.match[2]);
+  const page = Number(ctx.match[3]);
+  const cur = await listAllProducts(0, 1000).then(({ rows }) =>
+    rows.find((r) => r.id === id),
+  );
+  if (!cur) {
+    await ctx.answerCallbackQuery({ text: 'Product no longer exists' });
+    await showProductList(ctx, page);
+    return;
+  }
+  const neighbour = await findAdjacentProduct(id, direction);
+  if (!neighbour) {
+    await ctx.answerCallbackQuery({
+      text: direction === 'up' ? 'Already at top' : 'Already at bottom',
+    });
+    return;
+  }
+  await swapProductOrder(
+    { id: cur.id, sort_order: cur.sort_order },
+    { id: neighbour.id, sort_order: neighbour.sort_order },
+  );
+  cache.del('cats');
+  await ctx.answerCallbackQuery({
+    text: direction === 'up' ? '↑ Moved up' : '↓ Moved down',
+  });
+  await showProductList(ctx, page);
 });
 
 // ---------- Payment methods ----------
