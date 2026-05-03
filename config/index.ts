@@ -413,6 +413,9 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // see the unicode fallback.
   support_live_active: { unicode: '💬', custom_emoji_id: '5456580414254619349' },
   support_live_closed: { unicode: '🔴', custom_emoji_id: '5803151379887297481' },
+  // Kiwi AI Support — premium glyph used in the AI greeting and
+  // anywhere the rebrand needs the kiwi avatar in front of text.
+  kiwi_ai: { unicode: '🥝', custom_emoji_id: '4956398762164487204' },
 
   // ---- My Deposits screen --------------------------------------
   deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },
@@ -534,6 +537,10 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   support_live: 'support_live_active',
   support_cancel: 'support_live_closed',
   support_end_session: 'support_live_closed',
+  // Kiwi AI button on the main menu — premium kiwi avatar with
+  // unicode `🥝` fallback. Matches the locale label so the button
+  // renders consistently for premium and non-premium users.
+  ai_support: 'kiwi_ai',
 
   // Inline quantity counter — premium twins for the matching unicode
   // glyphs in the locale labels. Keys whose unicode has no premium

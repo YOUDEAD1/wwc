@@ -4,10 +4,22 @@ import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
 import { inlineBtn, inlineUrl } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getAdminContactUrlWithPrefill, getTextOverride } from '../services/settings.js';
+import {
+  getAdminContactUrlWithPrefill,
+  getChannelUrl,
+  getTextOverride,
+} from '../services/settings.js';
 import { logger } from '../logger.js';
 import type { Lang } from '../../config/index.js';
-import { deleteSetting, readSetting, setSetting, findUserById } from '../db/queries.js';
+import {
+  deleteSetting,
+  findUserById,
+  listActiveProducts,
+  listCategories,
+  listPaymentMethods,
+  readSetting,
+  setSetting,
+} from '../db/queries.js';
 import * as adminLog from '../services/adminLog.js';
 import { buildSupportTranscriptPdf } from '../services/pdfReport.js';
 import { sendReportEmail } from '../services/mailer.js';
@@ -1185,12 +1197,58 @@ function aiSessionKeyboard(lang: Lang): InlineKeyboard {
  * Default system prompt used when the admin hasn't customised one
  * via the `🤖 AI Setup → 💬 Set AI Prompt` button. The override
  * lives in the settings table under `text.ai.system_prompt`.
+ *
+ * Kiwi is the bot's named persona. The prompt below is intentionally
+ * "heavy" so the model behaves like a knowledgeable shop assistant
+ * even before the live store-context block (built by
+ * `buildStoreContextBlock`) is appended.
  */
-const DEFAULT_AI_SYSTEM_PROMPT =
-  "You are SafwanTiger Shop's helpful customer support assistant. " +
-  'Be concise, friendly, and avoid making up information about ' +
-  'products, prices, or order status — if you do not know, ask the ' +
-  'customer to wait for a human admin to follow up.';
+const DEFAULT_AI_SYSTEM_PROMPT = [
+  'You are *Kiwi*, the friendly automated support assistant for',
+  'SafwanTiger Shop — a Telegram-based digital storefront selling',
+  'subscriptions, gift cards, and accounts (YouTube Premium, Spotify,',
+  'Netflix, etc.). Speak in first person as Kiwi, stay concise, warm,',
+  'and helpful. Use short paragraphs (≤3 sentences each) and bullet',
+  'lists when comparing options. Use the kiwi emoji 🥝 sparingly to',
+  'keep your personality consistent.',
+  '',
+  'Capabilities you can confidently help with:',
+  ' • Recommending products from the live catalog (sent below as the',
+  '   *Store Snapshot*). Suggest the best match for the user\'s stated',
+  '   need (region, plan length, budget) and quote the current price',
+  '   in USDT. If multiple variants exist, list 2–3 options briefly.',
+  ' • Explaining how to buy: open Shop → pick a category → tap a',
+  '   product → tap *Buy Now* → confirm. Payments are deducted from',
+  '   the user\'s wallet balance.',
+  ' • Explaining how to top up the wallet: open *Topup* from the',
+  '   main menu → pick a payment method (listed in the snapshot) →',
+  '   follow the on-screen instructions. Most methods accept USDT.',
+  ' • Explaining settings: language picker, region picker, email',
+  '   capture (used for receipts and "Send chat PDF to email"',
+  '   buttons), notification toggles (Stock / Info / Wallet alerts).',
+  ' • Explaining the referral program: every referred user\'s top-ups',
+  '   pay you 1 % back (capped at $1.00 per top-up). Earnings can be',
+  '   transferred to your wallet anytime, or withdrawn as cash via',
+  '   support ($1.00 minimum). Share your referral link from',
+  '   *Settings → Refer & Earn → Copy Link*.',
+  ' • Explaining gift codes: redeem from *Settings → Redeem Gift Code*',
+  '   to credit your wallet.',
+  ' • Walking through what to do if a product is out of stock',
+  '   (subscribe to stock alerts in *Settings → Notifications*) or',
+  '   if a deposit is pending approval (admin reviews manually).',
+  '',
+  'When you genuinely don\'t know an answer (e.g. the user asks',
+  'something order-specific that\'s not in the snapshot, or wants a',
+  'refund / dispute), politely tell them you\'ll hand off to a human',
+  'admin and suggest they tap *💬 Support → 🟢 Live Support* on the',
+  'main menu. NEVER invent prices, stock counts, order statuses, or',
+  'delivery details — only quote numbers that appear in the Store',
+  'Snapshot below.',
+  '',
+  'Format your replies in plain text. You may use *single asterisks*',
+  'for bold; the bot renders them as proper bold in Telegram. Avoid',
+  'code blocks unless quoting a referral link or order id.',
+].join('\n');
 
 /**
  * Resolve the AI provider from the configured key shape. Google AI
@@ -1222,6 +1280,100 @@ function resolveAiConfig(): { key: string; prompt: string } | null {
   if (!key) return null;
   const prompt = getTextOverride('ai.system_prompt') ?? DEFAULT_AI_SYSTEM_PROMPT;
   return { key, prompt };
+}
+
+/**
+ * In-memory cache of the live store snapshot appended to every AI
+ * Support call. Refreshed on a 5-minute TTL so the assistant always
+ * sees recent prices / stock / payment methods without hammering
+ * the DB on every keystroke.
+ */
+type StoreSnapshot = { text: string; expiresAt: number };
+let storeSnapshotCache: StoreSnapshot | null = null;
+const STORE_SNAPSHOT_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Build a compact, model-friendly snapshot of the current shop state:
+ * categories, active products (with name / price / stock), payment
+ * methods, channel URL. Cached for `STORE_SNAPSHOT_TTL_MS`. Failures
+ * are swallowed so a transient DB hiccup doesn't break AI replies —
+ * we just fall back to the persona-only system prompt in that case.
+ */
+async function buildStoreContextBlock(): Promise<string> {
+  if (storeSnapshotCache && storeSnapshotCache.expiresAt > Date.now()) {
+    return storeSnapshotCache.text;
+  }
+  try {
+    const [categories, productsPage, payments] = await Promise.all([
+      listCategories(),
+      // Cap at 200 active products so the prompt stays well under
+      // model context limits even for very large catalogs.
+      listActiveProducts(0, 200),
+      listPaymentMethods(),
+    ]);
+    const catName = new Map(categories.map((c) => [c.id, c.name]));
+    const grouped = new Map<string, typeof productsPage.rows>();
+    for (const p of productsPage.rows) {
+      const key =
+        p.category_id != null ? (catName.get(p.category_id) ?? 'Other') : 'Other';
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(p);
+    }
+    const lines: string[] = [];
+    lines.push('---');
+    lines.push('STORE SNAPSHOT (live data — quote these numbers):');
+    lines.push('');
+    if (grouped.size === 0) {
+      lines.push('• No active products in the catalog right now.');
+    } else {
+      for (const [cat, prods] of grouped) {
+        lines.push(`Category: ${cat}`);
+        for (const p of prods) {
+          const stock = p.stock <= 0 ? 'OUT OF STOCK' : `${p.stock} in stock`;
+          // Trim description so the prompt stays reasonably small;
+          // the AI doesn't need the full marketing copy, just enough
+          // to disambiguate variants.
+          const desc =
+            p.description && p.description.trim().length > 0
+              ? ` — ${p.description.trim().replace(/\s+/g, ' ').slice(0, 140)}`
+              : '';
+          lines.push(
+            `  - #${p.id} ${p.name}: ${Number(p.price).toFixed(2)} USDT (${stock})${desc}`,
+          );
+        }
+        lines.push('');
+      }
+    }
+    lines.push('Payment methods (used in Topup):');
+    if (payments.length === 0) {
+      lines.push('  • No payment methods configured yet.');
+    } else {
+      for (const m of payments) {
+        lines.push(
+          `  - ${m.name} (min ${Number(m.min_amount).toFixed(2)} USDT)`,
+        );
+      }
+    }
+    const channel = getChannelUrl();
+    if (channel) {
+      lines.push('');
+      lines.push(`Announcements channel: ${channel}`);
+    }
+    lines.push('');
+    lines.push(
+      'Bot menu shortcuts: *Shop* (browse + buy), *Topup* (add USDT to ' +
+        'wallet), *Settings* (profile, email, language, region, ' +
+        'notifications, refer & earn, redeem code, my orders, my ' +
+        'deposits, my stats), *💬 Support* (live human or Kiwi AI).',
+    );
+    lines.push('---');
+    const text = lines.join('\n');
+    storeSnapshotCache = { text, expiresAt: Date.now() + STORE_SNAPSHOT_TTL_MS };
+    return text;
+  } catch (err) {
+    logger.warn({ err }, 'AI: failed to build store snapshot, using empty block');
+    return '';
+  }
 }
 
 async function callOpenAI(
@@ -1327,19 +1479,21 @@ async function answerAI(question: string): Promise<string> {
   const cfg = resolveAiConfig();
   if (!cfg) {
     return (
-      '🤖 (AI not configured) An admin needs to paste an API key under ' +
-      '*AI Setup → Set AI API Key* before this assistant can reply. ' +
+      '🥝 (AI not configured) An admin needs to paste an API key under ' +
+      '*AI Setup → Set AI API Key* before Kiwi can reply. ' +
       'A human will follow up shortly.'
     );
   }
   try {
+    const context = await buildStoreContextBlock();
+    const fullPrompt = context ? `${cfg.prompt}\n\n${context}` : cfg.prompt;
     const provider = aiProvider(cfg.key);
     if (provider === 'google') {
-      return await callGemini(cfg.key, cfg.prompt, question);
+      return await callGemini(cfg.key, fullPrompt, question);
     }
-    return await callOpenAI(cfg.key, cfg.prompt, question);
+    return await callOpenAI(cfg.key, fullPrompt, question);
   } catch (err) {
     logger.error({ err }, 'AI: answerAI threw');
-    return `🤖 ${(err as Error).message}`;
+    return `🥝 ${(err as Error).message}`;
   }
 }

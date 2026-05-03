@@ -11,7 +11,7 @@ export const vi: Record<string, string> = {
   'btn.topup': '🪙 Nạp',
   'btn.profile': '⚙️ Cài đặt',
   'btn.support': '💬 Hỗ trợ',
-  'btn.ai_support': '🤖 AI',
+  'btn.ai_support': '🥝 Kiwi AI',
   'btn.back': '⬅️ Quay lại',
   'btn.next': 'Tiếp ▶️',
   'btn.prev': '◀️ Trước',
@@ -240,9 +240,12 @@ export const vi: Record<string, string> = {
   'support.transcript.expired_popup':
     '⌛ Bản ghi này không còn khả dụng. Bắt đầu phiên Hỗ trợ trực tiếp mới khi bạn cần giúp đỡ.',
   'support.ai.session_open':
-    '{support_live_active} *Trợ lý hỗ trợ tự động*\n\n' +
-    'Mô tả vấn đề và tôi sẽ tiếp tục trả lời đến khi bạn nhấn *Huỷ*.\n' +
-    'Khi bạn huỷ, tôi sẽ lưu hội thoại thành PDF để bạn gửi qua email.',
+    '{kiwi_ai} *Xin chào! Tôi là Kiwi, trợ lý hỗ trợ tự động.*\n' +
+    '*Tôi có thể giúp gì cho bạn hôm nay?*\n\n' +
+    'Hỏi tôi bất cứ điều gì về cửa hàng — sản phẩm, giá, phương thức ' +
+    'thanh toán, nạp tiền, giới thiệu, ví của bạn — tôi có toàn bộ ' +
+    'danh mục. Nhấn *Huỷ* khi xong và tôi sẽ lưu hội thoại thành PDF ' +
+    'để gửi qua email.',
   'support.ai.user_ended':
     '{support_live_closed} Đã đóng AI Support.\n\n' +
     'Mở lại AI Support từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
