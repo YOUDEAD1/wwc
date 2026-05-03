@@ -1139,7 +1139,11 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     } catch {
       // Best-effort UX hint, never fatal.
     }
-    const answer = await answerAI(question);
+    const answer = await answerAI(ctx.api, {
+      telegram_id: ctx.from.id,
+      username: ctx.from.username ?? null,
+      first_name: ctx.from.first_name ?? null,
+    }, question);
     session.entries.push({ at: new Date(), side: 'admin', text: answer });
     // Render with premium emojis + markdown bold/italics. If the
     // upstream provider emits unbalanced markdown that breaks
@@ -1329,39 +1333,80 @@ async function buildStoreContextBlock(): Promise<string> {
   }
 }
 
+/**
+ * Error class enriched with the upstream provider, model, HTTP
+ * status, and raw error body so the admin log notification can
+ * surface exactly what failed without the user seeing it. Caught
+ * by `answerAI` and converted to the short retry message + an
+ * `[AI]` admin log entry.
+ */
+class AiCallError extends Error {
+  constructor(
+    public provider: 'openai' | 'gemini',
+    public model: string,
+    public status: number | string | undefined,
+    public details: string,
+  ) {
+    super(details);
+    this.name = 'AiCallError';
+  }
+}
+
+/**
+ * Status codes that are usually transient (overloaded backend,
+ * brief rate limit, gateway hiccup). We retry exactly once with a
+ * short backoff before surfacing the failure.
+ */
+function isTransientAiStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
 async function callOpenAI(
   apiKey: string,
   prompt: string,
   question: string,
+  attempt = 0,
 ): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: env.OPENAI_MODEL,
-      messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: question },
-      ],
-      temperature: 0.3,
-      // Cap reply length so Kiwi doesn't ramble — short, focused
-      // answers fit better in a Telegram chat bubble.
-      max_tokens: 200,
-    }),
-  });
+  const model = env.OPENAI_MODEL;
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: question },
+        ],
+        temperature: 0.3,
+        // Cap reply length so Kiwi doesn't ramble — short, focused
+        // answers fit better in a Telegram chat bubble.
+        max_tokens: 200,
+      }),
+    });
+  } catch (err) {
+    throw new AiCallError('openai', model, 'network', (err as Error).message);
+  }
   if (!res.ok) {
     const body = await res.text();
-    logger.warn({ status: res.status, body }, 'AI: OpenAI call failed');
-    throw new Error(`OpenAI ${res.status}`);
+    logger.warn({ status: res.status, body, model, attempt }, 'AI: OpenAI call failed');
+    if (attempt === 0 && isTransientAiStatus(res.status)) {
+      await new Promise((r) => setTimeout(r, 750));
+      return callOpenAI(apiKey, prompt, question, attempt + 1);
+    }
+    throw new AiCallError('openai', model, res.status, body || `OpenAI ${res.status}`);
   }
   const json = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
   };
   const content = json.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenAI: empty response');
+  if (!content) {
+    throw new AiCallError('openai', model, 'empty', 'OpenAI: empty response');
+  }
   return content;
 }
 
@@ -1386,6 +1431,7 @@ async function callGemini(
   apiKey: string,
   prompt: string,
   question: string,
+  attempt = 0,
 ): Promise<string> {
   // Reuse OPENAI_MODEL as a generic knob unless it still points at
   // an OpenAI default (`gpt-…`) or one of the now-deprecated
@@ -1400,30 +1446,42 @@ async function callGemini(
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` +
     `?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: prompt }] },
-      contents: [{ role: 'user', parts: [{ text: question }] }],
-      // Cap reply length so Kiwi stays terse — Gemini otherwise
-      // tends to write multi-paragraph essays for simple questions.
-      generationConfig: { temperature: 0.3, maxOutputTokens: 200 },
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: prompt }] },
+        contents: [{ role: 'user', parts: [{ text: question }] }],
+        // Cap reply length so Kiwi stays terse — Gemini otherwise
+        // tends to write multi-paragraph essays for simple questions.
+        generationConfig: { temperature: 0.3, maxOutputTokens: 200 },
+      }),
+    });
+  } catch (err) {
+    throw new AiCallError('gemini', model, 'network', (err as Error).message);
+  }
   if (!res.ok) {
     const body = await res.text();
     logger.warn(
-      { status: res.status, body, model },
+      { status: res.status, body, model, attempt },
       'AI: Gemini call failed',
     );
+    if (attempt === 0 && isTransientAiStatus(res.status)) {
+      await new Promise((r) => setTimeout(r, 750));
+      return callGemini(apiKey, prompt, question, attempt + 1);
+    }
     if (res.status === 404) {
-      throw new Error(
+      throw new AiCallError(
+        'gemini',
+        model,
+        404,
         `Gemini model "${model}" not found. Set OPENAI_MODEL to a current ` +
           'Gemini model id (e.g. gemini-2.5-flash, gemini-2.5-pro).',
       );
     }
-    throw new Error(`Gemini ${res.status}`);
+    throw new AiCallError('gemini', model, res.status, body || `Gemini ${res.status}`);
   }
   const json = (await res.json()) as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -1432,7 +1490,9 @@ async function callGemini(
     ?.map((p) => p.text ?? '')
     .join('')
     .trim();
-  if (!text || text.length === 0) throw new Error('Gemini: empty response');
+  if (!text || text.length === 0) {
+    throw new AiCallError('gemini', model, 'empty', 'Gemini: empty response');
+  }
   return text;
 }
 
@@ -1444,9 +1504,24 @@ async function callGemini(
  */
 const AI_ERROR_RETRY_MESSAGE = '🥝 Kiwi 404 Please Send again message';
 
-async function answerAI(question: string): Promise<string> {
+async function answerAI(
+  api: import('grammy').Api,
+  user: adminLog.LogUser,
+  question: string,
+): Promise<string> {
   const cfg = resolveAiConfig();
-  if (!cfg) return AI_ERROR_RETRY_MESSAGE;
+  if (!cfg) {
+    void adminLog.logAiError(api, {
+      user,
+      provider: 'unconfigured',
+      model: env.OPENAI_MODEL,
+      status: 'no-key',
+      errorMessage:
+        'No AI API key configured. Paste one via 🤖 AI Setup → 🔑 Set AI API Key.',
+      question,
+    });
+    return AI_ERROR_RETRY_MESSAGE;
+  }
   try {
     const context = await buildStoreContextBlock();
     const fullPrompt = context ? `${cfg.prompt}\n\n${context}` : cfg.prompt;
@@ -1457,6 +1532,24 @@ async function answerAI(question: string): Promise<string> {
     return await callOpenAI(cfg.key, fullPrompt, question);
   } catch (err) {
     logger.error({ err }, 'AI: answerAI threw');
+    if (err instanceof AiCallError) {
+      void adminLog.logAiError(api, {
+        user,
+        provider: err.provider,
+        model: err.model,
+        status: err.status,
+        errorMessage: err.details,
+        question,
+      });
+    } else {
+      void adminLog.logAiError(api, {
+        user,
+        provider: 'unknown',
+        model: env.OPENAI_MODEL,
+        errorMessage: (err as Error).message ?? String(err),
+        question,
+      });
+    }
     return AI_ERROR_RETRY_MESSAGE;
   }
 }
