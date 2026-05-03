@@ -21,6 +21,12 @@ export const ar: Record<string, string> = {
   'btn.view_note': '📝 عرض الملاحظة',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
+  'btn.custom_qty': '🔢 كمية مخصّصة',
+  'btn.qty_keypad_back': '⌫',
+  'btn.qty_keypad_clear': '🗑 مسح',
+  'btn.qty_keypad_confirm': '✅ تأكيد',
+  'btn.pay_wallet': '👛 الدفع من المحفظة',
+  'btn.pay_topup': '🪙 إيداع',
   'btn.qty.max': '🎯 الحد الأقصى',
   'btn.qty.reset': '🔄 إعادة',
   'btn.qty.confirm': '✅ تأكيد',
@@ -65,6 +71,22 @@ export const ar: Record<string, string> = {
   'shop.choose_category': '*المنتجات المتاحة:*',
   'shop.qty.prompt': '🔢 اكتب الكمية (1–{max}) وأرسل.',
   'shop.qty.invalid': '❌ رقم غير صالح — أرسل قيمة بين 1 و {max}.',
+  'shop.qty.keypad.prompt':
+    '{qty_prompt_pencil} *أرسل كمية مخصّصة للمنتج* {qty_prompt_keypad}\n\n' +
+    '*{name}*\n' +
+    'متوفر: *{stock}*\n\n' +
+    'اضغط على الأرقام أو أرسل رقماً ثم اضغط تأكيد.\n\n' +
+    'الحالي: <code>{current}</code>',
+  'shop.qty.keypad.invalid':
+    '{qty_invalid} *كمية غير صالحة.*\n\n' +
+    'أرسل عدداً صحيحاً بين *1* و *{max}*.',
+  'shop.pay.title':
+    '{prod_qty_selected} *ملخص الطلب*\n\n' +
+    '*{name}*\n' +
+    '{prod_qty_selected} الكمية: *{qty}*\n' +
+    '{prod_total_amount} الإجمالي: *{total} USDT*\n' +
+    '{prod_wallet} المحفظة: *{balance} USDT*\n\n' +
+    'اختر طريقة الدفع:',
   'shop.qty.editor.title':
     '🔢 *اختر الكمية*\n\n' +
     '*{name}*\n' +
@@ -74,13 +96,13 @@ export const ar: Record<string, string> = {
     'الإجمالي: *{total} USDT*',
   'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
   'shop.empty_products': 'لا توجد منتجات في هذه الفئة بعد.',
-  'shop.product.line.name': '*{name}*',
-  'shop.product.line.price': '💰 السعر: *{price}*',
-  'shop.product.line.stock': '📦 المخزون: *{stock}*',
-  'shop.product.line.warranty': '🛡️ الضمان: {warranty}',
-  'shop.product.line.qty': '🔢 الكمية المختارة: *{qty}*',
-  'shop.product.line.total': '🧮 الإجمالي: *{total}*',
-  'shop.product.line.balance': '👛 المحفظة: *{balance}*',
+  'shop.product.line.name': '{emoji} *{name}*',
+  'shop.product.line.price': '{prod_price_base} *السعر الأساسي:* {price} USDT',
+  'shop.product.line.stock': '{prod_stock} *المتوفر:* {stock}',
+  'shop.product.line.warranty': '{prod_warranty} *الضمان:* {warranty}',
+  'shop.product.line.qty': '{prod_qty_selected} *الكمية المختارة:* {qty}',
+  'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total} USDT',
+  'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance} USDT',
   'shop.product.out_of_stock_popup':
     '❌ هذا المنتج غير متوفر حاليًا. الرجاء التواصل مع الإدارة لإعادة تجديد المخزون أو اختيار منتج مشابه.',
   'shop.note.title': '📝 *ملاحظة المنتج*',

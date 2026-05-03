@@ -144,6 +144,24 @@ export type UserFlow =
     }
   | {
       /**
+       * User opened the *Custom Quantity* keypad on a product page.
+       * While this flow is active any plain-text reply is parsed as
+       * a quantity (concatenation, not arithmetic — `1` then `1`
+       * yields `11`). On a successful submit the bot deletes both
+       * the keypad prompt and the user's reply so the chat stays
+       * clean. `promptChatId` / `promptMessageId` track the prompt
+       * message so it can be edited and ultimately deleted.
+       */
+      type: 'qty_keypad';
+      step: 'await_qty';
+      data: {
+        productId: number;
+        promptChatId: number;
+        promptMessageId?: number;
+      };
+    }
+  | {
+      /**
        * User is in a Live Support relay session. While this flow is
        * active, every non-command message they send is forwarded to
        * the admin (and admin's replies come back here).
@@ -172,6 +190,13 @@ export type UserFlow =
 export type SessionData = {
   /** Selected qty per product id, used by the shop product page */
   qty: Record<number, number>;
+  /**
+   * In-progress digit buffer per product id — populated only while
+   * the user has the *Custom Quantity* keypad open. Stored as a
+   * string so taps and direct-typed numbers can both append cleanly
+   * without arithmetic surprises (e.g. `1` + `1` → `"11"`).
+   */
+  qtyInput?: Record<number, string>;
   /** Multi-step admin input flow, if any */
   adminFlow?: AdminFlow;
   /** Multi-step user input flow, if any (e.g. Binance Pay top-up). */
