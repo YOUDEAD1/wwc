@@ -410,12 +410,12 @@ export const en: Record<string, string> = {
   // greeting is multi-turn: tap any number of questions, then
   // Cancel to close and (optionally) email the transcript.
   'support.ai.session_open':
-    '{kiwi_ai} *Hello! I am Kiwi automated support assistant.*\n' +
-    '*How can I help you today?*\n\n' +
-    'Ask me anything about our store — products, prices, payment ' +
-    'methods, top-up, referrals, your wallet — I have the full ' +
-    'catalog handy. Tap *Cancel* when you\'re done and I\'ll save ' +
-    'the chat as a PDF you can email to yourself.',
+    '{kiwi_ai} *Kiwi Ai*\n' +
+    '🥝 *Hello!*\n' +
+    '*I am Kiwi automated support assistant.*\n\n' +
+    'You can ask normal questions in any language or get help with ' +
+    'products, pricing, stock, deposits, coupons, orders, and ' +
+    'delivery. Internal system details are off-limits.',
   // Closure message shown when the user taps Cancel. Mirrors
   // `support.live.user_ended` so the two flows feel identical.
   'support.ai.user_ended':
