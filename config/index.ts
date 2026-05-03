@@ -155,6 +155,18 @@ export const BUTTON_KEYS = {
   qty_reset: 'btn.qty.reset',
   qty_confirm: 'btn.qty.confirm',
   contact_admin: 'btn.contact_admin',
+  qty_dec_1: 'btn.qty.dec_1',
+  qty_dec_10: 'btn.qty.dec_10',
+  qty_dec_100: 'btn.qty.dec_100',
+  qty_inc_1: 'btn.qty.inc_1',
+  qty_inc_10: 'btn.qty.inc_10',
+  qty_inc_100: 'btn.qty.inc_100',
+  qty_display: 'btn.qty.display',
+
+  // ---- Product page extras ----
+  share_product: 'btn.share_product',
+  view_note_file: 'btn.view_note_file',
+  send_note_txt: 'btn.send_note_txt',
 } as const;
 
 /**
@@ -247,6 +259,20 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   qty_reset: 'none',
   qty_confirm: 'green',
   contact_admin: 'blue',
+  // Increment buttons (green = positive); decrements neutral so the
+  // counter reads "add" as the visually dominant action.
+  qty_dec_1: 'none',
+  qty_dec_10: 'none',
+  qty_dec_100: 'none',
+  qty_inc_1: 'green',
+  qty_inc_10: 'green',
+  qty_inc_100: 'green',
+  qty_display: 'blue',
+
+  // Product extras.
+  share_product: 'blue',
+  view_note_file: 'none',
+  send_note_txt: 'blue',
 };
 
 /**
@@ -486,6 +512,17 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   support_live: 'support_live_active',
   support_cancel: 'support_live_closed',
   support_end_session: 'support_live_closed',
+
+  // Inline quantity counter — premium twins for the matching unicode
+  // glyphs in the locale labels. Keys whose unicode has no premium
+  // twin in the EMOJI map (e.g. ⏪/⏩/⏮/⏭) are intentionally left
+  // unset so the unicode glyph still renders.
+  qty_reset: 'stats_refresh', // 🔄
+  qty_confirm: 'orders_received', // ✅
+  qty_display: 'orders_product', // 📦
+
+  // Product-page extras.
+  share_product: 'profile_link', // 🔗
 };
 
 /**

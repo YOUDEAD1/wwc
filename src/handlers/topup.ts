@@ -11,6 +11,7 @@ import {
   generateNoteCode,
 } from '../services/binance.js';
 import { logger } from '../logger.js';
+import * as adminLog from '../services/adminLog.js';
 
 export function registerTopup(bot: Composer<AppCtx>): void {
   bot.callbackQuery('topup:open', async (ctx) => {
@@ -163,6 +164,18 @@ export function registerTopup(bot: Composer<AppCtx>): void {
         reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
       },
     );
+    void adminLog.logTopupSubmitted(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      depositDbId: depId,
+      method: flow.data.method_name,
+      noteCode: flow.data.note_code,
+      orderId,
+    });
   });
 }
 

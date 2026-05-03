@@ -147,6 +147,123 @@ export async function buildStatsPdf(args: {
   });
 }
 
+/**
+ * Live Support transcript PDF — chat-bubble style. The customer's
+ * messages render as right-aligned green bubbles, admin's as
+ * left-aligned card-coloured bubbles, mirroring how a regular
+ * one-on-one chat looks. Sent to admin when a session ends so they
+ * have a permanent record of the full conversation.
+ */
+export type SupportTranscriptEntry = {
+  at: Date;
+  side: 'user' | 'admin';
+  author: string;
+  text: string;
+};
+
+export async function buildSupportTranscriptPdf(args: {
+  sessionStartedAt: Date;
+  sessionEndedAt: Date;
+  user: { telegram_id: number; first_name: string; username: string | null };
+  endedBy: 'user' | 'admin';
+  entries: SupportTranscriptEntry[];
+}): Promise<Buffer> {
+  const reportUser: ReportUser = {
+    telegram_id: args.user.telegram_id,
+    first_name: args.user.first_name,
+    username: args.user.username,
+    email: null,
+  };
+  const durationSec = Math.max(
+    0,
+    Math.floor(
+      (args.sessionEndedAt.getTime() - args.sessionStartedAt.getTime()) / 1000,
+    ),
+  );
+  return renderPdf('Live Support — Transcript', reportUser, (doc) => {
+    drawSummary(doc, [
+      ['Customer', `${args.user.first_name} (#${args.user.telegram_id})`],
+      ['Username', args.user.username ? `@${args.user.username}` : '—'],
+      ['Started', formatTimestamp(args.sessionStartedAt.toISOString())],
+      ['Ended', formatTimestamp(args.sessionEndedAt.toISOString())],
+      [
+        'Duration',
+        `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`,
+      ],
+      ['Ended by', args.endedBy],
+      ['Total messages', String(args.entries.length)],
+    ]);
+    drawSectionHeader(doc, 'Conversation');
+    if (args.entries.length === 0) {
+      drawInfoBlock(doc, [
+        'No messages were exchanged during this Live Support session.',
+      ]);
+      return;
+    }
+    for (const entry of args.entries) {
+      drawChatBubble(doc, entry);
+    }
+  });
+}
+
+function drawChatBubble(
+  doc: PDFKit.PDFDocument,
+  entry: SupportTranscriptEntry,
+): void {
+  const isUser = entry.side === 'user';
+  const maxBubbleW = (PAGE_W - MARGIN_X * 2) * 0.72;
+  const padX = 14;
+  const padY = 10;
+
+  doc.font('Helvetica').fontSize(11);
+  const textW = Math.min(
+    maxBubbleW - padX * 2,
+    Math.max(60, doc.widthOfString(entry.text)),
+  );
+  // Estimate height by re-running through pdfkit's measurement.
+  const measuredH = doc.heightOfString(entry.text, { width: textW });
+  const metaH = 14;
+  const bubbleH = measuredH + padY * 2 + metaH;
+
+  ensureRoom(doc, bubbleH + 14);
+
+  const y = doc.y;
+  const bubbleW = textW + padX * 2;
+  const bubbleX = isUser
+    ? PAGE_W - MARGIN_X - bubbleW
+    : MARGIN_X;
+  const fill = isUser ? COLOR.gold : COLOR.card;
+  const textColor = isUser ? '#1a1814' : COLOR.cream;
+
+  doc.save();
+  doc.roundedRect(bubbleX, y, bubbleW, bubbleH, 12).fill(fill);
+  doc.restore();
+
+  // Author + time line
+  const time = `${String(entry.at.getUTCHours()).padStart(2, '0')}:${String(
+    entry.at.getUTCMinutes(),
+  ).padStart(2, '0')} UTC`;
+  doc
+    .fillColor(isUser ? '#3a3a3a' : COLOR.muted)
+    .font('Helvetica-Bold')
+    .fontSize(8)
+    .text(`${entry.author} · ${time}`, bubbleX + padX, y + padY - 2, {
+      width: textW,
+      align: isUser ? 'right' : 'left',
+    });
+
+  // Body
+  doc
+    .fillColor(textColor)
+    .font('Helvetica')
+    .fontSize(11)
+    .text(entry.text, bubbleX + padX, y + padY + metaH, {
+      width: textW,
+    });
+
+  doc.y = y + bubbleH + 8;
+}
+
 // ---------------------------------------------------------------------------
 //  Internals
 // ---------------------------------------------------------------------------

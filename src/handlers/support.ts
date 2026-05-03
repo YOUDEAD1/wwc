@@ -1,4 +1,4 @@
-import { Composer, InlineKeyboard } from 'grammy';
+import { Composer, InlineKeyboard, InputFile } from 'grammy';
 import { env } from '../env.js';
 import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
 import { inlineBtn, inlineUrl } from '../keyboards/helpers.js';
@@ -8,6 +8,8 @@ import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 import { logger } from '../logger.js';
 import type { Lang } from '../../config/index.js';
 import { deleteSetting, readSetting, setSetting } from '../db/queries.js';
+import * as adminLog from '../services/adminLog.js';
+import { buildSupportTranscriptPdf } from '../services/pdfReport.js';
 
 /**
  * Set of users currently waiting for a one-shot AI Support reply.
@@ -56,6 +58,33 @@ type LiveUser = {
 };
 
 let liveUser: LiveUser | null = null;
+
+/**
+ * In-memory chat transcript for the active Live Support session.
+ * Reset whenever a new session opens. Each entry captures who sent
+ * the message, the timestamp, and a short text representation —
+ * media is logged with a `[<kind>]` placeholder so the transcript
+ * still reads naturally without trying to embed bytes.
+ *
+ * Best-effort: if the bot is restarted mid-session the transcript
+ * resets (the `liveUser` slot survives DB-side, but the message log
+ * does not). The PDF is sent on `endSession` and discarded after.
+ */
+type TranscriptEntry = {
+  at: Date;
+  side: 'user' | 'admin';
+  authorName: string;
+  /** Plain text or `[<kind>]` placeholder. */
+  text: string;
+};
+let transcript: TranscriptEntry[] = [];
+let sessionStartedAt: Date | null = null;
+
+function pushTranscript(entry: TranscriptEntry): void {
+  // Cap so a runaway / huge conversation doesn't OOM the bot.
+  if (transcript.length >= 5000) return;
+  transcript.push(entry);
+}
 
 const LIVE_SUPPORT_KEY = 'live_support.session';
 
@@ -246,7 +275,11 @@ async function endSession(
   endedBy: 'user' | 'admin',
 ): Promise<void> {
   const target = liveUser;
+  const startedAt = sessionStartedAt ?? new Date();
+  const messagesSnapshot = transcript.slice();
   liveUser = null;
+  transcript = [];
+  sessionStartedAt = null;
   await persistLiveUser();
   if (!target) return;
   // Clear the user's session flow so subsequent messages stop being
@@ -278,6 +311,66 @@ async function endSession(
     });
   } catch (err) {
     logger.warn({ err }, 'live-support: failed to notify admin of end');
+  }
+
+  // Deep-detail end log + PDF transcript. Best-effort — failures
+  // logged but don't break the user-facing flow.
+  const endedAt = new Date();
+  const durationSec = Math.max(
+    0,
+    Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000),
+  );
+  void adminLog.logSupportEnd(ctx.api, {
+    user: {
+      telegram_id: target.telegram_id,
+      username: target.username,
+      first_name: target.first_name,
+      email: null,
+    },
+    endedBy,
+    durationSeconds: durationSec,
+    messageCount: messagesSnapshot.length,
+  });
+
+  // Generate and send the chat-style PDF transcript to admin.
+  try {
+    const buffer = await buildSupportTranscriptPdf({
+      sessionStartedAt: startedAt,
+      sessionEndedAt: endedAt,
+      user: {
+        telegram_id: target.telegram_id,
+        first_name: target.first_name,
+        username: target.username,
+      },
+      endedBy,
+      entries: messagesSnapshot.map((e) => ({
+        at: e.at,
+        side: e.side,
+        author: e.authorName,
+        text: e.text,
+      })),
+    });
+    const safeName = (target.username ?? `user_${target.telegram_id}`).replace(
+      /[^A-Za-z0-9_-]/g,
+      '_',
+    );
+    const filename = `live_support_${safeName}_${startedAt
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, '-')}.pdf`;
+    await adminLog.logSupportTranscript(ctx.api, {
+      user: {
+        telegram_id: target.telegram_id,
+        username: target.username,
+        first_name: target.first_name,
+        email: null,
+      },
+      durationSeconds: durationSec,
+      messageCount: messagesSnapshot.length,
+      pdf: new InputFile(buffer, filename),
+    });
+  } catch (err) {
+    logger.warn({ err }, 'live-support: failed to build/send transcript PDF');
   }
 }
 
@@ -363,6 +456,10 @@ export function registerSupport(bot: Composer<AppCtx>): void {
       first_name: ctx.user.first_name ?? '—',
       username: ctx.user.username ?? null,
     };
+    // Reset the per-session transcript & start clock so the
+    // end-of-session PDF only contains messages from THIS session.
+    transcript = [];
+    sessionStartedAt = new Date();
 
     // Create a "Live Support" forum topic in the user's chat so they
     // get the dedicated tab at the top of the chat (matching the
@@ -436,6 +533,19 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     // lifecycle (Render redeploy, OOM restart, etc.) can pick the
     // relay back up without the user having to cancel + re-open.
     await persistLiveUser();
+
+    // Deep-detail admin log so the support session start lands in the
+    // same auditable feed as orders / topups / etc.
+    void adminLog.logSupportStart(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      userTopicId,
+      adminTopicId,
+    });
 
     // Notify the admin and seed their topic. When `adminTopicId` is
     // undefined (forum topics not available on the admin's side) the
@@ -593,6 +703,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     };
 
     if (typeof text === 'string') {
+      pushTranscript({ at: new Date(), side: 'user', authorName: senderName, text });
       const html = renderMdHtml(ctx.t('support.live.admin_relay', { name: senderName, text }));
       await tryRelay(
         () =>
@@ -608,6 +719,26 @@ export function registerSupport(bot: Composer<AppCtx>): void {
           }),
       );
     } else {
+      const mediaKind = ctx.message?.photo
+        ? 'photo'
+        : ctx.message?.video
+          ? 'video'
+          : ctx.message?.document
+            ? 'document'
+            : ctx.message?.voice
+              ? 'voice'
+              : ctx.message?.audio
+                ? 'audio'
+                : ctx.message?.sticker
+                  ? 'sticker'
+                  : 'media';
+      const captionText = ctx.message?.caption ?? '';
+      pushTranscript({
+        at: new Date(),
+        side: 'user',
+        authorName: senderName,
+        text: `[${mediaKind}]${captionText ? ` ${captionText}` : ''}`,
+      });
       const headerHtml = renderMdHtml(
         ctx.t('support.live.admin_media_header', { name: senderName }),
       );
@@ -664,6 +795,33 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const messageThreadId = ctx.message?.message_thread_id;
     if (liveUser.adminTopicId && messageThreadId !== liveUser.adminTopicId) {
       return next();
+    }
+
+    // Capture admin side of the conversation for the end-of-session
+    // PDF transcript.
+    if (typeof text === 'string') {
+      pushTranscript({ at: new Date(), side: 'admin', authorName: 'Admin', text });
+    } else {
+      const adminMediaKind = ctx.message?.photo
+        ? 'photo'
+        : ctx.message?.video
+          ? 'video'
+          : ctx.message?.document
+            ? 'document'
+            : ctx.message?.voice
+              ? 'voice'
+              : ctx.message?.audio
+                ? 'audio'
+                : ctx.message?.sticker
+                  ? 'sticker'
+                  : 'media';
+      const cap = ctx.message?.caption ?? '';
+      pushTranscript({
+        at: new Date(),
+        side: 'admin',
+        authorName: 'Admin',
+        text: `[${adminMediaKind}]${cap ? ` ${cap}` : ''}`,
+      });
     }
 
     // No `[Admin]` tag on the user-facing side — the relay forwards
