@@ -500,6 +500,9 @@ export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_K
 /** Shop pagination size — products per page */
 export const PRODUCTS_PER_PAGE = 10;
 
+/** Categories pagination size — categories per page on the Shop home. */
+export const CATEGORIES_PER_PAGE = 9;
+
 /** Quantity limits in the product page */
 export const QTY_MIN = 1;
 export const QTY_MAX = 999;

@@ -145,6 +145,21 @@ export type UserFlow =
         userTopicId?: number;
         adminTopicId?: number;
       };
+    }
+  | {
+      /**
+       * User tapped the qty digit on the product page — next plain
+       * text message they send is parsed as a custom quantity
+       * (clamped to QTY_MIN..QTY_MAX). The product's qty is updated
+       * and the product page re-rendered.
+       */
+      type: 'set_qty';
+      step: 'value';
+      data: {
+        product_id: number;
+        /** Where we sent the force-reply prompt — used to delete it after capture. */
+        prompt_message_id?: number;
+      };
     };
 
 export type SessionData = {
