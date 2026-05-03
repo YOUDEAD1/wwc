@@ -1,6 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
-import { applyButtonChrome, inlineBtn, inlineCopyText, btn } from './helpers.js';
+import { inlineBtn, inlineCopyText } from './helpers.js';
 import { getStateColor } from '../services/settings.js';
 import type { DBProduct } from '../types.js';
 
@@ -64,10 +64,11 @@ export function shopProductsKeyboard(
 }
 
 /**
- * The product-detail page keyboard (qty +/-, buy, topup, note,
- * back). Tapping the qty digit opens the custom-qty entry flow
- * (`qty:<id>:custom`) so the user can type any number 1..QTY_MAX
- * directly instead of mashing +/-.
+ * The product-detail page keyboard. The legacy +/- qty adder has
+ * been removed in favour of a 🔢 *Custom Quantity* button that
+ * opens a numeric keypad (digits accumulate — tapping `1` then `1`
+ * sets qty to `11`). The 🔄 *Refresh* button next to it re-renders
+ * the page so the user sees the latest stock / wallet balance.
  *
  * Back returns to the Shop home (page 0) since the categories step
  * has been removed.
@@ -75,7 +76,7 @@ export function shopProductsKeyboard(
 export function productKeyboard(
   lang: Lang,
   product: DBProduct,
-  qty: number,
+  _qty: number,
   shareUrl: string,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
@@ -83,11 +84,13 @@ export function productKeyboard(
     inlineBtn(kb, lang, 'out_of_stock', 'noop:oos');
     kb.row();
   } else {
-    inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:-`);
-    kb.text(`${qty}`, `qty:${product.id}:custom`);
-    inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:+`);
-    kb.row();
     inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
+    kb.row();
+    // 1) Custom Quantity opens the numeric keypad. 2) Refresh
+    // re-fetches and re-renders the product page so any out-of-band
+    // stock / wallet balance updates show up.
+    inlineBtn(kb, lang, 'custom_qty', `qty:${product.id}:custom`);
+    inlineBtn(kb, lang, 'refresh', `prod:${product.id}`);
     kb.row();
   }
   // Topup Wallet removed; replaced with a 1-tap *copy* link to
@@ -107,80 +110,81 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
 }
 
 /**
- * Futuristic inline counter for picking a custom quantity. Shown
- * when the user taps the qty digit on the product page.
+ * Numeric keypad for the *Custom Quantity* prompt. Tapping a digit
+ * appends to a session buffer (string concat, not arithmetic — so
+ * `1` then `1` becomes `11`); ⌫ pops the last digit; 🗑 Clear empties
+ * the buffer; ✅ Confirm validates against `[1, min(QTY_MAX, stock)]`
+ * and either applies the qty (and returns to the product page) or
+ * surfaces the premium-emoji invalid-quantity warning.
  *
- * Layout (qty=23, stock=120):
- *   ┌────────┬────────┬────────┐
- *   │ ⏮ 100 │ ⏪ 10  │ ➖ 1   │
- *   ├────────┴────────┴────────┤
- *   │     📦 23 / 120          │
- *   ├────────┬────────┬────────┤
- *   │ ➕ 1   │ ⏩ 10  │ ⏭ 100 │
- *   ├────────┴────────┴────────┤
- *   │   🎯 Max     🔄 Reset    │
- *   ├──────────────┬───────────┤
- *   │ ✅ Confirm   │  Back     │
- *   └──────────────┴───────────┘
+ * The user can also send a number directly via the chat input — the
+ * text-message handler short-circuits for any active keypad session
+ * and reuses the same validation path.
  *
- * Premium icons (`icon_custom_emoji_id`) + Bot API 9.4 button styles
- * are layered on automatically per `BUTTON_ICONS` / `DEFAULT_BUTTON_COLORS`
- * — green increments, neutral decrements, blue qty pill, green
- * Confirm.
+ * Layout:
+ *   ┌─────┬─────┬─────┐
+ *   │  1  │  2  │  3  │
+ *   ├─────┼─────┼─────┤
+ *   │  4  │  5  │  6  │
+ *   ├─────┼─────┼─────┤
+ *   │  7  │  8  │  9  │
+ *   ├─────┼─────┼─────┤
+ *   │  ⌫  │  0  │ 🗑  │
+ *   ├─────┴─────┴─────┤
+ *   │   ✅ Confirm     │
+ *   ├─────────────────┤
+ *   │      Back        │
+ *   └─────────────────┘
  *
- * The numeric ±N buttons emit `qtye:<id>:<signed-number>` callbacks
- * (kept compact on purpose). The semantic actions emit
- * `qtye:<id>:max|reset|confirm`. The Contact Admin button has been
- * removed from this counter per the latest UX request.
+ * Callbacks:
+ *   qkp:<id>:d:<digit>   — push the digit onto the buffer
+ *   qkp:<id>:back        — pop the last digit
+ *   qkp:<id>:clear       — wipe the buffer
+ *   qkp:<id>:confirm     — validate + apply
+ *   prod:<id>            — Back / cancel (no apply)
  */
-export function qtyEditorKeyboard(
+export function qtyKeypadKeyboard(
   lang: Lang,
   product: DBProduct,
-  qty: number,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const id = product.id;
-
-  // Decrement row — coarsest step on the LEFT so it reads naturally
-  // as "rewind to less" left-to-right.
-  kb.text(btn(lang, 'qty_dec_100'), `qtye:${id}:-100`);
-  applyButtonChrome(kb, 'qty_dec_100');
-  kb.text(btn(lang, 'qty_dec_10'), `qtye:${id}:-10`);
-  applyButtonChrome(kb, 'qty_dec_10');
-  kb.text(btn(lang, 'qty_dec_1'), `qtye:${id}:-1`);
-  applyButtonChrome(kb, 'qty_dec_1');
+  const digitRows: ReadonlyArray<ReadonlyArray<string>> = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+  ];
+  for (const row of digitRows) {
+    for (const d of row) kb.text(d, `qkp:${id}:d:${d}`);
+    kb.row();
+  }
+  // Bottom action row: backspace, 0, clear.
+  inlineBtn(kb, lang, 'qty_keypad_back', `qkp:${id}:back`);
+  kb.text('0', `qkp:${id}:d:0`);
+  inlineBtn(kb, lang, 'qty_keypad_clear', `qkp:${id}:clear`);
   kb.row();
-
-  // Big qty readout — full-width pill so the current value is
-  // unmistakably the focal point of the screen.
-  const stock = Math.max(0, product.stock);
-  const safeQty = Math.max(1, Math.min(qty, stock || qty));
-  kb.text(
-    btn(lang, 'qty_display')
-      .replace('{qty}', String(safeQty))
-      .replace('{stock}', String(stock)),
-    `qtye:${id}:noop`,
-  );
-  applyButtonChrome(kb, 'qty_display');
+  inlineBtn(kb, lang, 'qty_keypad_confirm', `qkp:${id}:confirm`);
   kb.row();
-
-  // Increment row — finest step on the LEFT, matching the mirror of
-  // the decrement row above.
-  kb.text(btn(lang, 'qty_inc_1'), `qtye:${id}:+1`);
-  applyButtonChrome(kb, 'qty_inc_1');
-  kb.text(btn(lang, 'qty_inc_10'), `qtye:${id}:+10`);
-  applyButtonChrome(kb, 'qty_inc_10');
-  kb.text(btn(lang, 'qty_inc_100'), `qtye:${id}:+100`);
-  applyButtonChrome(kb, 'qty_inc_100');
-  kb.row();
-
-  // Max + Reset.
-  inlineBtn(kb, lang, 'qty_max', `qtye:${id}:max`);
-  inlineBtn(kb, lang, 'qty_reset', `qtye:${id}:reset`);
-  kb.row();
-
-  // Confirm + Back (both jump back to the product page).
-  inlineBtn(kb, lang, 'qty_confirm', `qtye:${id}:confirm`);
   inlineBtn(kb, lang, 'back', `prod:${id}`);
+  return kb;
+}
+
+/**
+ * Payment-method picker shown after the user taps *Buy Now* on the
+ * product page. Renders the order summary above two buttons:
+ * 👛 *Wallet Pay* (charges the user's wallet via the existing
+ * `pay:wallet:<id>` flow) and 🪙 *Top Up* (deep-links into the
+ * top-up flow at `topup:open`).
+ */
+export function paymentMethodKeyboard(
+  lang: Lang,
+  product: DBProduct,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, lang, 'pay_wallet', `pay:wallet:${product.id}`);
+  kb.row();
+  inlineBtn(kb, lang, 'pay_topup', 'topup:open');
+  kb.row();
+  inlineBtn(kb, lang, 'back', `prod:${product.id}`);
   return kb;
 }

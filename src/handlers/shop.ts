@@ -13,8 +13,9 @@ import {
 } from '../services/pricing.js';
 import { charge } from '../services/wallet.js';
 import {
+  paymentMethodKeyboard,
   productKeyboard,
-  qtyEditorKeyboard,
+  qtyKeypadKeyboard,
   shopProductsKeyboard,
 } from '../keyboards/shop.js';
 import { inlineBtn } from '../keyboards/helpers.js';
@@ -60,20 +61,38 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   }
 }
 
-function productPageText(ctx: AppCtx, p: NonNullable<Awaited<ReturnType<typeof getProduct>>>, qty: number) {
+/**
+ * Render the new product detail body — product emoji + name on
+ * line 1, then a blank line, then a stack of premium-emoji-prefixed
+ * facts (Price Base / Available Stock / Warranty), a blank line,
+ * then the live "Selected Qty / Total Amount / Wallet" trio that
+ * updates whenever the user changes the qty.
+ *
+ * Each `{prod_*}` token in the locale strings resolves to a
+ * `<tg-emoji>` tag at render time so premium subscribers see the
+ * animated glyph. Bot-owner-supplied custom_emoji_id values live in
+ * the EMOJI map in `config/index.ts`.
+ */
+function productPageText(
+  ctx: AppCtx,
+  p: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
+  qty: number,
+) {
   const total = (p.price * qty).toFixed(2);
-  return [
-    ctx.t('shop.product.line.name', { name: p.name }),
-    p.description ? p.description : '',
+  const lines: string[] = [
+    ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
+  ];
+  if (p.description) lines.push(p.description);
+  lines.push(
     ctx.t('shop.product.line.price', { price: p.price }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
+    '',
     ctx.t('shop.product.line.qty', { qty }),
     ctx.t('shop.product.line.total', { total }),
     ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
-  ]
-    .filter(Boolean)
-    .join('\n');
+  );
+  return lines.join('\n');
 }
 
 /**
@@ -104,38 +123,48 @@ async function showProduct(ctx: AppCtx, productId: number) {
 }
 
 /**
- * Render the futuristic inline qty-editor screen — the big counter
- * replacing the legacy "Type a quantity" prompt.
+ * Render the *Custom Quantity* keypad screen. Edits the current
+ * product page in place so the user stays in one message; the
+ * accumulating digit buffer (the "Current:" line) lives in
+ * `ctx.session.qtyInput[productId]` so taps and direct-typed
+ * numbers feed into the same string.
+ *
+ * The bot stores `ctx.session.userFlow = { type: 'qty_keypad', ... }`
+ * while the keypad is open so the text-message middleware knows to
+ * treat plain numbers as qty input (and to auto-delete the prompt
+ * + the user's reply on a successful submission).
  */
-async function showQtyEditor(ctx: AppCtx, productId: number) {
+async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string) {
   const raw = await getProduct(productId);
   if (!raw) {
     await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
     return;
   }
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-  const qty = ctx.session.qty[productId] ?? QTY_MIN;
-  const total = (p.price * qty).toFixed(2);
-  const text = ctx.t('shop.qty.editor.title', {
+  const buf = currentBuf ?? ctx.session.qtyInput?.[productId] ?? '';
+  const text = ctx.t('shop.qty.keypad.prompt', {
     name: p.name,
     stock: p.stock,
-    price: p.price,
-    qty,
-    total,
+    current: buf.length > 0 ? buf : '—',
   });
   await ctx.editMessageText(renderMdHtml(text), {
     parse_mode: 'HTML',
-    reply_markup: qtyEditorKeyboard(ctx.lang, p, qty),
+    reply_markup: qtyKeypadKeyboard(ctx.lang, p),
   });
 }
 
 /**
- * Clamp a candidate qty to [QTY_MIN, min(QTY_MAX, stock)] — guards
- * against the user spamming +100 past the available stock.
+ * Validate a candidate quantity against `[1, min(QTY_MAX, stock)]`.
+ * Returns the clamped integer on success or `null` if the input is
+ * non-numeric / out of range — caller surfaces the premium-emoji
+ * error message and keeps the keypad open.
  */
-function clampQty(candidate: number, stock: number): number {
-  const ceiling = Math.min(QTY_MAX, Math.max(QTY_MIN, stock));
-  return Math.min(ceiling, Math.max(QTY_MIN, Math.trunc(candidate)));
+function validateQty(candidate: string | number, stock: number): number | null {
+  const n = typeof candidate === 'string' ? Number(candidate) : candidate;
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return null;
+  const ceiling = Math.min(QTY_MAX, Math.max(0, stock));
+  if (n < QTY_MIN || n > ceiling) return null;
+  return n;
 }
 
 export function registerShop(bot: Composer<AppCtx>): void {
@@ -165,74 +194,141 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await showProduct(ctx, Number(ctx.match[1]));
   });
 
-  bot.callbackQuery(/^qty:(\d+):([+-])$/, async (ctx) => {
-    const id = Number(ctx.match[1]);
-    const op = ctx.match[2];
-    const cur = ctx.session.qty[id] ?? QTY_MIN;
-    const next = Math.min(QTY_MAX, Math.max(QTY_MIN, cur + (op === '+' ? 1 : -1)));
-    ctx.session.qty[id] = next;
-    await ctx.answerCallbackQuery();
-    await showProduct(ctx, id);
-  });
-
-  // Tap the qty digit → open the inline qty editor (the big counter
-  // with ±1 / ±10 / ±100 / Max / Reset / Confirm / Contact Admin).
-  // Replaces the legacy force-reply "Type a quantity (1–N) and send"
-  // prompt so the entire flow stays in one message — no extra text
-  // bubbles, no virtual keyboard required.
+  // Tap *Custom Quantity* on the product page → switches the same
+  // message into the numeric-keypad screen. Resets the digit buffer
+  // and arms the userFlow so plain-text replies are interpreted as
+  // qty input (with auto-delete of the prompt + reply on success).
   bot.callbackQuery(/^qty:(\d+):custom$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    if (!ctx.session.qtyInput) ctx.session.qtyInput = {};
+    ctx.session.qtyInput[id] = '';
+    ctx.session.userFlow = {
+      type: 'qty_keypad',
+      step: 'await_qty',
+      data: {
+        productId: id,
+        promptChatId: ctx.chat?.id ?? ctx.from!.id,
+        promptMessageId: ctx.callbackQuery!.message?.message_id,
+      },
+    };
     await ctx.answerCallbackQuery();
-    await showQtyEditor(ctx, Number(ctx.match[1]));
+    await showQtyKeypad(ctx, id, '');
   });
 
-  // Editor actions: ±N / max / reset / confirm / noop. Confirm and
-  // Back both leave the editor — confirm renders the product page
-  // so the user sees Buy Now ready to tap; Back is wired straight
-  // to `prod:<id>` in the keyboard. `noop` is the qty-readout pill;
-  // tapping it silently re-acks so the button doesn't appear hung.
-  bot.callbackQuery(/^qtye:(\d+):(.+)$/, async (ctx) => {
+  // Numeric-keypad actions: digit / backspace / clear / confirm.
+  // Digits are appended as strings so `1` + `1` becomes `"11"` (not
+  // arithmetic 2). `Back` (cancel) is wired straight to `prod:<id>`
+  // in the keyboard.
+  bot.callbackQuery(/^qkp:(\d+):(d:[0-9]|back|clear|confirm)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
-    const action = ctx.match[2];
-    const p = await getProduct(id);
-    if (!p) {
+    const action = ctx.match[2]!;
+    const raw = await getProduct(id);
+    if (!raw) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
-    if (action === 'confirm') {
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    if (!ctx.session.qtyInput) ctx.session.qtyInput = {};
+    const prev = ctx.session.qtyInput[id] ?? '';
+    let buf = prev;
+    if (action.startsWith('d:')) {
+      const digit = action.slice(2);
+      // Cap at 4 digits — anything larger than 9999 is rejected by
+      // QTY_MAX anyway, so don't let the buffer balloon.
+      if (buf.length < 4) buf = (buf + digit).replace(/^0+(\d)/, '$1');
+    } else if (action === 'back') {
+      buf = buf.slice(0, -1);
+    } else if (action === 'clear') {
+      buf = '';
+    } else if (action === 'confirm') {
+      const next = validateQty(buf, p.stock);
+      if (next === null) {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) }),
+          show_alert: true,
+        });
+        return;
+      }
+      ctx.session.qty[id] = next;
+      delete ctx.session.qtyInput[id];
+      ctx.session.userFlow = undefined;
       await ctx.answerCallbackQuery();
       await showProduct(ctx, id);
       return;
     }
-    if (action === 'noop') {
-      // Tap on the qty readout pill — silent ack only; no edit.
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    const cur = ctx.session.qty[id] ?? QTY_MIN;
-    let candidate: number;
-    if (action === 'max') {
-      candidate = p.stock;
-    } else if (action === 'reset') {
-      candidate = QTY_MIN;
-    } else {
-      const delta = Number(action);
-      if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
-        await ctx.answerCallbackQuery();
-        return;
-      }
-      candidate = cur + delta;
-    }
-    const next = clampQty(candidate, p.stock);
-    if (next === cur) {
-      // Telegram errors out on `editMessageText` calls that don't
-      // change anything; short-circuit so the user just gets a
-      // silent ack on edge taps (e.g. -1 at 1, +1 at stock).
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    ctx.session.qty[id] = next;
+    ctx.session.qtyInput[id] = buf;
     await ctx.answerCallbackQuery();
-    await showQtyEditor(ctx, id);
+    // Skip the edit when the buffer didn't change (e.g. backspace
+    // on an already-empty buffer, digit beyond the 4-char cap) —
+    // Telegram rejects no-op edits with "message is not modified".
+    if (buf === prev) return;
+    await showQtyKeypad(ctx, id, buf);
+  });
+
+  // While the *Custom Quantity* keypad is open, plain-text replies
+  // are interpreted as the quantity. On success: auto-delete the
+  // keypad prompt + the user's message, apply the qty, and re-open
+  // the product page (matches the bot-owner spec). On failure: show
+  // the premium-emoji invalid-quantity warning (auto-deleted after
+  // a short delay so the chat stays tidy) and keep the keypad open.
+  bot.on('message:text', async (ctx, next) => {
+    const flow = ctx.session.userFlow;
+    if (!flow || flow.type !== 'qty_keypad') return next();
+    const text = ctx.message.text.trim();
+    if (text.startsWith('/')) {
+      // /cancel etc — leave the keypad and let downstream commands
+      // run normally.
+      ctx.session.userFlow = undefined;
+      delete ctx.session.qtyInput?.[flow.data.productId];
+      return next();
+    }
+    const raw = await getProduct(flow.data.productId);
+    if (!raw) {
+      ctx.session.userFlow = undefined;
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    // Strip non-digits so a stray space / punctuation doesn't
+    // invalidate an otherwise-valid number ("11 " → "11").
+    const digits = text.replace(/[^0-9]/g, '');
+    const next_ = digits ? validateQty(digits, p.stock) : null;
+    if (next_ === null) {
+      // Premium-emoji invalid warning. Sent to the chat (as opposed
+      // to a callback popup) because the user typed a message — a
+      // popup wouldn't surface here.
+      const warn = await ctx.reply(
+        renderMdHtml(
+          ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) }),
+        ),
+        { parse_mode: 'HTML' },
+      );
+      // Auto-cleanup: delete the user's bad reply now and the
+      // warning bubble after ~5s so the screen stays calm.
+      void ctx.deleteMessage().catch(() => undefined);
+      setTimeout(() => {
+        void ctx.api
+          .deleteMessage(warn.chat.id, warn.message_id)
+          .catch(() => undefined);
+      }, 5_000);
+      return;
+    }
+    // Success — apply the qty and tear down both messages.
+    ctx.session.qty[flow.data.productId] = next_;
+    delete ctx.session.qtyInput?.[flow.data.productId];
+    ctx.session.userFlow = undefined;
+    void ctx.deleteMessage().catch(() => undefined);
+    if (flow.data.promptMessageId) {
+      void ctx.api
+        .deleteMessage(flow.data.promptChatId, flow.data.promptMessageId)
+        .catch(() => undefined);
+    }
+    // Re-open the product page as a fresh message (the prompt was
+    // just deleted, so we can't editMessageText into it).
+    const shareUrl = buildProductShareUrl(p.id);
+    await ctx.reply(renderMdHtml(productPageText(ctx, p, next_)), {
+      parse_mode: 'HTML',
+      reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl),
+    });
   });
 
   // ---- View Note ----
@@ -307,7 +403,41 @@ export function registerShop(bot: Composer<AppCtx>): void {
     );
   });
 
+  // *Buy Now* on the product page no longer charges immediately —
+  // it edits the message into a payment-method picker that lets the
+  // user choose between paying with their wallet balance and topping
+  // up first. The actual charge happens on `pay:wallet:<id>`.
   bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const raw = await getProduct(id);
+    if (!raw) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    if (p.stock <= 0) {
+      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
+      return;
+    }
+    const qty = ctx.session.qty[id] ?? QTY_MIN;
+    const total = (p.price * qty).toFixed(2);
+    const text = ctx.t('shop.pay.title', {
+      name: p.name,
+      qty,
+      total,
+      balance: ctx.user.balance,
+    });
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: paymentMethodKeyboard(ctx.lang, p),
+    });
+  });
+
+  // Wallet-payment branch of the new payment-method picker. Mirrors
+  // the legacy `buy:<id>` charge logic — email gate, balance check,
+  // order creation, wallet charge, stock decrement, admin log.
+  bot.callbackQuery(/^pay:wallet:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
     if (!raw) {

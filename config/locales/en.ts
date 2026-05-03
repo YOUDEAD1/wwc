@@ -23,6 +23,15 @@ export const en: Record<string, string> = {
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
+  // Custom-quantity keypad — opens a numeric keypad in place of
+  // the legacy +/- adder.
+  'btn.custom_qty': '🔢 Custom Quantity',
+  'btn.qty_keypad_back': '⌫',
+  'btn.qty_keypad_clear': '🗑 Clear',
+  'btn.qty_keypad_confirm': '✅ Confirm',
+  // Buy-now payment-method screen.
+  'btn.pay_wallet': '👛 Wallet Pay',
+  'btn.pay_topup': '🪙 Top Up',
   'btn.qty.max': '🎯 Max',
   'btn.qty.reset': '🔄 Reset',
   'btn.qty.confirm': '✅ Confirm',
@@ -83,6 +92,33 @@ export const en: Record<string, string> = {
   'shop.choose_category': '*Available Products:*',
   'shop.qty.prompt': '🔢 Type a quantity (1–{max}) and send.',
   'shop.qty.invalid': '❌ Invalid number — please send a value between 1 and {max}.',
+
+  // ---- Custom-quantity prompt + keypad ------------------------
+  // Header rendered above the numeric keypad. The {qty_prompt_*}
+  // tokens resolve to premium custom emojis frame the bold title.
+  // {current} shows the digits the user has tapped so far on the
+  // keypad — empty until they've started entering a number.
+  'shop.qty.keypad.prompt':
+    '{qty_prompt_pencil} *Send Custom Quantity For Product* {qty_prompt_keypad}\n\n' +
+    '*{name}*\n' +
+    'In stock: *{stock}*\n\n' +
+    'Tap digits below or send a number, then tap Confirm.\n\n' +
+    'Current: <code>{current}</code>',
+  // Premium-emoji error shown when the user enters an out-of-range
+  // or non-numeric quantity. Auto-deletes a few seconds later so
+  // it doesn't clutter the chat.
+  'shop.qty.keypad.invalid':
+    '{qty_invalid} *Invalid quantity.*\n\n' +
+    'Please send a whole number between *1* and *{max}*.',
+
+  // ---- Buy-now → payment method picker -------------------------
+  'shop.pay.title':
+    '{prod_qty_selected} *Order summary*\n\n' +
+    '*{name}*\n' +
+    '{prod_qty_selected} Qty: *{qty}*\n' +
+    '{prod_total_amount} Total: *{total} USDT*\n' +
+    '{prod_wallet} Wallet: *{balance} USDT*\n\n' +
+    'Choose a payment method:',
   // Inline qty-editor screen body. Renders as a "big counter" with
   // the current selected qty in monospace, the product name, and
   // the running total cost.
@@ -95,13 +131,17 @@ export const en: Record<string, string> = {
     'Total: *{total} USDT*',
   'shop.empty_categories': 'No categories yet. Please check back later.',
   'shop.empty_products': 'No products in this category yet.',
-  'shop.product.line.name': '*{name}*',
-  'shop.product.line.price': '💰 Price: *{price}*',
-  'shop.product.line.stock': '📦 Stock: *{stock}*',
-  'shop.product.line.warranty': '🛡️ Warranty: {warranty}',
-  'shop.product.line.qty': '🔢 Selected qty: *{qty}*',
-  'shop.product.line.total': '🧮 Total: *{total}*',
-  'shop.product.line.balance': '👛 Wallet: *{balance}*',
+  // Product detail page — premium emojis prefix every label per
+  // bot-owner UX request. Each `{prod_*}` token resolves to a
+  // `<tg-emoji>` tag with the configured custom_emoji_id (animated
+  // for premium subs, plain unicode for everyone else).
+  'shop.product.line.name': '{emoji} *{name}*',
+  'shop.product.line.price': '{prod_price_base} *Price Base:* {price} USDT',
+  'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
+  'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
+  'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
+  'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
+  'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
   'shop.product.out_of_stock_popup':
     '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
   'shop.note.title': '📝 *Product note*',

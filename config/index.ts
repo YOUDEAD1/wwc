@@ -175,6 +175,15 @@ export const BUTTON_KEYS = {
   share_product: 'btn.share_product',
   view_note_file: 'btn.view_note_file',
   send_note_txt: 'btn.send_note_txt',
+
+  // ---- Custom-quantity keypad (replaces the legacy +/- adder) ---
+  custom_qty: 'btn.custom_qty',
+  qty_keypad_back: 'btn.qty_keypad_back',
+  qty_keypad_clear: 'btn.qty_keypad_clear',
+  qty_keypad_confirm: 'btn.qty_keypad_confirm',
+  // ---- Buy-now payment-method screen ----------------------------
+  pay_wallet: 'btn.pay_wallet',
+  pay_topup: 'btn.pay_topup',
 } as const;
 
 /**
@@ -286,6 +295,17 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   share_product: 'blue',
   view_note_file: 'none',
   send_note_txt: 'blue',
+
+  // Custom-quantity keypad — digits stay neutral so the action
+  // buttons (Clear, Confirm) read as the dominant choices.
+  custom_qty: 'blue',
+  qty_keypad_back: 'none',
+  qty_keypad_clear: 'red',
+  qty_keypad_confirm: 'green',
+
+  // Buy-now payment-method screen.
+  pay_wallet: 'green',
+  pay_topup: 'blue',
 };
 
 /**
@@ -416,6 +436,24 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // Kiwi AI Support — premium glyph used in the AI greeting and
   // anywhere the rebrand needs the kiwi avatar in front of text.
   kiwi_ai: { unicode: '🥝', custom_emoji_id: '4956398762164487204' },
+
+  // ---- Product page (revamped) ---------------------------------
+  // Premium glyphs that prefix every line on the product detail
+  // screen. Telegram premium users see the animated/styled icon;
+  // everyone else sees the unicode fallback.
+  prod_price_base: { unicode: '💰', custom_emoji_id: '6325444137797554944' },
+  prod_stock: { unicode: '📦', custom_emoji_id: '5472170432574528133' },
+  prod_warranty: { unicode: '🛡️', custom_emoji_id: '5893365724830765382' },
+  prod_qty_selected: { unicode: '🔢', custom_emoji_id: '5363964615657017717' },
+  prod_total_amount: { unicode: '🧮', custom_emoji_id: '5366223171454278937' },
+  prod_wallet: { unicode: '👛', custom_emoji_id: '6102840685835066490' },
+
+  // Custom-quantity prompt — pencil + keypad framing the bold body.
+  qty_prompt_pencil: { unicode: '✏️', custom_emoji_id: '5866355487255039002' },
+  qty_prompt_keypad: { unicode: '🔢', custom_emoji_id: '5926964914684957537' },
+  // Premium-styled red warning shown when the user enters an
+  // invalid quantity (0, > stock, > QTY_MAX, non-integer).
+  qty_invalid: { unicode: '⚠️', custom_emoji_id: '5974083768233760323' },
 
   // ---- My Deposits screen --------------------------------------
   deposits_title: { unicode: '💳', custom_emoji_id: '6102840685835066490' },
@@ -552,6 +590,16 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 
   // Product-page extras.
   share_product: 'profile_link', // 🔗
+
+  // Custom-quantity keypad — keypad on the open button, ✓ on
+  // confirm. Digit buttons are intentionally unset so the plain
+  // unicode digit renders as-is on every platform.
+  custom_qty: 'qty_prompt_keypad',
+  qty_keypad_confirm: 'orders_received',
+
+  // Buy-now payment-method screen — wallet on Pay, topup on Top Up.
+  pay_wallet: 'prod_wallet',
+  pay_topup: 'deposits_wallet',
 };
 
 /**

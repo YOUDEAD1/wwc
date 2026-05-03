@@ -21,6 +21,12 @@ export const vi: Record<string, string> = {
   'btn.view_note': '📝 Xem ghi chú',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
+  'btn.custom_qty': '🔢 Số lượng tùy chỉnh',
+  'btn.qty_keypad_back': '⌫',
+  'btn.qty_keypad_clear': '🗑 Xóa',
+  'btn.qty_keypad_confirm': '✅ Xác nhận',
+  'btn.pay_wallet': '👛 Thanh toán Ví',
+  'btn.pay_topup': '🪙 Nạp tiền',
   'btn.qty.max': '🎯 Tối đa',
   'btn.qty.reset': '🔄 Đặt lại',
   'btn.qty.confirm': '✅ Xác nhận',
@@ -65,6 +71,22 @@ export const vi: Record<string, string> = {
   'shop.choose_category': '*Sản phẩm có sẵn:*',
   'shop.qty.prompt': '🔢 Nhập số lượng (1–{max}) và gửi.',
   'shop.qty.invalid': '❌ Số không hợp lệ — vui lòng gửi giá trị từ 1 đến {max}.',
+  'shop.qty.keypad.prompt':
+    '{qty_prompt_pencil} *Gửi Số Lượng Tùy Chỉnh Cho Sản Phẩm* {qty_prompt_keypad}\n\n' +
+    '*{name}*\n' +
+    'Còn lại: *{stock}*\n\n' +
+    'Nhấn các chữ số bên dưới hoặc gửi số, sau đó nhấn Xác nhận.\n\n' +
+    'Hiện tại: <code>{current}</code>',
+  'shop.qty.keypad.invalid':
+    '{qty_invalid} *Số lượng không hợp lệ.*\n\n' +
+    'Vui lòng gửi số nguyên từ *1* đến *{max}*.',
+  'shop.pay.title':
+    '{prod_qty_selected} *Tóm tắt đơn hàng*\n\n' +
+    '*{name}*\n' +
+    '{prod_qty_selected} Số lượng: *{qty}*\n' +
+    '{prod_total_amount} Tổng: *{total} USDT*\n' +
+    '{prod_wallet} Ví: *{balance} USDT*\n\n' +
+    'Chọn phương thức thanh toán:',
   'shop.qty.editor.title':
     '🔢 *Chọn số lượng*\n\n' +
     '*{name}*\n' +
@@ -74,13 +96,13 @@ export const vi: Record<string, string> = {
     'Tổng: *{total} USDT*',
   'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
   'shop.empty_products': 'Chưa có sản phẩm trong danh mục này.',
-  'shop.product.line.name': '*{name}*',
-  'shop.product.line.price': '💰 Giá: *{price}*',
-  'shop.product.line.stock': '📦 Tồn kho: *{stock}*',
-  'shop.product.line.warranty': '🛡️ Bảo hành: {warranty}',
-  'shop.product.line.qty': '🔢 Số lượng: *{qty}*',
-  'shop.product.line.total': '🧮 Tổng: *{total}*',
-  'shop.product.line.balance': '👛 Ví: *{balance}*',
+  'shop.product.line.name': '{emoji} *{name}*',
+  'shop.product.line.price': '{prod_price_base} *Giá gốc:* {price} USDT',
+  'shop.product.line.stock': '{prod_stock} *Còn lại:* {stock}',
+  'shop.product.line.warranty': '{prod_warranty} *Bảo hành:* {warranty}',
+  'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
+  'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
+  'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
   'shop.product.out_of_stock_popup':
     '❌ Sản phẩm này hiện đã hết hàng. Vui lòng liên hệ quản trị viên để bổ sung kho hoặc chọn sản phẩm tương tự.',
   'shop.note.title': '📝 *Ghi chú sản phẩm*',
