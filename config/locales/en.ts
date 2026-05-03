@@ -13,7 +13,7 @@ export const en: Record<string, string> = {
   'btn.topup': '🪙 Topup',
   'btn.profile': '⚙️ Settings',
   'btn.support': '💬 Support',
-  'btn.ai_support': '🤖 AI Support',
+  'btn.ai_support': '🥝 Kiwi AI',
   'btn.back': '⬅️ Back',
   'btn.next': 'Next ▶️',
   'btn.prev': '◀️ Prev',
@@ -404,15 +404,18 @@ export const en: Record<string, string> = {
     '❌ Could not send the transcript to {email}. Please try again — if it keeps failing, contact support.',
   'support.transcript.expired_popup':
     '⌛ This transcript is no longer available. Start a new Live Support session whenever you need help.',
-  // AI Support — premium-formatted prompt screen. The header reuses
-  // the same `support_live_active` premium emoji as Live Support so
-  // both flows look visually consistent. The footer hint tells the
-  // user the chat is multi-turn and that tapping Cancel closes the
-  // session and saves it as a PDF (mirrors Live Support behaviour).
+  // Kiwi AI — premium-formatted greeting. The kiwi avatar (`kiwi_ai`)
+  // prefixes the headline so premium viewers see the animated kiwi
+  // glyph and everyone else gets the unicode kiwi fallback. The
+  // greeting is multi-turn: tap any number of questions, then
+  // Cancel to close and (optionally) email the transcript.
   'support.ai.session_open':
-    '{support_live_active} *Automated Support Assistant*\n\n' +
-    'Describe your issue and I\'ll keep answering until you tap *Cancel*.\n' +
-    'When you cancel I\'ll save the chat as a PDF you can email to yourself.',
+    '{kiwi_ai} *Hello! I am Kiwi automated support assistant.*\n' +
+    '*How can I help you today?*\n\n' +
+    'Ask me anything about our store — products, prices, payment ' +
+    'methods, top-up, referrals, your wallet — I have the full ' +
+    'catalog handy. Tap *Cancel* when you\'re done and I\'ll save ' +
+    'the chat as a PDF you can email to yourself.',
   // Closure message shown when the user taps Cancel. Mirrors
   // `support.live.user_ended` so the two flows feel identical.
   'support.ai.user_ended':
