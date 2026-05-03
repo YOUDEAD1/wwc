@@ -475,6 +475,85 @@ export async function clearUserProductPrice(
     .eq('product_id', product_id);
 }
 
+/**
+ * Admin overview — every override across every user, joined with
+ * the user row (for username / first_name) and the product row (for
+ * the human-readable name + default price). Sorted by `telegram_id`
+ * then `product_id` so callers can group by user with a single
+ * pass.
+ *
+ * `users` is LEFT-joined because overrides can be pre-set for users
+ * who haven't `/start`-ed the bot yet — those rows still need to
+ * appear in the report, just without a username.
+ */
+export async function listAllPriceOverrides(): Promise<
+  Array<{
+    telegram_id: number;
+    product_id: number;
+    price: number;
+    created_at: string;
+    updated_at: string;
+    created_by: number | null;
+    username: string | null;
+    first_name: string | null;
+    product_name: string;
+    product_default_price: number;
+  }>
+> {
+  // Two separate selects — Supabase's PostgREST can't auto-join via
+  // a non-FK relation (telegram_id is intentionally NOT a FK), so we
+  // hydrate the user row in JS using a Map.
+  const { data: rows } = await supabase
+    .from('user_price_overrides')
+    .select('*, products(name, price)')
+    .order('telegram_id', { ascending: true })
+    .order('product_id', { ascending: true });
+  const overrideRows = ((rows ?? []) as Array<
+    DBUserPriceOverride & {
+      products: { name: string; price: number } | null;
+    }
+  >);
+  if (overrideRows.length === 0) return [];
+
+  const ids = Array.from(
+    new Set(overrideRows.map((r) => Number(r.telegram_id))),
+  );
+  const { data: users } = await supabase
+    .from('users')
+    .select('telegram_id, username, first_name')
+    .in('telegram_id', ids);
+  const userMap = new Map<
+    number,
+    { username: string | null; first_name: string | null }
+  >();
+  for (const u of (users ?? []) as Array<{
+    telegram_id: number;
+    username: string | null;
+    first_name: string | null;
+  }>) {
+    userMap.set(Number(u.telegram_id), {
+      username: u.username,
+      first_name: u.first_name,
+    });
+  }
+
+  return overrideRows.map((r) => {
+    const u = userMap.get(Number(r.telegram_id));
+    return {
+      telegram_id: Number(r.telegram_id),
+      product_id: Number(r.product_id),
+      price: Number(r.price),
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      created_by: r.created_by,
+      username: u?.username ?? null,
+      first_name: u?.first_name ?? null,
+      product_name: r.products?.name ?? `#${r.product_id}`,
+      product_default_price: Number(r.products?.price ?? 0),
+    };
+  });
+}
+
 /** Drop every override for a user (admin convenience). */
 export async function clearAllUserPriceOverrides(
   telegram_id: number,

@@ -4,7 +4,7 @@
  * Entry: /admin (admin only). Everything else happens via inline
  * buttons + multi-step text input collected through `session.adminFlow`.
  */
-import { Composer, InlineKeyboard, type MiddlewareFn } from 'grammy';
+import { Composer, InlineKeyboard, InputFile, type MiddlewareFn } from 'grammy';
 import {
   addCategory,
   addPaymentMethod,
@@ -34,6 +34,7 @@ import {
   banUser,
   unbanUser,
   listUserPriceOverrides,
+  listAllPriceOverrides,
   setUserProductPrice,
   clearUserProductPrice,
   clearAllUserPriceOverrides,
@@ -1422,15 +1423,26 @@ async function showCustomPriceUserPick(ctx: AppCtx): Promise<void> {
     'Tip: you can pre-set prices for users who haven\'t `/start`-ed ' +
     'the bot yet — paste their numeric Telegram ID.\n\n' +
     'Or `/cancel`.';
+  // Two top-level shortcuts that don't require typing a user first:
+  //   📊 Overview — paginated, deeply detailed table of every
+  //                 override across every user.
+  //   📥 Export CSV — same data as a downloadable .csv file you can
+  //                   open in Excel / Google Sheets for sorting,
+  //                   filtering, charting.
+  const kb = new InlineKeyboard()
+    .text('📊 Full overview', 'adm:price:report:0')
+    .text('📥 Export CSV', 'adm:price:csv')
+    .row()
+    .text('⬅️ Back', 'adm:root');
   if (ctx.callbackQuery) {
     await ctx.editMessageText(body, {
       parse_mode: 'Markdown',
-      reply_markup: backRow(new InlineKeyboard()),
+      reply_markup: kb,
     });
   } else {
     await ctx.reply(body, {
       parse_mode: 'Markdown',
-      reply_markup: backRow(new InlineKeyboard()),
+      reply_markup: kb,
     });
   }
 }
@@ -1622,6 +1634,198 @@ adminBot.callbackQuery(/^adm:price:bulk:(\d+)$/, async (ctx) => {
     {
       parse_mode: 'Markdown',
       reply_markup: backRow(new InlineKeyboard()),
+    },
+  );
+});
+
+// ------------------------------------------------------------
+// 📊 Full overview — paginated, deeply detailed table of every
+// override across every user. Groups by user; each group shows
+// the user's handle / Telegram ID, total override count, total
+// dollar swing (sum of override-default deltas) and a row per
+// product with default → override price + delta.
+//
+// USERS_PER_PAGE limits how many user-groups appear per Telegram
+// message so we never blow past the 4096-char Markdown limit.
+// ------------------------------------------------------------
+const PRICE_REPORT_USERS_PER_PAGE = 5;
+
+adminBot.callbackQuery(/^adm:price:report:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const page = Math.max(0, Number(ctx.match[1]));
+  const all = await listAllPriceOverrides();
+  if (all.length === 0) {
+    await ctx.editMessageText(
+      '📊 *Custom Prices — Overview*\n\n_No overrides set yet._\n\n' +
+        'Add one via the user pick screen or pre-set by Telegram ID.',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:price'),
+      },
+    );
+    return;
+  }
+
+  // Group by telegram_id while preserving the (telegram_id, product_id)
+  // sort coming from the query.
+  const groups = new Map<
+    number,
+    {
+      telegram_id: number;
+      username: string | null;
+      first_name: string | null;
+      rows: typeof all;
+    }
+  >();
+  for (const o of all) {
+    let g = groups.get(o.telegram_id);
+    if (!g) {
+      g = {
+        telegram_id: o.telegram_id,
+        username: o.username,
+        first_name: o.first_name,
+        rows: [],
+      };
+      groups.set(o.telegram_id, g);
+    }
+    g.rows.push(o);
+  }
+  const groupArr = Array.from(groups.values());
+  const totalPages = Math.max(
+    1,
+    Math.ceil(groupArr.length / PRICE_REPORT_USERS_PER_PAGE),
+  );
+  const safePage = Math.min(page, totalPages - 1);
+  const start = safePage * PRICE_REPORT_USERS_PER_PAGE;
+  const end = Math.min(start + PRICE_REPORT_USERS_PER_PAGE, groupArr.length);
+
+  const header = [
+    '📊 *Custom Prices — Overview*',
+    `Users with overrides: *${groupArr.length}* · ` +
+      `Total override rows: *${all.length}*` +
+      ` · Page ${safePage + 1}/${totalPages}`,
+    '',
+  ];
+
+  const sections: string[] = [];
+  for (let i = start; i < end; i++) {
+    const g = groupArr[i];
+    if (!g) continue;
+    const handle = g.username ? `@${g.username}` : (g.first_name ?? '_no name_');
+    const swing = g.rows.reduce(
+      (acc, r) => acc + (r.price - r.product_default_price),
+      0,
+    );
+    const swingTxt =
+      swing === 0
+        ? '±$0.00'
+        : swing > 0
+          ? `+$${swing.toFixed(2)} above default`
+          : `−$${Math.abs(swing).toFixed(2)} below default`;
+    const userLine =
+      `*${i + 1}.* \`${g.telegram_id}\` _(${escapeHtml(handle)})_ · ` +
+      `*${g.rows.length}* override${g.rows.length === 1 ? '' : 's'} · ${swingTxt}`;
+    const productLines = g.rows.map((r) => {
+      const delta = r.price - r.product_default_price;
+      const sign = delta === 0 ? '=' : delta > 0 ? '+' : '−';
+      const pct =
+        r.product_default_price > 0
+          ? `${((delta / r.product_default_price) * 100).toFixed(1)}%`
+          : 'n/a';
+      return (
+        `   • \`#${r.product_id}\` ${escapeHtml(r.product_name)}: ` +
+        `*$${r.price.toFixed(2)}* ` +
+        `(default $${r.product_default_price.toFixed(2)}, ` +
+        `${sign}$${Math.abs(delta).toFixed(2)} / ${pct})`
+      );
+    });
+    sections.push([userLine, ...productLines].join('\n'));
+  }
+
+  const kb = new InlineKeyboard();
+  if (safePage > 0) {
+    kb.text('◀ Prev', `adm:price:report:${safePage - 1}`);
+  }
+  if (safePage + 1 < totalPages) {
+    kb.text('Next ▶', `adm:price:report:${safePage + 1}`);
+  }
+  kb.row().text('📥 Export CSV', 'adm:price:csv').row();
+  kb.text('⬅️ Back', 'adm:price');
+
+  const body = [...header, ...sections].join('\n\n');
+  await ctx.editMessageText(body, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+// 📥 CSV export — emits the same data as a downloadable file with
+// columns the admin can sort / filter / chart in Excel or Google
+// Sheets. Quoted with RFC-4180 doubling so commas and quotes inside
+// product names don't break parsing.
+function csvEscape(value: string | number | null | undefined): string {
+  const s = value === null || value === undefined ? '' : String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+adminBot.callbackQuery('adm:price:csv', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Building CSV…' });
+  const all = await listAllPriceOverrides();
+  if (all.length === 0) {
+    await ctx.reply(
+      '📥 No overrides to export — set at least one before downloading.',
+    );
+    return;
+  }
+  const header = [
+    'telegram_id',
+    'username',
+    'first_name',
+    'product_id',
+    'product_name',
+    'default_price_usd',
+    'override_price_usd',
+    'delta_usd',
+    'delta_pct',
+    'set_by_admin_telegram_id',
+    'set_at',
+  ];
+  const lines = [header.join(',')];
+  for (const r of all) {
+    const delta = r.price - r.product_default_price;
+    const pct =
+      r.product_default_price > 0
+        ? ((delta / r.product_default_price) * 100).toFixed(2)
+        : '';
+    lines.push(
+      [
+        r.telegram_id,
+        r.username ?? '',
+        r.first_name ?? '',
+        r.product_id,
+        r.product_name,
+        r.product_default_price.toFixed(2),
+        r.price.toFixed(2),
+        delta.toFixed(2),
+        pct,
+        r.created_by ?? '',
+        r.updated_at,
+      ]
+        .map(csvEscape)
+        .join(','),
+    );
+  }
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const filename = `price_overrides_${stamp}.csv`;
+  await ctx.replyWithDocument(
+    new InputFile(Buffer.from(lines.join('\n') + '\n', 'utf8'), filename),
+    {
+      caption:
+        `📥 *Custom Prices — Export*\n` +
+        `Rows: *${all.length}* · ` +
+        `Generated: ${new Date().toUTCString()}`,
+      parse_mode: 'Markdown',
     },
   );
 });
