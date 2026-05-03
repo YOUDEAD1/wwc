@@ -594,6 +594,27 @@ export async function listAllProducts(
   return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
 }
 
+/**
+ * Customer-facing all-products list. Filters on `active=true` so
+ * the shop shopfront never surfaces hidden / draft products. Order
+ * is `id ASC` so the list is stable across pages (newest products
+ * land at the back, like the per-category list).
+ */
+export async function listActiveProducts(
+  page: number,
+  perPage: number,
+): Promise<{ rows: DBProduct[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count } = await supabase
+    .from('products')
+    .select('*', { count: 'exact' })
+    .eq('active', true)
+    .order('id', { ascending: true })
+    .range(from, to);
+  return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
+}
+
 export async function deleteProduct(id: number): Promise<void> {
   await supabase.from('products').delete().eq('id', id);
 }

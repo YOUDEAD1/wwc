@@ -36,11 +36,15 @@ export function colored(
  * itself (avoids "[premium icon] 🛍 Shop" — i.e. two emojis side by
  * side).
  *
- * The strip regex matches a single grapheme that's an emoji-like
- * character (or zero-width-joined sequence) at the start of the
- * label, followed by an optional space.
+ * Two leading shapes are matched:
+ *   1. A pair of regional-indicator codepoints (country flag like
+ *      🇬🇧 / 🇸🇦 / 🇻🇳) — these are NOT in `\p{Extended_Pictographic}`
+ *      per Unicode, so they need their own branch.
+ *   2. Any single emoji-like grapheme, optionally a ZWJ-sequence,
+ *      with an optional VS-16.
+ * Optional trailing space is stripped too.
  */
-const LEADING_EMOJI = /^(?:\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*\uFE0F?)\s?/u;
+const LEADING_EMOJI = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*\uFE0F?)\s?/u;
 
 function stripLeadingEmoji(label: string): string {
   return label.replace(LEADING_EMOJI, '');

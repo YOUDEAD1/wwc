@@ -427,7 +427,9 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   notifications: 'notify_bell',
   language: 'lang_globe',
   deposit_history: 'deposits_title',
-  channel: 'notify_stock',
+  // `channel` left unset on purpose — the user asked for no emoji
+  // on this button at all (label-only). Re-add an EMOJI key here to
+  // restore a premium icon if you change your mind.
   stats: 'stats',
   stats_refresh: 'stats_refresh',
   set_region: 'profile_region',
@@ -449,10 +451,12 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   notify_wallet_on: 'notify_on',
   notify_wallet_off: 'notify_off',
 
-  // Send-PDF buttons (paper-plane / outbox icons)
+  // Send-PDF buttons (paper-plane / outbox icons). `send_pdf_orders`
+  // is intentionally left unset — the user wants the My Orders
+  // sub-screen completely emoji-free. The Stats / Deposits PDF
+  // buttons live on different screens and keep their icons.
   send_pdf_stats: 'pdf_sent_l',
   send_pdf_deposits: 'pdf_sent_l',
-  send_pdf_orders: 'pdf_sent_l',
 
   // Refer copy-link
   copy_link: 'refer_transferred',
@@ -461,9 +465,9 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   redeem: 'gift_title',
   buy_code: 'gift_usdt',
 
-  // Order detail
-  orders_open_link: 'profile_link',
-  orders_back_list: 'stats_back',
+  // Order detail — left unset so the My Orders flow stays
+  // emoji-free per the latest UX request. Re-add a key here to bring
+  // back a premium icon.
 
   // Support section
   support_contact: 'support_title',
