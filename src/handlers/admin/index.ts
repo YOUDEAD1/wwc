@@ -195,7 +195,7 @@ adminBot.callbackQuery('adm:bot:contact', async (ctx) => {
   );
 });
 
-// ---------- AI Setup (placeholder) ----------
+// ---------- AI Setup ----------
 adminBot.callbackQuery('adm:ai', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = undefined;
@@ -205,7 +205,17 @@ adminBot.callbackQuery('adm:ai', async (ctx) => {
     .text('💬 Set AI Prompt', 'adm:ai:prompt');
   backRow(kb);
   await ctx.editMessageText(
-    '🤖 *AI Setup*\n\nConfigure the assistant used by the Support flow.',
+    [
+      '🤖 *AI Setup*',
+      '',
+      'Configure the assistant used by the AI Support flow.',
+      '',
+      'Provider is auto-detected from the API-key shape:',
+      '• `AIza…` → Google AI Studio (Gemini)',
+      '• `sk-…`  → OpenAI Chat Completions',
+      '',
+      '_The key you paste here overrides `OPENAI_API_KEY` from the deployment env._',
+    ].join('\n'),
     { parse_mode: 'Markdown', reply_markup: kb },
   );
 });
