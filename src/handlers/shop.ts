@@ -7,6 +7,10 @@ import {
   getProduct,
   listActiveProducts,
 } from '../db/queries.js';
+import {
+  applyUserPriceToProduct,
+  applyUserPriceToProducts,
+} from '../services/pricing.js';
 import { charge } from '../services/wallet.js';
 import {
   productKeyboard,
@@ -28,7 +32,11 @@ import * as adminLog from '../services/adminLog.js';
  * footer.
  */
 async function showShopHome(ctx: AppCtx, page = 0) {
-  const { rows, total } = await listActiveProducts(page, PRODUCTS_PER_PAGE);
+  const { rows: rawRows, total } = await listActiveProducts(page, PRODUCTS_PER_PAGE);
+  // Layer per-user price overrides onto the catalog rows before we
+  // build the keyboard so the price embedded in each button label
+  // matches what the user will actually be charged.
+  const rows = await applyUserPriceToProducts(ctx.user.telegram_id, rawRows);
   if (total === 0) {
     const empty = renderMdHtml(ctx.t('shop.empty_products'));
     if (ctx.callbackQuery) {
@@ -81,11 +89,12 @@ function buildProductShareUrl(productId: number): string {
 }
 
 async function showProduct(ctx: AppCtx, productId: number) {
-  const p = await getProduct(productId);
-  if (!p) {
+  const raw = await getProduct(productId);
+  if (!raw) {
     await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
     return;
   }
+  const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
   const shareUrl = buildProductShareUrl(p.id);
   await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty)), {
@@ -99,11 +108,12 @@ async function showProduct(ctx: AppCtx, productId: number) {
  * replacing the legacy "Type a quantity" prompt.
  */
 async function showQtyEditor(ctx: AppCtx, productId: number) {
-  const p = await getProduct(productId);
-  if (!p) {
+  const raw = await getProduct(productId);
+  if (!raw) {
     await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
     return;
   }
+  const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
   const total = (p.price * qty).toFixed(2);
   const text = ctx.t('shop.qty.editor.title', {
@@ -235,11 +245,12 @@ export function registerShop(bot: Composer<AppCtx>): void {
   //   - Back → returns to the product page.
   bot.callbackQuery(/^note:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
-    const p = await getProduct(id);
-    if (!p) {
+    const raw = await getProduct(id);
+    if (!raw) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
     await ctx.answerCallbackQuery();
     const body = ctx.t('shop.note.full', {
       name: p.name,
@@ -264,11 +275,12 @@ export function registerShop(bot: Composer<AppCtx>): void {
   // forward it to friends, etc. without any third-party hosting.
   bot.callbackQuery(/^note:txt:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
-    const p = await getProduct(id);
-    if (!p) {
+    const raw = await getProduct(id);
+    if (!raw) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
     await ctx.answerCallbackQuery();
     const lines = [
       `Product: ${p.name}`,
@@ -297,11 +309,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
 
   bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
-    const p = await getProduct(id);
-    if (!p) {
+    const raw = await getProduct(id);
+    if (!raw) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
+    // Use the per-user effective price for charge / order recording
+    // so the price the user saw on the product page is the price
+    // they're actually billed.
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
     if (p.stock <= 0) {
       await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
       return;

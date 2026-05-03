@@ -51,6 +51,20 @@ export type DBProduct = {
   created_at: string;
 };
 
+/**
+ * Admin-set custom price for a single user × product combination.
+ * Keyed by `telegram_id` (not users FK) so the admin can pre-set a
+ * price for a user who hasn't `/start`-ed the bot yet.
+ */
+export type DBUserPriceOverride = {
+  telegram_id: number;
+  product_id: number;
+  price: number;
+  created_at: string;
+  updated_at: string;
+  created_by: number | null;
+};
+
 export type DBOrder = {
   id: number;
   user_id: number;

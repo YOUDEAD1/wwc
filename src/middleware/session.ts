@@ -57,6 +57,27 @@ export type AdminFlow =
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
+  | {
+      // Step 1 of the Custom-Prices flow — admin entered the menu and
+      // is being asked to identify which user the overrides apply to.
+      type: 'price_overrides_pick_user';
+      step: 'query';
+      data: Record<string, never>;
+    }
+  | {
+      // Admin tapped "Set/edit override" on a specific product and
+      // is now being asked for the override price (numeric, USD).
+      type: 'price_override_set';
+      step: 'price';
+      data: { telegram_id: number; product_id: number };
+    }
+  | {
+      // Admin tapped "Bulk paste" — they'll send a multi-line block
+      // of `<product_id> <price>` lines that we apply atomically.
+      type: 'price_override_bulk';
+      step: 'block';
+      data: { telegram_id: number };
+    }
   | { type: 'ban_user'; step: 'reason'; data: { telegram_id: number } }
   | { type: 'set_deposit_amount'; step: 'amount'; data: { deposit_id: number } }
   | { type: 'add_gift'; step: 'code'; data: Record<string, never> }
