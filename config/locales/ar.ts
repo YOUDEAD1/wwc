@@ -11,7 +11,7 @@ export const ar: Record<string, string> = {
   'btn.topup': '🪙 شحن',
   'btn.profile': '⚙️ الإعدادات',
   'btn.support': '💬 الدعم',
-  'btn.ai_support': '🥝 كيوي AI',
+  'btn.ai_support': '🥝 Kiwi Ai',
   'btn.back': '⬅️ رجوع',
   'btn.next': 'التالي ▶️',
   'btn.prev': '◀️ السابق',
@@ -237,19 +237,18 @@ export const ar: Record<string, string> = {
     '⌛ لم يعد هذا السجل متاحًا. ابدأ جلسة دعم مباشر جديدة عند الحاجة للمساعدة.',
   'support.ai.session_open':
     '{kiwi_ai} *Kiwi Ai*\n' +
-    '🥝 *مرحبًا!*\n' +
     '*أنا كيوي، مساعد الدعم الآلي.*\n\n' +
     'يمكنك طرح أي سؤال بأي لغة أو الحصول على مساعدة بشأن المنتجات، ' +
     'الأسعار، المخزون، الإيداعات، الكوبونات، الطلبات، والتوصيل. ' +
     'تفاصيل النظام الداخلية ممنوعة.',
   'support.ai.user_ended':
-    '{support_live_closed} تم إغلاق دردشة الذكاء الاصطناعي.\n\n' +
-    'افتح الدعم الآلي مرة أخرى من القائمة عند الحاجة.',
+    '{support_live_closed} تم إغلاق دردشة Kiwi Ai.\n\n' +
+    'افتح Kiwi Ai مرة أخرى من القائمة عند الحاجة.',
   'support.ai.fallback':
     'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',
   'support.ai.empty_popup':
     '💬 أرسل سؤالاً واحداً على الأقل أولاً — لا يوجد شيء لحفظه بعد.',
-  'support.ai.title': '🤖 *مساعد الدعم الآلي*',
+  'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
   'support.ai.prompt': 'اشرح مشكلتك وسأبذل قصارى جهدي للمساعدة.',
   'channel.not_set': '📢 لم يتم ضبط رابط القناة بعد.',
   'channel.subscribe.title': '📢 *انضم إلى قناتنا* للمتابعة',

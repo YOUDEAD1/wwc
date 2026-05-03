@@ -13,7 +13,7 @@ export const en: Record<string, string> = {
   'btn.topup': '🪙 Topup',
   'btn.profile': '⚙️ Settings',
   'btn.support': '💬 Support',
-  'btn.ai_support': '🥝 Kiwi AI',
+  'btn.ai_support': '🥝 Kiwi Ai',
   'btn.back': '⬅️ Back',
   'btn.next': 'Next ▶️',
   'btn.prev': '◀️ Prev',
@@ -411,7 +411,6 @@ export const en: Record<string, string> = {
   // Cancel to close and (optionally) email the transcript.
   'support.ai.session_open':
     '{kiwi_ai} *Kiwi Ai*\n' +
-    '🥝 *Hello!*\n' +
     '*I am Kiwi automated support assistant.*\n\n' +
     'You can ask normal questions in any language or get help with ' +
     'products, pricing, stock, deposits, coupons, orders, and ' +
@@ -419,14 +418,14 @@ export const en: Record<string, string> = {
   // Closure message shown when the user taps Cancel. Mirrors
   // `support.live.user_ended` so the two flows feel identical.
   'support.ai.user_ended':
-    '{support_live_closed} AI chat closed.\n\n' +
-    'Open AI Support again from the menu whenever you need help.',
+    '{support_live_closed} Kiwi Ai chat closed.\n\n' +
+    'Open Kiwi Ai again from the menu whenever you need help.',
   'support.ai.fallback':
     'I couldn\'t answer that automatically. A human will reach out shortly.',
   'support.ai.empty_popup':
     '💬 Send at least one question first — there\'s nothing to save yet.',
   // Legacy keys kept for any code path still referencing them.
-  'support.ai.title': '🤖 *Automated Support Assistant*',
+  'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
   'support.ai.prompt': 'Describe your issue and I\'ll do my best to help.',
 
   // ---------- Channel ----------

@@ -515,6 +515,44 @@ export async function logPdfSent(api: Api, args: {
   await send(api, body);
 }
 
+/**
+ * Notify the admin every time the Kiwi AI provider call fails so
+ * the operator can spot a misconfigured key, wrong model id, hit
+ * quota, etc. without needing access to Render / Railway logs. The
+ * user only ever sees the short retry message — the full upstream
+ * error body and provider identity stays in the admin feed.
+ */
+export async function logAiError(api: Api, args: {
+  user: LogUser;
+  provider: string;
+  model: string;
+  status?: number | string;
+  errorMessage: string;
+  question: string;
+}): Promise<void> {
+  const status = args.status === undefined ? '—' : String(args.status);
+  const trimmedQ = args.question.length > 200
+    ? args.question.slice(0, 200) + '…'
+    : args.question;
+  const trimmedErr = args.errorMessage.length > 800
+    ? args.errorMessage.slice(0, 800) + '…'
+    : args.errorMessage;
+  const body = compose({
+    tag: 'AI',
+    title: 'Kiwi AI provider call failed',
+    user: args.user,
+    bodyLines: [
+      '🤖 <b>AI Failure</b>',
+      `Provider: <code>${escapeHtml(args.provider)}</code>`,
+      `Model: <code>${escapeHtml(args.model)}</code>`,
+      `Status: <code>${escapeHtml(status)}</code>`,
+      `Question: ${escapeHtml(trimmedQ)}`,
+      `Error: <code>${escapeHtml(trimmedErr)}</code>`,
+    ],
+  });
+  await send(api, body);
+}
+
 export async function logSupportTranscript(api: Api, args: {
   user: LogUser;
   durationSeconds: number;
