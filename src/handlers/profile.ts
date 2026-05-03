@@ -49,6 +49,11 @@ import {
   buildDepositsPdf,
   buildStatsPdf,
 } from '../services/pdfReport.js';
+import {
+  buildOrdersCsv,
+  buildDepositsCsv,
+  buildStatsCsv,
+} from '../services/csvReport.js';
 import { logger } from '../logger.js';
 import {
   getEmailPdfUrl,
@@ -305,11 +310,16 @@ async function sendReportPdfFromCallback(
       email,
     };
     let pdf: Buffer;
+    // Spreadsheet companion built from the same source data so a
+    // recipient can sort / filter / chart in Excel without retyping
+    // anything from the PDF.
+    let csv: Buffer;
     let rowCount = 0;
     if (kind === 'orders') {
       const orders = await listOrders(ctx.user.telegram_id, 500);
       rowCount = orders.length;
       pdf = await buildOrdersPdf({ user: reportUser, orders });
+      csv = buildOrdersCsv({ user: reportUser, orders });
     } else if (kind === 'deposits') {
       const [deposits, ledger] = await Promise.all([
         listDeposits(ctx.user.telegram_id, 500),
@@ -317,15 +327,18 @@ async function sendReportPdfFromCallback(
       ]);
       rowCount = deposits.length + ledger.length;
       pdf = await buildDepositsPdf({ user: reportUser, deposits, ledger });
+      csv = buildDepositsCsv({ user: reportUser, deposits, ledger });
     } else {
       const stats = await getUserStats(ctx.user.telegram_id);
       rowCount = stats.orders;
       pdf = await buildStatsPdf({ user: reportUser, stats });
+      csv = buildStatsCsv({ user: reportUser, stats });
     }
     const ok = await sendReportEmail({
       email,
       kind,
       pdf,
+      csv,
       firstName: ctx.user.first_name ?? null,
       username: ctx.user.username ?? null,
     });

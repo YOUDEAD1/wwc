@@ -21,6 +21,7 @@ import {
 } from '../db/queries.js';
 import * as adminLog from '../services/adminLog.js';
 import { buildSupportTranscriptPdf } from '../services/pdfReport.js';
+import { buildSupportTranscriptCsv } from '../services/csvReport.js';
 import { sendReportEmail } from '../services/mailer.js';
 
 /**
@@ -136,6 +137,12 @@ function pushTranscript(entry: TranscriptEntry): void {
 type CachedTranscript = {
   buffer: Buffer;
   filename: string;
+  /**
+   * Spreadsheet companion built from the same transcript entries
+   * the PDF was rendered from. Attached to the same email so the
+   * recipient can sort / filter messages in Excel.
+   */
+  csvBuffer: Buffer;
   expiresAt: number;
   durationSeconds: number;
   messageCount: number;
@@ -397,7 +404,7 @@ async function endSession(
   let pdfBuffer: Buffer | null = null;
   let pdfFilename = '';
   try {
-    pdfBuffer = await buildSupportTranscriptPdf({
+    const transcriptArgs = {
       sessionStartedAt: startedAt,
       sessionEndedAt: endedAt,
       user: {
@@ -412,7 +419,9 @@ async function endSession(
         author: e.authorName,
         text: e.text,
       })),
-    });
+    };
+    pdfBuffer = await buildSupportTranscriptPdf(transcriptArgs);
+    const csvBuffer = buildSupportTranscriptCsv(transcriptArgs);
     const safeName = (target.username ?? `user_${target.telegram_id}`).replace(
       /[^A-Za-z0-9_-]/g,
       '_',
@@ -424,6 +433,7 @@ async function endSession(
     cacheTranscript(target.telegram_id, {
       buffer: pdfBuffer,
       filename: pdfFilename,
+      csvBuffer,
       durationSeconds: durationSec,
       messageCount: messagesSnapshot.length,
     });
@@ -778,6 +788,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         email,
         kind: 'support',
         pdf: cached.buffer,
+        csv: cached.csvBuffer,
         firstName: ctx.user.first_name ?? null,
         username: ctx.user.username ?? null,
       });
@@ -1110,7 +1121,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     let pdfBuilt = false;
     if (session && session.entries.length > 0) {
       try {
-        const pdfBuffer = await buildSupportTranscriptPdf({
+        const transcriptArgs = {
           sessionStartedAt: session.startedAt,
           sessionEndedAt: endedAt,
           user: {
@@ -1118,7 +1129,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
             first_name: session.firstName,
             username: session.username,
           },
-          endedBy: 'user',
+          endedBy: 'user' as const,
           entries: session.entries.map((e) => ({
             at: e.at,
             side: e.side,
@@ -1127,7 +1138,9 @@ export function registerSupport(bot: Composer<AppCtx>): void {
             author: e.side === 'user' ? session.firstName : 'Kiwi Ai',
             text: e.text,
           })),
-        });
+        };
+        const pdfBuffer = await buildSupportTranscriptPdf(transcriptArgs);
+        const csvBuffer = buildSupportTranscriptCsv(transcriptArgs);
         const safeName = (session.username ?? `user_${ctx.from.id}`).replace(
           /[^A-Za-z0-9_-]/g,
           '_',
@@ -1139,6 +1152,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         cacheTranscript(ctx.from.id, {
           buffer: pdfBuffer,
           filename: pdfFilename,
+          csvBuffer,
           durationSeconds: Math.max(
             0,
             Math.floor(
