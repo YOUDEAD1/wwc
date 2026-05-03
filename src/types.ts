@@ -22,6 +22,9 @@ export type DBUser = {
   referral_available: number;
   referral_transferred: number;
   referral_withdrawn: number;
+  is_banned: boolean;
+  banned_at: string | null;
+  banned_reason: string | null;
 };
 
 export type DBCategory = {

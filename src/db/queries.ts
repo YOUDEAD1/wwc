@@ -918,6 +918,52 @@ export async function findUserByUsername(username: string): Promise<DBUser | nul
   return (data as DBUser) ?? null;
 }
 
+/**
+ * Ban a user. The next time the bot sees an update from this
+ * `telegram_id` it will short-circuit before any handler runs.
+ *
+ * `reason` is optional and shown only in the admin user card; the
+ * banned user themselves never sees it.
+ */
+export async function banUser(
+  telegram_id: number,
+  reason: string | null,
+): Promise<void> {
+  await supabase
+    .from('users')
+    .update({
+      is_banned: true,
+      banned_at: new Date().toISOString(),
+      banned_reason: reason,
+    })
+    .eq('telegram_id', telegram_id);
+}
+
+/** Lift a previous ban. Leaves `banned_reason` as historical record. */
+export async function unbanUser(telegram_id: number): Promise<void> {
+  await supabase
+    .from('users')
+    .update({ is_banned: false, banned_at: null })
+    .eq('telegram_id', telegram_id);
+}
+
+/**
+ * Lightweight ban-check used by the global middleware on every
+ * incoming update. Returns true only if a row exists AND its
+ * `is_banned` flag is set — banning a Telegram ID that hasn't
+ * `/start`-ed the bot yet is intentionally a no-op (their first
+ * /start will create the user as unbanned, which the admin can
+ * then ban from the user card).
+ */
+export async function isUserBanned(telegram_id: number): Promise<boolean> {
+  const { data } = await supabase
+    .from('users')
+    .select('is_banned')
+    .eq('telegram_id', telegram_id)
+    .maybeSingle();
+  return Boolean((data as { is_banned?: boolean } | null)?.is_banned);
+}
+
 /** Add a Telegram user as bot admin. */
 export async function promoteAdmin(telegram_id: number, username?: string | null): Promise<void> {
   await supabase

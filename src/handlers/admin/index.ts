@@ -31,6 +31,8 @@ import {
   listRecentUsers,
   listUsersForAnnouncement,
   promoteAdmin,
+  banUser,
+  unbanUser,
   setDepositAmount,
   setDepositStatus,
   setProductActive,
@@ -1259,6 +1261,13 @@ async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
     `Joined: ${new Date(user.joined_at).toLocaleDateString('en-GB')}`,
     `Orders: *${summary.orders}* • Total spent: *$${summary.spent.toFixed(2)}*`,
     `Admin: ${isAdminUser ? '✅' : '❌'}`,
+    user.is_banned
+      ? `Banned: *YES*${
+          user.banned_at
+            ? ` (since ${new Date(user.banned_at).toLocaleDateString('en-GB')})`
+            : ''
+        }${user.banned_reason ? `\nReason: _${user.banned_reason}_` : ''}`
+      : 'Banned: ❌',
   ];
   const kb = new InlineKeyboard()
     .text('💰 Adjust balance', `adm:usr:bal:${user.telegram_id}`)
@@ -1268,7 +1277,18 @@ async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
   } else {
     kb.text('🛡 Promote admin', `adm:usr:promote:${user.telegram_id}`);
   }
-  kb.row().text('⬅️ Back to users', 'adm:usr:0').text('🏠 Main', 'adm:root');
+  kb.row();
+  // Admins can never be banned via this UI — promote-then-ban
+  // would be self-defeating, so just hide the row entirely.
+  if (!isAdminUser) {
+    if (user.is_banned) {
+      kb.text('♻️ Unban user', `adm:usr:unban:${user.telegram_id}`);
+    } else {
+      kb.text('🚫 Ban user', `adm:usr:ban:${user.telegram_id}`);
+    }
+    kb.row();
+  }
+  kb.text('⬅️ Back to users', 'adm:usr:0').text('🏠 Main', 'adm:root');
   if (ctx.callbackQuery) {
     await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
   } else {
@@ -1318,6 +1338,47 @@ adminBot.callbackQuery(/^adm:usr:bal:(\d+)$/, async (ctx) => {
       '\n\nOr `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
+});
+
+// Step 1 of the ban flow: prompt admin for an optional reason. Admin
+// can send `-` (or just hit /cancel) to ban with no reason. Any other
+// message becomes the reason and is stored on the user row for
+// future reference.
+adminBot.callbackQuery(/^adm:usr:ban:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  if (id === ctx.from!.id) {
+    await ctx.answerCallbackQuery({
+      text: 'Refusing to ban yourself.',
+      show_alert: true,
+    });
+    return;
+  }
+  if (await isAdmin(id)) {
+    await ctx.answerCallbackQuery({
+      text: 'Demote this admin first before banning.',
+      show_alert: true,
+    });
+    return;
+  }
+  ctx.session.adminFlow = { type: 'ban_user', step: 'reason', data: { telegram_id: id } };
+  await ctx.editMessageText(
+    `🚫 *Ban user* \`${id}\`\n\n` +
+      'Send a short reason (admin-only note) or `-` to skip.\n' +
+      'After confirmation the bot will silently drop every update from this ' +
+      'user until you unban them.\n\n' +
+      'Or `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+// One-tap unban — no extra prompt, mirrors how Promote/Demote work.
+adminBot.callbackQuery(/^adm:usr:unban:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await unbanUser(id);
+  await ctx.answerCallbackQuery({ text: '♻️ User unbanned.' });
+  const u = await findUserById(id);
+  if (u) await showUserCard(ctx, u);
 });
 
 // ============================================================
@@ -1793,6 +1854,21 @@ adminBot.on('message:text', async (ctx, next) => {
         reason: delta > 0 ? 'admin manual credit' : 'admin manual debit',
         by: 'admin',
       });
+      return;
+    }
+
+    if (flow.type === 'ban_user') {
+      const reason = text === '-' ? null : text.slice(0, 200);
+      await banUser(flow.data.telegram_id, reason);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `🚫 *User banned.*\n\n` +
+          `\`${flow.data.telegram_id}\` will see no responses from the bot ` +
+          `until you unban them.${
+            reason ? `\n\nReason on file: _${reason}_` : ''
+          }`,
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
       return;
     }
 

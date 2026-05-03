@@ -3,6 +3,7 @@ import { env } from './env.js';
 import { logger } from './logger.js';
 import { sessionMiddleware, type SessionCtx } from './middleware/session.js';
 import { userMiddleware, type AppCtx } from './middleware/user.js';
+import { banMiddleware } from './middleware/ban.js';
 import { registerStart } from './handlers/start.js';
 import { registerShop } from './handlers/shop.js';
 import { registerProfile } from './handlers/profile.js';
@@ -14,9 +15,11 @@ import { refreshSettings } from './services/settings.js';
 export async function buildBot(): Promise<Bot<AppCtx>> {
   const bot = new Bot<AppCtx>(env.BOT_TOKEN);
 
-  // Order matters: session → user (which depends on session) → handlers.
+  // Order matters: session → user (which depends on session) → ban
+  // (which depends on the loaded user row) → handlers.
   bot.use(sessionMiddleware as unknown as (ctx: SessionCtx, next: () => Promise<void>) => Promise<void>);
   bot.use(userMiddleware);
+  bot.use(banMiddleware);
 
   registerStart(bot);
   registerShop(bot);

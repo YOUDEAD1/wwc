@@ -57,6 +57,7 @@ export type AdminFlow =
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
+  | { type: 'ban_user'; step: 'reason'; data: { telegram_id: number } }
   | { type: 'set_deposit_amount'; step: 'amount'; data: { deposit_id: number } }
   | { type: 'add_gift'; step: 'code'; data: Record<string, never> }
   | { type: 'add_gift'; step: 'amount'; data: { code: string } }
