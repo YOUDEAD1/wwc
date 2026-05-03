@@ -13,13 +13,33 @@ import { buildSupportTranscriptPdf } from '../services/pdfReport.js';
 import { sendReportEmail } from '../services/mailer.js';
 
 /**
- * Set of users currently waiting for a one-shot AI Support reply.
- *
- * The AI Support flow is single-message: tap the button, type a
- * question, get one answer back, and we drop them from the set so the
- * next message is treated normally.
+ * Per-user AI Support session state. The flow is multi-turn now:
+ * tap the button, ask any number of questions, then tap Cancel to
+ * close. While the entry exists in the map, every plain text
+ * message from the user is fed into `answerAI` and the answer is
+ * sent back. On Cancel the bot builds a chat-style PDF transcript
+ * (using the same renderer Live Support uses), caches it, and
+ * shows the user the same `Send chat PDF to email` button as the
+ * Live Support closure flow.
  */
-const aiArmed = new Set<number>();
+type AiSession = {
+  startedAt: Date;
+  firstName: string;
+  username: string | null;
+  entries: { at: Date; side: 'user' | 'admin'; text: string }[];
+};
+const aiSessions = new Map<number, AiSession>();
+
+/**
+ * Drop the AI session for `userId` if there is one. Called from
+ * `/start` and `main:open` so a user who navigates away from the
+ * AI Support screen via menu instead of tapping Cancel doesn't
+ * accidentally keep getting AI replies on their next text message.
+ */
+export function clearAiSession(userId: number | undefined): void {
+  if (userId === undefined) return;
+  aiSessions.delete(userId);
+}
 
 /**
  * Single-slot Live Support state. Only one user can be in an active
@@ -1023,19 +1043,142 @@ export function registerSupport(bot: Composer<AppCtx>): void {
   // ------------------------------ AI Support ------------------------
   bot.callbackQuery('support:ai', async (ctx) => {
     await ctx.answerCallbackQuery();
+    if (!ctx.from) return;
+    if (!aiSessions.has(ctx.from.id)) {
+      aiSessions.set(ctx.from.id, {
+        startedAt: new Date(),
+        firstName: ctx.from.first_name ?? '—',
+        username: ctx.from.username ?? null,
+        entries: [],
+      });
+    }
     await ctx.editMessageText(
-      renderMdHtml(`${ctx.t('support.ai.title')}\n\n${ctx.t('support.ai.prompt')}`),
-      { parse_mode: 'HTML', reply_markup: backToMenuKeyboard(ctx.lang) },
+      renderMdHtml(ctx.t('support.ai.session_open')),
+      {
+        parse_mode: 'HTML',
+        reply_markup: aiSessionKeyboard(ctx.lang),
+      },
     );
-    if (ctx.from) aiArmed.add(ctx.from.id);
   });
 
-  bot.on('message:text', async (ctx, next) => {
-    if (!ctx.from || !aiArmed.has(ctx.from.id)) return next();
-    aiArmed.delete(ctx.from.id);
-    const answer = await answerAI(ctx.message.text);
-    await ctx.reply(answer, { reply_markup: backToMenuKeyboard(ctx.lang) });
+  // Cancel button on the AI Support screen. Mirrors the Live
+  // Support closure flow: builds a chat-style PDF, caches it, and
+  // posts the same `📧 Send chat PDF to email` follow-up button so
+  // the user can keep a copy of the conversation.
+  bot.callbackQuery('support:ai:end', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!ctx.from) return;
+    const session = aiSessions.get(ctx.from.id);
+    if (!session) {
+      // Already cancelled (e.g. double-tap). Just bounce back to menu.
+      await ctx.editMessageText(
+        renderMdHtml(ctx.t('support.ai.user_ended')),
+        { parse_mode: 'HTML', reply_markup: backToMenuKeyboard(ctx.lang) },
+      );
+      return;
+    }
+    aiSessions.delete(ctx.from.id);
+    const endedAt = new Date();
+    let pdfBuffer: Buffer | null = null;
+    let pdfFilename = '';
+    if (session.entries.length > 0) {
+      try {
+        pdfBuffer = await buildSupportTranscriptPdf({
+          sessionStartedAt: session.startedAt,
+          sessionEndedAt: endedAt,
+          user: {
+            telegram_id: ctx.from.id,
+            first_name: session.firstName,
+            username: session.username,
+          },
+          endedBy: 'user',
+          entries: session.entries.map((e) => ({
+            at: e.at,
+            side: e.side,
+            // Map our admin-side entries to a friendlier label so
+            // the PDF reads "AI Assistant" instead of an admin name
+            // even though we reuse the Live Support renderer.
+            author: e.side === 'user' ? session.firstName : 'AI Assistant',
+            text: e.text,
+          })),
+        });
+        const safeName = (session.username ?? `user_${ctx.from.id}`).replace(
+          /[^A-Za-z0-9_-]/g,
+          '_',
+        );
+        pdfFilename = `ai_support_${safeName}_${session.startedAt
+          .toISOString()
+          .slice(0, 19)
+          .replace(/[:T]/g, '-')}.pdf`;
+        cacheTranscript(ctx.from.id, {
+          buffer: pdfBuffer,
+          filename: pdfFilename,
+          durationSeconds: Math.max(
+            0,
+            Math.floor(
+              (endedAt.getTime() - session.startedAt.getTime()) / 1000,
+            ),
+          ),
+          messageCount: session.entries.length,
+        });
+      } catch (err) {
+        logger.warn({ err }, 'ai-support: failed to build transcript PDF');
+      }
+    }
+    await ctx.editMessageText(
+      renderMdHtml(ctx.t('support.ai.user_ended')),
+      {
+        parse_mode: 'HTML',
+        reply_markup: pdfBuffer
+          ? userClosureKeyboard(ctx.lang)
+          : backToMenuKeyboard(ctx.lang),
+      },
+    );
   });
+
+  // Multi-turn message handler. While the user has an active AI
+  // session, every plain text message is fed into the configured
+  // provider and the answer is replied to with the cancel keyboard
+  // re-attached so they can end the session at any point. Runs after
+  // the live-support relay handler so a user mid-relay can't
+  // accidentally trigger AI replies.
+  bot.on('message:text', async (ctx, next) => {
+    if (!ctx.from) return next();
+    const session = aiSessions.get(ctx.from.id);
+    if (!session) return next();
+    const question = ctx.message.text;
+    session.entries.push({ at: new Date(), side: 'user', text: question });
+    // Show a typing indicator while the upstream provider is working.
+    try {
+      await ctx.replyWithChatAction('typing');
+    } catch {
+      // Best-effort UX hint, never fatal.
+    }
+    const answer = await answerAI(question);
+    session.entries.push({ at: new Date(), side: 'admin', text: answer });
+    // Render with premium emojis + markdown bold/italics. If the
+    // upstream provider emits unbalanced markdown that breaks
+    // Telegram's HTML parser, fall back to a plain-text send so
+    // the user still sees the answer.
+    try {
+      await ctx.reply(renderMdHtml(answer), {
+        parse_mode: 'HTML',
+        reply_markup: aiSessionKeyboard(ctx.lang),
+      });
+    } catch (err) {
+      logger.warn({ err }, 'ai-support: HTML reply failed, falling back to plain text');
+      await ctx.reply(answer, { reply_markup: aiSessionKeyboard(ctx.lang) });
+    }
+  });
+}
+
+/**
+ * Keyboard rendered under the AI Support prompt and every assistant
+ * reply. The single Cancel button calls `support:ai:end` which
+ * closes the session and offers the chat-as-PDF email button.
+ */
+function aiSessionKeyboard(lang: Lang): InlineKeyboard {
+  return inlineBtn(new InlineKeyboard(), lang, 'support_cancel', 'support:ai:end');
 }
 
 /**

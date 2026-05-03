@@ -7,6 +7,7 @@ import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
 import { env } from '../env.js';
 import * as adminLog from '../services/adminLog.js';
+import { clearAiSession } from './support.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -107,6 +108,9 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
+    // Reset AI Support state so a stale session doesn't intercept
+    // later text messages after the user navigates away from it.
+    clearAiSession(ctx.from?.id);
     // First-start admin log — fires only on the very first /start so
     // the admin sees a clean "new user joined" entry. The sentinel
     // is set by getOrCreateUser when the row was just inserted.
@@ -129,6 +133,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
 
   bot.command('menu', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
+    clearAiSession(ctx.from?.id);
     await showMainMenu(ctx, { fresh: true });
   });
 
@@ -138,6 +143,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
     // Reset any in-flight user flow when returning to the main menu so
     // a stale prompt (e.g. set_email) can't capture later messages.
     ctx.session.userFlow = undefined;
+    clearAiSession(ctx.from?.id);
     await showMainMenu(ctx);
   });
 
