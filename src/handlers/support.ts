@@ -1113,11 +1113,20 @@ async function callOpenAI(
 }
 
 /**
+ * Default Gemini model when the operator hasn't picked one
+ * explicitly via `OPENAI_MODEL`. `gemini-2.5-flash` is the current
+ * generally-available "best price-performance" Gemini model on AI
+ * Studio's free tier (the 1.5 family was deprecated in 2025 and
+ * now returns 404 on the REST API).
+ */
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+
+/**
  * Call Google AI Studio (Gemini) via the public REST endpoint.
- * Uses the `gemini-1.5-flash` model by default (free tier on AI
- * Studio at the time of writing). Override the model name by
- * setting `OPENAI_MODEL` to a Gemini model id (e.g.
- * `gemini-1.5-pro`) — the env var is reused as a generic
+ * Uses {@link DEFAULT_GEMINI_MODEL} by default. Override by setting
+ * `OPENAI_MODEL` to a Gemini model id (e.g. `gemini-2.5-pro`,
+ * `gemini-2.5-flash-lite`, or a preview id like
+ * `gemini-3-flash-preview`) — the env var is reused as a generic
  * "preferred model" knob across providers.
  */
 async function callGemini(
@@ -1126,12 +1135,15 @@ async function callGemini(
   question: string,
 ): Promise<string> {
   // Reuse OPENAI_MODEL as a generic knob unless it still points at
-  // an OpenAI default (`gpt-…`), in which case fall back to a
-  // sensible Gemini default. Keeps the env surface minimal — no
-  // need for a separate GEMINI_MODEL variable.
-  const model = env.OPENAI_MODEL.startsWith('gpt-')
-    ? 'gemini-1.5-flash'
-    : env.OPENAI_MODEL;
+  // an OpenAI default (`gpt-…`) or one of the now-deprecated
+  // Gemini 1.5 ids, in which case fall back to a sensible Gemini
+  // default. Keeps the env surface minimal — no need for a
+  // separate GEMINI_MODEL variable.
+  const configured = env.OPENAI_MODEL;
+  const model =
+    configured.startsWith('gpt-') || configured.startsWith('gemini-1.5')
+      ? DEFAULT_GEMINI_MODEL
+      : configured;
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` +
     `?key=${encodeURIComponent(apiKey)}`;
@@ -1146,7 +1158,16 @@ async function callGemini(
   });
   if (!res.ok) {
     const body = await res.text();
-    logger.warn({ status: res.status, body }, 'AI: Gemini call failed');
+    logger.warn(
+      { status: res.status, body, model },
+      'AI: Gemini call failed',
+    );
+    if (res.status === 404) {
+      throw new Error(
+        `Gemini model "${model}" not found. Set OPENAI_MODEL to a current ` +
+          'Gemini model id (e.g. gemini-2.5-flash, gemini-2.5-pro).',
+      );
+    }
     throw new Error(`Gemini ${res.status}`);
   }
   const json = (await res.json()) as {
