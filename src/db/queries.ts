@@ -13,6 +13,7 @@ import type {
   DBWalletLedger,
   DBGiftCode,
   DBGiftCodeRedemption,
+  DBUserPriceOverride,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -356,6 +357,133 @@ export async function decrementProductStock(id: number, qty: number): Promise<vo
   const { data: p } = await supabase.from('products').select('stock').eq('id', id).single();
   const cur = Number(p?.stock ?? 0);
   await supabase.from('products').update({ stock: Math.max(0, cur - qty) }).eq('id', id);
+}
+
+// ---------- Per-user price overrides ----------
+
+/**
+ * Look up the price override (if any) for a single user × product
+ * pair. Returns the override price as a `number`, or `null` when no
+ * override is set — callers must fall back to the product's default
+ * `products.price`.
+ */
+export async function getUserProductPrice(
+  telegram_id: number,
+  product_id: number,
+): Promise<number | null> {
+  const { data } = await supabase
+    .from('user_price_overrides')
+    .select('price')
+    .eq('telegram_id', telegram_id)
+    .eq('product_id', product_id)
+    .maybeSingle();
+  if (!data) return null;
+  return Number((data as { price: number }).price);
+}
+
+/**
+ * Bulk lookup of overrides for one user across many products.
+ * Returns a `Map<product_id, price>` containing only entries that
+ * actually have an override — callers iterate the requested product
+ * ids and `map.get(id) ?? product.price`.
+ *
+ * Used by the shop list view so we don't have to issue one query
+ * per product on every page render.
+ */
+export async function getUserProductPriceMap(
+  telegram_id: number,
+  product_ids: number[],
+): Promise<Map<number, number>> {
+  if (product_ids.length === 0) return new Map();
+  const { data } = await supabase
+    .from('user_price_overrides')
+    .select('product_id, price')
+    .eq('telegram_id', telegram_id)
+    .in('product_id', product_ids);
+  const map = new Map<number, number>();
+  for (const row of (data ?? []) as { product_id: number; price: number }[]) {
+    map.set(Number(row.product_id), Number(row.price));
+  }
+  return map;
+}
+
+/**
+ * List every override for a single user, joined with the underlying
+ * product so the admin UI can show "Product Name — default $X →
+ * override $Y" lines.
+ */
+export async function listUserPriceOverrides(
+  telegram_id: number,
+): Promise<Array<DBUserPriceOverride & { product_name: string; product_default_price: number }>> {
+  const { data } = await supabase
+    .from('user_price_overrides')
+    .select('*, products(name, price)')
+    .eq('telegram_id', telegram_id)
+    .order('updated_at', { ascending: false });
+  return ((data ?? []) as Array<
+    DBUserPriceOverride & { products: { name: string; price: number } | null }
+  >).map((row) => ({
+    telegram_id: Number(row.telegram_id),
+    product_id: Number(row.product_id),
+    price: Number(row.price),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    created_by: row.created_by,
+    product_name: row.products?.name ?? `#${row.product_id}`,
+    product_default_price: Number(row.products?.price ?? 0),
+  }));
+}
+
+/**
+ * Create or update a price override. Upsert keyed by
+ * (telegram_id, product_id) so calling this with the same pair just
+ * refreshes the price + bumps `updated_at`.
+ */
+export async function setUserProductPrice(args: {
+  telegram_id: number;
+  product_id: number;
+  price: number;
+  created_by: number | null;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('user_price_overrides')
+    .upsert(
+      {
+        telegram_id: args.telegram_id,
+        product_id: args.product_id,
+        price: args.price,
+        created_by: args.created_by,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'telegram_id,product_id' },
+    );
+  if (error) {
+    logger.error({ err: error, args }, 'setUserProductPrice failed');
+    throw error;
+  }
+}
+
+/** Drop a single override so the user falls back to the default price. */
+export async function clearUserProductPrice(
+  telegram_id: number,
+  product_id: number,
+): Promise<void> {
+  await supabase
+    .from('user_price_overrides')
+    .delete()
+    .eq('telegram_id', telegram_id)
+    .eq('product_id', product_id);
+}
+
+/** Drop every override for a user (admin convenience). */
+export async function clearAllUserPriceOverrides(
+  telegram_id: number,
+): Promise<number> {
+  const { count } = await supabase
+    .from('user_price_overrides')
+    .delete({ count: 'exact' })
+    .eq('telegram_id', telegram_id);
+  return count ?? 0;
 }
 
 // ---------- Orders ----------

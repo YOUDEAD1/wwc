@@ -3,6 +3,7 @@ import type { AppCtx } from '../middleware/user.js';
 import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderMdHtml } from '../services/premium.js';
 import { getProduct } from '../db/queries.js';
+import { applyUserPriceToProduct } from '../services/pricing.js';
 import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
 import { env } from '../env.js';
@@ -81,8 +82,9 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   if (!m) return false;
   const id = Number(m[1]);
   if (!Number.isFinite(id) || id <= 0) return false;
-  const p = await getProduct(id);
-  if (!p) return false;
+  const raw = await getProduct(id);
+  if (!raw) return false;
+  const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[p.id] ?? QTY_MIN;
   const total = (p.price * qty).toFixed(2);
   const body = [

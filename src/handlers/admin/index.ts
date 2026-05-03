@@ -33,6 +33,11 @@ import {
   promoteAdmin,
   banUser,
   unbanUser,
+  listUserPriceOverrides,
+  setUserProductPrice,
+  clearUserProductPrice,
+  clearAllUserPriceOverrides,
+  getProduct,
   setDepositAmount,
   setDepositStatus,
   setProductActive,
@@ -116,6 +121,7 @@ function rootMenu(): InlineKeyboard {
     .text('📊 Stats', 'adm:stats')
     .row()
     .text('🎁 Gift Codes', 'adm:gift')
+    .text('💎 Custom Prices', 'adm:price')
     .row()
     .text('🏠 Main Menu', 'adm:close');
 }
@@ -1288,6 +1294,7 @@ async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
     }
     kb.row();
   }
+  kb.text('💎 Custom prices', `adm:price:u:${user.telegram_id}`).row();
   kb.text('⬅️ Back to users', 'adm:usr:0').text('🏠 Main', 'adm:root');
   if (ctx.callbackQuery) {
     await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
@@ -1379,6 +1386,244 @@ adminBot.callbackQuery(/^adm:usr:unban:(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: '♻️ User unbanned.' });
   const u = await findUserById(id);
   if (u) await showUserCard(ctx, u);
+});
+
+// ============================================================
+// Custom Prices — per-user, per-product price overrides.
+//
+// Flow:
+//   adm:price            → ask admin for telegram_id (or @username)
+//   adm:price:u:<tgid>   → render the user's override list with
+//                          buttons to add a new override, edit /
+//                          clear an existing one, bulk paste, or
+//                          clear-all.
+//   adm:price:add:<tgid> → list every active product so the admin
+//                          can pick which one to override next.
+//   adm:price:set:<tgid>:<pid>
+//                        → prompt for the override price.
+//   adm:price:del:<tgid>:<pid>
+//                        → drop a single override.
+//   adm:price:bulk:<tgid> → enter bulk-paste mode.
+//   adm:price:clr:<tgid> → drop every override for the user.
+// ============================================================
+
+const PRICE_PRODUCTS_PER_PAGE = 8;
+
+async function showCustomPriceUserPick(ctx: AppCtx): Promise<void> {
+  ctx.session.adminFlow = {
+    type: 'price_overrides_pick_user',
+    step: 'query',
+    data: {},
+  };
+  const body =
+    '💎 *Custom Prices*\n\n' +
+    'Per-user, per-product price overrides. Send the user\'s ' +
+    'Telegram numeric ID or `@username` to start editing.\n\n' +
+    'Tip: you can pre-set prices for users who haven\'t `/start`-ed ' +
+    'the bot yet — paste their numeric Telegram ID.\n\n' +
+    'Or `/cancel`.';
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(body, {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+  } else {
+    await ctx.reply(body, {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+  }
+}
+
+async function showCustomPriceUserCard(
+  ctx: AppCtx,
+  telegram_id: number,
+): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const overrides = await listUserPriceOverrides(telegram_id);
+  const targetUser = await findUserById(telegram_id);
+  const handle = targetUser?.username
+    ? `@${targetUser.username}`
+    : (targetUser?.first_name ?? `id ${telegram_id}`);
+  const lines: string[] = [
+    `💎 *Custom Prices for* \`${telegram_id}\` _(${escapeHtml(handle)})_`,
+    '',
+  ];
+  if (overrides.length === 0) {
+    lines.push('_No overrides yet._ Tap *Add override* to set one.');
+  } else {
+    lines.push(`Active overrides: *${overrides.length}*`, '');
+    for (const o of overrides) {
+      lines.push(
+        `\`#${o.product_id}\` ${escapeHtml(o.product_name)}: ` +
+          `*$${o.price.toFixed(2)}* ` +
+          `_(default $${o.product_default_price.toFixed(2)})_`,
+      );
+    }
+  }
+  const kb = new InlineKeyboard()
+    .text('➕ Add / edit override', `adm:price:add:${telegram_id}:0`)
+    .row()
+    .text('📋 Bulk paste', `adm:price:bulk:${telegram_id}`)
+    .row();
+  if (overrides.length > 0) {
+    // Clear-rows: each override gets a one-tap delete row.
+    for (const o of overrides) {
+      kb.text(
+        `🗑 ${o.product_name.slice(0, 40)} ($${o.price.toFixed(2)})`,
+        `adm:price:del:${telegram_id}:${o.product_id}`,
+      ).row();
+    }
+    kb.text('🧹 Clear ALL overrides', `adm:price:clr:${telegram_id}`).row();
+  }
+  kb.text('⬅️ Back', 'adm:price');
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
+  } else {
+    await ctx.reply(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
+  }
+}
+
+async function showCustomPriceProductPicker(
+  ctx: AppCtx,
+  telegram_id: number,
+  page: number,
+): Promise<void> {
+  const { rows, total } = await listAllProducts(page, PRICE_PRODUCTS_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(total / PRICE_PRODUCTS_PER_PAGE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const overrides = await listUserPriceOverrides(telegram_id);
+  const overrideMap = new Map(overrides.map((o) => [o.product_id, o.price]));
+
+  const lines = [
+    `💎 *Pick a product* — page ${safePage + 1}/${totalPages}`,
+    '',
+    `Editing overrides for \`${telegram_id}\`. ` +
+      'Tap a product to set/replace its override price.',
+  ];
+  const kb = new InlineKeyboard();
+  for (const p of rows) {
+    const cur = overrideMap.get(p.id);
+    const label =
+      cur !== undefined
+        ? `${p.name} — $${cur.toFixed(2)} (was $${Number(p.price).toFixed(2)})`
+        : `${p.name} — $${Number(p.price).toFixed(2)}`;
+    kb.text(label.slice(0, 60), `adm:price:set:${telegram_id}:${p.id}`).row();
+  }
+  if (safePage > 0) {
+    kb.text('◀ Prev', `adm:price:add:${telegram_id}:${safePage - 1}`);
+  }
+  if (safePage + 1 < totalPages) {
+    kb.text('Next ▶', `adm:price:add:${telegram_id}:${safePage + 1}`);
+  }
+  kb.row().text('⬅️ Back', `adm:price:u:${telegram_id}`);
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery('adm:price', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showCustomPriceUserPick(ctx);
+});
+
+adminBot.callbackQuery(/^adm:price:u:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showCustomPriceUserCard(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:price:add:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showCustomPriceProductPicker(
+    ctx,
+    Number(ctx.match[1]),
+    Number(ctx.match[2]),
+  );
+});
+
+adminBot.callbackQuery(/^adm:price:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const telegram_id = Number(ctx.match[1]);
+  const product_id = Number(ctx.match[2]);
+  const product = await getProduct(product_id);
+  if (!product) {
+    await ctx.editMessageText('Product no longer exists.', {
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+    return;
+  }
+  ctx.session.adminFlow = {
+    type: 'price_override_set',
+    step: 'price',
+    data: { telegram_id, product_id },
+  };
+  await ctx.editMessageText(
+    `💎 *Set override*\n\n` +
+      `User: \`${telegram_id}\`\n` +
+      `Product: ${escapeHtml(product.name)} (\`#${product.id}\`)\n` +
+      `Default price: *$${Number(product.price).toFixed(2)}*\n\n` +
+      'Send the new override price (e.g. `12.50`). Send `0` to make ' +
+      'it free for this user, or `/cancel` to abort.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:price:del:(\d+):(\d+)$/, async (ctx) => {
+  const telegram_id = Number(ctx.match[1]);
+  const product_id = Number(ctx.match[2]);
+  await clearUserProductPrice(telegram_id, product_id);
+  await ctx.answerCallbackQuery({ text: '🗑 Override removed.' });
+  await showCustomPriceUserCard(ctx, telegram_id);
+});
+
+adminBot.callbackQuery(/^adm:price:clr:(\d+)$/, async (ctx) => {
+  const telegram_id = Number(ctx.match[1]);
+  const n = await clearAllUserPriceOverrides(telegram_id);
+  await ctx.answerCallbackQuery({
+    text: n === 0 ? 'No overrides to clear.' : `🧹 Cleared ${n} overrides.`,
+  });
+  await showCustomPriceUserCard(ctx, telegram_id);
+});
+
+adminBot.callbackQuery(/^adm:price:bulk:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const telegram_id = Number(ctx.match[1]);
+  ctx.session.adminFlow = {
+    type: 'price_override_bulk',
+    step: 'block',
+    data: { telegram_id },
+  };
+  await ctx.editMessageText(
+    `📋 *Bulk paste* — for user \`${telegram_id}\`\n\n` +
+      'Send a single message with one override per line, in the form:\n' +
+      '```\n' +
+      '<product_id> <price>\n' +
+      '<product_id> <price>\n' +
+      '```\n' +
+      'Example:\n' +
+      '```\n' +
+      '17 9.99\n' +
+      '23 0\n' +
+      '42 100.50\n' +
+      '```\n' +
+      'Lines starting with `#` are ignored. Existing overrides for the ' +
+      'listed products are replaced; others are left untouched.\n\n' +
+      'Or `/cancel`.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+    },
+  );
 });
 
 // ============================================================
@@ -1869,6 +2114,110 @@ adminBot.on('message:text', async (ctx, next) => {
           }`,
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
+      return;
+    }
+
+    if (flow.type === 'price_overrides_pick_user') {
+      const query = text.replace(/^@/, '');
+      const numeric = /^\d+$/.test(query);
+      // Username path requires the user to have started the bot at
+      // least once (otherwise we have no row to look up). Numeric
+      // path works regardless — the override system is keyed by
+      // telegram_id, not by users.id.
+      let telegram_id: number | null = null;
+      if (numeric) {
+        telegram_id = Number(query);
+      } else {
+        const u = await findUserByUsername(query);
+        if (u) telegram_id = u.telegram_id;
+      }
+      if (telegram_id === null || !Number.isFinite(telegram_id) || telegram_id <= 0) {
+        await ctx.reply(
+          'Could not resolve that user. Send a numeric Telegram ID ' +
+            '(e.g. `123456789`) or `@username` of a user who has ' +
+            'previously started the bot. Or `/cancel`.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await showCustomPriceUserCard(ctx, telegram_id);
+      return;
+    }
+
+    if (flow.type === 'price_override_set') {
+      const price = Number(text);
+      if (!Number.isFinite(price) || price < 0) {
+        await ctx.reply('❌ Send a non-negative number, e.g. `9.99` or `0`.');
+        return;
+      }
+      await setUserProductPrice({
+        telegram_id: flow.data.telegram_id,
+        product_id: flow.data.product_id,
+        price,
+        created_by: ctx.from!.id,
+      });
+      const target = flow.data.telegram_id;
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `💎 *Override saved.*\n\n` +
+          `User \`${target}\` now sees product \`#${flow.data.product_id}\` ` +
+          `at *$${price.toFixed(2)}*.`,
+        { parse_mode: 'Markdown' },
+      );
+      await showCustomPriceUserCard(ctx, target);
+      return;
+    }
+
+    if (flow.type === 'price_override_bulk') {
+      const target = flow.data.telegram_id;
+      const lines = text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.startsWith('#'));
+      const ok: string[] = [];
+      const bad: string[] = [];
+      for (const line of lines) {
+        const m = line.match(/^(\d+)\s+(-?\d+(?:\.\d+)?)$/);
+        if (!m) {
+          bad.push(`• \`${line.slice(0, 40)}\` — bad format`);
+          continue;
+        }
+        const product_id = Number(m[1]);
+        const price = Number(m[2]);
+        if (!Number.isFinite(price) || price < 0) {
+          bad.push(`• \`#${product_id}\` — price must be ≥ 0`);
+          continue;
+        }
+        const product = await getProduct(product_id);
+        if (!product) {
+          bad.push(`• \`#${product_id}\` — product not found`);
+          continue;
+        }
+        await setUserProductPrice({
+          telegram_id: target,
+          product_id,
+          price,
+          created_by: ctx.from!.id,
+        });
+        ok.push(
+          `• ${escapeHtml(product.name)} (\`#${product_id}\`) → *$${price.toFixed(2)}*`,
+        );
+      }
+      ctx.session.adminFlow = undefined;
+      const summary = [
+        `📋 *Bulk paste applied* for \`${target}\``,
+        '',
+        ok.length > 0 ? `*Saved (${ok.length}):*` : '_No overrides saved._',
+        ...ok,
+        '',
+        bad.length > 0 ? `*Skipped (${bad.length}):*` : '',
+        ...bad,
+      ]
+        .filter((l) => l !== '')
+        .join('\n');
+      await ctx.reply(summary, { parse_mode: 'Markdown' });
+      await showCustomPriceUserCard(ctx, target);
       return;
     }
 
