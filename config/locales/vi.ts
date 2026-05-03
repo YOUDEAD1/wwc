@@ -21,6 +21,10 @@ export const vi: Record<string, string> = {
   'btn.view_note': '📝 Xem ghi chú',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
+  'btn.qty.max': 'Tối đa',
+  'btn.qty.reset': 'Đặt lại',
+  'btn.qty.confirm': '✅ Xác nhận',
+  'btn.contact_admin': '💬 Liên hệ Admin',
   'btn.out_of_stock': '❌ Hết hàng',
   'btn.my_orders': '🧾 Đơn hàng của tôi',
   'btn.refer': '🎁 Giới thiệu',
@@ -47,10 +51,17 @@ export const vi: Record<string, string> = {
   'btn.stats_refresh': '🔄 Làm mới',
   'btn.stats_back': '◀️ Quay lại',
 
-  'shop.home.header': '*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
-  'shop.choose_category': '*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
+  'shop.home.header': '*Sản phẩm có sẵn:*',
+  'shop.choose_category': '*Sản phẩm có sẵn:*',
   'shop.qty.prompt': '🔢 Nhập số lượng (1–{max}) và gửi.',
   'shop.qty.invalid': '❌ Số không hợp lệ — vui lòng gửi giá trị từ 1 đến {max}.',
+  'shop.qty.editor.title':
+    '🔢 *Chọn số lượng*\n\n' +
+    '*{name}*\n' +
+    'Tồn kho: *{stock}*\n' +
+    'Đơn giá: *{price} USDT*\n\n' +
+    'Đã chọn: <code>{qty}</code>\n' +
+    'Tổng: *{total} USDT*',
   'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
   'shop.empty_products': 'Chưa có sản phẩm trong danh mục này.',
   'shop.product.line.name': '*{name}*',

@@ -23,6 +23,10 @@ export const en: Record<string, string> = {
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
+  'btn.qty.max': 'Max',
+  'btn.qty.reset': 'Reset',
+  'btn.qty.confirm': '✅ Confirm',
+  'btn.contact_admin': '💬 Contact Admin',
   'btn.out_of_stock': '❌ Out of Stock',
   'btn.my_orders': '🧾 My Orders',
   'btn.refer': '🎁 Refer',
@@ -57,12 +61,24 @@ export const en: Record<string, string> = {
 
   // ---------- Shop ----------
   // Shop home — single all-products list (categories step removed).
-  'shop.home.header': '*Available Products:*\n_{total} products — page {page}/{pages}_',
+  // Header is a single bold line; pagination lives in the keyboard
+  // footer (Prev / Refresh / Next / page indicator).
+  'shop.home.header': '*Available Products:*',
   // Legacy key, kept for any callsite still on the old categories
-  // flow. Same shape as `shop.home.header` so output is consistent.
-  'shop.choose_category': '*Available Products:*\n_{total} products — page {page}/{pages}_',
+  // flow.
+  'shop.choose_category': '*Available Products:*',
   'shop.qty.prompt': '🔢 Type a quantity (1–{max}) and send.',
   'shop.qty.invalid': '❌ Invalid number — please send a value between 1 and {max}.',
+  // Inline qty-editor screen body. Renders as a "big counter" with
+  // the current selected qty in monospace, the product name, and
+  // the running total cost.
+  'shop.qty.editor.title':
+    '🔢 *Select quantity*\n\n' +
+    '*{name}*\n' +
+    'In stock: *{stock}*\n' +
+    'Unit price: *{price} USDT*\n\n' +
+    'Selected: <code>{qty}</code>\n' +
+    'Total: *{total} USDT*',
   'shop.empty_categories': 'No categories yet. Please check back later.',
   'shop.empty_products': 'No products in this category yet.',
   'shop.product.line.name': '*{name}*',

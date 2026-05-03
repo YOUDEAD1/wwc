@@ -580,6 +580,118 @@ export async function getStats(): Promise<Stats> {
   };
 }
 
+/**
+ * Per-product sales aggregate, used by `/admin → 📊 Stats` to
+ * surface what's actually moving (revenue, units, last sale,
+ * remaining stock). Only counts orders in `paid` status — refunded
+ * and cancelled rows are excluded so the totals match the wallet
+ * ledger.
+ *
+ * Aggregation key is `product_id` when present, else falls back to
+ * `product_name` so historic orders for deleted products still
+ * appear in the report. `stock_left` is `null` for deleted
+ * products.
+ */
+export type ProductSalesRow = {
+  product_id: number | null;
+  product_name: string;
+  units_sold: number;
+  revenue: number;
+  stock_left: number | null;
+  last_sold_at: string | null;
+};
+
+export async function getProductSales(limit = 50): Promise<ProductSalesRow[]> {
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('product_id, product_name, qty, total, created_at, status')
+    .eq('status', 'paid')
+    .order('created_at', { ascending: false });
+  type OrderRow = Pick<
+    DBOrder,
+    'product_id' | 'product_name' | 'qty' | 'total' | 'created_at' | 'status'
+  >;
+  const rows = (orders ?? []) as OrderRow[];
+  const byKey = new Map<string, ProductSalesRow>();
+  for (const o of rows) {
+    const key =
+      o.product_id !== null ? `id:${o.product_id}` : `name:${o.product_name}`;
+    let row = byKey.get(key);
+    if (!row) {
+      row = {
+        product_id: o.product_id,
+        product_name: o.product_name,
+        units_sold: 0,
+        revenue: 0,
+        stock_left: null,
+        last_sold_at: o.created_at,
+      };
+      byKey.set(key, row);
+    }
+    row.units_sold += Number(o.qty);
+    row.revenue += Number(o.total);
+    if ((row.last_sold_at ?? '') < o.created_at) row.last_sold_at = o.created_at;
+  }
+  // Single round-trip to fill in current stock for products that
+  // still exist. Deleted products keep `stock_left = null`.
+  const productIds = Array.from(byKey.values())
+    .map((r) => r.product_id)
+    .filter((x): x is number => x !== null);
+  if (productIds.length > 0) {
+    const { data: prods } = await supabase
+      .from('products')
+      .select('id, stock')
+      .in('id', productIds);
+    const stockMap = new Map<number, number>();
+    for (const p of (prods ?? []) as Array<{ id: number; stock: number }>) {
+      stockMap.set(p.id, p.stock);
+    }
+    for (const row of byKey.values()) {
+      if (row.product_id !== null) {
+        row.stock_left = stockMap.get(row.product_id) ?? null;
+      }
+    }
+  }
+  const list = Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
+  // Round revenue to 2dp on the way out so callers don't have to.
+  for (const r of list) r.revenue = Number(r.revenue.toFixed(2));
+  return list.slice(0, limit);
+}
+
+/**
+ * Daily revenue trend for the last `days` days (default 7), ordered
+ * from oldest → newest. Days with no paid orders are returned with
+ * `revenue: 0, orders: 0` so the caller can render a complete row
+ * per day without gaps.
+ */
+export async function getDailyRevenue(
+  days = 7,
+): Promise<Array<{ date: string; revenue: number; orders: number }>> {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { data } = await supabase
+    .from('orders')
+    .select('total, created_at, status')
+    .eq('status', 'paid')
+    .gte('created_at', since);
+  type Row = Pick<DBOrder, 'total' | 'created_at' | 'status'>;
+  const rows = (data ?? []) as Row[];
+  const byDay = new Map<string, { revenue: number; orders: number }>();
+  for (const r of rows) {
+    const date = r.created_at.slice(0, 10);
+    const cur = byDay.get(date) ?? { revenue: 0, orders: 0 };
+    cur.revenue += Number(r.total);
+    cur.orders += 1;
+    byDay.set(date, cur);
+  }
+  const result: Array<{ date: string; revenue: number; orders: number }> = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
+    const v = byDay.get(d) ?? { revenue: 0, orders: 0 };
+    result.push({ date: d, revenue: Number(v.revenue.toFixed(2)), orders: v.orders });
+  }
+  return result;
+}
+
 export async function listAllProducts(
   page: number,
   perPage: number,

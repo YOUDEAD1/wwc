@@ -1,6 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
-import { inlineBtn } from './helpers.js';
+import { inlineBtn, inlineUrl } from './helpers.js';
 import { getStateColor } from '../services/settings.js';
 import type { DBProduct } from '../types.js';
 
@@ -98,4 +98,60 @@ export function productKeyboard(
 
 export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
   return inlineBtn(new InlineKeyboard(), lang, 'back', 'shop:home');
+}
+
+/**
+ * Big inline counter for picking a custom quantity. Shown when the
+ * user taps the qty digit on the product page. Replaces the legacy
+ * force-reply "Type a quantity (1–999) and send." prompt.
+ *
+ * Layout:
+ *   ┌──────┬──────┬──────┐
+ *   │ −100 │ −10  │ −1   │
+ *   ├──────┼──────┼──────┤
+ *   │ +1   │ +10  │ +100 │
+ *   ├──────┴──────┴──────┤
+ *   │ Max          Reset │
+ *   ├──────────┬─────────┤
+ *   │ ✅ Confirm│  Back   │
+ *   ├──────────┴─────────┤
+ *   │ 💬 Contact Admin   │
+ *   └────────────────────┘
+ *
+ * The numeric ±N buttons emit `qtye:<id>:<signed-number>` callbacks
+ * (kept compact on purpose). The semantic actions emit
+ * `qtye:<id>:max|reset|confirm`.
+ *
+ * `adminUrl` should already be the deep link returned by
+ * `getAdminContactUrl()` / `getAdminContactUrlWithPrefill(...)` so
+ * tapping Contact Admin opens a DM with the seller.
+ */
+export function qtyEditorKeyboard(
+  lang: Lang,
+  product: DBProduct,
+  adminUrl: string,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  const id = product.id;
+  // Decrement row.
+  kb.text('−100', `qtye:${id}:-100`);
+  kb.text('−10', `qtye:${id}:-10`);
+  kb.text('−1', `qtye:${id}:-1`);
+  kb.row();
+  // Increment row.
+  kb.text('+1', `qtye:${id}:+1`);
+  kb.text('+10', `qtye:${id}:+10`);
+  kb.text('+100', `qtye:${id}:+100`);
+  kb.row();
+  // Max + Reset.
+  inlineBtn(kb, lang, 'qty_max', `qtye:${id}:max`);
+  inlineBtn(kb, lang, 'qty_reset', `qtye:${id}:reset`);
+  kb.row();
+  // Confirm + Back (both jump back to the product page).
+  inlineBtn(kb, lang, 'qty_confirm', `qtye:${id}:confirm`);
+  inlineBtn(kb, lang, 'back', `prod:${id}`);
+  kb.row();
+  // Contact Admin URL.
+  inlineUrl(kb, lang, 'contact_admin', adminUrl);
+  return kb;
 }

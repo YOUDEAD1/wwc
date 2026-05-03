@@ -149,6 +149,12 @@ export const BUTTON_KEYS = {
 
   // ---- Region picker -----------------------------------------
   region_clear: 'btn.region.clear',
+
+  // ---- Quantity editor (replaces the type-a-number prompt) ----
+  qty_max: 'btn.qty.max',
+  qty_reset: 'btn.qty.reset',
+  qty_confirm: 'btn.qty.confirm',
+  contact_admin: 'btn.contact_admin',
 } as const;
 
 /**
@@ -235,6 +241,12 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 
   // Region clear: destructive.
   region_clear: 'red',
+
+  // Quantity editor.
+  qty_max: 'green',
+  qty_reset: 'none',
+  qty_confirm: 'green',
+  contact_admin: 'blue',
 };
 
 /**
