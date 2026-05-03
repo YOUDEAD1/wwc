@@ -730,6 +730,13 @@ export async function sendReportEmail(args: {
   email: string;
   kind: ReportKind;
   pdf: Buffer;
+  /**
+   * Optional CSV companion. When provided it's attached to the same
+   * email as the PDF (filename auto-derived from the report kind +
+   * timestamp). The user asked for the spreadsheet copy alongside
+   * every PDF so they can sort / filter / chart in Excel.
+   */
+  csv?: Buffer | null;
   firstName: string | null;
   username: string | null;
 }): Promise<boolean> {
@@ -749,6 +756,7 @@ export async function sendReportEmail(args: {
     generatedAt,
   });
   const filename = `SafwanTiger-Shop-${args.kind}.pdf`;
+  const csvFilename = `SafwanTiger-Shop-${args.kind}.csv`;
 
   if (resendConfigured()) {
     const client = resendClient();
@@ -766,6 +774,13 @@ export async function sendReportEmail(args: {
         contentType: 'application/pdf',
       },
     ];
+    if (args.csv) {
+      attachments.push({
+        filename: csvFilename,
+        content: args.csv.toString('base64'),
+        contentType: 'text/csv',
+      });
+    }
     if (logoB64) {
       attachments.push({
         filename: LOGO_FILENAME,
@@ -808,6 +823,33 @@ export async function sendReportEmail(args: {
   // SMTP fallback
   const tx = smtpTransporter();
   if (!tx) return false;
+  type SmtpAttachment = {
+    filename: string;
+    content?: Buffer;
+    path?: string;
+    contentType: string;
+    cid?: string;
+  };
+  const smtpAttachments: SmtpAttachment[] = [
+    {
+      filename,
+      content: args.pdf,
+      contentType: 'application/pdf',
+    },
+  ];
+  if (args.csv) {
+    smtpAttachments.push({
+      filename: csvFilename,
+      content: args.csv,
+      contentType: 'text/csv',
+    });
+  }
+  smtpAttachments.push({
+    filename: LOGO_FILENAME,
+    path: EMAIL_LOGO_PATH,
+    contentType: 'image/png',
+    cid: LOGO_CID,
+  });
   try {
     const info = await tx.sendMail({
       from: fromAddress(),
@@ -815,19 +857,7 @@ export async function sendReportEmail(args: {
       subject,
       html,
       text,
-      attachments: [
-        {
-          filename,
-          content: args.pdf,
-          contentType: 'application/pdf',
-        },
-        {
-          filename: LOGO_FILENAME,
-          path: EMAIL_LOGO_PATH,
-          contentType: 'image/png',
-          cid: LOGO_CID,
-        },
-      ],
+      attachments: smtpAttachments,
     });
     logger.info(
       { messageId: info.messageId, to: args.email, kind: args.kind, transport: 'smtp' },
