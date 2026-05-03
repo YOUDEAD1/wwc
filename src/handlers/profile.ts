@@ -54,6 +54,7 @@ import {
   getEmailPdfUrl,
   getAdminContactUrlWithPrefill,
 } from '../services/settings.js';
+import * as adminLog from '../services/adminLog.js';
 import { InputFile } from 'grammy';
 import { fileURLToPath } from 'url';
 import { dirname, resolve as pathResolve } from 'path';
@@ -304,17 +305,21 @@ async function sendReportPdfFromCallback(
       email,
     };
     let pdf: Buffer;
+    let rowCount = 0;
     if (kind === 'orders') {
       const orders = await listOrders(ctx.user.telegram_id, 500);
+      rowCount = orders.length;
       pdf = await buildOrdersPdf({ user: reportUser, orders });
     } else if (kind === 'deposits') {
       const [deposits, ledger] = await Promise.all([
         listDeposits(ctx.user.telegram_id, 500),
         listWalletLedger(ctx.user.telegram_id, 500).catch(() => []),
       ]);
+      rowCount = deposits.length + ledger.length;
       pdf = await buildDepositsPdf({ user: reportUser, deposits, ledger });
     } else {
       const stats = await getUserStats(ctx.user.telegram_id);
+      rowCount = stats.orders;
       pdf = await buildStatsPdf({ user: reportUser, stats });
     }
     const ok = await sendReportEmail({
@@ -325,6 +330,17 @@ async function sendReportPdfFromCallback(
       username: ctx.user.username ?? null,
     });
     if (ok) {
+      void adminLog.logPdfSent(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email,
+        },
+        kind,
+        destinationEmail: email,
+        rowCount,
+      });
       // Surface success as a real chat message so the premium 📬
       // custom emoji renders as a `<tg-emoji>` entity rather than a
       // plain toast (Telegram strips custom_emoji from popup text).
@@ -587,6 +603,17 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       renderMdHtml(ctx.t('gift.redeemed', { amount: formatted })),
       { parse_mode: 'HTML' },
     );
+    void adminLog.logGiftRedeem(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      code,
+      amount,
+      balanceAfter: Number(newBalance.toFixed(3)),
+    });
   });
 
   // ---- Refer ----
@@ -637,6 +664,16 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         text: next ? ctx.t('profile.notify.stock_on') : ctx.t('profile.notify.stock_off'),
       });
       await showNotifications(ctx);
+      void adminLog.logNotificationToggle(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        channel: 'stock',
+        enabled: next,
+      });
     } catch {
       await ctx.answerCallbackQuery({
         text: ctx.t('profile.notify.error'),
@@ -653,6 +690,16 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         text: next ? ctx.t('profile.notify.ann_on') : ctx.t('profile.notify.ann_off'),
       });
       await showNotifications(ctx);
+      void adminLog.logNotificationToggle(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        channel: 'announcements',
+        enabled: next,
+      });
     } catch {
       await ctx.answerCallbackQuery({
         text: ctx.t('profile.notify.error'),
@@ -669,6 +716,16 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         text: next ? ctx.t('profile.notify.wallet_on') : ctx.t('profile.notify.wallet_off'),
       });
       await showNotifications(ctx);
+      void adminLog.logNotificationToggle(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        channel: 'wallet',
+        enabled: next,
+      });
     } catch {
       await ctx.answerCallbackQuery({
         text: ctx.t('profile.notify.error'),
@@ -691,11 +748,24 @@ export function registerProfile(bot: Composer<AppCtx>): void {
 
   bot.callbackQuery(/^lang:(en|ar|vi)$/, async (ctx) => {
     const next = ctx.match[1] as Lang;
+    const prev = ctx.user.language;
     await setUserLanguage(ctx.user.telegram_id, next);
     ctx.user.language = next;
     ctx.lang = next;
     await ctx.answerCallbackQuery();
     await showProfile(ctx);
+    if (prev !== next) {
+      void adminLog.logLanguageChange(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        oldLang: prev,
+        newLang: next,
+      });
+    }
   });
 
   // ---- Region picker ----
@@ -732,6 +802,17 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       text: `${reg.flag} ${reg.name}`,
     });
     await showProfile(ctx);
+    void adminLog.logRegion(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      mode: 'set',
+      region: reg.code,
+      timezone: reg.timezone,
+    });
   });
 
   bot.callbackQuery('profile:region:clear', async (ctx) => {
@@ -749,6 +830,17 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     ctx.user.timezone = null;
     await ctx.answerCallbackQuery({ text: '🚫 Cleared' });
     await showProfile(ctx);
+    void adminLog.logRegion(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      mode: 'clear',
+      region: null,
+      timezone: null,
+    });
   });
 
   // ---- Email Settings hub (3-button submenu) ----
@@ -871,6 +963,17 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       text: ctx.t('profile.email.delete.success'),
     });
     await showEmailHub(ctx);
+    void adminLog.logEmail(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: null,
+      },
+      mode: 'delete',
+      oldEmail,
+      newEmail: null,
+    });
   });
 
   // Why Email — explanatory screen with a "Know More" PDF button.
@@ -975,19 +1078,19 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       username: ctx.user.username ?? null,
       mode,
     });
-    // Notify admin so they have a record of the new contact email.
-    try {
-      const adminId = Number(env.ADMIN_USER_ID);
-      if (adminId && adminId !== ctx.user.telegram_id) {
-        await ctx.api.sendMessage(
-          adminId,
-          `📧 User \`${ctx.user.telegram_id}\` (@${ctx.user.username ?? '—'}) saved email \`${text}\`.`,
-          { parse_mode: 'Markdown' },
-        );
-      }
-    } catch (err) {
-      console.warn('admin email notify failed', err);
-    }
+    // Notify admin (deep-detail) so they have a record of the new
+    // contact email — old + new both included for set/change.
+    void adminLog.logEmail(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: text,
+      },
+      mode,
+      oldEmail: previousEmail,
+      newEmail: text,
+    });
     // Bug fix: re-render the FULL settings screen as a fresh message
     // so the user immediately sees the saved email and the row of
     // buttons under it updates.

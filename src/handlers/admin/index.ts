@@ -55,6 +55,7 @@ import {
   clearButtonIcon,
 } from '../../services/settings.js';
 import { renderMdHtml } from '../../services/premium.js';
+import * as adminLog from '../../services/adminLog.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI } from '../../../config/index.js';
@@ -717,6 +718,20 @@ adminBot.callbackQuery(/^adm:dep:ok:(\d+)$/, async (ctx) => {
   } catch (err) {
     logger.warn({ err }, 'Could not DM depositor');
   }
+  void adminLog.logTopupResolved(ctx.api, {
+    user: {
+      telegram_id: dep.user_id,
+      username: null,
+      first_name: null,
+      email: null,
+    },
+    depositDbId: dep.id,
+    method: dep.method,
+    amount: Number(dep.amount),
+    status: 'approved',
+    balanceAfter: Number(Number(newBal).toFixed(3)),
+    resolvedBy: ctx.from!.id,
+  });
   await showDepositList(ctx);
 });
 
@@ -739,6 +754,20 @@ adminBot.callbackQuery(/^adm:dep:no:(\d+)$/, async (ctx) => {
   } catch (err) {
     logger.warn({ err }, 'Could not DM depositor');
   }
+  void adminLog.logTopupResolved(ctx.api, {
+    user: {
+      telegram_id: dep.user_id,
+      username: null,
+      first_name: null,
+      email: null,
+    },
+    depositDbId: dep.id,
+    method: dep.method,
+    amount: Number(dep.amount),
+    status: 'rejected',
+    balanceAfter: null,
+    resolvedBy: ctx.from!.id,
+  });
   await showDepositList(ctx);
 });
 
@@ -1693,6 +1722,21 @@ adminBot.on('message:text', async (ctx, next) => {
       } catch (err) {
         logger.warn({ err }, 'Could not DM user about balance change');
       }
+      // Deep-detail admin log so the action ends up in the same
+      // structured feed as everything else (auditable trail across
+      // sessions, even when the admin is the actor).
+      void adminLog.logBalanceChange(ctx.api, {
+        user: {
+          telegram_id: flow.data.telegram_id,
+          username: null,
+          first_name: null,
+          email: null,
+        },
+        delta,
+        balanceAfter: Number(Number(newBal).toFixed(3)),
+        reason: delta > 0 ? 'admin manual credit' : 'admin manual debit',
+        by: 'admin',
+      });
       return;
     }
 

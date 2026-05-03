@@ -1,6 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
-import { inlineBtn, inlineUrl } from './helpers.js';
+import { applyButtonChrome, inlineBtn, inlineUrl, btn } from './helpers.js';
 import { getStateColor } from '../services/settings.js';
 import type { DBProduct } from '../types.js';
 
@@ -76,6 +76,7 @@ export function productKeyboard(
   lang: Lang,
   product: DBProduct,
   qty: number,
+  shareUrl: string,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   if (product.stock <= 0) {
@@ -89,7 +90,10 @@ export function productKeyboard(
     inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
     kb.row();
   }
-  inlineBtn(kb, lang, 'topup_wallet', 'topup:open');
+  // Topup Wallet removed; replaced with a 1-tap copy/share link to
+  // this product. The URL deep-links straight back into the bot's
+  // product page so anyone who opens it lands on the same screen.
+  inlineUrl(kb, lang, 'share_product', shareUrl);
   inlineBtn(kb, lang, 'view_note', `note:${product.id}`);
   kb.row();
   inlineBtn(kb, lang, 'back', 'shop:home');
@@ -101,57 +105,80 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
 }
 
 /**
- * Big inline counter for picking a custom quantity. Shown when the
- * user taps the qty digit on the product page. Replaces the legacy
- * force-reply "Type a quantity (1–999) and send." prompt.
+ * Futuristic inline counter for picking a custom quantity. Shown
+ * when the user taps the qty digit on the product page.
  *
- * Layout:
- *   ┌──────┬──────┬──────┐
- *   │ −100 │ −10  │ −1   │
- *   ├──────┼──────┼──────┤
- *   │ +1   │ +10  │ +100 │
- *   ├──────┴──────┴──────┤
- *   │ Max          Reset │
- *   ├──────────┬─────────┤
- *   │ ✅ Confirm│  Back   │
- *   ├──────────┴─────────┤
- *   │ 💬 Contact Admin   │
- *   └────────────────────┘
+ * Layout (qty=23, stock=120):
+ *   ┌────────┬────────┬────────┐
+ *   │ ⏮ 100 │ ⏪ 10  │ ➖ 1   │
+ *   ├────────┴────────┴────────┤
+ *   │     📦 23 / 120          │
+ *   ├────────┬────────┬────────┤
+ *   │ ➕ 1   │ ⏩ 10  │ ⏭ 100 │
+ *   ├────────┴────────┴────────┤
+ *   │   🎯 Max     🔄 Reset    │
+ *   ├──────────────┬───────────┤
+ *   │ ✅ Confirm   │  Back     │
+ *   └──────────────┴───────────┘
+ *
+ * Premium icons (`icon_custom_emoji_id`) + Bot API 9.4 button styles
+ * are layered on automatically per `BUTTON_ICONS` / `DEFAULT_BUTTON_COLORS`
+ * — green increments, neutral decrements, blue qty pill, green
+ * Confirm.
  *
  * The numeric ±N buttons emit `qtye:<id>:<signed-number>` callbacks
  * (kept compact on purpose). The semantic actions emit
- * `qtye:<id>:max|reset|confirm`.
- *
- * `adminUrl` should already be the deep link returned by
- * `getAdminContactUrl()` / `getAdminContactUrlWithPrefill(...)` so
- * tapping Contact Admin opens a DM with the seller.
+ * `qtye:<id>:max|reset|confirm`. The Contact Admin button has been
+ * removed from this counter per the latest UX request.
  */
 export function qtyEditorKeyboard(
   lang: Lang,
   product: DBProduct,
-  adminUrl: string,
+  qty: number,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const id = product.id;
-  // Decrement row.
-  kb.text('−100', `qtye:${id}:-100`);
-  kb.text('−10', `qtye:${id}:-10`);
-  kb.text('−1', `qtye:${id}:-1`);
+
+  // Decrement row — coarsest step on the LEFT so it reads naturally
+  // as "rewind to less" left-to-right.
+  kb.text(btn(lang, 'qty_dec_100'), `qtye:${id}:-100`);
+  applyButtonChrome(kb, 'qty_dec_100');
+  kb.text(btn(lang, 'qty_dec_10'), `qtye:${id}:-10`);
+  applyButtonChrome(kb, 'qty_dec_10');
+  kb.text(btn(lang, 'qty_dec_1'), `qtye:${id}:-1`);
+  applyButtonChrome(kb, 'qty_dec_1');
   kb.row();
-  // Increment row.
-  kb.text('+1', `qtye:${id}:+1`);
-  kb.text('+10', `qtye:${id}:+10`);
-  kb.text('+100', `qtye:${id}:+100`);
+
+  // Big qty readout — full-width pill so the current value is
+  // unmistakably the focal point of the screen.
+  const stock = Math.max(0, product.stock);
+  const safeQty = Math.max(1, Math.min(qty, stock || qty));
+  kb.text(
+    btn(lang, 'qty_display')
+      .replace('{qty}', String(safeQty))
+      .replace('{stock}', String(stock)),
+    `qtye:${id}:noop`,
+  );
+  applyButtonChrome(kb, 'qty_display');
   kb.row();
+
+  // Increment row — finest step on the LEFT, matching the mirror of
+  // the decrement row above.
+  kb.text(btn(lang, 'qty_inc_1'), `qtye:${id}:+1`);
+  applyButtonChrome(kb, 'qty_inc_1');
+  kb.text(btn(lang, 'qty_inc_10'), `qtye:${id}:+10`);
+  applyButtonChrome(kb, 'qty_inc_10');
+  kb.text(btn(lang, 'qty_inc_100'), `qtye:${id}:+100`);
+  applyButtonChrome(kb, 'qty_inc_100');
+  kb.row();
+
   // Max + Reset.
   inlineBtn(kb, lang, 'qty_max', `qtye:${id}:max`);
   inlineBtn(kb, lang, 'qty_reset', `qtye:${id}:reset`);
   kb.row();
+
   // Confirm + Back (both jump back to the product page).
   inlineBtn(kb, lang, 'qty_confirm', `qtye:${id}:confirm`);
   inlineBtn(kb, lang, 'back', `prod:${id}`);
-  kb.row();
-  // Contact Admin URL.
-  inlineUrl(kb, lang, 'contact_admin', adminUrl);
   return kb;
 }

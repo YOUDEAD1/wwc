@@ -23,10 +23,24 @@ export const en: Record<string, string> = {
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
-  'btn.qty.max': 'Max',
-  'btn.qty.reset': 'Reset',
+  'btn.qty.max': '🎯 Max',
+  'btn.qty.reset': '🔄 Reset',
   'btn.qty.confirm': '✅ Confirm',
   'btn.contact_admin': '💬 Contact Admin',
+  // Inline-counter step buttons. Premium emojis are layered on at
+  // render time (per-button icon override) — these unicode glyphs
+  // are the fallback for clients without premium.
+  'btn.qty.dec_1': '➖ 1',
+  'btn.qty.dec_10': '⏪ 10',
+  'btn.qty.dec_100': '⏮ 100',
+  'btn.qty.inc_1': '➕ 1',
+  'btn.qty.inc_10': '⏩ 10',
+  'btn.qty.inc_100': '⏭ 100',
+  'btn.qty.display': '📦 {qty} / {stock}',
+  // Product-page extras.
+  'btn.share_product': '🔗 Copy / Share',
+  'btn.view_note_file': '📥 Save Note as TXT',
+  'btn.send_note_txt': '📥 Save as TXT',
   'btn.out_of_stock': '❌ Out of Stock',
   'btn.my_orders': '🧾 My Orders',
   'btn.refer': '🎁 Refer',
@@ -90,6 +104,19 @@ export const en: Record<string, string> = {
   'shop.product.line.balance': '👛 Wallet: *{balance}*',
   'shop.note.title': '📝 *Product note*',
   'shop.note.empty': 'No note for this product.',
+  'shop.note.full': [
+    '*📝 Product Note — {name}*',
+    '',
+    '*Price:* `{price} USDT`',
+    '*Stock:* `{stock}`',
+    '*Warranty:* `{warranty}`',
+    '',
+    '*Description:*',
+    '{description}',
+    '',
+    '*Note:*',
+    '{note}',
+  ].join('\n'),
   'shop.buy.success':
     '✅ Purchase successful!\n\nProduct: *{name}*\nQty: *{qty}*\nTotal: *{total}*\n\nDelivery:\n```\n{delivery}\n```',
   'shop.buy.insufficient':

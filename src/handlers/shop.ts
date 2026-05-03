@@ -1,4 +1,5 @@
 import type { Composer } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
 import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   createOrder,
@@ -12,9 +13,12 @@ import {
   qtyEditorKeyboard,
   shopProductsKeyboard,
 } from '../keyboards/shop.js';
+import { inlineBtn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getAdminContactUrl } from '../services/settings.js';
+import { env } from '../env.js';
+import { publicOrderId } from '../services/orderId.js';
+import * as adminLog from '../services/adminLog.js';
 
 /**
  * Top-level Shop home — paginated all-products list. The categories
@@ -64,6 +68,19 @@ function productPageText(ctx: AppCtx, p: NonNullable<Awaited<ReturnType<typeof g
     .join('\n');
 }
 
+/**
+ * Build the t.me share URL that deep-links anyone who taps it back
+ * into THIS bot on the given product page. We prefer Telegram's
+ * native share sheet (`share?url=`) so the user gets a chip-list of
+ * recent contacts instead of just copying. Falls back to the plain
+ * `?start=prod_<id>` URL when share is unavailable.
+ */
+function buildProductShareUrl(productId: number, productName: string): string {
+  const target = `https://t.me/${env.BOT_USERNAME}?start=prod_${productId}`;
+  const text = `${productName} — SafwanTiger Shop`;
+  return `https://t.me/share/url?url=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`;
+}
+
 async function showProduct(ctx: AppCtx, productId: number) {
   const p = await getProduct(productId);
   if (!p) {
@@ -71,15 +88,16 @@ async function showProduct(ctx: AppCtx, productId: number) {
     return;
   }
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
+  const shareUrl = buildProductShareUrl(p.id, p.name);
   await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty)), {
     parse_mode: 'HTML',
-    reply_markup: productKeyboard(ctx.lang, p, qty),
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
   });
 }
 
 /**
- * Render the inline qty-editor screen — the "big counter" replacing
- * the legacy `Type a quantity (1–999) and send.` force-reply prompt.
+ * Render the futuristic inline qty-editor screen — the big counter
+ * replacing the legacy "Type a quantity" prompt.
  */
 async function showQtyEditor(ctx: AppCtx, productId: number) {
   const p = await getProduct(productId);
@@ -98,7 +116,7 @@ async function showQtyEditor(ctx: AppCtx, productId: number) {
   });
   await ctx.editMessageText(renderMdHtml(text), {
     parse_mode: 'HTML',
-    reply_markup: qtyEditorKeyboard(ctx.lang, p, getAdminContactUrl()),
+    reply_markup: qtyEditorKeyboard(ctx.lang, p, qty),
   });
 }
 
@@ -158,10 +176,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await showQtyEditor(ctx, Number(ctx.match[1]));
   });
 
-  // Editor actions: ±N / max / reset / confirm. Confirm and Back
-  // both leave the editor — confirm renders the product page so the
-  // user sees Buy Now ready to tap; Back is wired straight to
-  // `prod:<id>` in the keyboard.
+  // Editor actions: ±N / max / reset / confirm / noop. Confirm and
+  // Back both leave the editor — confirm renders the product page
+  // so the user sees Buy Now ready to tap; Back is wired straight
+  // to `prod:<id>` in the keyboard. `noop` is the qty-readout pill;
+  // tapping it silently re-acks so the button doesn't appear hung.
   bot.callbackQuery(/^qtye:(\d+):(.+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const action = ctx.match[2];
@@ -173,6 +192,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
     if (action === 'confirm') {
       await ctx.answerCallbackQuery();
       await showProduct(ctx, id);
+      return;
+    }
+    if (action === 'noop') {
+      // Tap on the qty readout pill — silent ack only; no edit.
+      await ctx.answerCallbackQuery();
       return;
     }
     const cur = ctx.session.qty[id] ?? QTY_MIN;
@@ -202,12 +226,74 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await showQtyEditor(ctx, id);
   });
 
+  // ---- View Note ----
+  // Replaces the popup-only behaviour with a full-screen detail view.
+  // Body shows everything the user might need to know about the
+  // product (name, price, stock, warranty, description, full note).
+  // Buttons:
+  //   - 📥 Save Note as TXT — sends the same body as a `.txt` file
+  //     so the user has a downloadable copy.
+  //   - Back → returns to the product page.
   bot.callbackQuery(/^note:(\d+)$/, async (ctx) => {
-    const p = await getProduct(Number(ctx.match[1]));
-    await ctx.answerCallbackQuery({
-      text: p?.note ? p.note.slice(0, 190) : ctx.t('shop.note.empty'),
-      show_alert: true,
+    const id = Number(ctx.match[1]);
+    const p = await getProduct(id);
+    if (!p) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const body = ctx.t('shop.note.full', {
+      name: p.name,
+      price: p.price,
+      stock: p.stock,
+      warranty: p.warranty ?? '—',
+      description: p.description ?? '—',
+      note: p.note && p.note.length > 0 ? p.note : ctx.t('shop.note.empty'),
     });
+    const kb = new InlineKeyboard();
+    inlineBtn(kb, ctx.lang, 'view_note_file', `note:txt:${p.id}`);
+    kb.row();
+    inlineBtn(kb, ctx.lang, 'back', `prod:${p.id}`);
+    await ctx.editMessageText(renderMdHtml(body), {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  });
+
+  // Send the full product note as a downloadable `.txt` attachment.
+  // Uses Telegram's native document viewer so the user can save it,
+  // forward it to friends, etc. without any third-party hosting.
+  bot.callbackQuery(/^note:txt:(\d+)$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const p = await getProduct(id);
+    if (!p) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const lines = [
+      `Product: ${p.name}`,
+      `Price: ${p.price} USDT`,
+      `Stock: ${p.stock}`,
+      `Warranty: ${p.warranty ?? '—'}`,
+      '',
+      'Description:',
+      p.description ?? '—',
+      '',
+      'Note:',
+      p.note ?? '—',
+      '',
+      `— SafwanTiger Shop · ${new Date().toUTCString()}`,
+    ].join('\n');
+    const safeName = p.name.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40) || 'product';
+    const filename = `${safeName}_note.txt`;
+    await ctx.replyWithDocument(
+      new InputFile(Buffer.from(lines, 'utf8'), filename),
+      {
+        caption: `📄 ${p.name} — note`,
+        parse_mode: 'HTML',
+      },
+    );
   });
 
   bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
@@ -278,6 +364,24 @@ export function registerShop(bot: Composer<AppCtx>): void {
         ),
         { parse_mode: 'HTML' },
       );
+      // Notify admin with the deep-detail order block.
+      void adminLog.logOrderCreated(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        orderDbId: order.id,
+        orderPublicId: publicOrderId(order),
+        productId: p.id,
+        productName: p.name,
+        qty,
+        unitPrice: p.price,
+        total,
+        paidVia: 'Wallet balance',
+        balanceAfter: Number(newBalance.toFixed(3)),
+      });
     } catch (e: unknown) {
       const code = (e as { code?: string }).code;
       if (code === 'INSUFFICIENT_FUNDS') {

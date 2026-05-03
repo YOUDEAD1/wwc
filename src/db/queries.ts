@@ -50,11 +50,13 @@ export async function getOrCreateUser(args: {
       .eq('telegram_id', args.telegram_id);
     // Default wallet_alert to true for rows pre-dating migration 0008
     // so the Notifications screen renders with a sensible default.
-    return {
+    const out = {
       ...(existing as DBUser),
       wallet_alert:
         (existing as { wallet_alert?: boolean }).wallet_alert ?? true,
-    };
+    } as DBUser & { __just_created?: boolean };
+    out.__just_created = false;
+    return out;
   }
 
   const ref_code = makeRefCode(args.telegram_id);
@@ -78,7 +80,9 @@ export async function getOrCreateUser(args: {
       .insert({ referrer_id: args.referred_by, referee_id: args.telegram_id })
       .then(() => {});
   }
-  return data as DBUser;
+  const created = data as DBUser & { __just_created?: boolean };
+  created.__just_created = true;
+  return created;
 }
 
 export async function setUserLanguage(telegram_id: number, language: Lang): Promise<void> {

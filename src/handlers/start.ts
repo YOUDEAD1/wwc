@@ -2,6 +2,11 @@ import type { Composer } from 'grammy';
 import type { AppCtx } from '../middleware/user.js';
 import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderMdHtml } from '../services/premium.js';
+import { getProduct } from '../db/queries.js';
+import { productKeyboard } from '../keyboards/shop.js';
+import { QTY_MIN } from '../../config/index.js';
+import { env } from '../env.js';
+import * as adminLog from '../services/adminLog.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -59,9 +64,66 @@ async function showMainMenu(ctx: AppCtx, opts: { fresh?: boolean } = {}): Promis
   await ctx.reply(html, { parse_mode: 'HTML', reply_markup });
 }
 
+/**
+ * Inspect the /start payload for a `prod_<id>` deep link emitted by
+ * the Copy/Share button on the product page. When present, render
+ * the product page directly so the friend who tapped the share link
+ * lands exactly where the sharer wanted them. Returns true when the
+ * deep link was handled and the caller should NOT show the main menu.
+ */
+async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
+  const text = ctx.message?.text ?? '';
+  const m = text.match(/^\/start(?:@\S+)?\s+prod_(\d+)/i);
+  if (!m) return false;
+  const id = Number(m[1]);
+  if (!Number.isFinite(id) || id <= 0) return false;
+  const p = await getProduct(id);
+  if (!p) return false;
+  const qty = ctx.session.qty[p.id] ?? QTY_MIN;
+  const total = (p.price * qty).toFixed(2);
+  const body = [
+    ctx.t('shop.product.line.name', { name: p.name }),
+    p.description ? p.description : '',
+    ctx.t('shop.product.line.price', { price: p.price }),
+    ctx.t('shop.product.line.stock', { stock: p.stock }),
+    ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
+    ctx.t('shop.product.line.qty', { qty }),
+    ctx.t('shop.product.line.total', { total }),
+    ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const target = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
+  const shareUrl =
+    `https://t.me/share/url?url=${encodeURIComponent(target)}` +
+    `&text=${encodeURIComponent(`${p.name} — SafwanTiger Shop`)}`;
+  await ctx.reply(renderMdHtml(body), {
+    parse_mode: 'HTML',
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
+  });
+  return true;
+}
+
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
+    // First-start admin log — fires only on the very first /start so
+    // the admin sees a clean "new user joined" entry. The sentinel
+    // is set by getOrCreateUser when the row was just inserted.
+    const flagged = ctx.user as typeof ctx.user & { __just_created?: boolean };
+    if (flagged.__just_created) {
+      void adminLog.logFirstStart(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        referralCode: ctx.user.ref_code ?? null,
+        referredBy: ctx.user.referred_by ?? null,
+      });
+    }
+    if (await handleProductDeepLink(ctx)) return;
     await showMainMenu(ctx, { fresh: true });
   });
 
