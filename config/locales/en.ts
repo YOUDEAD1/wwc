@@ -38,7 +38,7 @@ export const en: Record<string, string> = {
   'btn.qty.inc_100': '⏭ 100',
   'btn.qty.display': '📦 {qty} / {stock}',
   // Product-page extras.
-  'btn.share_product': '🔗 Copy / Share',
+  'btn.share_product': '🔗 Copy Link',
   'btn.view_note_file': '📥 Save Note as TXT',
   'btn.send_note_txt': '📥 Save as TXT',
   'btn.out_of_stock': '❌ Out of Stock',
@@ -102,6 +102,8 @@ export const en: Record<string, string> = {
   'shop.product.line.qty': '🔢 Selected qty: *{qty}*',
   'shop.product.line.total': '🧮 Total: *{total}*',
   'shop.product.line.balance': '👛 Wallet: *{balance}*',
+  'shop.product.out_of_stock_popup':
+    '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
   'shop.note.title': '📝 *Product note*',
   'shop.note.empty': 'No note for this product.',
   'shop.note.full': [

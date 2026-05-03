@@ -32,7 +32,7 @@ export const ar: Record<string, string> = {
   'btn.qty.inc_10': '⏩ 10',
   'btn.qty.inc_100': '⏭ 100',
   'btn.qty.display': '📦 {qty} / {stock}',
-  'btn.share_product': '🔗 نسخ / مشاركة',
+  'btn.share_product': '🔗 نسخ الرابط',
   'btn.view_note_file': '📥 حفظ كملف TXT',
   'btn.send_note_txt': '📥 حفظ كـ TXT',
   'btn.out_of_stock': '❌ غير متوفر',
@@ -81,6 +81,8 @@ export const ar: Record<string, string> = {
   'shop.product.line.qty': '🔢 الكمية المختارة: *{qty}*',
   'shop.product.line.total': '🧮 الإجمالي: *{total}*',
   'shop.product.line.balance': '👛 المحفظة: *{balance}*',
+  'shop.product.out_of_stock_popup':
+    '❌ هذا المنتج غير متوفر حاليًا. الرجاء التواصل مع الإدارة لإعادة تجديد المخزون أو اختيار منتج مشابه.',
   'shop.note.title': '📝 *ملاحظة المنتج*',
   'shop.note.empty': 'لا توجد ملاحظة لهذا المنتج.',
   'shop.note.full': [

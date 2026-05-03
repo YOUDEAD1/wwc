@@ -118,43 +118,60 @@ function compose(args: {
 }
 
 /**
- * Resolve the chat the deep-detail log feed is delivered to.
+ * Routing channels for the deep-detail log feed.
  *
- * When `LOG_CHAT_ID` is configured the admin gets a clean,
- * separate "shop log" channel (the use case the bot owner asked
- * for — "all details on this channel, no on admin chat"). When it
- * isn't set we fall back to the admin's DM so existing deployments
- * keep working with zero migration. The configured value can be a
- * numeric chat id (`-1001234567890`) or a public channel username
- * (`@safwantigershopsales`); both forms are accepted by the
- * Telegram bot API directly.
+ * - `main`   → `LOG_CHAT_ID`        (everything except orders)
+ * - `orders` → `ORDER_LOG_CHAT_ID`  (only `logOrderCreated`)
+ *
+ * Either env var may be opt-out (resolved to `undefined` by the env
+ * schema), in which case we walk the fallback chain in
+ * `chatChain()` to pick the next-best destination — orders fall
+ * through to the main channel, and the main channel falls through
+ * to the admin DM. That ensures deep-detail notifications never
+ * silently disappear even if a channel is mis-configured.
  */
-function logChatId(): number | string {
-  return env.LOG_CHAT_ID ?? env.ADMIN_USER_ID;
+type LogChannel = 'main' | 'orders';
+
+type ChatId = number | string;
+
+function chatChain(channel: LogChannel): ChatId[] {
+  const seen = new Set<ChatId>();
+  const chain: ChatId[] = [];
+  const push = (chat: ChatId | undefined): void => {
+    if (chat === undefined) return;
+    if (seen.has(chat)) return;
+    seen.add(chat);
+    chain.push(chat);
+  };
+  if (channel === 'orders') {
+    push(env.ORDER_LOG_CHAT_ID);
+    push(env.LOG_CHAT_ID);
+  } else {
+    push(env.LOG_CHAT_ID);
+  }
+  push(env.ADMIN_USER_ID);
+  return chain;
 }
 
-async function send(api: Api, body: string): Promise<void> {
-  const chat = logChatId();
-  try {
-    await api.sendMessage(chat, body, {
-      parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-    });
-  } catch (err) {
-    logger.warn({ err, chat }, 'adminLog: sendMessage failed');
-    // If the log-channel send fails (e.g. bot not added as admin
-    // there yet) fall back to the admin DM so the notification
-    // never silently disappears. Skipped when the configured chat
-    // already IS the admin DM to avoid double-sending.
-    if (chat !== env.ADMIN_USER_ID) {
-      try {
-        await api.sendMessage(env.ADMIN_USER_ID, body, {
-          parse_mode: 'HTML',
-          link_preview_options: { is_disabled: true },
-        });
-      } catch (err2) {
-        logger.warn({ err: err2 }, 'adminLog: fallback DM sendMessage failed');
-      }
+async function send(
+  api: Api,
+  body: string,
+  channel: LogChannel = 'main',
+): Promise<void> {
+  const chain = chatChain(channel);
+  for (let i = 0; i < chain.length; i++) {
+    const chat = chain[i]!;
+    try {
+      await api.sendMessage(chat, body, {
+        parse_mode: 'HTML',
+        link_preview_options: { is_disabled: true },
+      });
+      return;
+    } catch (err) {
+      logger.warn(
+        { err, chat, channel, attempt: i + 1, total: chain.length },
+        'adminLog: sendMessage failed',
+      );
     }
   }
 }
@@ -163,24 +180,22 @@ async function sendDocument(
   api: Api,
   file: InputFile,
   caption: string,
+  channel: LogChannel = 'main',
 ): Promise<void> {
-  const chat = logChatId();
-  try {
-    await api.sendDocument(chat, file, {
-      caption,
-      parse_mode: 'HTML',
-    });
-  } catch (err) {
-    logger.warn({ err, chat }, 'adminLog: sendDocument failed');
-    if (chat !== env.ADMIN_USER_ID) {
-      try {
-        await api.sendDocument(env.ADMIN_USER_ID, file, {
-          caption,
-          parse_mode: 'HTML',
-        });
-      } catch (err2) {
-        logger.warn({ err: err2 }, 'adminLog: fallback DM sendDocument failed');
-      }
+  const chain = chatChain(channel);
+  for (let i = 0; i < chain.length; i++) {
+    const chat = chain[i]!;
+    try {
+      await api.sendDocument(chat, file, {
+        caption,
+        parse_mode: 'HTML',
+      });
+      return;
+    } catch (err) {
+      logger.warn(
+        { err, chat, channel, attempt: i + 1, total: chain.length },
+        'adminLog: sendDocument failed',
+      );
     }
   }
 }
@@ -239,7 +254,10 @@ export async function logOrderCreated(api: Api, args: {
       `💳 Balance After: ${args.balanceAfter} USDT`,
     ],
   });
-  await send(api, body);
+  // Orders go to the dedicated orders channel (`ORDER_LOG_CHAT_ID`),
+  // falling back to `LOG_CHAT_ID` and finally the admin DM. Every
+  // other event still goes straight to `LOG_CHAT_ID`.
+  await send(api, body, 'orders');
 }
 
 export async function logTopupSubmitted(api: Api, args: {

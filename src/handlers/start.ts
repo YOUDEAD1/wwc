@@ -93,10 +93,10 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   ]
     .filter(Boolean)
     .join('\n');
-  const target = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
-  const shareUrl =
-    `https://t.me/share/url?url=${encodeURIComponent(target)}` +
-    `&text=${encodeURIComponent(`${p.name} — SafwanTiger Shop`)}`;
+  // Plain deep-link URL — fed straight into the keyboard's
+  // `copy_text` button so a tap copies it to the user's clipboard
+  // (no share-to-chat dialog, no automatic forward — see PR #57).
+  const shareUrl = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
   await ctx.reply(renderMdHtml(body), {
     parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
