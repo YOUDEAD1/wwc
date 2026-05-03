@@ -56,7 +56,9 @@ export const en: Record<string, string> = {
   'btn.set_email': '📧 Set Email',
 
   // ---------- Shop ----------
-  'shop.choose_category': '🛒 *Shop* — choose a category:',
+  'shop.choose_category': '🛒 *Shop*\n\n*Available Products:*\n_{total} categories — page {page}/{pages}_',
+  'shop.qty.prompt': '🔢 Type a quantity (1–{max}) and send.',
+  'shop.qty.invalid': '❌ Invalid number — please send a value between 1 and {max}.',
   'shop.empty_categories': 'No categories yet. Please check back later.',
   'shop.empty_products': 'No products in this category yet.',
   'shop.product.line.name': '*{name}*',
@@ -75,7 +77,7 @@ export const en: Record<string, string> = {
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
   'shop.buy.email_required':
     'Setup email system first — we need your email to send the receipt.',
-  'shop.page.header': '🛒 *{category}* — page {page}',
+  'shop.page.header': '🛒 *{category}*\n\n*Available Products:*\n_{total} products — page {page}/{pages}_',
 
   // ---------- Profile ----------
   'profile.title': '*User Profile*',

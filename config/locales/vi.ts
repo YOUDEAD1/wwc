@@ -47,7 +47,9 @@ export const vi: Record<string, string> = {
   'btn.stats_refresh': '🔄 Làm mới',
   'btn.stats_back': '◀️ Quay lại',
 
-  'shop.choose_category': '🛒 *Cửa hàng* — chọn danh mục:',
+  'shop.choose_category': '🛒 *Cửa hàng*\n\n*Sản phẩm có sẵn:*\n_{total} danh mục — trang {page}/{pages}_',
+  'shop.qty.prompt': '🔢 Nhập số lượng (1–{max}) và gửi.',
+  'shop.qty.invalid': '❌ Số không hợp lệ — vui lòng gửi giá trị từ 1 đến {max}.',
   'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
   'shop.empty_products': 'Chưa có sản phẩm trong danh mục này.',
   'shop.product.line.name': '*{name}*',
@@ -64,7 +66,7 @@ export const vi: Record<string, string> = {
   'shop.buy.insufficient':
     '❌ Số dư ví không đủ. Cần *{need}* nhưng chỉ có *{have}*. Vui lòng nạp tiền trước.',
   'shop.buy.no_stock': '❌ Xin lỗi, sản phẩm đã hết hàng.',
-  'shop.page.header': '🛒 *{category}* — trang {page}',
+  'shop.page.header': '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
 
   'profile.title': '⚙️ *Cài đặt*',
   'profile.notifications.title': '{notify_bell} *Thông báo*',

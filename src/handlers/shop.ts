@@ -1,5 +1,10 @@
 import type { Composer } from 'grammy';
-import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
+import {
+  CATEGORIES_PER_PAGE,
+  PRODUCTS_PER_PAGE,
+  QTY_MAX,
+  QTY_MIN,
+} from '../../config/index.js';
 import {
   createOrder,
   decrementProductStock,
@@ -19,7 +24,7 @@ import {
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 
-async function showCategories(ctx: AppCtx) {
+async function showCategories(ctx: AppCtx, page = 0) {
   let cats = cache.get<Awaited<ReturnType<typeof listCategories>>>('cats');
   if (!cats) {
     cats = await listCategories();
@@ -29,8 +34,19 @@ async function showCategories(ctx: AppCtx) {
     await ctx.reply(ctx.t('shop.empty_categories'));
     return;
   }
-  const html = renderMdHtml(ctx.t('shop.choose_category'));
-  const kb = categoriesKeyboard(ctx.lang, cats);
+  const total = cats.length;
+  const totalPages = Math.max(1, Math.ceil(total / CATEGORIES_PER_PAGE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const start = safePage * CATEGORIES_PER_PAGE;
+  const slice = cats.slice(start, start + CATEGORIES_PER_PAGE);
+  const html = renderMdHtml(
+    ctx.t('shop.choose_category', {
+      total,
+      page: safePage + 1,
+      pages: totalPages,
+    }),
+  );
+  const kb = categoriesKeyboard(ctx.lang, slice, safePage, totalPages);
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {
@@ -52,7 +68,12 @@ async function showCategoryPage(ctx: AppCtx, categoryId: number, page: number) {
     });
     return;
   }
-  const header = ctx.t('shop.page.header', { category: cat.name, page: page + 1 });
+  const header = ctx.t('shop.page.header', {
+    category: cat.name,
+    total,
+    page: page + 1,
+    pages: totalPages,
+  });
   await ctx.editMessageText(renderMdHtml(header), {
     parse_mode: 'HTML',
     reply_markup: productsKeyboard(ctx.lang, categoryId, rows, page, totalPages),
@@ -95,6 +116,13 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await showCategories(ctx);
   });
 
+  // Paginated categories list — `shop:p:<page>` is emitted by the
+  // Prev / Refresh / Next buttons on the Shop home keyboard.
+  bot.callbackQuery(/^shop:p:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showCategories(ctx, Number(ctx.match[1]));
+  });
+
   bot.callbackQuery(/^cat:(\d+):(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const [, idStr, pageStr] = ctx.match;
@@ -114,6 +142,70 @@ export function registerShop(bot: Composer<AppCtx>): void {
     ctx.session.qty[id] = next;
     await ctx.answerCallbackQuery();
     await showProduct(ctx, id);
+  });
+
+  // Tap the qty digit → prompt the user to type any number 1..QTY_MAX.
+  // We send the prompt with `force_reply: true` so the user's
+  // keyboard pops up automatically focused on the reply box (mobile)
+  // and keep the prompt's message id around so the text-handler can
+  // delete it after capture.
+  bot.callbackQuery(/^qty:(\d+):custom$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    await ctx.answerCallbackQuery();
+    const prompt = await ctx.reply(ctx.t('shop.qty.prompt', { max: QTY_MAX }), {
+      reply_markup: { force_reply: true, selective: true },
+    });
+    ctx.session.userFlow = {
+      type: 'set_qty',
+      step: 'value',
+      data: { product_id: id, prompt_message_id: prompt.message_id },
+    };
+  });
+
+  // Capture the next plain-text message as the custom quantity.
+  bot.on('message:text', async (ctx, next) => {
+    const flow = ctx.session.userFlow;
+    if (!flow || flow.type !== 'set_qty') return next();
+    const raw = ctx.message.text.trim();
+    if (raw.startsWith('/')) {
+      ctx.session.userFlow = undefined;
+      return next();
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < QTY_MIN || n > QTY_MAX) {
+      await ctx.reply(ctx.t('shop.qty.invalid', { max: QTY_MAX }));
+      return;
+    }
+    const { product_id, prompt_message_id } = flow.data;
+    ctx.session.qty[product_id] = n;
+    ctx.session.userFlow = undefined;
+    // Best-effort cleanup of the prompt and the user's reply so the
+    // chat stays tidy. Failures are ignored — a stale prompt is
+    // harmless.
+    if (prompt_message_id !== undefined) {
+      try {
+        await ctx.api.deleteMessage(ctx.chat.id, prompt_message_id);
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      await ctx.api.deleteMessage(ctx.chat.id, ctx.message.message_id);
+    } catch {
+      /* ignore */
+    }
+    // Re-render the product page with the new qty as a fresh message
+    // (we don't have a callbackQuery here so editMessageText would
+    // target the wrong message).
+    const p = await getProduct(product_id);
+    if (!p) {
+      await ctx.reply(ctx.t('err.unknown_action'));
+      return;
+    }
+    await ctx.reply(renderMdHtml(productPageText(ctx, p, n)), {
+      parse_mode: 'HTML',
+      reply_markup: productKeyboard(ctx.lang, p, n),
+    });
   });
 
   bot.callbackQuery(/^note:(\d+)$/, async (ctx) => {

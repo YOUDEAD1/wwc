@@ -47,7 +47,9 @@ export const ar: Record<string, string> = {
   'btn.stats_refresh': '🔄 تحديث',
   'btn.stats_back': '◀️ رجوع',
 
-  'shop.choose_category': '🛒 *المتجر* — اختر فئة:',
+  'shop.choose_category': '🛒 *المتجر*\n\n*المنتجات المتاحة:*\n_{total} فئة — صفحة {page}/{pages}_',
+  'shop.qty.prompt': '🔢 اكتب الكمية (1–{max}) وأرسل.',
+  'shop.qty.invalid': '❌ رقم غير صالح — أرسل قيمة بين 1 و {max}.',
   'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
   'shop.empty_products': 'لا توجد منتجات في هذه الفئة بعد.',
   'shop.product.line.name': '*{name}*',
@@ -63,7 +65,7 @@ export const ar: Record<string, string> = {
     '✅ تمت عملية الشراء!\n\nالمنتج: *{name}*\nالكمية: *{qty}*\nالإجمالي: *{total}*\n\nالتسليم:\n```\n{delivery}\n```',
   'shop.buy.insufficient': '❌ رصيد غير كافٍ. تحتاج *{need}* ولديك *{have}* فقط. يرجى الشحن أولاً.',
   'shop.buy.no_stock': '❌ عذرًا، هذا المنتج غير متوفر.',
-  'shop.page.header': '🛒 *{category}* — صفحة {page}',
+  'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
   'profile.title': '⚙️ *الإعدادات*',
   'profile.notifications.title': '{notify_bell} *الإشعارات*',
