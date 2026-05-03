@@ -73,6 +73,24 @@ const schema = z.object({
   // Defaults to "shopbot@safwantiger.com" if both this and SMTP_USER
   // are unset. Must be an address whose domain is verified in Resend.
   RESEND_FROM: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  Deep-detail log channel
+  // ----------------------------------------------------------------
+  // Numeric Telegram chat id of a private channel (or supergroup)
+  // the admin owns. When set, every "deep details" notification
+  // emitted by `services/adminLog.ts` (orders, top-ups, support
+  // sessions, support transcripts, PDF sends, language /
+  // notification toggles, etc.) is sent there instead of the
+  // admin's DM. Falls back to `ADMIN_USER_ID` when unset so existing
+  // deployments keep working with no migration needed.
+  //
+  // Channel ids are negative and start with `-100…` (e.g.
+  // `-1002145678901`). Add the bot to the channel as an admin with
+  // "Post Messages" + "Manage Topics" permission, then forward any
+  // message from the channel to @userinfobot or @RawDataBot to read
+  // the id.
+  LOG_CHAT_ID: z.coerce.number().int().optional(),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

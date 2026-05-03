@@ -273,6 +273,14 @@ export const en: Record<string, string> = {
   // Buttons used on the Order detail screen.
   'btn.orders_back_list': 'Back to Orders',
   'btn.orders_open_link': 'Open Link',
+  // Find by Order ID — opens a typed-input flow for a public order id.
+  'btn.find_order_by_id': '🔍 Find by Order ID',
+  // Prompt + error responses for the Find by Order ID flow. Custom
+  // emoji ids resolve to premium glyphs at render time.
+  'orders.lookup.prompt':
+    '{order_id_find_l} *Send Your Order ID to find.* {order_id_find_r}',
+  'orders.lookup.invalid':
+    '{gift_invalid} That doesn\'t look like a valid Order ID. {order_id_invalid_r}',
   // Legacy keys kept so anything still calling them won't break.
   'profile.email.title': '📧 *Set Email*',
   'profile.email.body':
@@ -380,6 +388,20 @@ export const en: Record<string, string> = {
     '{support_live_closed} Live Support closed.\n\n' +
     'Open Support again from the menu whenever you need help.',
   'support.live.admin_ended': '🔴 *Live Support session closed.*',
+  // "Send chat PDF to email" follow-up under the closure message.
+  'support.btn.email_transcript': '📧 Send chat PDF to email',
+  // Reuses pdf_sent_l / pdf_sent_r so the success copy renders the
+  // same animated frame the user sees after Send-PDF on My Orders.
+  'support.transcript.sent_message':
+    '{pdf_sent_l} *Pdf has been sended to mail* {pdf_sent_r}',
+  'support.transcript.no_email_popup':
+    '⚠️ Set your email first. Open Settings → Email Settings → Set Email to add one, then come back and tap Send chat PDF to email.',
+  'support.transcript.sending_popup':
+    '⏳ Generating your support transcript and sending it to {email}…',
+  'support.transcript.failed_popup':
+    '❌ Could not send the transcript to {email}. Please try again — if it keeps failing, contact support.',
+  'support.transcript.expired_popup':
+    '⌛ This transcript is no longer available. Start a new Live Support session whenever you need help.',
   'support.ai.title': '🤖 *Automated Support Assistant*',
   'support.ai.prompt': 'Describe your issue and I\'ll do my best to help.',
   'support.ai.fallback':

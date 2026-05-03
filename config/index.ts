@@ -135,12 +135,20 @@ export const BUTTON_KEYS = {
   // ---- Order-detail screen ------------------------------------
   orders_open_link: 'btn.orders_open_link',
   orders_back_list: 'btn.orders_back_list',
+  // "Find by Order ID" lets the user jump straight to a specific
+  // order detail screen by typing a public Order ID (e.g.
+  // ORD67FF2G9YG) — useful when the orders list is long.
+  find_order_by_id: 'btn.find_order_by_id',
 
   // ---- Support section ----------------------------------------
   support_contact: 'support.btn.contact',
   support_live: 'support.btn.live',
   support_cancel: 'support.btn.cancel',
   support_end_session: 'support.btn.end_session',
+  // "Send chat PDF to email" — shown under the closure message so
+  // the user can keep a copy of the just-finished Live Support
+  // transcript without contacting an admin.
+  support_email_transcript: 'support.btn.email_transcript',
 
   // ---- Language picker ---------------------------------------
   language_en: 'btn.language.english',
@@ -239,12 +247,17 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   // Order detail.
   orders_open_link: 'blue',
   orders_back_list: 'none',
+  // Find-by-id matches the Send-PDF blue so search-style actions
+  // read consistently across the orders screen.
+  find_order_by_id: 'blue',
 
   // Support section.
   support_contact: 'blue',
   support_live: 'green',
   support_cancel: 'red',
   support_end_session: 'red',
+  // Email-transcript is a positive follow-up action.
+  support_email_transcript: 'blue',
 
   // Language picker — neutral (admin can colour them per language).
   language_en: 'none',
@@ -431,6 +444,15 @@ export const EMOJI: Record<string, EmojiSpec> = {
   orders_note: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
   orders_warranty: { unicode: '⏰', custom_emoji_id: '5280821895711697516' },
   orders_received: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
+
+  // ---- Find Order by ID prompt + invalid response --------------
+  // The two glyphs below frame the "Send Your Order ID to find"
+  // prompt shown when the user taps Find by Order ID. The invalid
+  // response uses the existing `gift_invalid` ❌ on the left and a
+  // dedicated warning glyph on the right.
+  order_id_find_l: { unicode: '🆔', custom_emoji_id: '5463424023734014980' },
+  order_id_find_r: { unicode: '🔍', custom_emoji_id: '6084844906008812139' },
+  order_id_invalid_r: { unicode: '⚠️', custom_emoji_id: '5967560851077469602' },
 };
 
 /**

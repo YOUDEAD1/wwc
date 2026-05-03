@@ -443,6 +443,18 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await showOrdersPage(ctx, Number(ctx.match[1]));
   });
 
+  // Find by Order ID — surface the typed-input flow that was
+  // previously only documented inline. Tapping the button arms the
+  // `orders_lookup` flow and posts a prompt so the next plain text
+  // message the user sends is parsed as a public Order ID.
+  bot.callbackQuery('profile:orders:find', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = { type: 'orders_lookup', step: 'value', data: {} };
+    await ctx.reply(renderMdHtml(ctx.t('orders.lookup.prompt')), {
+      parse_mode: 'HTML',
+    });
+  });
+
   // ---- Order detail ----
   async function renderOrderDetail(ctx: AppCtx, orderId: number, asReply = false): Promise<void> {
     const order = await getOrder(orderId);
@@ -514,7 +526,9 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     }
     const id = parsePublicOrderId(text);
     if (!id) {
-      await ctx.reply('That doesn\'t look like a valid Order ID.');
+      await ctx.reply(renderMdHtml(ctx.t('orders.lookup.invalid')), {
+        parse_mode: 'HTML',
+      });
       return;
     }
     await renderOrderDetail(ctx, id, true);

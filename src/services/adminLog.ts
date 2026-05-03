@@ -117,14 +117,42 @@ function compose(args: {
   return out.join('\n');
 }
 
+/**
+ * Resolve the chat the deep-detail log feed is delivered to.
+ *
+ * When `LOG_CHAT_ID` is configured the admin gets a clean,
+ * separate "shop log" channel (the use case the bot owner asked
+ * for — "all details on this channel, no on admin chat"). When it
+ * isn't set we fall back to the admin's DM so existing deployments
+ * keep working with zero migration.
+ */
+function logChatId(): number {
+  return env.LOG_CHAT_ID ?? env.ADMIN_USER_ID;
+}
+
 async function send(api: Api, body: string): Promise<void> {
+  const chat = logChatId();
   try {
-    await api.sendMessage(env.ADMIN_USER_ID, body, {
+    await api.sendMessage(chat, body, {
       parse_mode: 'HTML',
       link_preview_options: { is_disabled: true },
     });
   } catch (err) {
-    logger.warn({ err }, 'adminLog: sendMessage failed');
+    logger.warn({ err, chat }, 'adminLog: sendMessage failed');
+    // If the log-channel send fails (e.g. bot not added as admin
+    // there yet) fall back to the admin DM so the notification
+    // never silently disappears. Skipped when the configured chat
+    // already IS the admin DM to avoid double-sending.
+    if (chat !== env.ADMIN_USER_ID) {
+      try {
+        await api.sendMessage(env.ADMIN_USER_ID, body, {
+          parse_mode: 'HTML',
+          link_preview_options: { is_disabled: true },
+        });
+      } catch (err2) {
+        logger.warn({ err: err2 }, 'adminLog: fallback DM sendMessage failed');
+      }
+    }
   }
 }
 
@@ -133,13 +161,24 @@ async function sendDocument(
   file: InputFile,
   caption: string,
 ): Promise<void> {
+  const chat = logChatId();
   try {
-    await api.sendDocument(env.ADMIN_USER_ID, file, {
+    await api.sendDocument(chat, file, {
       caption,
       parse_mode: 'HTML',
     });
   } catch (err) {
-    logger.warn({ err }, 'adminLog: sendDocument failed');
+    logger.warn({ err, chat }, 'adminLog: sendDocument failed');
+    if (chat !== env.ADMIN_USER_ID) {
+      try {
+        await api.sendDocument(env.ADMIN_USER_ID, file, {
+          caption,
+          parse_mode: 'HTML',
+        });
+      } catch (err2) {
+        logger.warn({ err: err2 }, 'adminLog: fallback DM sendDocument failed');
+      }
+    }
   }
 }
 
@@ -437,7 +476,7 @@ export async function logSupportEnd(api: Api, args: {
 
 export async function logPdfSent(api: Api, args: {
   user: LogUser;
-  kind: 'orders' | 'deposits' | 'stats';
+  kind: 'orders' | 'deposits' | 'stats' | 'support';
   destinationEmail: string;
   rowCount: number;
 }): Promise<void> {

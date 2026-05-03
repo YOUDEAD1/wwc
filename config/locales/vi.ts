@@ -226,6 +226,17 @@ export const vi: Record<string, string> = {
     '{support_live_closed} Đã đóng Hỗ trợ trực tiếp.\n\n' +
     'Mở lại Hỗ trợ từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
   'support.live.admin_ended': '🔴 *Phiên Hỗ trợ trực tiếp đã đóng.*',
+  'support.btn.email_transcript': '📧 Gửi PDF chat tới email',
+  'support.transcript.sent_message':
+    '{pdf_sent_l} *PDF đã được gửi tới email* {pdf_sent_r}',
+  'support.transcript.no_email_popup':
+    '⚠️ Hãy đặt email trước. Cài đặt → Cài đặt email → Đặt email, sau đó quay lại và nhấn nút gửi PDF chat.',
+  'support.transcript.sending_popup':
+    '⏳ Đang tạo bản ghi hỗ trợ và gửi đến {email}…',
+  'support.transcript.failed_popup':
+    '❌ Không gửi được bản ghi đến {email}. Vui lòng thử lại — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
+  'support.transcript.expired_popup':
+    '⌛ Bản ghi này không còn khả dụng. Bắt đầu phiên Hỗ trợ trực tiếp mới khi bạn cần giúp đỡ.',
   'support.ai.title': '🤖 *Trợ lý hỗ trợ tự động*',
   'support.ai.prompt': 'Mô tả vấn đề và tôi sẽ cố gắng hỗ trợ.',
   'support.ai.fallback': 'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
