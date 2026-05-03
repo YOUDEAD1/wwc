@@ -17,7 +17,9 @@ import {
   demoteAdmin,
   findUserById,
   findUserByUsername,
+  getDailyRevenue,
   getDeposit,
+  getProductSales,
   getStats,
   getUserOrderSummary,
   isAdmin,
@@ -288,19 +290,88 @@ adminBot.callbackQuery(/^adm:gift:del:(.+)$/, async (ctx) => {
 });
 
 // ---------- Stats ----------
+//
+// Renders the deep stats dashboard:
+//   1. Top-line counters (users, products, orders, revenue, ...)
+//   2. Top 5 sellers by revenue
+//   3. Per-product breakdown (units, revenue, stock left, last sale)
+//   4. Daily revenue trend for the last 7 days (incl. zero-rev days)
+//
+// Telegram caps message text at 4096 chars; very large catalogs
+// would otherwise truncate mid-row, so we cap the per-product list
+// at the first ~30 products and truncate the entire body to 3950
+// chars as a final guard.
+function escapeMd(s: string): string {
+  // Markdown v1 only treats `_*\`[` specially. We keep this minimal
+  // because the rest of the admin UI also uses Markdown v1.
+  return s.replace(/([_*`[\]])/g, '\\$1');
+}
+
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
-  const s = await getStats();
-  const text = [
-    '📊 *Stats*',
-    '',
-    `👥 Users: *${s.users}*`,
-    `📦 Active products: *${s.active_products}*`,
-    `🗂 Active categories: *${s.active_categories}*`,
-    `🧾 Total orders: *${s.orders}*`,
-    `💰 Total revenue: *$${s.revenue.toFixed(2)}*`,
-    `💳 Pending deposits: *${s.pending_deposits}*`,
-  ].join('\n');
+  const [s, productSales, daily] = await Promise.all([
+    getStats(),
+    getProductSales(50),
+    getDailyRevenue(7),
+  ]);
+  const lines: string[] = [];
+  lines.push('📊 *Stats*');
+  lines.push('');
+  lines.push(`👥 Users: *${s.users}*`);
+  lines.push(`📦 Active products: *${s.active_products}*`);
+  lines.push(`🗂 Active categories: *${s.active_categories}*`);
+  lines.push(`🧾 Total orders: *${s.orders}*`);
+  lines.push(`💰 Total revenue: *$${s.revenue.toFixed(2)}*`);
+  lines.push(`💳 Pending deposits: *${s.pending_deposits}*`);
+
+  if (productSales.length > 0) {
+    lines.push('');
+    lines.push('🏆 *Top Sellers (by revenue)*');
+    productSales.slice(0, 5).forEach((r, i) => {
+      const medal = ['🥇', '🥈', '🥉', '4.', '5.'][i] ?? `${i + 1}.`;
+      lines.push(
+        `${medal} ${escapeMd(r.product_name)} — *${r.units_sold}* units · *$${r.revenue.toFixed(
+          2,
+        )}*`,
+      );
+    });
+  }
+
+  if (productSales.length > 0) {
+    lines.push('');
+    lines.push('📈 *All Products — Sales Breakdown*');
+    const cap = 30;
+    productSales.slice(0, cap).forEach((r) => {
+      const stockStr =
+        r.stock_left !== null ? `stock *${r.stock_left}*` : '_deleted_';
+      const lastStr = r.last_sold_at
+        ? ` · last *${r.last_sold_at.slice(0, 10)}*`
+        : '';
+      lines.push(
+        `• ${escapeMd(r.product_name)}: *${r.units_sold}*u · *$${r.revenue.toFixed(
+          2,
+        )}* · ${stockStr}${lastStr}`,
+      );
+    });
+    if (productSales.length > cap) {
+      lines.push(`_…and ${productSales.length - cap} more (download PDF for full list)_`);
+    }
+  }
+
+  lines.push('');
+  lines.push('📅 *Last 7 Days*');
+  for (const d of daily) {
+    lines.push(`\`${d.date}\` — *$${d.revenue.toFixed(2)}* (${d.orders} orders)`);
+  }
+  // Weekly summary at the foot of the trend section.
+  const weekRev = daily.reduce((acc, d) => acc + d.revenue, 0);
+  const weekOrders = daily.reduce((acc, d) => acc + d.orders, 0);
+  lines.push(
+    `_7-day total:_ *$${weekRev.toFixed(2)}* across *${weekOrders}* orders`,
+  );
+
+  let text = lines.join('\n');
+  if (text.length > 3950) text = text.slice(0, 3900) + '\n\n_…(truncated)_';
   await ctx.editMessageText(text, {
     parse_mode: 'Markdown',
     reply_markup: backRow(new InlineKeyboard()),

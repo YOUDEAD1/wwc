@@ -21,6 +21,10 @@ export const ar: Record<string, string> = {
   'btn.view_note': '📝 عرض الملاحظة',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
+  'btn.qty.max': 'الحد الأقصى',
+  'btn.qty.reset': 'إعادة',
+  'btn.qty.confirm': '✅ تأكيد',
+  'btn.contact_admin': '💬 تواصل مع الإدارة',
   'btn.out_of_stock': '❌ غير متوفر',
   'btn.my_orders': '🧾 طلباتي',
   'btn.refer': '🎁 إحالة',
@@ -47,10 +51,17 @@ export const ar: Record<string, string> = {
   'btn.stats_refresh': '🔄 تحديث',
   'btn.stats_back': '◀️ رجوع',
 
-  'shop.home.header': '*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
-  'shop.choose_category': '*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
+  'shop.home.header': '*المنتجات المتاحة:*',
+  'shop.choose_category': '*المنتجات المتاحة:*',
   'shop.qty.prompt': '🔢 اكتب الكمية (1–{max}) وأرسل.',
   'shop.qty.invalid': '❌ رقم غير صالح — أرسل قيمة بين 1 و {max}.',
+  'shop.qty.editor.title':
+    '🔢 *اختر الكمية*\n\n' +
+    '*{name}*\n' +
+    'المخزون: *{stock}*\n' +
+    'السعر للوحدة: *{price} USDT*\n\n' +
+    'المحدد: <code>{qty}</code>\n' +
+    'الإجمالي: *{total} USDT*',
   'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
   'shop.empty_products': 'لا توجد منتجات في هذه الفئة بعد.',
   'shop.product.line.name': '*{name}*',

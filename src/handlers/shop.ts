@@ -7,9 +7,14 @@ import {
   listActiveProducts,
 } from '../db/queries.js';
 import { charge } from '../services/wallet.js';
-import { productKeyboard, shopProductsKeyboard } from '../keyboards/shop.js';
+import {
+  productKeyboard,
+  qtyEditorKeyboard,
+  shopProductsKeyboard,
+} from '../keyboards/shop.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
+import { getAdminContactUrl } from '../services/settings.js';
 
 /**
  * Top-level Shop home — paginated all-products list. The categories
@@ -31,13 +36,10 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   }
   const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PER_PAGE));
   const safePage = Math.min(Math.max(0, page), totalPages - 1);
-  const html = renderMdHtml(
-    ctx.t('shop.home.header', {
-      total,
-      page: safePage + 1,
-      pages: totalPages,
-    }),
-  );
+  // Header is the single bold line `Available Products:` — page /
+  // total counts live in the keyboard footer where they don't
+  // clutter the body copy.
+  const html = renderMdHtml(ctx.t('shop.home.header'));
   const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages);
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
@@ -73,6 +75,40 @@ async function showProduct(ctx: AppCtx, productId: number) {
     parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty),
   });
+}
+
+/**
+ * Render the inline qty-editor screen — the "big counter" replacing
+ * the legacy `Type a quantity (1–999) and send.` force-reply prompt.
+ */
+async function showQtyEditor(ctx: AppCtx, productId: number) {
+  const p = await getProduct(productId);
+  if (!p) {
+    await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+    return;
+  }
+  const qty = ctx.session.qty[productId] ?? QTY_MIN;
+  const total = (p.price * qty).toFixed(2);
+  const text = ctx.t('shop.qty.editor.title', {
+    name: p.name,
+    stock: p.stock,
+    price: p.price,
+    qty,
+    total,
+  });
+  await ctx.editMessageText(renderMdHtml(text), {
+    parse_mode: 'HTML',
+    reply_markup: qtyEditorKeyboard(ctx.lang, p, getAdminContactUrl()),
+  });
+}
+
+/**
+ * Clamp a candidate qty to [QTY_MIN, min(QTY_MAX, stock)] — guards
+ * against the user spamming +100 past the available stock.
+ */
+function clampQty(candidate: number, stock: number): number {
+  const ceiling = Math.min(QTY_MAX, Math.max(QTY_MIN, stock));
+  return Math.min(ceiling, Math.max(QTY_MIN, Math.trunc(candidate)));
 }
 
 export function registerShop(bot: Composer<AppCtx>): void {
@@ -112,68 +148,58 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await showProduct(ctx, id);
   });
 
-  // Tap the qty digit → prompt the user to type any number 1..QTY_MAX.
-  // We send the prompt with `force_reply: true` so the user's
-  // keyboard pops up automatically focused on the reply box (mobile)
-  // and keep the prompt's message id around so the text-handler can
-  // delete it after capture.
+  // Tap the qty digit → open the inline qty editor (the big counter
+  // with ±1 / ±10 / ±100 / Max / Reset / Confirm / Contact Admin).
+  // Replaces the legacy force-reply "Type a quantity (1–N) and send"
+  // prompt so the entire flow stays in one message — no extra text
+  // bubbles, no virtual keyboard required.
   bot.callbackQuery(/^qty:(\d+):custom$/, async (ctx) => {
-    const id = Number(ctx.match[1]);
     await ctx.answerCallbackQuery();
-    const prompt = await ctx.reply(ctx.t('shop.qty.prompt', { max: QTY_MAX }), {
-      reply_markup: { force_reply: true, selective: true },
-    });
-    ctx.session.userFlow = {
-      type: 'set_qty',
-      step: 'value',
-      data: { product_id: id, prompt_message_id: prompt.message_id },
-    };
+    await showQtyEditor(ctx, Number(ctx.match[1]));
   });
 
-  // Capture the next plain-text message as the custom quantity.
-  bot.on('message:text', async (ctx, next) => {
-    const flow = ctx.session.userFlow;
-    if (!flow || flow.type !== 'set_qty') return next();
-    const raw = ctx.message.text.trim();
-    if (raw.startsWith('/')) {
-      ctx.session.userFlow = undefined;
-      return next();
-    }
-    const n = Number(raw);
-    if (!Number.isFinite(n) || !Number.isInteger(n) || n < QTY_MIN || n > QTY_MAX) {
-      await ctx.reply(ctx.t('shop.qty.invalid', { max: QTY_MAX }));
-      return;
-    }
-    const { product_id, prompt_message_id } = flow.data;
-    ctx.session.qty[product_id] = n;
-    ctx.session.userFlow = undefined;
-    // Best-effort cleanup of the prompt and the user's reply so the
-    // chat stays tidy. Failures are ignored — a stale prompt is
-    // harmless.
-    if (prompt_message_id !== undefined) {
-      try {
-        await ctx.api.deleteMessage(ctx.chat.id, prompt_message_id);
-      } catch {
-        /* ignore */
-      }
-    }
-    try {
-      await ctx.api.deleteMessage(ctx.chat.id, ctx.message.message_id);
-    } catch {
-      /* ignore */
-    }
-    // Re-render the product page with the new qty as a fresh message
-    // (we don't have a callbackQuery here so editMessageText would
-    // target the wrong message).
-    const p = await getProduct(product_id);
+  // Editor actions: ±N / max / reset / confirm. Confirm and Back
+  // both leave the editor — confirm renders the product page so the
+  // user sees Buy Now ready to tap; Back is wired straight to
+  // `prod:<id>` in the keyboard.
+  bot.callbackQuery(/^qtye:(\d+):(.+)$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const action = ctx.match[2];
+    const p = await getProduct(id);
     if (!p) {
-      await ctx.reply(ctx.t('err.unknown_action'));
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
-    await ctx.reply(renderMdHtml(productPageText(ctx, p, n)), {
-      parse_mode: 'HTML',
-      reply_markup: productKeyboard(ctx.lang, p, n),
-    });
+    if (action === 'confirm') {
+      await ctx.answerCallbackQuery();
+      await showProduct(ctx, id);
+      return;
+    }
+    const cur = ctx.session.qty[id] ?? QTY_MIN;
+    let candidate: number;
+    if (action === 'max') {
+      candidate = p.stock;
+    } else if (action === 'reset') {
+      candidate = QTY_MIN;
+    } else {
+      const delta = Number(action);
+      if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      candidate = cur + delta;
+    }
+    const next = clampQty(candidate, p.stock);
+    if (next === cur) {
+      // Telegram errors out on `editMessageText` calls that don't
+      // change anything; short-circuit so the user just gets a
+      // silent ack on edge taps (e.g. -1 at 1, +1 at stock).
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    ctx.session.qty[id] = next;
+    await ctx.answerCallbackQuery();
+    await showQtyEditor(ctx, id);
   });
 
   bot.callbackQuery(/^note:(\d+)$/, async (ctx) => {
