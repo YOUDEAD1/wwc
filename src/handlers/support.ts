@@ -4,7 +4,7 @@ import { backToMenuKeyboard } from '../keyboards/mainMenu.js';
 import { inlineBtn, inlineUrl } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getAdminContactUrlWithPrefill } from '../services/settings.js';
+import { getAdminContactUrlWithPrefill, getTextOverride } from '../services/settings.js';
 import { logger } from '../logger.js';
 import type { Lang } from '../../config/index.js';
 import { deleteSetting, readSetting, setSetting, findUserById } from '../db/queries.js';
@@ -1038,36 +1038,144 @@ export function registerSupport(bot: Composer<AppCtx>): void {
   });
 }
 
+/**
+ * Default system prompt used when the admin hasn't customised one
+ * via the `🤖 AI Setup → 💬 Set AI Prompt` button. The override
+ * lives in the settings table under `text.ai.system_prompt`.
+ */
+const DEFAULT_AI_SYSTEM_PROMPT =
+  "You are SafwanTiger Shop's helpful customer support assistant. " +
+  'Be concise, friendly, and avoid making up information about ' +
+  'products, prices, or order status — if you do not know, ask the ' +
+  'customer to wait for a human admin to follow up.';
+
+/**
+ * Resolve the AI provider from the configured key shape. Google AI
+ * Studio (Gemini) keys start with `AIza`; OpenAI keys start with
+ * `sk-`. Falls back to OpenAI for unrecognised shapes so manually
+ * pasted custom keys still hit a sensible endpoint.
+ */
+function aiProvider(key: string): 'google' | 'openai' {
+  if (key.startsWith('AIza')) return 'google';
+  return 'openai';
+}
+
+/**
+ * Resolve the AI API key + system prompt the bot should use for
+ * the one-shot AI Support replies.
+ *
+ * Priority:
+ *   1. The runtime override set via the admin UI
+ *      (`🤖 AI Setup → 🔑 Set AI API Key` → `text.ai.api_key`).
+ *      This is what the bot owner expects to "just work" after
+ *      pasting a key into Telegram.
+ *   2. The legacy env var `OPENAI_API_KEY`, kept for backwards
+ *      compatibility with deployments that wired the key at the
+ *      Render / Railway env layer before the admin UI existed.
+ */
+function resolveAiConfig(): { key: string; prompt: string } | null {
+  const override = getTextOverride('ai.api_key');
+  const key = override && override.length > 0 ? override : env.OPENAI_API_KEY;
+  if (!key) return null;
+  const prompt = getTextOverride('ai.system_prompt') ?? DEFAULT_AI_SYSTEM_PROMPT;
+  return { key, prompt };
+}
+
+async function callOpenAI(
+  apiKey: string,
+  prompt: string,
+  question: string,
+): Promise<string> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_MODEL,
+      messages: [
+        { role: 'system', content: prompt },
+        { role: 'user', content: question },
+      ],
+      temperature: 0.3,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    logger.warn({ status: res.status, body }, 'AI: OpenAI call failed');
+    throw new Error(`OpenAI ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  return json.choices?.[0]?.message?.content ?? '🤖 (no answer)';
+}
+
+/**
+ * Call Google AI Studio (Gemini) via the public REST endpoint.
+ * Uses the `gemini-1.5-flash` model by default (free tier on AI
+ * Studio at the time of writing). Override the model name by
+ * setting `OPENAI_MODEL` to a Gemini model id (e.g.
+ * `gemini-1.5-pro`) — the env var is reused as a generic
+ * "preferred model" knob across providers.
+ */
+async function callGemini(
+  apiKey: string,
+  prompt: string,
+  question: string,
+): Promise<string> {
+  // Reuse OPENAI_MODEL as a generic knob unless it still points at
+  // an OpenAI default (`gpt-…`), in which case fall back to a
+  // sensible Gemini default. Keeps the env surface minimal — no
+  // need for a separate GEMINI_MODEL variable.
+  const model = env.OPENAI_MODEL.startsWith('gpt-')
+    ? 'gemini-1.5-flash'
+    : env.OPENAI_MODEL;
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` +
+    `?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: prompt }] },
+      contents: [{ role: 'user', parts: [{ text: question }] }],
+      generationConfig: { temperature: 0.3 },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    logger.warn({ status: res.status, body }, 'AI: Gemini call failed');
+    throw new Error(`Gemini ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+  };
+  const text = json.candidates?.[0]?.content?.parts
+    ?.map((p) => p.text ?? '')
+    .join('')
+    .trim();
+  return text && text.length > 0 ? text : '🤖 (no answer)';
+}
+
 async function answerAI(question: string): Promise<string> {
-  if (!env.OPENAI_API_KEY) {
-    return `🤖 (stub) I received: "${question.slice(0, 200)}"\n\nA human will follow up shortly.`;
+  const cfg = resolveAiConfig();
+  if (!cfg) {
+    return (
+      '🤖 (AI not configured) An admin needs to paste an API key under ' +
+      '*AI Setup → Set AI API Key* before this assistant can reply. ' +
+      'A human will follow up shortly.'
+    );
   }
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: env.OPENAI_MODEL,
-        messages: [
-          {
-            role: 'system',
-            content:
-              "You are SafwanTiger Shop's helpful customer support assistant. Be concise.",
-          },
-          { role: 'user', content: question },
-        ],
-        temperature: 0.3,
-      }),
-    });
-    if (!res.ok) return `🤖 ${await res.text()}`;
-    const json = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    return json.choices?.[0]?.message?.content ?? '🤖 (no answer)';
+    const provider = aiProvider(cfg.key);
+    if (provider === 'google') {
+      return await callGemini(cfg.key, cfg.prompt, question);
+    }
+    return await callOpenAI(cfg.key, cfg.prompt, question);
   } catch (err) {
+    logger.error({ err }, 'AI: answerAI threw');
     return `🤖 ${(err as Error).message}`;
   }
 }
