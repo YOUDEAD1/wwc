@@ -22,7 +22,6 @@ import {
 import * as adminLog from '../services/adminLog.js';
 import { buildSupportTranscriptPdf } from '../services/pdfReport.js';
 import { sendReportEmail } from '../services/mailer.js';
-import { showMainMenu } from './start.js';
 
 /**
  * Per-user AI Support session state. The flow is multi-turn now:
@@ -1091,11 +1090,11 @@ export function registerSupport(bot: Composer<AppCtx>): void {
 
   // Cancel button on the AI Support screen. Wipes the entire AI
   // Support exchange (every bot prompt + reply and every user
-  // question tracked on the session) from the user's chat, drops
-  // them back onto a fresh main menu, and — if the conversation
-  // had any Q&A — posts a tiny follow-up message holding just the
-  // "📧 Send chat PDF to email" button so the user can still grab
-  // a copy without seeing the noisy "AI chat closed" panel.
+  // question tracked on the session) from the user's chat. If the
+  // conversation had any Q&A, posts a tiny follow-up message
+  // holding just the "📧 Send chat PDF to email" button so the user
+  // can still grab a copy. Does NOT auto-reopen the main menu —
+  // the user can tap /start themselves whenever they want.
   bot.callbackQuery('support:ai:end', async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!ctx.from || !ctx.chat) return;
@@ -1169,8 +1168,6 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         }),
       ),
     );
-
-    await showMainMenu(ctx, { fresh: true });
 
     if (pdfBuilt) {
       try {
