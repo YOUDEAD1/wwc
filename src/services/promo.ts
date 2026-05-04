@@ -90,25 +90,35 @@ export function priceBreakdown(
 
 /**
  * Resolve the "upcoming" promo to surface on the product page as a
- * teaser when the buyer hasn't reached the threshold qty yet.
+ * teaser when the buyer hasn't reached the threshold qty yet (or
+ * has reached one, but a strictly better tier is still upcoming).
  *
  * Selection rules — purely cosmetic, never affects the actual charge:
+ *   - Only considers upcoming rules: `min_qty > qty`.
+ *   - When a promo is already applying (`currentDiscount > 0`),
+ *     filters to upcoming rules whose `discount_amount` is strictly
+ *     larger than the current applied amount — surfacing a "weaker"
+ *     upcoming promo on top of an active one would be misleading.
  *   - Most-specific scope tier first (per-user-product → per-user
  *     → per-product → default).
- *   - Within tier, the closest unmet threshold wins (lowest
- *     `min_qty` that is still greater than the current `qty`).
+ *   - Within tier, the closest threshold wins (lowest `min_qty`).
  *   - Within that, largest `discount_amount` wins.
  *
- * Returns `null` when no upcoming promo exists for the (user,
- * product) scope.
+ * Returns `null` when no qualifying upcoming promo exists.
  */
 export async function nextPromoTeaser(
   telegram_id: number,
   product_id: number,
   qty: number,
+  currentDiscount = 0,
 ): Promise<DBPromo | null> {
   const all = await findScopedActivePromos(telegram_id, product_id);
-  const upcoming = all.filter((p) => p.min_qty > qty);
+  let upcoming = all.filter((p) => p.min_qty > qty);
+  if (currentDiscount > 0) {
+    upcoming = upcoming.filter(
+      (p) => Number(p.discount_amount) > currentDiscount,
+    );
+  }
   if (upcoming.length === 0) return null;
   upcoming.sort(
     (a, b) =>

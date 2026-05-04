@@ -98,11 +98,22 @@ function productPageText(
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
-  // Show the teaser line under Warranty when an upcoming promo
-  // exists for this user/product but they haven't reached the
-  // threshold qty yet. Suppressed once the promo is actually
-  // applying — the strikethrough Total below carries that info.
-  if (!eligible && teaser) {
+  // Teaser line under Warranty.
+  //   - Always shows when there is no active promo yet but an
+  //     upcoming threshold exists (the original "Buy 10+ −$5 Off"
+  //     case).
+  //   - When a promo is *already* applying, we still surface the
+  //     next-upcoming threshold IFF it offers a strictly better
+  //     discount than the one currently applied. This is the
+  //     multi-tier UX: at qty 10 with `10+ → −$5` active, the
+  //     buyer should still see `🎁 Promo: Buy 25+ −$15 Off` so
+  //     they know the next reachable rule. We never surface a
+  //     "weaker" upcoming promo on top of an active one — that
+  //     would just be noise.
+  const teaserBeats = teaser
+    ? Number(teaser.discount_amount) > discount
+    : false;
+  if (teaser && (!eligible || teaserBeats)) {
     lines.push(
       ctx.t('shop.product.line.promo.teaser', {
         min_qty: teaser.min_qty,
@@ -173,10 +184,13 @@ async function showProduct(ctx: AppCtx, productId: number) {
   }
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
-  const [promo, teaser] = await Promise.all([
-    resolvePromo(ctx.user.telegram_id, p.id, qty, p.price),
-    nextPromoTeaser(ctx.user.telegram_id, p.id, qty),
-  ]);
+  const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
+  const teaser = await nextPromoTeaser(
+    ctx.user.telegram_id,
+    p.id,
+    qty,
+    promo?.discount ?? 0,
+  );
   const shareUrl = buildProductShareUrl(p.id);
   await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser)), {
     parse_mode: 'HTML',
@@ -215,10 +229,13 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
   // else the saved qty (or QTY_MIN) so the page is never visually
   // empty before the first tap.
   const previewQty = buf.length > 0 ? Number(buf) : ctx.session.qty[productId] ?? QTY_MIN;
-  const [promo, teaser] = await Promise.all([
-    resolvePromo(ctx.user.telegram_id, p.id, previewQty, p.price),
-    nextPromoTeaser(ctx.user.telegram_id, p.id, previewQty),
-  ]);
+  const promo = await resolvePromo(ctx.user.telegram_id, p.id, previewQty, p.price);
+  const teaser = await nextPromoTeaser(
+    ctx.user.telegram_id,
+    p.id,
+    previewQty,
+    promo?.discount ?? 0,
+  );
   const body = productPageText(ctx, p, previewQty, promo, teaser);
   const instruction = ctx.t('shop.qty.keypad.instruction', {
     current: buf.length > 0 ? buf : '—',
@@ -436,10 +453,13 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // Re-open the product page as a fresh message (the prompt was
     // just deleted, so we can't editMessageText into it).
     const shareUrl = buildProductShareUrl(p.id);
-    const [promo, teaser] = await Promise.all([
-      resolvePromo(ctx.user.telegram_id, p.id, next_, p.price),
-      nextPromoTeaser(ctx.user.telegram_id, p.id, next_),
-    ]);
+    const promo = await resolvePromo(ctx.user.telegram_id, p.id, next_, p.price);
+    const teaser = await nextPromoTeaser(
+      ctx.user.telegram_id,
+      p.id,
+      next_,
+      promo?.discount ?? 0,
+    );
     await ctx.reply(
       renderMdHtml(productPageText(ctx, p, next_, promo, teaser)),
       {
