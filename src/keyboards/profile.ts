@@ -28,7 +28,37 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
   inlineBtn(kb, lang, 'set_region', 'profile:region');
   inlineBtn(kb, lang, 'redeem', 'profile:redeem');
   kb.row();
+  // Premium-shop overhaul: two new admin-editable info screens
+  // surfaced from Settings.
+  inlineBtn(kb, lang, 'bot_tutorial', 'profile:tutorial');
+  inlineBtn(kb, lang, 'send_price_list', 'profile:pricelist');
+  kb.row();
   inlineBtn(kb, lang, 'back', 'main:open');
+  return kb;
+}
+
+/**
+ * Send Price List sub-screen — two delivery options (mail / chat)
+ * stacked on full-width rows so the inline icons line up cleanly.
+ */
+export function priceListKeyboard(lang: Lang): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, lang, 'send_price_list_mail', 'profile:pricelist:mail');
+  kb.row();
+  inlineBtn(kb, lang, 'send_price_list_chat', 'profile:pricelist:chat');
+  kb.row();
+  inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
+  return kb;
+}
+
+/** Bot Tutorial viewer footer — just a Back button. */
+export function botTutorialKeyboard(lang: Lang, url: string | null): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (url) {
+    inlineUrl(kb, lang, 'tutorial_open_link', url);
+    kb.row();
+  }
+  inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }
 
@@ -124,17 +154,24 @@ export function notificationsKeyboard(
     stock_alert: boolean;
     announcements: boolean;
     wallet_alert: boolean;
+    email_reports: boolean;
   },
 ): InlineKeyboard {
   const stockKey = state.stock_alert ? 'notify_stock_on' : 'notify_stock_off';
   const annKey = state.announcements ? 'notify_ann_on' : 'notify_ann_off';
   const walletKey = state.wallet_alert ? 'notify_wallet_on' : 'notify_wallet_off';
+  const emailKey = state.email_reports ? 'notify_email_on' : 'notify_email_off';
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, stockKey, 'profile:toggle_stock');
   kb.row();
   inlineBtn(kb, lang, annKey, 'profile:toggle_ann');
   kb.row();
   inlineBtn(kb, lang, walletKey, 'profile:toggle_wallet');
+  kb.row();
+  // Email Reports controls both the 12h "add your email" nag AND
+  // the Send-PDF-to-mail buttons (those throw a popup error when
+  // this toggle is OFF).
+  inlineBtn(kb, lang, emailKey, 'profile:toggle_email_reports');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;

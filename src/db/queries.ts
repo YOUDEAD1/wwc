@@ -176,6 +176,46 @@ export async function adjustBalance(telegram_id: number, delta: number): Promise
   return next;
 }
 
+/**
+ * Toggle the "Email Reports" preference. Stored as the inverse of
+ * `email_nag_disabled` so the existing `false → on, true → off`
+ * semantics on the rest of the notify columns still hold for the UI
+ * label generator. Returns the new state (true = email reports ON).
+ */
+export async function toggleEmailReports(telegram_id: number): Promise<boolean> {
+  const { data, error: selectErr } = await supabase
+    .from('users')
+    .select('email_nag_disabled')
+    .eq('telegram_id', telegram_id)
+    .single();
+  if (selectErr) {
+    logger.error({ err: selectErr, telegram_id }, 'toggleEmailReports select failed');
+    throw selectErr;
+  }
+  const cur = Boolean((data as { email_nag_disabled?: boolean } | null)?.email_nag_disabled);
+  const nextDisabled = !cur;
+  const { error } = await supabase
+    .from('users')
+    .update({ email_nag_disabled: nextDisabled })
+    .eq('telegram_id', telegram_id);
+  if (error) {
+    logger.error({ err: error, telegram_id }, 'toggleEmailReports update failed');
+    throw error;
+  }
+  return !nextDisabled;
+}
+
+/**
+ * Mark `now()` as the last time the bot sent the 12h "please add an
+ * email" nag for this user, so we don't spam them on every interaction.
+ */
+export async function markEmailNagSent(telegram_id: number): Promise<void> {
+  await supabase
+    .from('users')
+    .update({ last_email_nag_at: new Date().toISOString() })
+    .eq('telegram_id', telegram_id);
+}
+
 export async function toggleNotification(
   telegram_id: number,
   field: 'stock_alert' | 'announcements' | 'wallet_alert',
@@ -348,15 +388,138 @@ export async function addProduct(p: {
   warranty?: string;
   description?: string;
   note?: string;
+  emoji?: string | null;
+  emoji_id?: string | null;
+  unlimited_stock?: boolean;
 }): Promise<DBProduct> {
   const { data, error } = await supabase.from('products').insert(p).select('*').single();
   if (error || !data) throw error ?? new Error('addProduct failed');
   return data as DBProduct;
 }
 
+/**
+ * Patch any subset of editable product fields. Used by the admin
+ * product-edit screen to set the per-product premium emoji, the
+ * View Note attachment, the Using Method tutorial, the unlimited
+ * stock flag, etc.
+ */
+export async function updateProduct(
+  id: number,
+  patch: Partial<{
+    name: string;
+    price: number;
+    stock: number;
+    warranty: string | null;
+    description: string | null;
+    note: string | null;
+    emoji: string | null;
+    emoji_id: string | null;
+    note_file_id: string | null;
+    note_file_name: string | null;
+    note_file_mime: string | null;
+    tutorial_text: string | null;
+    tutorial_file_id: string | null;
+    tutorial_file_type: 'photo' | 'video' | 'document' | null;
+    tutorial_url: string | null;
+    unlimited_stock: boolean;
+  }>,
+): Promise<void> {
+  const { error } = await supabase.from('products').update(patch).eq('id', id);
+  if (error) {
+    logger.error({ err: error, id, patch }, 'updateProduct failed');
+    throw error;
+  }
+}
+
+/**
+ * Add a single line of payload to the per-product items pool. Returns
+ * the inserted row.
+ */
+export async function addProductItems(
+  product_id: number,
+  payloads: string[],
+): Promise<number> {
+  if (payloads.length === 0) return 0;
+  const rows = payloads.map((payload) => ({ product_id, payload }));
+  const { error } = await supabase.from('product_items').insert(rows);
+  if (error) {
+    logger.error({ err: error, product_id }, 'addProductItems failed');
+    throw error;
+  }
+  return rows.length;
+}
+
+/** Count unconsumed items in the pool (for the admin card). */
+export async function countAvailableProductItems(product_id: number): Promise<number> {
+  const { count, error } = await supabase
+    .from('product_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('product_id', product_id)
+    .is('consumed_at', null);
+  if (error) {
+    logger.error({ err: error, product_id }, 'countAvailableProductItems failed');
+    return 0;
+  }
+  return count ?? 0;
+}
+
+/** Wipe every item (consumed or not) from the pool. */
+export async function clearProductItems(product_id: number): Promise<void> {
+  const { error } = await supabase
+    .from('product_items')
+    .delete()
+    .eq('product_id', product_id);
+  if (error) {
+    logger.error({ err: error, product_id }, 'clearProductItems failed');
+    throw error;
+  }
+}
+
+/**
+ * Claim up to `qty` unconsumed items from the pool and mark them as
+ * consumed by the given order. Returns the payload strings (in the
+ * order they were claimed). When the pool is short, returns whatever
+ * was available so the caller can fall back to a manual-delivery
+ * placeholder.
+ */
+export async function claimProductItems(
+  product_id: number,
+  qty: number,
+  order_id: number,
+): Promise<string[]> {
+  const { data: rows, error } = await supabase
+    .from('product_items')
+    .select('id, payload')
+    .eq('product_id', product_id)
+    .is('consumed_at', null)
+    .order('id', { ascending: true })
+    .limit(Math.max(0, qty));
+  if (error) {
+    logger.error({ err: error, product_id, qty }, 'claimProductItems select failed');
+    return [];
+  }
+  if (!rows || rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+  const now = new Date().toISOString();
+  const { error: upd } = await supabase
+    .from('product_items')
+    .update({ consumed_at: now, consumed_order_id: order_id })
+    .in('id', ids);
+  if (upd) {
+    logger.error({ err: upd, ids }, 'claimProductItems update failed');
+  }
+  return rows.map((r) => String(r.payload));
+}
+
 export async function decrementProductStock(id: number, qty: number): Promise<void> {
-  const { data: p } = await supabase.from('products').select('stock').eq('id', id).single();
-  const cur = Number(p?.stock ?? 0);
+  const { data: p } = await supabase
+    .from('products')
+    .select('stock, unlimited_stock')
+    .eq('id', id)
+    .single();
+  const unlimited = Boolean((p as { unlimited_stock?: boolean } | null)?.unlimited_stock);
+  if (unlimited) return;
+  const cur = Number((p as { stock?: number } | null)?.stock ?? 0);
   await supabase.from('products').update({ stock: Math.max(0, cur - qty) }).eq('id', id);
 }
 
@@ -631,6 +794,25 @@ export async function getPromo(id: number): Promise<DBPromo | null> {
  * the optional product so the admin UI can show the product name
  * inline without a second roundtrip.
  */
+/**
+ * Flat list of every currently-active promo. Used by the Send Price
+ * List CSV builder to surface the cheapest active promo per product
+ * inline. Inactive / expired rows are filtered out so the export
+ * matches what the buyer would actually see at checkout.
+ */
+export async function listActivePromos(): Promise<DBPromo[]> {
+  const { data, error } = await supabase
+    .from('promos')
+    .select('*')
+    .eq('active', true)
+    .order('min_qty', { ascending: true });
+  if (error) {
+    logger.error({ err: error }, 'listActivePromos failed');
+    return [];
+  }
+  return (data ?? []) as DBPromo[];
+}
+
 export async function listPromos(
   page: number,
   pageSize: number,
@@ -840,6 +1022,7 @@ export async function createOrder(o: {
   /** ID of the matched promo, when a discount was applied. */
   promo_id?: number | null;
   delivery?: string;
+  delivered_items?: string | null;
 }): Promise<DBOrder> {
   const { data, error } = await supabase
     .from('orders')
@@ -848,11 +1031,24 @@ export async function createOrder(o: {
       discount: o.discount ?? 0,
       promo_id: o.promo_id ?? null,
       delivery: o.delivery ?? null,
+      delivered_items: o.delivered_items ?? null,
     })
     .select('*')
     .single();
   if (error || !data) throw error ?? new Error('createOrder failed');
   return data as DBOrder;
+}
+
+/**
+ * Patch the `delivered_items` payload onto an existing order. Used
+ * after `claimProductItems` resolves so the order detail screen can
+ * re-show the same payload later without re-consuming the pool.
+ */
+export async function setOrderDeliveredItems(
+  order_id: number,
+  delivered_items: string,
+): Promise<void> {
+  await supabase.from('orders').update({ delivered_items }).eq('id', order_id);
 }
 
 export async function listOrders(user_id: number, limit = 10): Promise<DBOrder[]> {

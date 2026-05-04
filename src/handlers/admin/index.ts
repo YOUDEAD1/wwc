@@ -54,6 +54,10 @@ import {
   getPromoImpact,
   updatePromo,
   deletePromo,
+  updateProduct,
+  addProductItems,
+  countAvailableProductItems,
+  clearProductItems,
 } from '../../db/queries.js';
 import * as cache from '../../services/cache.js';
 import { credit } from '../../services/wallet.js';
@@ -70,6 +74,9 @@ import {
   getButtonIcon,
   setButtonIcon,
   clearButtonIcon,
+  setBotTutorialField,
+  getBotTutorial,
+  type BotTutorial,
 } from '../../services/settings.js';
 import { renderMdHtml } from '../../services/premium.js';
 import * as adminLog from '../../services/adminLog.js';
@@ -3619,6 +3626,312 @@ adminBot.command('setemoji', async (ctx) => {
   }
   await setEmoji(key, unicode, customId, ctx.from!.id);
   await ctx.reply(`✅ Emoji \`${key}\` updated.`, { parse_mode: 'Markdown' });
+});
+
+// ---------------------------------------------------------------------------
+//  Premium-shop overhaul: per-product asset commands.
+//
+//  Each command operates on a single product id. Replying *to* the
+//  admin's own message that contains a photo / video / document
+//  swaps the slash-command target into the replied-to file, so the
+//  admin can drag-drop a file into Telegram and run the command in
+//  the same chat without copy-pasting file_ids.
+// ---------------------------------------------------------------------------
+
+function readPremiumEmojiFromMessage(
+  ctx: AppCtx,
+): { unicode: string; custom_emoji_id: string } | null {
+  // Admin replies to a message containing a single premium emoji.
+  // We grab the first `custom_emoji` entity and snapshot its unicode
+  // fallback (one grapheme cluster from the entity range).
+  const reply = ctx.message?.reply_to_message;
+  if (!reply) return null;
+  const text = reply.text ?? reply.caption ?? '';
+  const entities = reply.entities ?? reply.caption_entities ?? [];
+  const entity = entities.find(
+    (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
+  ) as { offset: number; length: number; custom_emoji_id: string } | undefined;
+  if (!entity) return null;
+  const unicode = text
+    .substring(entity.offset, entity.offset + entity.length)
+    .trim();
+  if (!unicode) return null;
+  return { unicode, custom_emoji_id: entity.custom_emoji_id };
+}
+
+adminBot.command('setproductemoji', async (ctx) => {
+  // Usage: /setproductemoji <id> [<unicode> <custom_emoji_id>]
+  // Or: reply to a premium-emoji message with `/setproductemoji <id>`.
+  const parts = (ctx.message?.text ?? '').split(/\s+/);
+  const id = Number(parts[1]);
+  if (!Number.isFinite(id)) {
+    await ctx.reply('Usage: /setproductemoji <id> [<unicode> <custom_emoji_id>]');
+    return;
+  }
+  let customId: string | null = null;
+  if (parts[2] && parts[3]) {
+    customId = parts[3]!;
+  } else {
+    const fromReply = readPremiumEmojiFromMessage(ctx);
+    if (fromReply) customId = fromReply.custom_emoji_id;
+  }
+  if (!customId) {
+    await ctx.reply(
+      'Reply to a single premium-emoji message with `/setproductemoji <id>`, or pass the id directly.',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+  await updateProduct(id, { emoji_id: customId });
+  await ctx.reply(`✅ Product #${id} emoji_id set.`);
+});
+
+adminBot.command('clearproductemoji', async (ctx) => {
+  const id = Number((ctx.message?.text ?? '').split(/\s+/)[1]);
+  if (!Number.isFinite(id)) {
+    await ctx.reply('Usage: /clearproductemoji <id>');
+    return;
+  }
+  await updateProduct(id, { emoji_id: null });
+  await ctx.reply(`🧹 Product #${id} emoji_id cleared.`);
+});
+
+adminBot.command('setproductunlimited', async (ctx) => {
+  // Usage: /setproductunlimited <id> on|off
+  const parts = (ctx.message?.text ?? '').split(/\s+/);
+  const id = Number(parts[1]);
+  const flag = parts[2]?.toLowerCase();
+  if (!Number.isFinite(id) || (flag !== 'on' && flag !== 'off')) {
+    await ctx.reply('Usage: /setproductunlimited <id> on|off');
+    return;
+  }
+  await updateProduct(id, { unlimited_stock: flag === 'on' });
+  await ctx.reply(`✅ Product #${id} unlimited_stock = ${flag.toUpperCase()}.`);
+});
+
+adminBot.command('setproductnotefile', async (ctx) => {
+  // Reply to a document message with `/setproductnotefile <id>` to
+  // upload a custom note file (pic 2 reference). Pass `clear` instead
+  // of replying to remove the note file.
+  const parts = (ctx.message?.text ?? '').split(/\s+/);
+  const id = Number(parts[1]);
+  if (!Number.isFinite(id)) {
+    await ctx.reply('Usage: reply to a document with /setproductnotefile <id>, or /setproductnotefile <id> clear');
+    return;
+  }
+  if (parts[2]?.toLowerCase() === 'clear') {
+    await updateProduct(id, { note_file_id: null, note_file_name: null, note_file_mime: null });
+    await ctx.reply(`🧹 Product #${id} note file cleared.`);
+    return;
+  }
+  const doc = ctx.message?.reply_to_message?.document;
+  if (!doc) {
+    await ctx.reply('Reply to a document message with this command.');
+    return;
+  }
+  await updateProduct(id, {
+    note_file_id: doc.file_id,
+    note_file_name: doc.file_name ?? null,
+    note_file_mime: doc.mime_type ?? null,
+  });
+  await ctx.reply(`✅ Product #${id} note file set (${doc.file_name ?? doc.file_id}).`);
+});
+
+adminBot.command('setproducttutorial', async (ctx) => {
+  // Usage variants:
+  //   /setproducttutorial <id> text <body...>
+  //   /setproducttutorial <id> url <https://...>
+  //   /setproducttutorial <id> clear
+  //   reply to photo/video/doc with: /setproducttutorial <id> file
+  const text = ctx.message?.text ?? '';
+  const m = text.match(/^\/setproducttutorial(?:@\S+)?\s+(\d+)\s+(text|url|file|clear)\s*([\s\S]*)$/);
+  if (!m) {
+    await ctx.reply(
+      'Usage:\n' +
+        '`/setproducttutorial <id> text <body>`\n' +
+        '`/setproducttutorial <id> url <https://...>`\n' +
+        '`/setproducttutorial <id> file` (reply to photo/video/document)\n' +
+        '`/setproducttutorial <id> clear`',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+  const id = Number(m[1]);
+  const action = m[2];
+  const value = m[3]?.trim() ?? '';
+  if (action === 'text') {
+    await updateProduct(id, { tutorial_text: value || null });
+    await ctx.reply(`✅ Product #${id} tutorial text saved.`);
+    return;
+  }
+  if (action === 'url') {
+    await updateProduct(id, { tutorial_url: value || null });
+    await ctx.reply(`✅ Product #${id} tutorial url saved.`);
+    return;
+  }
+  if (action === 'clear') {
+    await updateProduct(id, {
+      tutorial_text: null,
+      tutorial_file_id: null,
+      tutorial_file_type: null,
+      tutorial_url: null,
+    });
+    await ctx.reply(`🧹 Product #${id} tutorial wiped.`);
+    return;
+  }
+  // file
+  const reply = ctx.message?.reply_to_message;
+  let file_id: string | undefined;
+  let file_type: 'photo' | 'video' | 'document' | undefined;
+  if (reply?.photo && reply.photo.length > 0) {
+    file_id = reply.photo[reply.photo.length - 1]!.file_id;
+    file_type = 'photo';
+  } else if (reply?.video) {
+    file_id = reply.video.file_id;
+    file_type = 'video';
+  } else if (reply?.document) {
+    file_id = reply.document.file_id;
+    file_type = 'document';
+  }
+  if (!file_id || !file_type) {
+    await ctx.reply('Reply to a photo, video, or document message with this command.');
+    return;
+  }
+  await updateProduct(id, {
+    tutorial_file_id: file_id,
+    tutorial_file_type: file_type,
+  });
+  await ctx.reply(`✅ Product #${id} tutorial ${file_type} saved.`);
+});
+
+adminBot.command('addproductitems', async (ctx) => {
+  // Usage: /addproductitems <id>
+  // Then reply to a message containing newline-separated payloads,
+  // OR include them after the id in the same message body.
+  const text = ctx.message?.text ?? '';
+  const m = text.match(/^\/addproductitems(?:@\S+)?\s+(\d+)\s*([\s\S]*)$/);
+  if (!m) {
+    await ctx.reply(
+      'Usage: /addproductitems <id>\nThen include payloads on subsequent lines, or reply to a message containing them.',
+    );
+    return;
+  }
+  const id = Number(m[1]);
+  let body = (m[2] ?? '').trim();
+  if (!body && ctx.message?.reply_to_message) {
+    body = (ctx.message.reply_to_message.text ?? ctx.message.reply_to_message.caption ?? '').trim();
+  }
+  if (!body) {
+    await ctx.reply('No payloads found. Either include them after the id or reply to a message with one payload per line.');
+    return;
+  }
+  const payloads = body
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (payloads.length === 0) {
+    await ctx.reply('No payloads found.');
+    return;
+  }
+  const inserted = await addProductItems(id, payloads);
+  const remaining = await countAvailableProductItems(id);
+  await ctx.reply(`✅ Added ${inserted} items to product #${id}. Pool now has ${remaining} unconsumed.`);
+});
+
+adminBot.command('countproductitems', async (ctx) => {
+  const id = Number((ctx.message?.text ?? '').split(/\s+/)[1]);
+  if (!Number.isFinite(id)) {
+    await ctx.reply('Usage: /countproductitems <id>');
+    return;
+  }
+  const remaining = await countAvailableProductItems(id);
+  await ctx.reply(`Product #${id}: ${remaining} unconsumed item(s).`);
+});
+
+adminBot.command('clearproductitems', async (ctx) => {
+  const id = Number((ctx.message?.text ?? '').split(/\s+/)[1]);
+  if (!Number.isFinite(id)) {
+    await ctx.reply('Usage: /clearproductitems <id>');
+    return;
+  }
+  await clearProductItems(id);
+  await ctx.reply(`🧹 Product #${id}: all items wiped.`);
+});
+
+// ---- Bot Tutorial (Settings) ----
+adminBot.command('setbottutorial', async (ctx) => {
+  // /setbottutorial text <body>
+  // /setbottutorial url <https://...>
+  // /setbottutorial file (reply to photo/video/document)
+  // /setbottutorial clear
+  const text = ctx.message?.text ?? '';
+  const m = text.match(/^\/setbottutorial(?:@\S+)?\s+(text|url|file|clear)\s*([\s\S]*)$/);
+  if (!m) {
+    await ctx.reply(
+      'Usage:\n' +
+        '`/setbottutorial text <body>`\n' +
+        '`/setbottutorial url <https://...>`\n' +
+        '`/setbottutorial file` (reply to a photo/video/document)\n' +
+        '`/setbottutorial clear`',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+  const action = m[1];
+  const value = m[2]?.trim() ?? '';
+  const adminId = ctx.from!.id;
+  if (action === 'text') {
+    await setBotTutorialField('text', value || null, adminId);
+    await ctx.reply('✅ Bot Tutorial text saved.');
+    return;
+  }
+  if (action === 'url') {
+    await setBotTutorialField('url', value || null, adminId);
+    await ctx.reply('✅ Bot Tutorial URL saved.');
+    return;
+  }
+  if (action === 'clear') {
+    await setBotTutorialField('text', null, adminId);
+    await setBotTutorialField('file_id', null, adminId);
+    await setBotTutorialField('file_type', null, adminId);
+    await setBotTutorialField('url', null, adminId);
+    await ctx.reply('🧹 Bot Tutorial wiped.');
+    return;
+  }
+  // file
+  const reply = ctx.message?.reply_to_message;
+  let file_id: string | undefined;
+  let file_type: NonNullable<BotTutorial['file_type']> | undefined;
+  if (reply?.photo && reply.photo.length > 0) {
+    file_id = reply.photo[reply.photo.length - 1]!.file_id;
+    file_type = 'photo';
+  } else if (reply?.video) {
+    file_id = reply.video.file_id;
+    file_type = 'video';
+  } else if (reply?.document) {
+    file_id = reply.document.file_id;
+    file_type = 'document';
+  }
+  if (!file_id || !file_type) {
+    await ctx.reply('Reply to a photo, video, or document message with /setbottutorial file.');
+    return;
+  }
+  await setBotTutorialField('file_id', file_id, adminId);
+  await setBotTutorialField('file_type', file_type, adminId);
+  await ctx.reply(`✅ Bot Tutorial ${file_type} saved.`);
+});
+
+adminBot.command('showbottutorial', async (ctx) => {
+  const tut = getBotTutorial();
+  await ctx.reply(
+    [
+      '*Bot Tutorial:*',
+      `Text: ${tut.text ? '`set`' : '_unset_'}`,
+      `File: ${tut.file_id ? `\`${tut.file_type}\`` : '_unset_'}`,
+      `URL: ${tut.url ? `\`${tut.url}\`` : '_unset_'}`,
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
 });
 
 adminBot.command('clearcache', async (ctx) => {

@@ -9,6 +9,7 @@ import { env } from '../env.js';
 import { t as translate } from '../i18n/index.js';
 import type { DBUser } from '../types.js';
 import type { SessionCtx } from './session.js';
+import { maybeSendEmailNag } from '../services/emailNag.js';
 
 export type AppCtx = SessionCtx & {
   user: DBUser;
@@ -44,5 +45,10 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   ctx.user = user;
   ctx.lang = user.language;
   ctx.t = (key, vars) => translate(ctx.lang, key, vars);
+  // Fire-and-forget the 12h email nag. The helper itself decides
+  // whether to send anything (skips when the user already has an
+  // email, when notifications are off, or when the cooldown is
+  // active) so the middleware never blocks on it.
+  void maybeSendEmailNag(ctx);
   return next();
 };

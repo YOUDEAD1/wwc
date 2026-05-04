@@ -19,10 +19,14 @@ function premiumIconId(key: string): string | undefined {
  * step has been removed; tapping the Shop button drops the user
  * straight onto this screen.
  *
- * Each in-stock product gets a premium 📦 icon (state colour: blue);
- * out-of-stock items get a red ❌ icon (state colour: red). Footer is
- * an optional Prev, a Refresh that re-fetches the current page, an
- * optional Next, and a Back row that returns to the main menu.
+ * Each row renders as `{name} - {price} USDT (Stock: {N or ∞})` to
+ * match the bot-owner reference UX (pic 1). The row icon is the
+ * per-product premium emoji_id when set, falling back to the
+ * default 📦 (in-stock) / red ❌ (out-of-stock) glyphs.
+ *
+ * Out-of-stock items remain tappable — tapping opens the product
+ * page where the green Buy Now turns into a red ❌ Buy Now that
+ * pops up the "contact admin to restock" alert.
  */
 export function shopProductsKeyboard(
   lang: Lang,
@@ -32,17 +36,26 @@ export function shopProductsKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
-  const inStockIcon = premiumIconId('orders_product');
+  const defaultInStockIcon = premiumIconId('orders_product');
   const oosIcon = premiumIconId('gift_invalid');
 
   products.forEach((p) => {
-    const inStock = p.stock > 0;
-    // Quantity is shown right next to the product name as
-    // `(qty: N)` — for OOS items N is 0, reinforced by the red
-    // colour + red icon.
-    const label = `${p.emoji ?? ''} ${p.name} — ${p.price} (qty: ${p.stock})`.trim();
-    kb.text(label, inStock ? `prod:${p.id}` : 'noop:oos');
-    const iconId = inStock ? inStockIcon : oosIcon;
+    const inStock = p.unlimited_stock || p.stock > 0;
+    // Stock label format matches pic 1: `(Stock: ∞)` for unlimited
+    // products, otherwise `(Stock: N)` with the actual count.
+    const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
+    // Drop the leading unicode emoji from the label when a per-
+    // product premium icon is configured — the icon renders to the
+    // left of the label so we don't want a duplicate glyph.
+    const hasPremiumIcon = Boolean(p.emoji_id);
+    const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
+    const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
+    // Out-of-stock products still navigate to the product page so
+    // the user sees details + a popup-armed Buy Now button.
+    kb.text(label, `prod:${p.id}`);
+    const iconId = inStock
+      ? p.emoji_id ?? defaultInStockIcon
+      : p.emoji_id ?? oosIcon;
     if (iconId) kb.icon(iconId);
     const style = colorModeToStyle(getStateColor(inStock ? 'in_stock' : 'out_of_stock'));
     if (style !== undefined) kb.style(style);
@@ -81,7 +94,11 @@ export function productKeyboard(
   shareUrl: string,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
-  if (product.stock <= 0) {
+  const inStock = product.unlimited_stock || product.stock > 0;
+  if (!inStock) {
+    // Out-of-stock UX: keyboard still shows a "Buy Now" button with
+    // the cross emoji per the bot-owner spec. Tapping it pops up
+    // the "contact admin to restock" alert instead of a silent ack.
     inlineBtn(kb, lang, 'out_of_stock', 'noop:oos');
     kb.row();
   } else {

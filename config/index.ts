@@ -184,6 +184,21 @@ export const BUTTON_KEYS = {
   // ---- Buy-now payment-method screen ----------------------------
   pay_wallet: 'btn.pay_wallet',
   pay_topup: 'btn.pay_topup',
+
+  // ---- Premium-shop overhaul ----------------------------------
+  // `using_method` is the post-order tutorial trigger (pic 3).
+  // `bot_tutorial` + `send_price_list` are the two new Settings
+  // entries. `tutorial_open_link` opens the admin-configured
+  // external URL. `email_reports_on/off` is the new toggle row in
+  // the notifications screen.
+  using_method: 'btn.using_method',
+  tutorial_open_link: 'btn.tutorial_open_link',
+  bot_tutorial: 'btn.bot_tutorial',
+  send_price_list: 'btn.send_price_list',
+  send_price_list_mail: 'btn.send_price_list.mail',
+  send_price_list_chat: 'btn.send_price_list.chat',
+  notify_email_on: 'btn.notify.email.on',
+  notify_email_off: 'btn.notify.email.off',
 } as const;
 
 /**
@@ -306,6 +321,20 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   // Buy-now payment-method screen.
   pay_wallet: 'green',
   pay_topup: 'blue',
+
+  // Premium-shop overhaul. `using_method` is the post-order
+  // tutorial CTA (blue = primary action). `out_of_stock`'s color
+  // is already declared above; the new red Buy-Now-when-OOS variant
+  // reuses that key. `email_reports_on` is green like the other
+  // notification toggles.
+  using_method: 'blue',
+  tutorial_open_link: 'blue',
+  bot_tutorial: 'blue',
+  send_price_list: 'blue',
+  send_price_list_mail: 'blue',
+  send_price_list_chat: 'green',
+  notify_email_on: 'green',
+  notify_email_off: 'none',
 };
 
 /**
@@ -498,6 +527,25 @@ export const EMOJI: Record<string, EmojiSpec> = {
   order_id_find_l: { unicode: '🆔', custom_emoji_id: '5463424023734014980' },
   order_id_find_r: { unicode: '🔍', custom_emoji_id: '6084844906008812139' },
   order_id_invalid_r: { unicode: '⚠️', custom_emoji_id: '5967560851077469602' },
+
+  // ---- Premium-shop overhaul (PR: premium-shop-overhaul) -------
+  // Header glyphs for the new two-step delivery card (pic 3) and
+  // the per-product Using Method tutorial. `note_premium` is the
+  // animated note glyph used at the top of the View Note screen.
+  // All custom_emoji_ids are placeholders — the bot owner can
+  // override with `/setemoji <key> <unicode> <custom_emoji_id>`.
+  order_verified: { unicode: '✅', custom_emoji_id: '5237699328843200968' },
+  order_delivered: { unicode: '🚚', custom_emoji_id: '5237699328843200968' },
+  tutorial: { unicode: '📘', custom_emoji_id: '5215459728810641551' },
+  note_premium: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
+  // 12-hour email nag glyph + the Email Reports notifications row.
+  email_nag: { unicode: '📧', custom_emoji_id: '5472239203590888751' },
+  notify_email: { unicode: '📧', custom_emoji_id: '5472239203590888751' },
+  // Bot Tutorial + Send Price List row icons in Settings.
+  bot_tutorial: { unicode: '📘', custom_emoji_id: '5215459728810641551' },
+  price_list: { unicode: '📊', custom_emoji_id: '4958506272551863292' },
+  // Out-of-stock cross used on the red Buy Now button.
+  oos_cross: { unicode: '❌', custom_emoji_id: '5095957930537124723' },
 };
 
 /**
@@ -604,6 +652,18 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // Buy-now payment-method screen — wallet on Pay, topup on Top Up.
   pay_wallet: 'prod_wallet',
   pay_topup: 'deposits_wallet',
+
+  // Premium-shop overhaul. Out-of-stock Buy Now uses the red cross
+  // glyph; Using Method uses the new tutorial book icon, etc.
+  out_of_stock: 'oos_cross',
+  using_method: 'tutorial',
+  tutorial_open_link: 'profile_link',
+  bot_tutorial: 'bot_tutorial',
+  send_price_list: 'price_list',
+  send_price_list_mail: 'pdf_sent_l',
+  send_price_list_chat: 'pdf_sent_r',
+  notify_email_on: 'notify_on',
+  notify_email_off: 'notify_off',
 };
 
 /**
