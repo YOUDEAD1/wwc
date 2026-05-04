@@ -30,15 +30,19 @@ export type Lang = 'en' | 'ar' | 'vi';
  *   yellow → no equivalent — falls back to the app default
  *   none   → no style    (app default)
  *
- * The prefix strings remain empty so older keyboards that still
- * call the `colored()` helper don't add stray glyphs in front of
- * labels — the colouring is now done at the button level instead.
+ * The prefix strings carry a coloured glyph so the picked color is
+ * visible on every Telegram client — even on legacy clients that
+ * don't yet support Bot API 9.4 styles. Bot owners can override any
+ * of these glyphs at runtime via the `color.prefix.<mode>` setting
+ * (lookup happens in `services/settings.ts → getColorPrefix()`).
+ * Set the override to an empty string to suppress the glyph for
+ * a given mode without losing the underlying API-9.4 style.
  */
 export const COLOR_PREFIX = {
-  blue: '',
-  green: '',
-  red: '',
-  yellow: '',
+  blue: '🔵',
+  green: '🟢',
+  red: '🔴',
+  yellow: '🟡',
   none: '',
 } as const;
 export type ColorMode = keyof typeof COLOR_PREFIX;

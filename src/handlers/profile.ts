@@ -922,80 +922,60 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   //  photo / video / document attachment + optional URL button).
   // ---------------------------------------------------------------
   bot.callbackQuery('profile:tutorial', async (ctx) => {
+    // Always ack first so Telegram never shows a perpetual spinner
+    // even if the body below throws.
     await ctx.answerCallbackQuery();
-    const tut = getBotTutorial();
-    const text = (tut.text ?? '').trim();
-    const titleLine = ctx.t('profile.bot_tutorial.title');
-    const body =
-      text.length > 0
-        ? `${titleLine}\n\n${ctx.t('profile.bot_tutorial.body', { body: text })}`
-        : `${titleLine}\n\n${ctx.t('profile.bot_tutorial.empty')}`;
-    const html = renderMdHtml(body);
-    const kb = botTutorialKeyboard(ctx.lang, tut.url);
-    // Diagnostic: previously the bot owner reported the Bot Tutorial
-    // button as "broken." The handler is registered correctly — the
-    // most common cause is `tut.text` / `tut.file_id` both being
-    // empty (admin never ran /admin → Bot Tutorial → Set Text/File).
-    // We log the resolved fields here so `pino` makes the empty
-    // state visible during triage.
-    logger.info(
-      {
-        hasText: text.length > 0,
-        hasFile: Boolean(tut.file_id && tut.file_type),
-        fileType: tut.file_type ?? null,
-        hasUrl: Boolean(tut.url),
-      },
-      'profile:tutorial — rendering Bot Tutorial',
-    );
-    // Inline-file behaviour mirrors View Note (pic-2 spec): when the
-    // admin uploaded a media attachment AND the rendered body fits
-    // inside Telegram's 1024-char caption limit we send ONE message
-    // (media + caption + Back/URL keyboard) instead of the legacy
-    // two-message layout (text + separate media). Keeps the chat
-    // tighter and matches the bot owner's reference UX.
-    const CAPTION_MAX = 1024;
-    const canInline =
-      Boolean(tut.file_id && tut.file_type) && html.length <= CAPTION_MAX;
-    if (canInline && tut.file_id && tut.file_type) {
-      const callbackChatId = ctx.chat?.id;
-      const callbackMessageId = ctx.callbackQuery.message?.message_id;
-      try {
-        const opts = { caption: html, parse_mode: 'HTML' as const, reply_markup: kb };
-        if (tut.file_type === 'photo') {
-          await ctx.replyWithPhoto(tut.file_id, opts);
-        } else if (tut.file_type === 'video') {
-          await ctx.replyWithVideo(tut.file_id, opts);
-        } else {
-          await ctx.replyWithDocument(tut.file_id, opts);
+    try {
+      const tut = getBotTutorial();
+      const text = (tut.text ?? '').trim();
+      const titleLine = ctx.t('profile.bot_tutorial.title');
+      const body =
+        text.length > 0
+          ? `${titleLine}\n\n${ctx.t('profile.bot_tutorial.body', { body: text })}`
+          : `${titleLine}\n\n${ctx.t('profile.bot_tutorial.empty')}`;
+      const html = renderMdHtml(body);
+      const kb = botTutorialKeyboard(ctx.lang, tut.url);
+      logger.info(
+        {
+          hasText: text.length > 0,
+          hasFile: Boolean(tut.file_id && tut.file_type),
+          fileType: tut.file_type ?? null,
+          hasUrl: Boolean(tut.url),
+        },
+        'profile:tutorial — rendering Bot Tutorial',
+      );
+      // Always send a NEW message (`reply`) instead of editing the
+      // Settings page. Editing was hitting silent failures on some
+      // clients; sending a fresh message is bulletproof — every
+      // tap shows a brand-new tutorial card below Settings, and the
+      // Back button returns the user to the same Settings page.
+      await ctx.reply(html, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+        link_preview_options: { is_disabled: true },
+      });
+      if (tut.file_id && tut.file_type) {
+        try {
+          if (tut.file_type === 'photo') {
+            await ctx.replyWithPhoto(tut.file_id);
+          } else if (tut.file_type === 'video') {
+            await ctx.replyWithVideo(tut.file_id);
+          } else {
+            await ctx.replyWithDocument(tut.file_id);
+          }
+        } catch (err) {
+          logger.warn({ err }, 'bot_tutorial file send failed');
         }
-        if (callbackChatId !== undefined && callbackMessageId !== undefined) {
-          await ctx.api
-            .deleteMessage(callbackChatId, callbackMessageId)
-            .catch(() => {});
-        }
-        return;
-      } catch (err) {
-        // file_id can expire across bot tokens; fall through to the
-        // text-only path below so the user always sees the body.
-        logger.warn({ err }, 'bot_tutorial inline file send failed');
       }
-    }
-    await ctx.editMessageText(html, {
-      parse_mode: 'HTML',
-      reply_markup: kb,
-    });
-    if (tut.file_id && tut.file_type && !canInline) {
+    } catch (err) {
+      logger.error({ err }, 'profile:tutorial — failed to render');
       try {
-        if (tut.file_type === 'photo') {
-          await ctx.replyWithPhoto(tut.file_id);
-        } else if (tut.file_type === 'video') {
-          await ctx.replyWithVideo(tut.file_id);
-        } else {
-          await ctx.replyWithDocument(tut.file_id);
-        }
-      } catch (err) {
-        // file_ids can expire across bot tokens — never crash.
-        logger.warn({ err }, 'bot_tutorial file send failed');
+        await ctx.reply(
+          '⚠️ <b>Failed to load Bot Tutorial.</b>\n\nThe admin needs to set this up: <code>/admin</code> → Bot Tutorial → Set Text / Set File / Set URL.',
+          { parse_mode: 'HTML' },
+        );
+      } catch {
+        // Last-ditch: nothing else to do.
       }
     }
   });
