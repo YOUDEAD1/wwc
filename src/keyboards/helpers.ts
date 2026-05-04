@@ -55,9 +55,14 @@ function stripLeadingEmoji(label: string): string {
 }
 
 export function btn(lang: Lang, key: keyof typeof BUTTON_KEYS, override?: ColorMode): string {
-  const label = colored(t(lang, BUTTON_KEYS[key]), key, override);
-  if (resolveIconId(key) !== undefined) return stripLeadingEmoji(label);
-  return label;
+  // Strip the label's leading unicode emoji BEFORE applying the
+  // color-prefix glyph. Otherwise the colour prefix becomes the new
+  // leading emoji and the original unicode (e.g. 🛍 / 🪙 / ⚙️ on Shop /
+  // Topup / Settings) survives in the label, leaving the button
+  // showing premium-icon + unicode-emoji + label.
+  const raw = t(lang, BUTTON_KEYS[key]);
+  const baseLabel = resolveIconId(key) !== undefined ? stripLeadingEmoji(raw) : raw;
+  return colored(baseLabel, key, override);
 }
 
 /**
