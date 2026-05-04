@@ -1,7 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
 import { inlineBtn, inlineCopyText } from './helpers.js';
-import { getStateColor } from '../services/settings.js';
+import { getStateColor, getCategoryColor } from '../services/settings.js';
 import type { DBProduct } from '../types.js';
 
 /**
@@ -57,7 +57,19 @@ export function shopProductsKeyboard(
       ? p.emoji_id ?? defaultInStockIcon
       : p.emoji_id ?? oosIcon;
     if (iconId) kb.icon(iconId);
-    const style = colorModeToStyle(getStateColor(inStock ? 'in_stock' : 'out_of_stock'));
+    // Colour resolution:
+    //   • Out-of-stock → state colour wins (red by default — the
+    //     red rail is a hard signal the buyer shouldn't tap).
+    //   • In-stock → category colour set by the admin via
+    //     /admin → Customize → 🎨 Set Color → 📂 Product Categories
+    //     wins, falling back to the in-stock state colour (blue
+    //     by default) when the category is on `'none'`.
+    let mode = getStateColor(inStock ? 'in_stock' : 'out_of_stock');
+    if (inStock && p.category_id != null) {
+      const catMode = getCategoryColor(p.category_id);
+      if (catMode !== 'none') mode = catMode;
+    }
+    const style = colorModeToStyle(mode);
     if (style !== undefined) kb.style(style);
     kb.row();
   });
