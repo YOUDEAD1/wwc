@@ -598,6 +598,28 @@ export async function findApplicablePromos(
   return (data ?? []) as DBPromo[];
 }
 
+/**
+ * Same scope filter as `findApplicablePromos` but without the
+ * qty threshold — used to render the *upcoming* promo teaser on
+ * the product page when the buyer hasn't reached `min_qty` yet.
+ */
+export async function findScopedActivePromos(
+  telegram_id: number,
+  product_id: number,
+): Promise<DBPromo[]> {
+  const { data, error } = await supabase
+    .from('promos')
+    .select('*')
+    .eq('active', true)
+    .or(`product_id.is.null,product_id.eq.${product_id}`)
+    .or(`telegram_id.is.null,telegram_id.eq.${telegram_id}`);
+  if (error) {
+    logger.error({ err: error, telegram_id, product_id }, 'findScopedActivePromos failed');
+    return [];
+  }
+  return (data ?? []) as DBPromo[];
+}
+
 /** Fetch a single promo by id, for the admin edit/delete screens. */
 export async function getPromo(id: number): Promise<DBPromo | null> {
   const { data } = await supabase.from('promos').select('*').eq('id', id).maybeSingle();

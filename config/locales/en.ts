@@ -149,6 +149,15 @@ export const en: Record<string, string> = {
   'shop.product.line.promo':
     '{prod_promo} *Promo:* {label} — −{discount} USDT',
   'shop.product.line.promo.fallback_label': 'qty ≥ {min_qty}',
+  // Teaser line under Warranty when a promo exists for this product
+  // but the buyer hasn't reached the qty threshold yet. Hidden once
+  // the threshold is met (the strikethrough Total takes over).
+  'shop.product.line.promo.teaser':
+    '{prod_promo} *Promo:* Buy {min_qty}+ −${discount} Off',
+  // Strikethrough Total Amount line shown when an active promo
+  // applies — gross (struck) → effective price.
+  'shop.product.line.total.discounted':
+    '{prod_total_amount} *Total Amount:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
     '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
   'shop.note.title': '📝 *Product note*',

@@ -105,6 +105,10 @@ export const ar: Record<string, string> = {
   'shop.product.line.promo':
     '{prod_promo} *عرض ترويجي:* {label} — −{discount} USDT',
   'shop.product.line.promo.fallback_label': 'الكمية ≥ {min_qty}',
+  'shop.product.line.promo.teaser':
+    '{prod_promo} *عرض ترويجي:* اشترِ {min_qty}+ بخصم −${discount}',
+  'shop.product.line.total.discounted':
+    '{prod_total_amount} *الإجمالي:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
     '❌ هذا المنتج غير متوفر حاليًا. الرجاء التواصل مع الإدارة لإعادة تجديد المخزون أو اختيار منتج مشابه.',
   'shop.note.title': '📝 *ملاحظة المنتج*',

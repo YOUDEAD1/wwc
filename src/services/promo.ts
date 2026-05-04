@@ -12,7 +12,7 @@
  * The applied discount is always clamped to `unit_price * qty` so the
  * line total can never go below zero.
  */
-import { findApplicablePromos } from '../db/queries.js';
+import { findApplicablePromos, findScopedActivePromos } from '../db/queries.js';
 import type { DBPromo } from '../types.js';
 
 export type PromoMatch = {
@@ -86,4 +86,35 @@ export function priceBreakdown(
   const discount = match ? Math.min(match.discount, gross) : 0;
   const total = +(gross - discount).toFixed(2);
   return { gross, discount, total };
+}
+
+/**
+ * Resolve the "upcoming" promo to surface on the product page as a
+ * teaser when the buyer hasn't reached the threshold qty yet.
+ *
+ * Selection rules — purely cosmetic, never affects the actual charge:
+ *   - Most-specific scope tier first (per-user-product → per-user
+ *     → per-product → default).
+ *   - Within tier, the closest unmet threshold wins (lowest
+ *     `min_qty` that is still greater than the current `qty`).
+ *   - Within that, largest `discount_amount` wins.
+ *
+ * Returns `null` when no upcoming promo exists for the (user,
+ * product) scope.
+ */
+export async function nextPromoTeaser(
+  telegram_id: number,
+  product_id: number,
+  qty: number,
+): Promise<DBPromo | null> {
+  const all = await findScopedActivePromos(telegram_id, product_id);
+  const upcoming = all.filter((p) => p.min_qty > qty);
+  if (upcoming.length === 0) return null;
+  upcoming.sort(
+    (a, b) =>
+      tier(b) - tier(a) ||
+      a.min_qty - b.min_qty ||
+      Number(b.discount_amount) - Number(a.discount_amount),
+  );
+  return upcoming[0]!;
 }
