@@ -71,11 +71,9 @@ export const vi: Record<string, string> = {
   'shop.choose_category': '*Sản phẩm có sẵn:*',
   'shop.qty.prompt': '🔢 Nhập số lượng (1–{max}) và gửi.',
   'shop.qty.invalid': '❌ Số không hợp lệ — vui lòng gửi giá trị từ 1 đến {max}.',
-  'shop.qty.keypad.prompt':
-    '{qty_prompt_pencil} *Gửi Số Lượng Tùy Chỉnh Cho Sản Phẩm* {qty_prompt_keypad}\n\n' +
-    '*{name}*\n' +
-    'Còn lại: *{stock}*\n\n' +
-    'Nhấn các chữ số bên dưới hoặc gửi số, sau đó nhấn Xác nhận.\n\n' +
+  'shop.qty.keypad.instruction':
+    '{qty_prompt_keypad} *Cách dùng:* nhấn các chữ số bên dưới hoặc gửi số, ' +
+    'sau đó nhấn ✅ Xác nhận.\n' +
     'Hiện tại: <code>{current}</code>',
   'shop.qty.keypad.invalid':
     '{qty_invalid} *Số lượng không hợp lệ.*\n\n' +

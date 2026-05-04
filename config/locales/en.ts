@@ -93,16 +93,13 @@ export const en: Record<string, string> = {
   'shop.qty.prompt': '🔢 Type a quantity (1–{max}) and send.',
   'shop.qty.invalid': '❌ Invalid number — please send a value between 1 and {max}.',
 
-  // ---- Custom-quantity prompt + keypad ------------------------
-  // Header rendered above the numeric keypad. The {qty_prompt_*}
-  // tokens resolve to premium custom emojis frame the bold title.
-  // {current} shows the digits the user has tapped so far on the
-  // keypad — empty until they've started entering a number.
-  'shop.qty.keypad.prompt':
-    '{qty_prompt_pencil} *Send Custom Quantity For Product* {qty_prompt_keypad}\n\n' +
-    '*{name}*\n' +
-    'In stock: *{stock}*\n\n' +
-    'Tap digits below or send a number, then tap Confirm.\n\n' +
+  // ---- Custom-quantity keypad ---------------------------------
+  // Short usage instruction appended below the product-page body
+  // when the keypad is open. {current} is the digits the user has
+  // tapped on the keypad so far — `—` until they've started.
+  'shop.qty.keypad.instruction':
+    '{qty_prompt_keypad} *How to use:* tap the digits below or send a number, ' +
+    'then tap ✅ Confirm.\n' +
     'Current: <code>{current}</code>',
   // Premium-emoji error shown when the user enters an out-of-range
   // or non-numeric quantity. Auto-deletes a few seconds later so

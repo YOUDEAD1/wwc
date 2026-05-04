@@ -85,15 +85,17 @@ export function productKeyboard(
     inlineBtn(kb, lang, 'out_of_stock', 'noop:oos');
     kb.row();
   } else {
-    inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
-    kb.row();
-    // Inline qty stepper: ➖ on the left, the live qty in the
+    // Inline qty stepper first: ➖ on the left, the live qty in the
     // middle (tap is a no-op — it's a label), ➕ on the right.
     // Clamping to `[1, min(QTY_MAX, stock)]` happens in the
     // callback handler so the keyboard stays presentation-only.
     inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:dec`);
     kb.text(String(qty), 'noop:qty');
     inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
+    kb.row();
+    // Buy Now sits directly under the stepper so the user's tap
+    // path is "set qty → buy".
+    inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
     kb.row();
     // 1) Refresh re-fetches and re-renders the product page so any
     // out-of-band stock / wallet balance updates show up. 2) Custom
