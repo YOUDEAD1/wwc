@@ -1025,11 +1025,11 @@ function invoiceBody(args: {
     `Total paid: ${args.total.toFixed(2)} USDT`,
     '',
   );
-  if (args.items.length > 0) {
-    textLines.push('Delivered items', '---------------');
-    for (const it of args.items) textLines.push(it);
-    textLines.push('');
-  }
+  // Delivered items are intentionally OMITTED from the invoice email
+  // (and the attached PDF). Per the bot owner's follow-up: the
+  // delivery payload (links / accounts / codes) belongs only in the
+  // in-chat Order Delivered card — leaking it into a forwarded /
+  // inbox-archived email is a privacy and resale-control concern.
   if (args.invoiceLink) {
     textLines.push(`Re-open this order in Telegram: ${args.invoiceLink}`, '');
   }
@@ -1059,13 +1059,10 @@ function invoiceBody(args: {
          </tr>`
       : '';
 
-  const itemsBlock =
-    args.items.length > 0
-      ? `<tr><td style="padding:0 36px 8px 36px;">
-           <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin:18px 0 10px 0;">Delivered items</div>
-           <div style="padding:14px 18px;border-radius:10px;background:#16151a;border:1px solid rgba(255,255,255,0.06);font-size:13px;color:#d8d3c8;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.7;white-space:pre-wrap;word-break:break-all;">${args.items.map((i) => escapeHtmlValue(i)).join('<br>')}</div>
-         </td></tr>`
-      : '';
+  // Delivered-items HTML block intentionally omitted (see textLines
+  // comment above) — `args.items` is preserved on the call signature
+  // for forward-compat but is no longer rendered into the email.
+  const itemsBlock = '';
 
   const ctaBlock = args.invoiceLink
     ? `<tr><td align="center" style="padding:8px 36px 24px 36px;">

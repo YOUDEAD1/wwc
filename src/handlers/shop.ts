@@ -505,15 +505,47 @@ export function registerShop(bot: Composer<AppCtx>): void {
     });
     const kb = new InlineKeyboard();
     inlineBtn(kb, ctx.lang, 'back', `prod:${p.id}`);
-    await ctx.editMessageText(renderMdHtml(body), {
+    const html = renderMdHtml(body);
+    // Pic-2 spec: when the admin uploaded a `.txt` (or any document)
+    // we want it INLINE under the View Note text — i.e. ONE message
+    // bubble containing the document card + the body as caption,
+    // not the legacy two-message layout (text, then a separate
+    // document). To do that we delete the in-place edit candidate
+    // (the product page the user was just on) and send a single
+    // document message with `body` as the caption + the Back keyboard.
+    //
+    // Telegram caps document captions at 1024 chars; if the rendered
+    // body is longer we fall back to the legacy split-message layout
+    // (plain `editMessageText` + standalone document) so we never
+    // truncate the user's note silently.
+    const CAPTION_MAX = 1024;
+    const canInline = Boolean(p.note_file_id) && html.length <= CAPTION_MAX;
+    if (canInline && p.note_file_id) {
+      const callbackChatId = ctx.chat?.id;
+      const callbackMessageId = ctx.callbackQuery.message?.message_id;
+      try {
+        await ctx.replyWithDocument(p.note_file_id, {
+          caption: html,
+          parse_mode: 'HTML',
+          reply_markup: kb,
+        });
+        if (callbackChatId !== undefined && callbackMessageId !== undefined) {
+          await ctx.api
+            .deleteMessage(callbackChatId, callbackMessageId)
+            .catch(() => {});
+        }
+        return;
+      } catch {
+        // file_id can expire when the admin re-issued the bot token
+        // or the file was deleted server-side — fall through to the
+        // text-only path so the user still sees the note body.
+      }
+    }
+    await ctx.editMessageText(html, {
       parse_mode: 'HTML',
       reply_markup: kb,
     });
-    // When the admin uploaded a document for this product, forward
-    // it to the user as a separate document message so Telegram
-    // renders it with its native green file card (pic 2). The body
-    // above already references the file in the locale string.
-    if (p.note_file_id) {
+    if (p.note_file_id && !canInline) {
       try {
         await ctx.replyWithDocument(p.note_file_id);
       } catch {
@@ -548,12 +580,45 @@ export function registerShop(bot: Composer<AppCtx>): void {
       kb.url(ctx.t('btn.tutorial_open_link'), raw.tutorial_url).row();
     }
     inlineBtn(kb, ctx.lang, 'back', `prod:${id}`);
-    // When a media attachment is configured, send it FIRST as a
-    // standalone message (Telegram caps caption length at 1024
-    // chars; a separate text message removes that constraint and
-    // keeps the layout consistent across long tutorials). The text
-    // body lands second carrying the URL/Back keyboard.
-    if (raw.tutorial_file_id && raw.tutorial_file_type) {
+    const html = renderMdHtml(body);
+    logger.info(
+      {
+        productId: id,
+        hasText: text.length > 0,
+        hasFile: Boolean(raw.tutorial_file_id && raw.tutorial_file_type),
+        fileType: raw.tutorial_file_type ?? null,
+        hasUrl: Boolean(raw.tutorial_url),
+      },
+      'tut: — rendering Using Method tutorial',
+    );
+    // Inline-file pattern: matches View Note + Bot Tutorial. When a
+    // media attachment is configured AND the body fits inside
+    // Telegram's 1024-char caption limit we send ONE message (media
+    // + body caption + URL/Back keyboard). For longer bodies we fall
+    // back to the legacy split-message layout so we never truncate
+    // the tutorial text silently.
+    const CAPTION_MAX = 1024;
+    const canInline =
+      Boolean(raw.tutorial_file_id && raw.tutorial_file_type) &&
+      html.length <= CAPTION_MAX;
+    if (canInline && raw.tutorial_file_id && raw.tutorial_file_type) {
+      try {
+        const opts = { caption: html, parse_mode: 'HTML' as const, reply_markup: kb };
+        if (raw.tutorial_file_type === 'photo') {
+          await ctx.replyWithPhoto(raw.tutorial_file_id, opts);
+        } else if (raw.tutorial_file_type === 'video') {
+          await ctx.replyWithVideo(raw.tutorial_file_id, opts);
+        } else {
+          await ctx.replyWithDocument(raw.tutorial_file_id, opts);
+        }
+        return;
+      } catch (err) {
+        // file_id can expire across bot tokens; fall through to the
+        // text-only path so the user always sees the body.
+        logger.warn({ err, productId: id }, 'tut: inline file send failed');
+      }
+    }
+    if (raw.tutorial_file_id && raw.tutorial_file_type && !canInline) {
       try {
         if (raw.tutorial_file_type === 'photo') {
           await ctx.replyWithPhoto(raw.tutorial_file_id);
@@ -566,7 +631,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         // file_id can expire across bot tokens; degrade gracefully.
       }
     }
-    await ctx.reply(renderMdHtml(body), { parse_mode: 'HTML', reply_markup: kb });
+    await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   });
 
   // *Buy Now* on the product page no longer charges immediately —
@@ -665,15 +730,21 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // "manual delivery" placeholder; the admin gets pinged via
       // logOrderCreated either way.
       const claimed = await claimProductItems(p.id, qty, order.id);
-      // Items are joined with BLANK LINES between them so multiple
-      // links / accounts each render on their own row with breathing
-      // space — matches the bot-owner spec ("link 1\n\nlink 2\n\n
-      // acc 1\n\nacc 2"). The DB-stored copy keeps single-line
-      // separation so existing /myorders rendering still works.
+      // Items are rendered as a Telegram blockquote (one `> line` per
+      // claimed link / account, blank `>` rows between them) so each
+      // entry shows up as a quoted pill — same style as the View Note
+      // "luli" / "Hey" pills the bot owner pointed to. `renderMdHtml`
+      // collapses consecutive `> …` lines into one `<blockquote>` per
+      // run; the empty `>` row inside is what gives us a blank line
+      // INSIDE the quote between entries.
+      //
+      // The DB-stored copy keeps plain single-line separation so the
+      // existing /myorders renderer (and the /admin orders block)
+      // doesn't suddenly contain blockquote markers.
       const deliveredItemsForChat =
         claimed.length > 0
-          ? claimed.join('\n\n')
-          : ctx.t('shop.buy.delivery_pending');
+          ? claimed.map((it) => `> ${it}`).join('\n>\n')
+          : `> ${ctx.t('shop.buy.delivery_pending')}`;
       const deliveredItemsForDb =
         claimed.length > 0
           ? claimed.join('\n')
@@ -708,18 +779,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
         });
       }, 15_000);
       // ---- Step 2: Order Delivered card -----------------------
-      // The keyboard always carries the per-product Using Method
-      // button. When the buyer has an email on file we ALSO surface
-      // a "View Invoice" deep-link so they can re-open this order's
-      // detail screen at any time.
+      // The keyboard carries only the per-product Using Method
+      // button — the standalone "View Invoice" button was removed
+      // per the bot owner's follow-up note.
       const deliveredKb = new InlineKeyboard();
       inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
-      const invoiceLink = env.BOT_USERNAME
-        ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
-        : '';
-      if (ctx.user.email && invoiceLink) {
-        deliveredKb.row().url(ctx.t('btn.view_invoice'), invoiceLink);
-      }
       await ctx.reply(
         renderMdHtml(
           ctx.t('shop.buy.order_delivered', {
@@ -735,38 +799,58 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // ---- Step 3: Email follow-up ----------------------------
       // Two branches per the bot-owner spec:
       //   a) No email → polite prompt with a `Set Email` deep link
-      //      that opens Settings → Email Settings → Set Email.
-      //   b) Has email → "Product Details and invoice sent" card +
-      //      fire-and-forget the polished invoice email.
+      //      that opens Settings → Email Settings → Set Email and
+      //      remembers `order.id` so once the email is saved we can
+      //      retroactively fire the invoice for THIS purchase.
+      //   b) Has email → single-line "invoice sent" card that
+      //      auto-deletes after 13 s + the polished invoice email.
       if (!ctx.user.email) {
         const noEmailKb = new InlineKeyboard();
-        inlineBtn(noEmailKb, ctx.lang, 'set_email_now', 'profile:email:set');
+        // Tag the callback with `:post:<orderId>` so the profile
+        // handler knows this came from a post-purchase nudge (vs.
+        // Settings → Set Email) and can run the auto-delete +
+        // retroactive-invoice path.
+        inlineBtn(
+          noEmailKb,
+          ctx.lang,
+          'set_email_now',
+          `profile:email:set:post:${order.id}`,
+        );
         await ctx.reply(
           renderMdHtml(ctx.t('shop.buy.add_email_prompt')),
           { parse_mode: 'HTML', reply_markup: noEmailKb },
         );
       } else {
-        const invoiceKb = new InlineKeyboard();
-        if (invoiceLink) {
-          invoiceKb.url(ctx.t('btn.view_invoice'), invoiceLink);
-        }
-        await ctx.reply(
-          renderMdHtml(
-            ctx.t('shop.buy.invoice_sent', {
-              email: ctx.user.email,
-              link: invoiceLink || '—',
-            }),
-          ),
+        // Single bold confirmation line — no spam-folder note, no
+        // Invoice-Email / Invoice-Link block, no inline buttons.
+        // Auto-deletes ~13 s later so the chat stays clean once the
+        // user has had time to read it.
+        const invoiceSentMsg = await ctx.reply(
+          renderMdHtml(ctx.t('shop.buy.invoice_sent')),
           {
             parse_mode: 'HTML',
-            reply_markup: invoiceKb,
             link_preview_options: { is_disabled: true },
           },
         );
+        const sentChatId = invoiceSentMsg.chat.id;
+        const sentMessageId = invoiceSentMsg.message_id;
+        setTimeout(() => {
+          void ctx.api
+            .deleteMessage(sentChatId, sentMessageId)
+            .catch((err) => {
+              logger.debug(
+                { err, chatId: sentChatId, messageId: sentMessageId },
+                'auto-delete of invoice_sent message failed (likely already gone)',
+              );
+            });
+        }, 13_000);
         // Fire-and-forget the professional invoice. Failure modes
         // (transport down, bad address) are logged inside mailer.ts
         // and never surface to the buyer — they already have the
         // delivery card with the items in-chat.
+        const invoiceLink = env.BOT_USERNAME
+          ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
+          : '';
         void sendInvoiceEmail({
           email: ctx.user.email,
           firstName: ctx.user.first_name ?? null,
@@ -782,6 +866,24 @@ export function registerShop(bot: Composer<AppCtx>): void {
           items: claimed,
           invoiceLink,
         });
+      }
+      // ---- Step 4: revert the original Order summary message --
+      // The callback was triggered from the Order summary message
+      // (the one that contained Wallet Pay / Top Up / Back). After
+      // the new delivery + email cards are sent we edit THAT same
+      // message back to the product's quantity page so the user
+      // can immediately buy more or browse — instead of leaving a
+      // stale "Choose a payment method" card pinned in the chat.
+      try {
+        await showProduct(ctx, p.id);
+      } catch (err) {
+        // The original message could be gone (manual delete, 48h
+        // expiry, no longer the latest update) — that's fine; the
+        // delivery cards above are what the user actually needs.
+        logger.debug(
+          { err, productId: p.id, orderId: order.id },
+          'post-delivery revert to product page failed (likely message gone)',
+        );
       }
       // Notify admin with the deep-detail order block.
       void adminLog.logOrderCreated(ctx.api, {

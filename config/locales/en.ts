@@ -216,9 +216,9 @@ export const en: Record<string, string> = {
     '{delivering} _Delivering your order…_',
   ].join('\n'),
   // Step 2 of the premium delivery card (pic 3): Order Delivered!
-  // Items are blank-line-separated so each link / account renders
-  // on its own row with breathing space — see `shop.ts` where
-  // `claimedItems` is joined with `\n\n`.
+  // The `{items}` slot is replaced in `shop.ts` with one `> line` per
+  // claimed link / account so the renderer turns each into a Telegram
+  // blockquote pill (matches the View Note "luli" / "Hey" look).
   'shop.buy.order_delivered': [
     '{order_delivered} *Order Delivered!*',
     '',
@@ -228,7 +228,6 @@ export const en: Record<string, string> = {
     '*Total Paid:* {total} USDT',
     '',
     '{delivered_items} *Items:*',
-    '',
     '{items}',
   ].join('\n'),
   // Email follow-up #1: shown after Order Delivered when the buyer
@@ -238,21 +237,26 @@ export const en: Record<string, string> = {
     '{email_add_l} *Please For sending Product Invoices and good experience Add you Verified Email* {email_add_r}',
   ].join('\n'),
   // Email follow-up #2: shown after Order Delivered when the buyer
-  // already has an email on file. Bold-formatted lines per the
-  // bot-owner spec; `{email}` is the current saved address and
-  // `{link}` is the deep-link `https://t.me/<bot>?start=ord_<pubId>`
-  // that opens the order detail screen back inside the bot.
-  'shop.buy.invoice_sent': [
-    '{invoice_sent_l} *Product Details and invoice sended to your mail* {invoice_sent_r}',
-    '',
-    '{invoice_spam} *Don’t forget to check your Gmail spam folder.*',
-    '',
-    '{invoice_email_label} *Invoice Email:*',
-    '`{email}`',
-    '',
-    '{invoice_link_label} *Invoice Link:*',
-    '{link}',
-  ].join('\n'),
+  // already has an email on file. Single bold line bookended by the
+  // configured premium-emoji slots; auto-deletes ~13 s later (handled
+  // in `shop.ts`).
+  'shop.buy.invoice_sent':
+    '{invoice_sent_l} *Product invoice sended to your mail* {invoice_sent_r}',
+  // Confirmation shown immediately after a buyer adds their email via
+  // the post-purchase `Add Verified Email` CTA. The other Email
+  // Settings entries (typed-email message, "User Profile / Has been
+  // Saved!" card) are auto-deleted from chat first — only this single
+  // bold line remains.
+  'shop.buy.email_setup_done':
+    '{order_delivered} *Email has been setuped*',
+  // Notification shown when an admin tops up a user's wallet via the
+  // `/credit` flow. `{credit_emoji}` slots a premium credit-card glyph
+  // and `{balance_emoji}` slots a premium wallet glyph so admins can
+  // swap the icons via `/setemoji credit_emoji / balance_emoji`.
+  'wallet.admin_credit':
+    '{credit_emoji} An admin credited *${amount}* to your wallet.\n{balance_emoji} New balance: *${balance}*',
+  'wallet.admin_debit':
+    '{debit_emoji} An admin debited *${amount}* from your wallet.\n{balance_emoji} New balance: *${balance}*',
   'shop.buy.delivery_pending':
     'Coming soon — admin will deliver your items manually within 12h.',
   'shop.buy.insufficient':

@@ -52,8 +52,10 @@ import {
   sendPriceListEmail,
   sendWelcomeEmail,
   sendReportEmail,
+  sendInvoiceEmail,
   type ReportKind,
 } from '../services/mailer.js';
+
 import {
   buildOrdersPdf,
   buildDepositsPdf,
@@ -423,6 +425,86 @@ async function sendReportPdfFromCallback(
       text: ctx.t('pdf.failed_popup', { email }),
       show_alert: true,
     });
+  }
+}
+
+/**
+ * Send a backfilled invoice email for an order that was placed
+ * before the buyer had an email address on file. Triggered from the
+ * post-purchase Set-Email flow (`profile:email:set:post:<orderId>`)
+ * once the user finishes typing their address.
+ *
+ * Failure modes (order missing, product gone, transport down, bad
+ * address) are logged at `info` level and swallowed — the buyer
+ * already has the delivery card with the items in chat, and the
+ * confirmation message ("Email has been setuped") is what they're
+ * expecting to see; surfacing a transport error here would confuse
+ * the UX.
+ */
+async function sendRetroactiveInvoiceForOrder(args: {
+  telegramId: number;
+  orderId: number;
+  email: string;
+  firstName: string | null;
+  username: string | null;
+}): Promise<void> {
+  try {
+    const order = await getOrder(args.orderId);
+    if (!order) {
+      logger.info(
+        { orderId: args.orderId },
+        'retroactive invoice: order not found, skipping',
+      );
+      return;
+    }
+    if (order.user_id !== args.telegramId) {
+      logger.info(
+        { orderId: args.orderId, expectedUser: args.telegramId, actualUser: order.user_id },
+        'retroactive invoice: order belongs to another user, skipping',
+      );
+      return;
+    }
+    if (order.status !== 'paid') {
+      logger.info(
+        { orderId: args.orderId, status: order.status },
+        'retroactive invoice: order not paid, skipping',
+      );
+      return;
+    }
+    const items =
+      order.delivered_items && order.delivered_items.trim().length > 0
+        ? order.delivered_items
+            .split(/\r?\n/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+        : [];
+    const invoiceLink = env.BOT_USERNAME
+      ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicOrderId(order)}`
+      : '';
+    await sendInvoiceEmail({
+      email: args.email,
+      firstName: args.firstName,
+      username: args.username,
+      orderPublicId: publicOrderId(order),
+      orderDate: order.created_at,
+      productName: order.product_name,
+      qty: order.qty,
+      unitPrice: Number(order.unit_price),
+      total: Number(order.total),
+      discount: Number(order.discount ?? 0),
+      paidVia: 'Wallet balance',
+      items,
+      invoiceLink,
+    });
+    logger.info(
+      { orderId: args.orderId, telegramId: args.telegramId },
+      'retroactive invoice email queued',
+    );
+  } catch (err) {
+    logger.warn(
+      { err, orderId: args.orderId, telegramId: args.telegramId },
+      'retroactive invoice email failed',
+    );
   }
 }
 
@@ -844,14 +926,65 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     const tut = getBotTutorial();
     const text = (tut.text ?? '').trim();
     const titleLine = ctx.t('profile.bot_tutorial.title');
-    const body = text.length > 0
-      ? `${titleLine}\n\n${ctx.t('profile.bot_tutorial.body', { body: text })}`
-      : `${titleLine}\n\n${ctx.t('profile.bot_tutorial.empty')}`;
-    await ctx.editMessageText(renderMdHtml(body), {
+    const body =
+      text.length > 0
+        ? `${titleLine}\n\n${ctx.t('profile.bot_tutorial.body', { body: text })}`
+        : `${titleLine}\n\n${ctx.t('profile.bot_tutorial.empty')}`;
+    const html = renderMdHtml(body);
+    const kb = botTutorialKeyboard(ctx.lang, tut.url);
+    // Diagnostic: previously the bot owner reported the Bot Tutorial
+    // button as "broken." The handler is registered correctly — the
+    // most common cause is `tut.text` / `tut.file_id` both being
+    // empty (admin never ran /admin → Bot Tutorial → Set Text/File).
+    // We log the resolved fields here so `pino` makes the empty
+    // state visible during triage.
+    logger.info(
+      {
+        hasText: text.length > 0,
+        hasFile: Boolean(tut.file_id && tut.file_type),
+        fileType: tut.file_type ?? null,
+        hasUrl: Boolean(tut.url),
+      },
+      'profile:tutorial — rendering Bot Tutorial',
+    );
+    // Inline-file behaviour mirrors View Note (pic-2 spec): when the
+    // admin uploaded a media attachment AND the rendered body fits
+    // inside Telegram's 1024-char caption limit we send ONE message
+    // (media + caption + Back/URL keyboard) instead of the legacy
+    // two-message layout (text + separate media). Keeps the chat
+    // tighter and matches the bot owner's reference UX.
+    const CAPTION_MAX = 1024;
+    const canInline =
+      Boolean(tut.file_id && tut.file_type) && html.length <= CAPTION_MAX;
+    if (canInline && tut.file_id && tut.file_type) {
+      const callbackChatId = ctx.chat?.id;
+      const callbackMessageId = ctx.callbackQuery.message?.message_id;
+      try {
+        const opts = { caption: html, parse_mode: 'HTML' as const, reply_markup: kb };
+        if (tut.file_type === 'photo') {
+          await ctx.replyWithPhoto(tut.file_id, opts);
+        } else if (tut.file_type === 'video') {
+          await ctx.replyWithVideo(tut.file_id, opts);
+        } else {
+          await ctx.replyWithDocument(tut.file_id, opts);
+        }
+        if (callbackChatId !== undefined && callbackMessageId !== undefined) {
+          await ctx.api
+            .deleteMessage(callbackChatId, callbackMessageId)
+            .catch(() => {});
+        }
+        return;
+      } catch (err) {
+        // file_id can expire across bot tokens; fall through to the
+        // text-only path below so the user always sees the body.
+        logger.warn({ err }, 'bot_tutorial inline file send failed');
+      }
+    }
+    await ctx.editMessageText(html, {
       parse_mode: 'HTML',
-      reply_markup: botTutorialKeyboard(ctx.lang, tut.url),
+      reply_markup: kb,
     });
-    if (tut.file_id && tut.file_type) {
+    if (tut.file_id && tut.file_type && !canInline) {
       try {
         if (tut.file_type === 'photo') {
           await ctx.replyWithPhoto(tut.file_id);
@@ -1151,6 +1284,48 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
+  // Post-purchase variant of Set Email — fired from the `Add Verified
+  // Email` CTA shown under Order Delivered when the buyer has no
+  // email on file. Carries the originating order id in the callback
+  // (`profile:email:set:post:<orderId>`) so the message handler can:
+  //   1. send a retroactive invoice email for that order once the
+  //      address lands;
+  //   2. auto-delete the typed-email message + the saved-confirmation
+  //      card and replace them with a single bold "Email has been
+  //      setuped" line — matching the bot owner's spec.
+  bot.callbackQuery(/^profile:email:set:post:(\d+)$/, async (ctx) => {
+    if (ctx.user.email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.email.set.already_set_popup', { current: ctx.user.email }),
+        show_alert: true,
+      });
+      return;
+    }
+    const orderId = Number(ctx.match[1]);
+    const promptMsg = ctx.callbackQuery.message;
+    await ctx.answerCallbackQuery();
+    ctx.session.userFlow = {
+      type: 'set_email',
+      step: 'value',
+      data: {
+        mode: 'set',
+        postPurchase: true,
+        pendingInvoiceOrderId: Number.isFinite(orderId) ? orderId : undefined,
+        promptChatId: promptMsg?.chat?.id,
+        promptMessageId: promptMsg?.message_id,
+      },
+    };
+    const text = [
+      ctx.t('profile.email.set.title'),
+      '',
+      ctx.t('profile.email.set.body'),
+    ].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: emailScreenKeyboard(ctx.lang),
+    });
+  });
+
   // Change Email screen — always shown in the hub, but if the user
   // doesn't have an email yet we abort with a mobile popup instead
   // of opening the screen.
@@ -1340,6 +1515,13 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       flow.data && (flow.data as { mode?: 'set' | 'change' }).mode === 'change'
         ? 'change'
         : 'set';
+    const flowData = flow.data as {
+      postPurchase?: boolean;
+      pendingInvoiceOrderId?: number;
+      promptChatId?: number;
+      promptMessageId?: number;
+    };
+    const postPurchase = Boolean(flowData.postPurchase);
     ctx.user.email = text;
     ctx.session.userFlow = undefined;
     // Fire-and-forget: send the user a polished welcome / confirmation
@@ -1366,6 +1548,59 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       oldEmail: previousEmail,
       newEmail: text,
     });
+    if (postPurchase) {
+      // ---- Post-purchase email setup (pic-1 spec) -------------
+      // The bot owner asked for a clean exit:
+      //   - delete the user's typed-email message
+      //   - delete the open Set Email screen (the original prompt,
+      //     edited in place by `profile:email:set:post:<id>`)
+      //   - drop ONE bold confirmation line "Email has been setuped"
+      //   - and retroactively send the invoice email for the order
+      //     they bought BEFORE saving their address.
+      const userMsgChatId = ctx.chat?.id;
+      const userMsgId = ctx.message.message_id;
+      if (userMsgChatId !== undefined) {
+        await ctx.api.deleteMessage(userMsgChatId, userMsgId).catch((err) => {
+          logger.debug(
+            { err, chatId: userMsgChatId, messageId: userMsgId },
+            'auto-delete of typed-email message failed',
+          );
+        });
+      }
+      if (flowData.promptChatId && flowData.promptMessageId) {
+        await ctx.api
+          .deleteMessage(flowData.promptChatId, flowData.promptMessageId)
+          .catch((err) => {
+            logger.debug(
+              {
+                err,
+                chatId: flowData.promptChatId,
+                messageId: flowData.promptMessageId,
+              },
+              'auto-delete of Set-Email prompt failed',
+            );
+          });
+      }
+      await ctx.reply(
+        renderMdHtml(ctx.t('shop.buy.email_setup_done')),
+        { parse_mode: 'HTML' },
+      );
+      // Retroactive invoice — fire one email for the order that
+      // triggered this whole flow. We deliberately don't iterate
+      // every prior order without an invoice flag (no schema
+      // support) so the implementation stays bounded; the buyer's
+      // most recent purchase is the one they care about.
+      if (flowData.pendingInvoiceOrderId) {
+        void sendRetroactiveInvoiceForOrder({
+          telegramId: ctx.user.telegram_id,
+          orderId: flowData.pendingInvoiceOrderId,
+          email: text,
+          firstName: ctx.user.first_name ?? null,
+          username: ctx.user.username ?? null,
+        });
+      }
+      return;
+    }
     // Bug fix: re-render the FULL settings screen as a fresh message
     // so the user immediately sees the saved email and the row of
     // buttons under it updates.

@@ -57,6 +57,7 @@ import {
   updateProduct,
   addProductItems,
   countAvailableProductItems,
+  listAvailableProductItems,
   clearProductItems,
 } from '../../db/queries.js';
 import * as cache from '../../services/cache.js';
@@ -79,6 +80,7 @@ import {
   type BotTutorial,
 } from '../../services/settings.js';
 import { renderMdHtml } from '../../services/premium.js';
+import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import type { ColorMode } from '../../../config/index.js';
@@ -749,12 +751,26 @@ async function showProductEditor(
   kb.text('📘 Tutorial Text', `adm:prod:tut:settxt:${p.id}:${page}`)
     .text('🎞 Tutorial File', `adm:prod:tut:setfile:${p.id}:${page}`)
     .row();
-  kb.text('🔗 Tutorial URL', `adm:prod:tut:seturl:${p.id}:${page}`)
-    .text('🧹 Clear Tutorial', `adm:prod:tut:clr:${p.id}:${page}`)
+  // Per-field clear row matches the Bot Tutorial editor: bot-owner
+  // explicitly asked for a "Clear File" alongside "Set File" so the
+  // attachment can be removed without nuking the rest of the
+  // tutorial. `Clear Tutorial` (everything) stays as a separate row
+  // for the all-at-once nuke path.
+  kb.text('🧹 Clear File', `adm:prod:tut:clrfile:${p.id}:${page}`)
+    .text('🔗 Tutorial URL', `adm:prod:tut:seturl:${p.id}:${page}`)
     .row();
+  kb.text('🧹 Clear Tutorial', `adm:prod:tut:clr:${p.id}:${page}`).row();
   kb.text(`📦 Add Items (pool: ${itemsCount})`, `adm:prod:items:add:${p.id}:${page}`)
     .text('🧹 Clear Pool', `adm:prod:items:clr:${p.id}:${page}`)
     .row();
+  // Stock Inspection — bot-owner asked for a way to audit remaining
+  // accounts / links / codes per product. Disabled when the pool is
+  // empty so the admin doesn't tap into a dead end (we still ack the
+  // tap with a popup explaining the empty state).
+  kb.text(
+    `🔎 View Stock Items (${itemsCount})`,
+    `adm:prod:items:view:${p.id}:${page}:0`,
+  ).row();
   kb.text(
     p.unlimited_stock ? '♾ Unlimited: ON' : '♾ Unlimited: OFF',
     `adm:prod:unl:tog:${p.id}:${page}`,
@@ -905,6 +921,20 @@ adminBot.callbackQuery(/^adm:prod:tut:clr:(\d+):(\d+)$/, async (ctx) => {
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
 
+// Clear ONLY the per-product tutorial file attachment. Mirrors the
+// Bot Tutorial editor's `adm:bot:tut:clrfile`. Bot-owner asked for
+// this so the admin can swap the Using Method file without re-typing
+// the tutorial body or re-pasting the URL.
+adminBot.callbackQuery(/^adm:prod:tut:clrfile:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, {
+    tutorial_file_id: null,
+    tutorial_file_type: null,
+  });
+  await ctx.answerCallbackQuery({ text: 'Tutorial file cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
 // --- Items pool ---
 adminBot.callbackQuery(/^adm:prod:items:add:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
@@ -927,6 +957,96 @@ adminBot.callbackQuery(/^adm:prod:items:clr:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: 'Pool cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
+
+// --- Stock Inspection screen ---
+// Shows the unconsumed items in the per-product pool, paginated 20
+// at a time. Each row is rendered inside a Markdown blockquote so
+// long account/credential strings stay visually separated; payloads
+// are escaped with backticks so a stray `*` / `_` / `[` in a
+// password doesn't break parsing.
+const STOCK_PAGE_SIZE = 20;
+async function showStockInspectionPage(
+  ctx: AppCtx,
+  product_id: number,
+  productPage: number,
+  itemsPage: number,
+): Promise<void> {
+  const product = await getProduct(product_id);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'Product not found', show_alert: true });
+    return;
+  }
+  const items = await listAvailableProductItems(product_id, 1000);
+  const total = items.length;
+  if (total === 0) {
+    await ctx.answerCallbackQuery({ text: 'Pool is empty.', show_alert: true });
+    return;
+  }
+  const pageCount = Math.max(1, Math.ceil(total / STOCK_PAGE_SIZE));
+  const safePage = Math.max(0, Math.min(itemsPage, pageCount - 1));
+  const slice = items.slice(
+    safePage * STOCK_PAGE_SIZE,
+    safePage * STOCK_PAGE_SIZE + STOCK_PAGE_SIZE,
+  );
+  const lines: string[] = [
+    `🔎 *Stock Inspection — ${product.name}*`,
+    '',
+    `*Remaining items:* \`${total}\``,
+    `*Page:* \`${safePage + 1} / ${pageCount}\``,
+    '',
+    'Items below are listed in the order the next purchase will pull from (top = next).',
+    '',
+  ];
+  slice.forEach((row, idx) => {
+    const globalIdx = safePage * STOCK_PAGE_SIZE + idx + 1;
+    // Truncate very long payloads (e.g. wall-of-text proxy creds) so
+    // the admin's screen never explodes; the full payload remains in
+    // the DB and is delivered to buyers as-is.
+    const trimmed =
+      row.payload.length > 220
+        ? `${row.payload.slice(0, 220)}…`
+        : row.payload;
+    // Backtick-escape any backticks inside the payload so it stays
+    // inside a Markdown inline-code span.
+    const safe = trimmed.replace(/`/g, "'");
+    lines.push(`> *${globalIdx}.* \`${safe}\``);
+  });
+  const kb = new InlineKeyboard();
+  if (pageCount > 1) {
+    if (safePage > 0) {
+      kb.text(
+        '⬅️ Prev',
+        `adm:prod:items:view:${product_id}:${productPage}:${safePage - 1}`,
+      );
+    }
+    kb.text('🔄', `adm:prod:items:view:${product_id}:${productPage}:${safePage}`);
+    if (safePage < pageCount - 1) {
+      kb.text(
+        'Next ➡️',
+        `adm:prod:items:view:${product_id}:${productPage}:${safePage + 1}`,
+      );
+    }
+    kb.row();
+  }
+  kb.text('⬅️ Back', `adm:prod:edit:${product_id}:${productPage}`);
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery(
+  /^adm:prod:items:view:(\d+):(\d+):(\d+)$/,
+  async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showStockInspectionPage(
+      ctx,
+      Number(ctx.match[1]),
+      Number(ctx.match[2]),
+      Number(ctx.match[3]),
+    );
+  },
+);
 
 // --- Unlimited toggle ---
 adminBot.callbackQuery(/^adm:prod:unl:tog:(\d+):(\d+)$/, async (ctx) => {
@@ -3632,12 +3752,27 @@ adminBot.on('message:text', async (ctx, next) => {
       );
       try {
         if (delta !== 0) {
+          // Render via the locale + premium-emoji pipeline so the
+          // wallet credit / debit notification picks up `credit_emoji`,
+          // `balance_emoji`, `debit_emoji` from the EMOJI map (and any
+          // admin override stored under `emoji.<key>`). Recipient's
+          // lang isn't loaded here, so we render in English; ar/vi
+          // fall through to en automatically via the i18n resolver.
+          const balanceFmt = Number(newBal).toFixed(2);
+          const tpl =
+            delta > 0
+              ? translate('en', 'wallet.admin_credit', {
+                  amount: delta.toFixed(2),
+                  balance: balanceFmt,
+                })
+              : translate('en', 'wallet.admin_debit', {
+                  amount: Math.abs(delta).toFixed(2),
+                  balance: balanceFmt,
+                });
           await ctx.api.sendMessage(
             flow.data.telegram_id,
-            delta > 0
-              ? `💰 An admin credited *$${delta.toFixed(2)}* to your wallet. New balance: *$${newBal}*.`
-              : `⚠️ An admin debited *$${Math.abs(delta).toFixed(2)}* from your wallet. New balance: *$${newBal}*.`,
-            { parse_mode: 'Markdown' },
+            renderMdHtml(tpl),
+            { parse_mode: 'HTML' },
           );
         }
       } catch (err) {

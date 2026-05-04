@@ -463,6 +463,34 @@ export async function countAvailableProductItems(product_id: number): Promise<nu
   return count ?? 0;
 }
 
+/**
+ * List unconsumed items in the pool — used by the admin Stock
+ * Inspection screen so the operator can audit remaining accounts /
+ * links / codes for a product. Returned in claim order (oldest
+ * first) so the next purchase will pull from the top of this list.
+ */
+export async function listAvailableProductItems(
+  product_id: number,
+  limit = 200,
+): Promise<{ id: number; payload: string; created_at: string }[]> {
+  const { data, error } = await supabase
+    .from('product_items')
+    .select('id, payload, created_at')
+    .eq('product_id', product_id)
+    .is('consumed_at', null)
+    .order('id', { ascending: true })
+    .limit(limit);
+  if (error) {
+    logger.error({ err: error, product_id }, 'listAvailableProductItems failed');
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: Number(r.id),
+    payload: String(r.payload),
+    created_at: String(r.created_at),
+  }));
+}
+
 /** Wipe every item (consumed or not) from the pool. */
 export async function clearProductItems(product_id: number): Promise<void> {
   const { error } = await supabase
