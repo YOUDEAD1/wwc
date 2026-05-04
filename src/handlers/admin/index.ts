@@ -2613,16 +2613,45 @@ adminBot.callbackQuery('adm:promo:nameSkip', async (ctx) => {
     });
     return;
   }
-  const created = await addPromo({
-    product_id: flow.data.product_id,
-    telegram_id: flow.data.telegram_id,
-    name: null,
-    min_qty: flow.data.min_qty,
-    discount_amount: flow.data.discount_amount,
-    created_by: ctx.from!.id,
-  });
+  // Mirror the message:text-handler error shape so admins see the
+  // real Postgres error (e.g. missing table) instead of a stuck UI.
+  let created;
+  try {
+    created = await addPromo({
+      product_id: flow.data.product_id,
+      telegram_id: flow.data.telegram_id,
+      name: null,
+      min_qty: flow.data.min_qty,
+      discount_amount: flow.data.discount_amount,
+      created_by: ctx.from!.id,
+    });
+  } catch (err) {
+    logger.error({ err, flow }, 'promo nameSkip addPromo failed');
+    ctx.session.adminFlow = undefined;
+    const e = err as { code?: string; message?: string };
+    const detail =
+      e?.code === '42P01'
+        ? 'The `promos` table is missing — apply migrations 0013 / 0014.'
+        : (e?.message ?? String(err)).slice(0, 500);
+    await ctx.editMessageText(
+      `⚠️ *Could not save promo*\n\n\`${escapeHtml(detail)}\``,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+      },
+    );
+    return;
+  }
   ctx.session.adminFlow = undefined;
-  await showPromoCard(ctx, created.id);
+  try {
+    await showPromoCard(ctx, created.id);
+  } catch (err) {
+    logger.error({ err, promo_id: created.id }, 'showPromoCard after nameSkip failed');
+    await ctx.reply(
+      `✅ Promo *#${created.id}* saved.\n\n_(Detail card render failed — open it from /promo list.)_`,
+      { parse_mode: 'Markdown', reply_markup: rootMenu() },
+    );
+  }
 });
 
 // ============================================================
@@ -3382,7 +3411,19 @@ adminBot.on('message:text', async (ctx, next) => {
       await ctx.reply(`✅ Promo *#${created.id}* saved.`, {
         parse_mode: 'Markdown',
       });
-      await showPromoCard(ctx, created.id);
+      // Isolate the post-save card render — if the impact-stats query
+      // happens to fail (e.g. orders.promo_id column missing) the
+      // promo is already in the database and the admin shouldn't
+      // see "Something went wrong" on top of a successful save.
+      try {
+        await showPromoCard(ctx, created.id);
+      } catch (err) {
+        logger.error({ err, promo_id: created.id }, 'showPromoCard after save failed');
+        await ctx.reply(
+          '_(Detail card render failed — promo is saved. Open it from /promo list.)_',
+          { parse_mode: 'Markdown' },
+        );
+      }
       return;
     }
 
@@ -3425,6 +3466,45 @@ adminBot.on('message:text', async (ctx, next) => {
   } catch (err) {
     logger.error({ err, flow }, 'admin flow error');
     ctx.session.adminFlow = undefined;
+    // Surface the real DB error for promo flows — these have been
+    // failing silently with "Something went wrong" when the
+    // migrations weren't applied. Knowing the Postgres error code is
+    // usually enough for the admin to tell whether they need to run
+    // a migration or just retry.
+    const e = err as { code?: string; message?: string; hint?: string } & Error;
+    const isPromoFlow = flow.type.startsWith('promo_');
+    if (isPromoFlow && e?.code === '42P01') {
+      // undefined_table — migrations 0013 / 0014 didn't run.
+      await ctx.reply(
+        '⚠️ *Promo system not migrated*\n\n' +
+          'The `promos` table is missing on this database. Apply the\n' +
+          '`supabase/migrations/0013_promos.sql` and `0014_orders_promo_id.sql`\n' +
+          'migrations on your Supabase, then try again.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+    if (isPromoFlow && e?.code === '42703') {
+      // undefined_column — schema partly migrated.
+      await ctx.reply(
+        '⚠️ *Promo schema is partially migrated*\n\n' +
+          `The database is missing a column: \`${escapeHtml(e.message ?? '')}\`. Make sure ` +
+          'both `0013_promos.sql` and `0014_orders_promo_id.sql` ran in full.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+    if (isPromoFlow) {
+      const detail = e?.message ?? String(err);
+      await ctx.reply(
+        '⚠️ *Promo flow failed*\n\n' +
+          `\`\`\`\n${detail.slice(0, 500)}\n\`\`\`\n` +
+          (e?.hint ? `_Hint: ${escapeHtml(e.hint)}_\n` : '') +
+          '\nCheck the bot logs for the full stack trace.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
     await ctx.reply('⚠️ Something went wrong. Cancelled.', { reply_markup: rootMenu() });
   }
 });
