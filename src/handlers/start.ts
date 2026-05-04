@@ -9,6 +9,7 @@ import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
 import { env } from '../env.js';
 import { parsePublicOrderId, publicOrderId } from '../services/orderId.js';
+import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
 import { inlineBtn } from '../keyboards/helpers.js';
@@ -147,7 +148,13 @@ async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
     ctx.t('orders.detail.total', { total }),
     ctx.t('orders.detail.status', { status }),
   ];
-  if (order.delivery) {
+  // Prefer the per-item delivered pool so each link renders as its
+  // own quoted pill; fall back to the legacy single-line delivery
+  // text for older orders that pre-date `delivered_items`.
+  const itemsBlock = formatReceivedItemsBlock(order.delivered_items);
+  if (itemsBlock) {
+    lines.push('', ctx.t('orders.detail.received', { received: itemsBlock }));
+  } else if (order.delivery) {
     const urlMatch = order.delivery.match(/https?:\/\/\S+/);
     const deliveryText = urlMatch ? urlMatch[0] : order.delivery;
     lines.push('', ctx.t('orders.detail.received', { received: deliveryText }));

@@ -45,6 +45,7 @@ import { regionPickerKeyboard } from '../keyboards/region.js';
 import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../keyboards/orders.js';
 import { redeemKeyboard } from '../keyboards/redeem.js';
 import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
+import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import {
@@ -630,7 +631,14 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       ctx.t('orders.detail.paid', { paid: when }),
       ctx.t('orders.detail.delivered', { delivered: when }),
     ];
-    if (order.delivery) {
+    // Prefer the actual claimed delivered_items pool (one per line)
+    // so each entry renders as its own quoted pill ("> #N\n> Open
+    // Link #N"). Falls back to the legacy single-line `delivery`
+    // text for orders predating the per-item pool.
+    const itemsBlock = formatReceivedItemsBlock(order.delivered_items);
+    if (itemsBlock) {
+      lines.push('', ctx.t('orders.detail.received', { received: itemsBlock }));
+    } else if (order.delivery) {
       const urlMatch = order.delivery.match(/https?:\/\/\S+/);
       const deliveryText = urlMatch ? urlMatch[0] : order.delivery;
       lines.push('', ctx.t('orders.detail.received', { received: deliveryText }));

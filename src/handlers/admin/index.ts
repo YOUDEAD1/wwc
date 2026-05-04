@@ -81,13 +81,17 @@ import {
   getColorPrefix,
   setColorPrefix,
   clearColorPrefix,
+  getCategoryColor,
+  setCategoryColor,
+  getCategoryDefaultColor,
+  setCategoryDefaultColor,
 } from '../../services/settings.js';
 import { renderMdHtml } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import type { ColorMode } from '../../../config/index.js';
-import { BUTTON_KEYS, COLOR_PREFIX, EMOJI } from '../../../config/index.js';
+import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
 import type { DBUser, DBPromo } from '../../types.js';
@@ -553,7 +557,10 @@ async function showCategoryList(ctx: AppCtx): Promise<void> {
   const kb = new InlineKeyboard();
   for (const c of cats) {
     lines.push(`#${c.id}  ${c.emoji ?? '📁'} ${c.name}${c.active ? '' : '  _(hidden)_'}`);
-    kb.text(`🗑 #${c.id} ${c.name}`.slice(0, 60), `adm:cat:del:${c.id}`).row();
+    kb.text(`🗑 #${c.id} ${c.name}`.slice(0, 60), `adm:cat:del:${c.id}`);
+    const style = colorModeToStyle(getCategoryColor(c.id));
+    if (style !== undefined) kb.style(style);
+    kb.row();
   }
   backRow(kb);
   await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
@@ -590,6 +597,12 @@ adminBot.callbackQuery('adm:prod:add', async (ctx) => {
   const kb = new InlineKeyboard();
   cats.forEach((c, i) => {
     kb.text(`${c.emoji ?? '📁'} ${c.name}`, `adm:prod:add:cat:${c.id}`);
+    // Apply the per-category Bot API 9.4 button style configured via
+    // /admin → Customize → Set Color → 📂 Product Categories. Falls
+    // back to the category-default color, then to undefined ('none')
+    // so the button stays unstyled when nothing has been picked.
+    const style = colorModeToStyle(getCategoryColor(c.id));
+    if (style !== undefined) kb.style(style);
     if (i % 2 === 1) kb.row();
   });
   backRow(kb);
@@ -1491,6 +1504,12 @@ function colorPickerKb(page: number): InlineKeyboard {
   const start = page * COLOR_PER_PAGE;
   const slice = keys.slice(start, start + COLOR_PER_PAGE);
   const kb = new InlineKeyboard();
+  // Top entry: dedicated picker for product-category buttons. Lives
+  // under its own list because categories are dynamic (admin-added)
+  // and shouldn't pollute the static button-key roster.
+  if (page === 0) {
+    kb.text('📂 Product Categories ▶️', 'adm:catcolor:list').row();
+  }
   for (const k of slice) {
     kb.text(
       buttonColorLabel(k as keyof typeof BUTTON_KEYS).slice(0, 60),
@@ -1551,6 +1570,100 @@ adminBot.callbackQuery(/^adm:color:set:([^:]+):([^:]+)$/, async (ctx) => {
   await setColor(key, color, ctx.from!.id);
   await ctx.answerCallbackQuery({ text: `Set ${key} → ${color}` });
   await showColorPicker(ctx, 0);
+});
+
+// ----- Product-category color picker -----
+//
+// Categories are admin-managed (added at runtime), so we list them
+// dynamically rather than baking them into BUTTON_KEYS. The "Default"
+// entry sets the colour applied to every category that hasn't been
+// explicitly themed — including any future categories the admin
+// adds. Per-category overrides win over the default; both win over
+// the hard-coded 'none'.
+const CATEGORY_COLOR_PER_PAGE = 8;
+
+async function showCategoryColorList(ctx: AppCtx, page: number): Promise<void> {
+  const cats = await listAllCategories();
+  const totalPages = Math.max(1, Math.ceil(cats.length / CATEGORY_COLOR_PER_PAGE));
+  const start = page * CATEGORY_COLOR_PER_PAGE;
+  const slice = cats.slice(start, start + CATEGORY_COLOR_PER_PAGE);
+  const kb = new InlineKeyboard();
+  if (page === 0) {
+    const def = getCategoryDefaultColor();
+    kb.text(`✨ Default (new categories) — ${def}`, 'adm:catcolor:pick:default').row();
+  }
+  for (const c of slice) {
+    const color = getCategoryColor(c.id);
+    const emoji = c.emoji ?? '📁';
+    const label = `${emoji} ${c.name} — ${color}`.slice(0, 60);
+    kb.text(label, `adm:catcolor:pick:${c.id}`).row();
+  }
+  if (totalPages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:catcolor:list:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, 'adm:noop');
+    if (page + 1 < totalPages) kb.text('Next ▶️', `adm:catcolor:list:${page + 1}`);
+    kb.row();
+  }
+  kb.text('⬅️ Back', 'adm:cust:color:pick');
+  await ctx.editMessageText(
+    '🎨 *Set Color — Product Categories*\n\n' +
+      'Pick a tint hint (blue / green / red / yellow / none) for each ' +
+      'product category select button. Tap a category to change its ' +
+      'colour. Tap *Default* to set the colour applied to every category ' +
+      'you add later.',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+}
+
+adminBot.callbackQuery('adm:catcolor:list', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showCategoryColorList(ctx, 0);
+});
+
+adminBot.callbackQuery(/^adm:catcolor:list:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showCategoryColorList(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:catcolor:pick:(default|\d+)$/, async (ctx) => {
+  const target = ctx.match[1]!;
+  await ctx.answerCallbackQuery();
+  let label: string;
+  if (target === 'default') {
+    label = 'Default (new categories)';
+  } else {
+    const cats = await listAllCategories();
+    const cat = cats.find((c) => c.id === Number(target));
+    label = cat ? `${cat.emoji ?? '📁'} ${cat.name}` : `Category #${target}`;
+  }
+  const kb = new InlineKeyboard();
+  for (const c of Object.keys(COLOR_PREFIX) as ColorMode[]) {
+    kb.text(c, `adm:catcolor:set:${target}:${c}`);
+  }
+  kb.row().text('⬅️ Back', 'adm:catcolor:list');
+  await ctx.editMessageText(`🎨 *Set Color* — ${label}\n\nPick a color:`, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+adminBot.callbackQuery(/^adm:catcolor:set:(default|\d+):([^:]+)$/, async (ctx) => {
+  const target = ctx.match[1]!;
+  const color = ctx.match[2] as ColorMode;
+  if (!(color in COLOR_PREFIX)) {
+    await ctx.answerCallbackQuery({ text: 'Bad color' });
+    return;
+  }
+  if (target === 'default') {
+    await setCategoryDefaultColor(color, ctx.from!.id);
+    await ctx.answerCallbackQuery({ text: `Default → ${color}` });
+  } else {
+    const id = Number(target);
+    await setCategoryColor(id, color, ctx.from!.id);
+    await ctx.answerCallbackQuery({ text: `#${id} → ${color}` });
+  }
+  await showCategoryColorList(ctx, 0);
 });
 
 // ----- Custom Color Glyphs editor -----
