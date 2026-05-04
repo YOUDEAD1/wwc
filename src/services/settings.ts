@@ -69,6 +69,47 @@ export function getStateColor(key: 'in_stock' | 'out_of_stock'): ColorMode {
   return key === 'in_stock' ? 'blue' : 'red';
 }
 
+/**
+ * Per-category button color (admin-editable via the Set Color picker).
+ * Stored under `color.category.<id>` so categories added later
+ * automatically pick up whatever color the admin assigns once. Falls
+ * back to the optional `color.category.default` setting (so the admin
+ * can paint every new category the same colour by default), then to
+ * `'none'`.
+ */
+export function getCategoryColor(id: number): ColorMode {
+  const v = cache.get(`color.category.${id}`);
+  if (typeof v === 'string' && v in COLOR_PREFIX) return v as ColorMode;
+  const def = cache.get('color.category.default');
+  if (typeof def === 'string' && def in COLOR_PREFIX) return def as ColorMode;
+  return 'none';
+}
+
+export function getCategoryDefaultColor(): ColorMode {
+  const def = cache.get('color.category.default');
+  if (typeof def === 'string' && def in COLOR_PREFIX) return def as ColorMode;
+  return 'none';
+}
+
+export async function setCategoryColor(
+  id: number,
+  color: ColorMode,
+  updated_by?: number,
+): Promise<void> {
+  const key = `color.category.${id}`;
+  await setSetting(key, color, updated_by);
+  cache.set(key, color);
+}
+
+export async function setCategoryDefaultColor(
+  color: ColorMode,
+  updated_by?: number,
+): Promise<void> {
+  const key = 'color.category.default';
+  await setSetting(key, color, updated_by);
+  cache.set(key, color);
+}
+
 export function getEmoji(key: string): EmojiSpec {
   const v = cache.get(`emoji.${key}`);
   if (

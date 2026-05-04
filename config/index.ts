@@ -550,7 +550,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // `/setemoji <key> <unicode> <custom_emoji_id>`.
   order_verified: { unicode: '✅', custom_emoji_id: '6325645228166353066' },
   order_delivered: { unicode: '🚚', custom_emoji_id: '5098567638565520047' },
-  tutorial: { unicode: '📘', custom_emoji_id: '5215459728810641551' },
+  tutorial: { unicode: '📘', custom_emoji_id: '5305737159909581647' },
   // Note section: header / Description label / Note label each get
   // their own slot so the admin can swap them independently from
   // `/setemoji note_premium / note_desc / note_text`. Defaults to
@@ -578,7 +578,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   email_nag: { unicode: '📧', custom_emoji_id: '5472239203590888751' },
   notify_email: { unicode: '📧', custom_emoji_id: '5472239203590888751' },
   // Bot Tutorial + Send Price List row icons in Settings.
-  bot_tutorial: { unicode: '📘', custom_emoji_id: '5215459728810641551' },
+  bot_tutorial: { unicode: '📘', custom_emoji_id: '5305737159909581647' },
   price_list: { unicode: '📊', custom_emoji_id: '4958506272551863292' },
   // Out-of-stock cross used on the red Buy Now button.
   oos_cross: { unicode: '❌', custom_emoji_id: '5095957930537124723' },
@@ -588,8 +588,8 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // debit_emoji <unicode> <custom_emoji_id>`. They start as plain
   // unicode glyphs (no premium id) so admins can drop in any premium
   // pack they like without us guessing ids that might not resolve.
-  credit_emoji: '💰',
-  balance_emoji: '💳',
+  credit_emoji: { unicode: '💰', custom_emoji_id: '5931293928186713205' },
+  balance_emoji: { unicode: '💳', custom_emoji_id: '5926961826603472005' },
   debit_emoji: '⚠️',
 };
 

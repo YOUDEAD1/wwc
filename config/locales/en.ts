@@ -254,9 +254,9 @@ export const en: Record<string, string> = {
   // and `{balance_emoji}` slots a premium wallet glyph so admins can
   // swap the icons via `/setemoji credit_emoji / balance_emoji`.
   'wallet.admin_credit':
-    '{credit_emoji} An admin credited *${amount}* to your wallet.\n{balance_emoji} New balance: *${balance}*',
+    '{credit_emoji} admin credited *${amount}* to your wallet.\n{balance_emoji} New balance: *${balance}*',
   'wallet.admin_debit':
-    '{debit_emoji} An admin debited *${amount}* from your wallet.\n{balance_emoji} New balance: *${balance}*',
+    '{debit_emoji} admin debited *${amount}* from your wallet.\n{balance_emoji} New balance: *${balance}*',
   'shop.buy.delivery_pending':
     'Coming soon — admin will deliver your items manually within 12h.',
   'shop.buy.insufficient':
@@ -365,7 +365,7 @@ export const en: Record<string, string> = {
   // video / document attachment + optional URL button). Body is
   // reused verbatim from the `bot_tutorial.text` setting; the
   // header / footer wrap it in premium emojis.
-  'profile.bot_tutorial.title': '{bot_tutorial} *Bot Tutorial*',
+  'profile.bot_tutorial.title': '{bot_tutorial} *Using Method — Bot*',
   'profile.bot_tutorial.empty':
     '_The admin hasn\u2019t added a bot tutorial yet. Please check back later._',
   'profile.bot_tutorial.body': '{body}',
@@ -500,7 +500,7 @@ export const en: Record<string, string> = {
   'orders.detail.delivered': '{orders_status} *Delivered:* {delivered}',
   'orders.detail.note': '*Product Note* {orders_note}\n{note}',
   'orders.detail.warranty': '*Warranty:* {warranty} {orders_warranty}',
-  'orders.detail.received': '*Received:* {orders_received}\n{received}',
+  'orders.detail.received': '*Received:* {orders_received}\n\n{received}',
   'orders.detail.no_warranty': 'Non',
   'orders.detail.type.wallet': 'Wallet balance',
   'orders.detail.type.direct': 'Direct payment',
