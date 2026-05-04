@@ -34,6 +34,7 @@ import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
+import { sendInvoiceEmail } from '../services/mailer.js';
 
 /**
  * Top-level Shop home — paginated all-products list. The categories
@@ -664,19 +665,29 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // "manual delivery" placeholder; the admin gets pinged via
       // logOrderCreated either way.
       const claimed = await claimProductItems(p.id, qty, order.id);
-      const deliveredItems =
+      // Items are joined with BLANK LINES between them so multiple
+      // links / accounts each render on their own row with breathing
+      // space — matches the bot-owner spec ("link 1\n\nlink 2\n\n
+      // acc 1\n\nacc 2"). The DB-stored copy keeps single-line
+      // separation so existing /myorders rendering still works.
+      const deliveredItemsForChat =
+        claimed.length > 0
+          ? claimed.join('\n\n')
+          : ctx.t('shop.buy.delivery_pending');
+      const deliveredItemsForDb =
         claimed.length > 0
           ? claimed.join('\n')
           : ctx.t('shop.buy.delivery_pending');
       if (claimed.length > 0) {
-        await setOrderDeliveredItems(order.id, deliveredItems);
+        await setOrderDeliveredItems(order.id, deliveredItemsForDb);
       }
       await ctx.answerCallbackQuery();
       const publicId = publicOrderId(order);
-      // Two-message premium delivery card per pic 3:
-      //   1) Payment Verified! (amount + ⏳ Delivering your order…)
-      //   2) Order Delivered! (Order ID, product, qty, total, items)
-      await ctx.reply(
+      // ---- Step 1: Payment Verified card (auto-deletes after 15s) ----
+      // We capture the message_id and schedule a delete via setTimeout
+      // so the chat stays clean: by the time the user finishes reading
+      // "Order Delivered!" the verified card has slid away.
+      const verifiedMsg = await ctx.reply(
         renderMdHtml(
           ctx.t('shop.buy.payment_verified', {
             total: total.toFixed(2),
@@ -684,8 +695,31 @@ export function registerShop(bot: Composer<AppCtx>): void {
         ),
         { parse_mode: 'HTML' },
       );
+      const verifiedChatId = verifiedMsg.chat.id;
+      const verifiedMessageId = verifiedMsg.message_id;
+      setTimeout(() => {
+        // Fire-and-forget; if the user already deleted it manually
+        // or 48h have passed, Telegram will reject — we just swallow.
+        void ctx.api.deleteMessage(verifiedChatId, verifiedMessageId).catch((err) => {
+          logger.debug(
+            { err, chatId: verifiedChatId, messageId: verifiedMessageId },
+            'auto-delete of payment_verified message failed (likely already gone)',
+          );
+        });
+      }, 15_000);
+      // ---- Step 2: Order Delivered card -----------------------
+      // The keyboard always carries the per-product Using Method
+      // button. When the buyer has an email on file we ALSO surface
+      // a "View Invoice" deep-link so they can re-open this order's
+      // detail screen at any time.
       const deliveredKb = new InlineKeyboard();
       inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
+      const invoiceLink = env.BOT_USERNAME
+        ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
+        : '';
+      if (ctx.user.email && invoiceLink) {
+        deliveredKb.row().url(ctx.t('btn.view_invoice'), invoiceLink);
+      }
       await ctx.reply(
         renderMdHtml(
           ctx.t('shop.buy.order_delivered', {
@@ -693,11 +727,62 @@ export function registerShop(bot: Composer<AppCtx>): void {
             name: p.name,
             qty,
             total: total.toFixed(2),
-            items: deliveredItems,
+            items: deliveredItemsForChat,
           }),
         ),
         { parse_mode: 'HTML', reply_markup: deliveredKb },
       );
+      // ---- Step 3: Email follow-up ----------------------------
+      // Two branches per the bot-owner spec:
+      //   a) No email → polite prompt with a `Set Email` deep link
+      //      that opens Settings → Email Settings → Set Email.
+      //   b) Has email → "Product Details and invoice sent" card +
+      //      fire-and-forget the polished invoice email.
+      if (!ctx.user.email) {
+        const noEmailKb = new InlineKeyboard();
+        inlineBtn(noEmailKb, ctx.lang, 'set_email_now', 'profile:email:set');
+        await ctx.reply(
+          renderMdHtml(ctx.t('shop.buy.add_email_prompt')),
+          { parse_mode: 'HTML', reply_markup: noEmailKb },
+        );
+      } else {
+        const invoiceKb = new InlineKeyboard();
+        if (invoiceLink) {
+          invoiceKb.url(ctx.t('btn.view_invoice'), invoiceLink);
+        }
+        await ctx.reply(
+          renderMdHtml(
+            ctx.t('shop.buy.invoice_sent', {
+              email: ctx.user.email,
+              link: invoiceLink || '—',
+            }),
+          ),
+          {
+            parse_mode: 'HTML',
+            reply_markup: invoiceKb,
+            link_preview_options: { is_disabled: true },
+          },
+        );
+        // Fire-and-forget the professional invoice. Failure modes
+        // (transport down, bad address) are logged inside mailer.ts
+        // and never surface to the buyer — they already have the
+        // delivery card with the items in-chat.
+        void sendInvoiceEmail({
+          email: ctx.user.email,
+          firstName: ctx.user.first_name ?? null,
+          username: ctx.user.username ?? null,
+          orderPublicId: publicId,
+          orderDate: order.created_at,
+          productName: p.name,
+          qty,
+          unitPrice: p.price,
+          total,
+          discount,
+          paidVia: 'Wallet balance',
+          items: claimed,
+          invoiceLink,
+        });
+      }
       // Notify admin with the deep-detail order block.
       void adminLog.logOrderCreated(ctx.api, {
         user: {

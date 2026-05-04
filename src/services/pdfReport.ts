@@ -670,6 +670,267 @@ function truncate(s: string, max: number): string {
 void logger;
 
 // ---------------------------------------------------------------------------
+//  Invoice (post-purchase email attachment)
+// ---------------------------------------------------------------------------
+//
+// Single-page receipt rendered with the same dark/champagne brand
+// chrome as the orders / deposits PDFs, but with classic invoice
+// layout: bill-to header, line-item table, totals block.
+//
+// The buyer receives this PDF by email immediately after a wallet
+// purchase clears (see `mailer.ts → sendInvoiceEmail`).
+
+export interface InvoiceLine {
+  /** Free-form description shown in the Description column. */
+  description: string;
+  qty: number;
+  /** Unit price in USDT. */
+  unitPrice: number;
+  /** Line total (qty * unitPrice) in USDT. */
+  amount: number;
+}
+
+export async function buildInvoicePdf(args: {
+  user: ReportUser;
+  /** Public order id, e.g. ORD67FF2G9YG. */
+  orderPublicId: string;
+  /** ISO timestamp the order was placed. */
+  orderDate: string;
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  /** Pre-discount subtotal (qty * unitPrice). */
+  subtotal: number;
+  /** Discount in USDT (0 if no promo applied). */
+  discount: number;
+  /** Final amount paid in USDT (subtotal - discount). */
+  total: number;
+  /** Free-form payment-method label, e.g. "Wallet balance". */
+  paidVia: string;
+  /** Per-item delivery payload (links / accounts). Optional. */
+  items: string[];
+}): Promise<Buffer> {
+  return renderPdf('Invoice', args.user, (doc) => {
+    drawInvoiceMeta(doc, {
+      orderPublicId: args.orderPublicId,
+      orderDate: args.orderDate,
+      paidVia: args.paidVia,
+    });
+    drawInvoiceLineItems(doc, [
+      {
+        description: args.productName,
+        qty: args.qty,
+        unitPrice: args.unitPrice,
+        amount: args.unitPrice * args.qty,
+      },
+    ]);
+    drawInvoiceTotals(doc, {
+      subtotal: args.subtotal,
+      discount: args.discount,
+      total: args.total,
+    });
+    if (args.items.length > 0) {
+      drawSectionHeader(doc, 'Delivered items');
+      drawInvoiceDeliveredItems(doc, args.items);
+    }
+    drawSectionHeader(doc, 'Notes');
+    drawInfoBlock(doc, [
+      'Thanks for purchasing from SafwanTiger Shop. This invoice is your',
+      'permanent receipt — keep it for your records.',
+      '',
+      'Need help with this order? Reply to this email or message',
+      '@safwantigershopbot on Telegram with your Order ID above.',
+    ]);
+  });
+}
+
+function drawInvoiceMeta(
+  doc: PDFKit.PDFDocument,
+  args: { orderPublicId: string; orderDate: string; paidVia: string },
+): void {
+  const cardW = PAGE_W - MARGIN_X * 2;
+  drawKvCard(
+    doc,
+    cardW,
+    [
+      ['Order ID', args.orderPublicId],
+      ['Issued', formatTimestamp(args.orderDate)],
+      ['Status', 'Paid in full'],
+      ['Method', args.paidVia],
+    ],
+    'Invoice details',
+  );
+}
+
+function drawInvoiceLineItems(
+  doc: PDFKit.PDFDocument,
+  rows: InvoiceLine[],
+): void {
+  const cardW = PAGE_W - MARGIN_X * 2;
+  const padX = 22;
+  const headerH = 30;
+  const rowH = 30;
+  const cardH = headerH + rows.length * rowH + 18;
+  ensureRoom(doc, cardH + 12);
+
+  const top = doc.y;
+  doc.save();
+  doc
+    .roundedRect(MARGIN_X, top, cardW, cardH, 10)
+    .fillAndStroke(COLOR.inner, COLOR.border);
+  doc.restore();
+
+  // Column geometry (description / qty / unit / amount).
+  const colDesc = MARGIN_X + padX;
+  const colQty = MARGIN_X + cardW - padX - 270;
+  const colUnit = MARGIN_X + cardW - padX - 180;
+  const colAmt = MARGIN_X + cardW - padX - 90;
+  const rightEdge = MARGIN_X + cardW - padX;
+
+  doc
+    .fillColor(COLOR.gold)
+    .font('Helvetica-Bold')
+    .fontSize(8)
+    .text('DESCRIPTION', colDesc, top + 12, { characterSpacing: 1.6 });
+  doc.text('QTY', colQty, top + 12, {
+    width: 60,
+    align: 'right',
+    characterSpacing: 1.6,
+  });
+  doc.text('UNIT', colUnit, top + 12, {
+    width: 80,
+    align: 'right',
+    characterSpacing: 1.6,
+  });
+  doc.text('AMOUNT', colAmt, top + 12, {
+    width: rightEdge - colAmt,
+    align: 'right',
+    characterSpacing: 1.6,
+  });
+
+  // Hairline separator below the header row
+  doc.save();
+  doc.rect(MARGIN_X + padX, top + headerH - 4, cardW - padX * 2, 0.5).fill(COLOR.border);
+  doc.restore();
+
+  let cursor = top + headerH + 4;
+  for (const row of rows) {
+    doc
+      .fillColor(COLOR.cream)
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .text(truncate(row.description, 60), colDesc, cursor + 6, {
+        width: colQty - colDesc - 12,
+        lineBreak: false,
+      });
+    doc
+      .fillColor(COLOR.body)
+      .font('Helvetica')
+      .fontSize(10)
+      .text(String(row.qty), colQty, cursor + 6, {
+        width: 60,
+        align: 'right',
+        lineBreak: false,
+      });
+    doc.text(`${row.unitPrice.toFixed(2)}`, colUnit, cursor + 6, {
+      width: 80,
+      align: 'right',
+      lineBreak: false,
+    });
+    doc
+      .fillColor(COLOR.cream)
+      .font('Helvetica-Bold')
+      .text(`${row.amount.toFixed(2)} USDT`, colAmt, cursor + 6, {
+        width: rightEdge - colAmt,
+        align: 'right',
+        lineBreak: false,
+      });
+    cursor += rowH;
+  }
+
+  doc.y = top + cardH + 12;
+}
+
+function drawInvoiceTotals(
+  doc: PDFKit.PDFDocument,
+  args: { subtotal: number; discount: number; total: number },
+): void {
+  const cardW = PAGE_W - MARGIN_X * 2;
+  const padX = 22;
+  const rowH = 22;
+  const rows: Array<[string, string, boolean]> = [
+    ['Subtotal', `${args.subtotal.toFixed(2)} USDT`, false],
+  ];
+  if (args.discount > 0) {
+    rows.push(['Discount', `−${args.discount.toFixed(2)} USDT`, false]);
+  }
+  rows.push(['Total paid', `${args.total.toFixed(2)} USDT`, true]);
+  const cardH = rows.length * rowH + 24;
+  ensureRoom(doc, cardH + 12);
+
+  const top = doc.y;
+  doc.save();
+  doc
+    .roundedRect(MARGIN_X, top, cardW, cardH, 10)
+    .fillAndStroke(COLOR.inner, COLOR.borderGold);
+  doc.restore();
+
+  let cursor = top + 14;
+  for (const [label, value, accent] of rows) {
+    doc
+      .fillColor(accent ? COLOR.gold : COLOR.muted)
+      .font(accent ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(accent ? 11 : 10)
+      .text(label, MARGIN_X + padX, cursor, {
+        width: cardW - padX * 2 - 200,
+      });
+    doc
+      .fillColor(accent ? COLOR.goldHi : COLOR.cream)
+      .font('Helvetica-Bold')
+      .fontSize(accent ? 14 : 11)
+      .text(value, MARGIN_X + cardW - padX - 200, cursor - (accent ? 2 : 0), {
+        width: 200,
+        align: 'right',
+        lineBreak: false,
+      });
+    cursor += rowH;
+  }
+  doc.y = top + cardH + 18;
+}
+
+function drawInvoiceDeliveredItems(
+  doc: PDFKit.PDFDocument,
+  items: string[],
+): void {
+  const cardW = PAGE_W - MARGIN_X * 2;
+  const padX = 22;
+  const lineH = 18;
+  const cardH = items.length * lineH + 24;
+  ensureRoom(doc, cardH + 12);
+
+  const top = doc.y;
+  doc.save();
+  doc
+    .roundedRect(MARGIN_X, top, cardW, cardH, 10)
+    .fillAndStroke(COLOR.inner, COLOR.border);
+  doc.restore();
+
+  let cursor = top + 14;
+  for (const it of items) {
+    doc
+      .fillColor(COLOR.body)
+      .font('Helvetica')
+      .fontSize(10)
+      .text(truncate(it, 200), MARGIN_X + padX, cursor, {
+        width: cardW - padX * 2,
+        lineBreak: false,
+      });
+    cursor += lineH;
+  }
+  doc.y = top + cardH + 12;
+}
+
+// ---------------------------------------------------------------------------
 //  Price list (Send Price List → Mail)
 // ---------------------------------------------------------------------------
 //

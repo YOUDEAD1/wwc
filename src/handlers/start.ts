@@ -1,14 +1,17 @@
 import type { Composer } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import type { AppCtx } from '../middleware/user.js';
 import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getProduct } from '../db/queries.js';
+import { getOrder, getProduct } from '../db/queries.js';
 import { applyUserPriceToProduct } from '../services/pricing.js';
 import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
 import { env } from '../env.js';
+import { parsePublicOrderId, publicOrderId } from '../services/orderId.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
+import { inlineBtn } from '../keyboards/helpers.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -110,6 +113,55 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   return true;
 }
 
+/**
+ * Handle `/start ord_<publicId>` deep links — these are emitted by
+ * the post-purchase invoice email "Re-open in Telegram" button and
+ * by the in-chat "View Invoice" buttons under the Order Delivered
+ * card. We resolve the public id back to a DB row, double-check
+ * ownership, and render a compact order summary so the buyer lands
+ * directly on their invoice instead of bouncing through Settings →
+ * My Orders → Find by ID.
+ */
+async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
+  const text = ctx.message?.text ?? '';
+  const m = text.match(/^\/start(?:@\S+)?\s+ord_([0-9A-Z]+)/i);
+  if (!m) return false;
+  const dbId = parsePublicOrderId(`ORD${m[1]}`);
+  if (!dbId) return false;
+  const order = await getOrder(dbId);
+  if (!order || order.user_id !== ctx.user.telegram_id) return false;
+  const pubId = publicOrderId(order);
+  const status =
+    order.status === 'paid'
+      ? ctx.t('orders.status.active')
+      : order.status === 'refunded'
+        ? ctx.t('orders.status.refunded')
+        : ctx.t('orders.status.cancelled');
+  const total = Number(order.total).toFixed(order.total % 1 === 0 ? 0 : 2);
+  const lines = [
+    ctx.t('orders.detail.title'),
+    '',
+    ctx.t('orders.detail.id', { id: pubId }),
+    ctx.t('orders.detail.product', { name: order.product_name }),
+    ctx.t('orders.detail.qty', { qty: order.qty }),
+    ctx.t('orders.detail.total', { total }),
+    ctx.t('orders.detail.status', { status }),
+  ];
+  if (order.delivery) {
+    const urlMatch = order.delivery.match(/https?:\/\/\S+/);
+    const deliveryText = urlMatch ? urlMatch[0] : order.delivery;
+    lines.push('', ctx.t('orders.detail.received', { received: deliveryText }));
+  }
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, ctx.lang, 'back', 'main:open');
+  await ctx.reply(renderMdHtml(lines.join('\n')), {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+    link_preview_options: { is_disabled: true },
+  });
+  return true;
+}
+
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
@@ -133,6 +185,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
       });
     }
     if (await handleProductDeepLink(ctx)) return;
+    if (await handleInvoiceDeepLink(ctx)) return;
     await showMainMenu(ctx, { fresh: true });
   });
 

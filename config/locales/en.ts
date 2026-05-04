@@ -66,6 +66,9 @@ export const en: Record<string, string> = {
   'btn.send_price_list.chat': '📬 Send in Chat',
   'btn.notify.email.on': '🟢 Email Reports: ON',
   'btn.notify.email.off': '🔕 Email Reports: OFF',
+  // Post-purchase email follow-up CTAs.
+  'btn.set_email_now': '📧 Add Verified Email',
+  'btn.view_invoice': '🔗 View Invoice',
   'btn.my_orders': '🧾 My Orders',
   'btn.refer': '🎁 Refer',
   'btn.notifications': '🔔 Notifications',
@@ -181,17 +184,20 @@ export const en: Record<string, string> = {
   'shop.note.empty': '_The admin hasn’t added any notes for this product yet._',
   'shop.note.empty_description': '_No description provided._',
   // Premium View Note layout (pic 2 reference). Token names use
-  // `note_premium` for the header glyph + `description`/`note` as
-  // the user-facing variables that get substituted by `t()` BEFORE
+  // `note_premium` for the header glyph, `note_desc` for the
+  // Description label and `note_text` for the Note label so the
+  // admin can swap each premium emoji independently via
+  // `/setemoji note_premium / note_desc / note_text`. Variables
+  // (`description` / `note`) are substituted by `t()` BEFORE
   // `renderMdHtml` runs the premium-emoji pass — so a `{note}`
   // variable here would collide with the EMOJI key of the same name.
   'shop.note.full': [
     '{note_premium} *View Note — {name}*',
     '',
-    '{note_premium} *Description:*',
+    '{note_desc} *Description:*',
     '> {description}',
     '',
-    '{note_premium} *Note:*',
+    '{note_text} *Note:*',
     '> {note}',
   ].join('\n'),
   // Legacy single-message confirmation — still used by /settext
@@ -201,14 +207,18 @@ export const en: Record<string, string> = {
   'shop.buy.success':
     '✅ Purchase successful!\n\nProduct: *{name}*\nQty: *{qty}*\nTotal: *{total}*\n\nDelivery:\n```\n{delivery}\n```',
   // Step 1 of the premium delivery card (pic 3): Payment Verified!
+  // Auto-deletes 15 seconds after being sent (handled in shop.ts).
   'shop.buy.payment_verified': [
     '{order_verified} *Payment Verified!*',
     '',
     '*Amount:* {total} USDT',
     '',
-    '⏳ _Delivering your order…_',
+    '{delivering} _Delivering your order…_',
   ].join('\n'),
   // Step 2 of the premium delivery card (pic 3): Order Delivered!
+  // Items are blank-line-separated so each link / account renders
+  // on its own row with breathing space — see `shop.ts` where
+  // `claimedItems` is joined with `\n\n`.
   'shop.buy.order_delivered': [
     '{order_delivered} *Order Delivered!*',
     '',
@@ -217,12 +227,31 @@ export const en: Record<string, string> = {
     '*Quantity:* {qty}',
     '*Total Paid:* {total} USDT',
     '',
-    '{orders_product} *Items:*',
-    '```',
-    '{items}',
-    '```',
+    '{delivered_items} *Items:*',
     '',
-    '{email_thanks} _I’ve mailed you also — Thanks for purchasing!_ {tiger}',
+    '{items}',
+  ].join('\n'),
+  // Email follow-up #1: shown after Order Delivered when the buyer
+  // has NO email on file. The `{email_add_l/r}` slots are left/right
+  // premium-emoji bookends per the bot-owner spec.
+  'shop.buy.add_email_prompt': [
+    '{email_add_l} *Please For sending Product Invoices and good experience Add you Verified Email* {email_add_r}',
+  ].join('\n'),
+  // Email follow-up #2: shown after Order Delivered when the buyer
+  // already has an email on file. Bold-formatted lines per the
+  // bot-owner spec; `{email}` is the current saved address and
+  // `{link}` is the deep-link `https://t.me/<bot>?start=ord_<pubId>`
+  // that opens the order detail screen back inside the bot.
+  'shop.buy.invoice_sent': [
+    '{invoice_sent_l} *Product Details and invoice sended to your mail* {invoice_sent_r}',
+    '',
+    '{invoice_spam} *Don’t forget to check your Gmail spam folder.*',
+    '',
+    '{invoice_email_label} *Invoice Email:*',
+    '`{email}`',
+    '',
+    '{invoice_link_label} *Invoice Link:*',
+    '{link}',
   ].join('\n'),
   'shop.buy.delivery_pending':
     'Coming soon — admin will deliver your items manually within 12h.',
