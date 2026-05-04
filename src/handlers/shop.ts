@@ -506,53 +506,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const kb = new InlineKeyboard();
     inlineBtn(kb, ctx.lang, 'back', `prod:${p.id}`);
     const html = renderMdHtml(body);
-    // Pic-2 spec: when the admin uploaded a `.txt` (or any document)
-    // we want it INLINE under the View Note text — i.e. ONE message
-    // bubble containing the document card + the body as caption,
-    // not the legacy two-message layout (text, then a separate
-    // document). To do that we delete the in-place edit candidate
-    // (the product page the user was just on) and send a single
-    // document message with `body` as the caption + the Back keyboard.
-    //
-    // Telegram caps document captions at 1024 chars; if the rendered
-    // body is longer we fall back to the legacy split-message layout
-    // (plain `editMessageText` + standalone document) so we never
-    // truncate the user's note silently.
-    const CAPTION_MAX = 1024;
-    const canInline = Boolean(p.note_file_id) && html.length <= CAPTION_MAX;
-    if (canInline && p.note_file_id) {
-      const callbackChatId = ctx.chat?.id;
-      const callbackMessageId = ctx.callbackQuery.message?.message_id;
-      try {
-        await ctx.replyWithDocument(p.note_file_id, {
-          caption: html,
-          parse_mode: 'HTML',
-          reply_markup: kb,
-        });
-        if (callbackChatId !== undefined && callbackMessageId !== undefined) {
-          await ctx.api
-            .deleteMessage(callbackChatId, callbackMessageId)
-            .catch(() => {});
-        }
-        return;
-      } catch {
-        // file_id can expire when the admin re-issued the bot token
-        // or the file was deleted server-side — fall through to the
-        // text-only path so the user still sees the note body.
-      }
-    }
+    // View Note is text-only: just edit the in-place message back
+    // to the rendered note body (description + note + product name).
+    // Per bot-owner request the per-product file attachment was
+    // removed — this keeps the screen consistent and avoids
+    // file_id-expiry edge cases.
     await ctx.editMessageText(html, {
       parse_mode: 'HTML',
       reply_markup: kb,
     });
-    if (p.note_file_id && !canInline) {
-      try {
-        await ctx.replyWithDocument(p.note_file_id);
-      } catch {
-        // file_id can expire across bot tokens; surface a polite
-        // fallback rather than crashing the callback.
-      }
-    }
   });
 
   // ---- Using Method tutorial ----
@@ -563,75 +525,73 @@ export function registerShop(bot: Composer<AppCtx>): void {
   // optional URL button. When nothing has been configured yet we
   // surface a polite placeholder so the button isn't a dead end.
   bot.callbackQuery(/^tut:(\d+)$/, async (ctx) => {
-    const id = Number(ctx.match[1]);
-    const raw = await getProduct(id);
-    if (!raw) {
-      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
-      return;
-    }
+    // Always ack first so Telegram never shows a perpetual spinner
+    // even if the body below throws.
     await ctx.answerCallbackQuery();
-    const text = (raw.tutorial_text ?? '').trim();
-    const body =
-      text.length > 0
-        ? ctx.t('shop.tutorial.body', { name: raw.name, body: text })
-        : ctx.t('shop.tutorial.empty', { name: raw.name });
-    const kb = new InlineKeyboard();
-    if (raw.tutorial_url) {
-      kb.url(ctx.t('btn.tutorial_open_link'), raw.tutorial_url).row();
-    }
-    inlineBtn(kb, ctx.lang, 'back', `prod:${id}`);
-    const html = renderMdHtml(body);
-    logger.info(
-      {
-        productId: id,
-        hasText: text.length > 0,
-        hasFile: Boolean(raw.tutorial_file_id && raw.tutorial_file_type),
-        fileType: raw.tutorial_file_type ?? null,
-        hasUrl: Boolean(raw.tutorial_url),
-      },
-      'tut: — rendering Using Method tutorial',
-    );
-    // Inline-file pattern: matches View Note + Bot Tutorial. When a
-    // media attachment is configured AND the body fits inside
-    // Telegram's 1024-char caption limit we send ONE message (media
-    // + body caption + URL/Back keyboard). For longer bodies we fall
-    // back to the legacy split-message layout so we never truncate
-    // the tutorial text silently.
-    const CAPTION_MAX = 1024;
-    const canInline =
-      Boolean(raw.tutorial_file_id && raw.tutorial_file_type) &&
-      html.length <= CAPTION_MAX;
-    if (canInline && raw.tutorial_file_id && raw.tutorial_file_type) {
-      try {
-        const opts = { caption: html, parse_mode: 'HTML' as const, reply_markup: kb };
-        if (raw.tutorial_file_type === 'photo') {
-          await ctx.replyWithPhoto(raw.tutorial_file_id, opts);
-        } else if (raw.tutorial_file_type === 'video') {
-          await ctx.replyWithVideo(raw.tutorial_file_id, opts);
-        } else {
-          await ctx.replyWithDocument(raw.tutorial_file_id, opts);
-        }
+    try {
+      const id = Number(ctx.match[1]);
+      const raw = await getProduct(id);
+      if (!raw) {
+        await ctx.reply(
+          '⚠️ <b>Product no longer available.</b>\n\nThis product was removed by the admin.',
+          { parse_mode: 'HTML' },
+        );
         return;
-      } catch (err) {
-        // file_id can expire across bot tokens; fall through to the
-        // text-only path so the user always sees the body.
-        logger.warn({ err, productId: id }, 'tut: inline file send failed');
       }
-    }
-    if (raw.tutorial_file_id && raw.tutorial_file_type && !canInline) {
-      try {
-        if (raw.tutorial_file_type === 'photo') {
-          await ctx.replyWithPhoto(raw.tutorial_file_id);
-        } else if (raw.tutorial_file_type === 'video') {
-          await ctx.replyWithVideo(raw.tutorial_file_id);
-        } else {
-          await ctx.replyWithDocument(raw.tutorial_file_id);
+      const text = (raw.tutorial_text ?? '').trim();
+      const body =
+        text.length > 0
+          ? ctx.t('shop.tutorial.body', { name: raw.name, body: text })
+          : ctx.t('shop.tutorial.empty', { name: raw.name });
+      const kb = new InlineKeyboard();
+      if (raw.tutorial_url) {
+        kb.url(ctx.t('btn.tutorial_open_link'), raw.tutorial_url).row();
+      }
+      inlineBtn(kb, ctx.lang, 'back', `prod:${id}`);
+      const html = renderMdHtml(body);
+      logger.info(
+        {
+          productId: id,
+          hasText: text.length > 0,
+          hasFile: Boolean(raw.tutorial_file_id && raw.tutorial_file_type),
+          fileType: raw.tutorial_file_type ?? null,
+          hasUrl: Boolean(raw.tutorial_url),
+        },
+        'tut: — rendering Using Method tutorial',
+      );
+      // Always send a NEW message (`reply`) instead of editing.
+      // Sending a fresh message is bulletproof — every tap shows a
+      // brand-new tutorial card, and the Back button returns the
+      // user to the product page.
+      await ctx.reply(html, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+        link_preview_options: { is_disabled: true },
+      });
+      if (raw.tutorial_file_id && raw.tutorial_file_type) {
+        try {
+          if (raw.tutorial_file_type === 'photo') {
+            await ctx.replyWithPhoto(raw.tutorial_file_id);
+          } else if (raw.tutorial_file_type === 'video') {
+            await ctx.replyWithVideo(raw.tutorial_file_id);
+          } else {
+            await ctx.replyWithDocument(raw.tutorial_file_id);
+          }
+        } catch (err) {
+          logger.warn({ err }, 'tut: file send failed');
         }
+      }
+    } catch (err) {
+      logger.error({ err }, 'tut: — failed to render');
+      try {
+        await ctx.reply(
+          '⚠️ <b>Failed to load Using Method tutorial.</b>\n\nThe admin needs to set this up: <code>/admin</code> → Edit Product → Tutorial Text / Tutorial File / Tutorial URL.',
+          { parse_mode: 'HTML' },
+        );
       } catch {
-        // file_id can expire across bot tokens; degrade gracefully.
+        // Last-ditch: nothing else to do.
       }
     }
-    await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   });
 
   // *Buy Now* on the product page no longer charges immediately —

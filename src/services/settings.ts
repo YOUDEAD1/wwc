@@ -32,6 +32,36 @@ export function getButtonColor(key: keyof typeof DEFAULT_BUTTON_COLORS): ColorMo
   return DEFAULT_BUTTON_COLORS[key];
 }
 
+/**
+ * Look up the prefix glyph for a color mode. Admins can override the
+ * built-in glyph (🔵🟢🔴🟡) with any custom string via the
+ * `color.prefix.<mode>` setting — useful for picking different
+ * symbols, alternative shapes, or suppressing the glyph entirely
+ * (set to an empty string) without losing the underlying Bot API 9.4
+ * style.
+ */
+export function getColorPrefix(mode: ColorMode): string {
+  const v = cache.get(`color.prefix.${mode}`);
+  if (typeof v === 'string') return v;
+  return COLOR_PREFIX[mode];
+}
+
+export async function setColorPrefix(
+  mode: ColorMode,
+  glyph: string,
+  updated_by?: number,
+): Promise<void> {
+  const key = `color.prefix.${mode}`;
+  await setSetting(key, glyph, updated_by);
+  cache.set(key, glyph);
+}
+
+export async function clearColorPrefix(mode: ColorMode): Promise<void> {
+  const key = `color.prefix.${mode}`;
+  await deleteSetting(key);
+  cache.delete(key);
+}
+
 /** Get color mode for a state-based key like in_stock / out_of_stock. */
 export function getStateColor(key: 'in_stock' | 'out_of_stock'): ColorMode {
   const v = cache.get(`color.${key}`);

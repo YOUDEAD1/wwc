@@ -2,13 +2,17 @@ import { InlineKeyboard, Keyboard } from 'grammy';
 import {
   BUTTON_ICONS,
   BUTTON_KEYS,
-  COLOR_PREFIX,
   colorModeToStyle,
   type ButtonStyle,
   type ColorMode,
   type Lang,
 } from '../../config/index.js';
-import { getButtonColor, getButtonIcon, getEmoji } from '../services/settings.js';
+import {
+  getButtonColor,
+  getButtonIcon,
+  getColorPrefix,
+  getEmoji,
+} from '../services/settings.js';
 import { t } from '../i18n/index.js';
 
 /**
@@ -26,7 +30,7 @@ export function colored(
   override?: ColorMode,
 ): string {
   const mode = override ?? getButtonColor(key);
-  const prefix = COLOR_PREFIX[mode];
+  const prefix = getColorPrefix(mode);
   return prefix ? `${prefix} ${label}` : label;
 }
 

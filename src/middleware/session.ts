@@ -79,7 +79,6 @@ export type AdminFlow =
   // Each step waits for ONE message of the appropriate kind.
   | { type: 'edit_product_emoji'; step: 'premium'; data: { product_id: number; page: number } }
   | { type: 'edit_product_note_text'; step: 'text'; data: { product_id: number; page: number } }
-  | { type: 'edit_product_note_file'; step: 'file'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_text'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_file'; step: 'file'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_url'; step: 'url'; data: { product_id: number; page: number } }
@@ -104,6 +103,7 @@ export type AdminFlow =
   | { type: 'set_emoji'; step: 'value'; data: { key: string } }
   | { type: 'set_btnicon'; step: 'value'; data: { btnKey: string } }
   | { type: 'set_color'; step: 'value'; data: { key: string } }
+  | { type: 'set_color_glyph'; step: 'value'; data: { mode: string } }
   | { type: 'announce'; step: 'text'; data: Record<string, never> }
   | { type: 'announce'; step: 'confirm'; data: { text: string } }
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }

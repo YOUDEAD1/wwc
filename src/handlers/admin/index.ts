@@ -78,6 +78,9 @@ import {
   setBotTutorialField,
   getBotTutorial,
   type BotTutorial,
+  getColorPrefix,
+  setColorPrefix,
+  clearColorPrefix,
 } from '../../services/settings.js';
 import { renderMdHtml } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
@@ -730,13 +733,12 @@ async function showProductEditor(
     `*Stock:* ${stockCell}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
     `*Note Text:* ${p.note ? '`set`' : '_unset_'}`,
-    `*Note File:* ${p.note_file_id ? '`' + (p.note_file_name ?? 'set') + '`' : '_unset_'}`,
     `*Tutorial Text:* ${p.tutorial_text ? '`set`' : '_unset_'}`,
     `*Tutorial File:* ${p.tutorial_file_id ? '`' + p.tutorial_file_type + '`' : '_unset_'}`,
     `*Tutorial URL:* ${p.tutorial_url ? '`' + p.tutorial_url + '`' : '_unset_'}`,
     `*Items pool:* ${itemsCount} unconsumed`,
     '',
-    '_Tap a button to edit. For "Set Premium Emoji" / "Set Note File" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
+    '_Tap a button to edit. For "Set Premium Emoji" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
   ];
   const kb = new InlineKeyboard();
   kb.text('🎬 Set Premium Emoji', `adm:prod:emoji:set:${p.id}:${page}`)
@@ -744,9 +746,6 @@ async function showProductEditor(
     .row();
   kb.text('📝 Set Note Text', `adm:prod:note:settxt:${p.id}:${page}`)
     .text('🧹 Clear Note', `adm:prod:note:clr:${p.id}:${page}`)
-    .row();
-  kb.text('📎 Set Note File', `adm:prod:note:setfile:${p.id}:${page}`)
-    .text('🧹 Clear File', `adm:prod:note:clrfile:${p.id}:${page}`)
     .row();
   kb.text('📘 Tutorial Text', `adm:prod:tut:settxt:${p.id}:${page}`)
     .text('🎞 Tutorial File', `adm:prod:tut:setfile:${p.id}:${page}`)
@@ -814,7 +813,7 @@ adminBot.callbackQuery(/^adm:prod:emoji:clr:(\d+):(\d+)$/, async (ctx) => {
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
 
-// --- Note text + file ---
+// --- Note text ---
 adminBot.callbackQuery(/^adm:prod:note:settxt:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const product_id = Number(ctx.match[1]);
@@ -833,32 +832,6 @@ adminBot.callbackQuery(/^adm:prod:note:settxt:(\d+):(\d+)$/, async (ctx) => {
 adminBot.callbackQuery(/^adm:prod:note:clr:(\d+):(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   await updateProduct(id, { note: null });
-  await ctx.answerCallbackQuery({ text: 'Cleared' });
-  await showProductEditor(ctx, id, Number(ctx.match[2]));
-});
-
-adminBot.callbackQuery(/^adm:prod:note:setfile:(\d+):(\d+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
-  const product_id = Number(ctx.match[1]);
-  const page = Number(ctx.match[2]);
-  ctx.session.adminFlow = {
-    type: 'edit_product_note_file',
-    step: 'file',
-    data: { product_id, page },
-  };
-  await ctx.reply(
-    '📎 Drop the *.txt* (or any document) file as your next message — it will be re-sent under View Note.',
-    { parse_mode: 'Markdown' },
-  );
-});
-
-adminBot.callbackQuery(/^adm:prod:note:clrfile:(\d+):(\d+)$/, async (ctx) => {
-  const id = Number(ctx.match[1]);
-  await updateProduct(id, {
-    note_file_id: null,
-    note_file_name: null,
-    note_file_mime: null,
-  });
   await ctx.answerCallbackQuery({ text: 'Cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
@@ -1348,6 +1321,8 @@ adminBot.callbackQuery('adm:cust', async (ctx) => {
     .text('📝 Edit Text', 'adm:cust:text')
     .text('🎨 Set Color', 'adm:cust:color:pick')
     .row()
+    .text('🎯 Custom Color Glyphs', 'adm:cust:colorglyph')
+    .row()
     .text('😀 Set Emoji', 'adm:cust:emoji')
     .text('🎯 Set Button Icon', 'adm:cust:btnicon')
     .row()
@@ -1576,6 +1551,59 @@ adminBot.callbackQuery(/^adm:color:set:([^:]+):([^:]+)$/, async (ctx) => {
   await setColor(key, color, ctx.from!.id);
   await ctx.answerCallbackQuery({ text: `Set ${key} → ${color}` });
   await showColorPicker(ctx, 0);
+});
+
+// ----- Custom Color Glyphs editor -----
+//
+// Lets the bot owner customise the prefix glyph used for each
+// `ColorMode` (blue/green/red/yellow/none). The default is the
+// matching coloured circle (🔵🟢🔴🟡), but an admin can replace
+// any of them with arbitrary unicode (e.g. squares, hearts, brand
+// emojis) or clear it entirely. Stored under `color.prefix.<mode>`
+// in the settings cache (see `services/settings.ts`).
+async function showColorGlyphPicker(ctx: AppCtx): Promise<void> {
+  const modes: ColorMode[] = ['blue', 'green', 'red', 'yellow', 'none'];
+  const lines = ['🎯 *Custom Color Glyphs*', ''];
+  for (const m of modes) {
+    const glyph = getColorPrefix(m);
+    const display = glyph.length > 0 ? glyph : '_(none)_';
+    lines.push(`*${m}*: ${display}`);
+  }
+  lines.push('', '_Tap a mode to change its glyph. Send any text (single emoji, brand symbol, etc.) or `/clear` to drop the override._');
+  const kb = new InlineKeyboard();
+  for (const m of modes) {
+    kb.text(`${m} → ${getColorPrefix(m) || '·'}`, `adm:colorglyph:edit:${m}`).row();
+  }
+  kb.text('⬅️ Back', 'adm:cust');
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery('adm:cust:colorglyph', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showColorGlyphPicker(ctx);
+});
+
+adminBot.callbackQuery(/^adm:colorglyph:edit:([^:]+)$/, async (ctx) => {
+  const mode = ctx.match[1]! as ColorMode;
+  if (!(mode in COLOR_PREFIX)) {
+    await ctx.answerCallbackQuery({ text: 'Bad mode' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'set_color_glyph',
+    step: 'value',
+    data: { mode },
+  };
+  const cur = getColorPrefix(mode);
+  await ctx.reply(
+    `🎯 *Set Glyph for \`${mode}\`*\n\nCurrent: ${cur || '_(none)_'}\n\nSend a single emoji / symbol as your next message — it will become the new prefix glyph for the *${mode}* color mode. Send \`/clear\` to drop the override (falls back to the built-in default). Send \`/cancel\` to abort.`,
+    { parse_mode: 'Markdown' },
+  );
 });
 
 // ----- Button-icon picker (button-driven, A → Z) -----
@@ -3686,6 +3714,40 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
 
+    if (flow.type === 'set_color_glyph') {
+      const mode = flow.data.mode as ColorMode;
+      if (!(mode in COLOR_PREFIX)) {
+        ctx.session.adminFlow = undefined;
+        await ctx.reply('⚠️ Unknown color mode — aborted.');
+        return;
+      }
+      const trimmed = text.trim();
+      if (trimmed === '/cancel') {
+        ctx.session.adminFlow = undefined;
+        await ctx.reply('Cancelled.');
+        return;
+      }
+      if (trimmed === '/clear') {
+        await clearColorPrefix(mode);
+        ctx.session.adminFlow = undefined;
+        await ctx.reply(
+          `✅ Cleared *${mode}* glyph — falling back to the built-in default.`,
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      // Trim whitespace but allow zero-width / multi-codepoint emoji.
+      // Cap to 16 chars so the prefix never breaks the button label.
+      const glyph = trimmed.slice(0, 16);
+      await setColorPrefix(mode, glyph, ctx.from!.id);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Updated *${mode}* glyph → ${glyph || '_(empty)_'}.`,
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
     if (flow.type === 'announce') {
       if (flow.step === 'text') {
         ctx.session.adminFlow = { type: 'announce', step: 'confirm', data: { text } };
@@ -4186,17 +4248,6 @@ adminBot.on('message:document', async (ctx, next) => {
   if (!flow) return next();
   if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
   const doc = ctx.message.document;
-  if (flow.type === 'edit_product_note_file') {
-    await updateProduct(flow.data.product_id, {
-      note_file_id: doc.file_id,
-      note_file_name: doc.file_name ?? null,
-      note_file_mime: doc.mime_type ?? null,
-    });
-    ctx.session.adminFlow = undefined;
-    await ctx.reply('✅ View Note file saved.');
-    await ctx.reply(`Tap _Edit_ → ✏️ on product list to verify.`, { parse_mode: 'Markdown' });
-    return;
-  }
   if (flow.type === 'edit_product_tutorial_file') {
     await updateProduct(flow.data.product_id, {
       tutorial_file_id: doc.file_id,
@@ -4544,34 +4595,6 @@ adminBot.command('setproductunlimited', async (ctx) => {
   }
   await updateProduct(id, { unlimited_stock: flag === 'on' });
   await ctx.reply(`✅ Product #${id} unlimited_stock = ${flag.toUpperCase()}.`);
-});
-
-adminBot.command('setproductnotefile', async (ctx) => {
-  // Reply to a document message with `/setproductnotefile <id>` to
-  // upload a custom note file (pic 2 reference). Pass `clear` instead
-  // of replying to remove the note file.
-  const parts = (ctx.message?.text ?? '').split(/\s+/);
-  const id = Number(parts[1]);
-  if (!Number.isFinite(id)) {
-    await ctx.reply('Usage: reply to a document with /setproductnotefile <id>, or /setproductnotefile <id> clear');
-    return;
-  }
-  if (parts[2]?.toLowerCase() === 'clear') {
-    await updateProduct(id, { note_file_id: null, note_file_name: null, note_file_mime: null });
-    await ctx.reply(`🧹 Product #${id} note file cleared.`);
-    return;
-  }
-  const doc = ctx.message?.reply_to_message?.document;
-  if (!doc) {
-    await ctx.reply('Reply to a document message with this command.');
-    return;
-  }
-  await updateProduct(id, {
-    note_file_id: doc.file_id,
-    note_file_name: doc.file_name ?? null,
-    note_file_mime: doc.mime_type ?? null,
-  });
-  await ctx.reply(`✅ Product #${id} note file set (${doc.file_name ?? doc.file_id}).`);
 });
 
 adminBot.command('setproducttutorial', async (ctx) => {
