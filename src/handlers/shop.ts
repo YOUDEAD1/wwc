@@ -194,6 +194,34 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await showProduct(ctx, Number(ctx.match[1]));
   });
 
+  // Inline `➖` / `➕` stepper on the product page — each tap nudges
+  // the qty by one and re-renders the same message in place. The
+  // value is clamped to `[QTY_MIN, min(QTY_MAX, stock)]`; tapping
+  // past either edge surfaces a small toast and leaves the qty as
+  // it was so we never push a no-op `editMessageText`.
+  bot.callbackQuery(/^qty:(\d+):(inc|dec)$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const direction = ctx.match[2];
+    const raw = await getProduct(id);
+    if (!raw) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    const ceiling = Math.min(QTY_MAX, Math.max(0, p.stock));
+    const current = ctx.session.qty[id] ?? QTY_MIN;
+    const candidate = direction === 'inc' ? current + 1 : current - 1;
+    if (candidate < QTY_MIN || candidate > ceiling) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.qty.invalid', { max: ceiling }),
+      });
+      return;
+    }
+    ctx.session.qty[id] = candidate;
+    await ctx.answerCallbackQuery();
+    await showProduct(ctx, id);
+  });
+
   // Tap *Custom Quantity* on the product page → switches the same
   // message into the numeric-keypad screen. Resets the digit buffer
   // and arms the userFlow so plain-text replies are interpreted as
