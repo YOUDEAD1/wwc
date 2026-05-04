@@ -199,6 +199,14 @@ export const BUTTON_KEYS = {
   send_price_list_chat: 'btn.send_price_list.chat',
   notify_email_on: 'btn.notify.email.on',
   notify_email_off: 'btn.notify.email.off',
+
+  // ---- Post-purchase email follow-up --------------------------
+  // `set_email_now` is shown under the "Please add your verified
+  // email" prompt that follows an Order Delivered card when the
+  // buyer has no email on file. `view_invoice` opens the public
+  // Order detail screen on the same chat.
+  set_email_now: 'btn.set_email_now',
+  view_invoice: 'btn.view_invoice',
 } as const;
 
 /**
@@ -335,6 +343,8 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   send_price_list_chat: 'green',
   notify_email_on: 'green',
   notify_email_off: 'none',
+  set_email_now: 'blue',
+  view_invoice: 'blue',
 };
 
 /**
@@ -532,12 +542,34 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // Header glyphs for the new two-step delivery card (pic 3) and
   // the per-product Using Method tutorial. `note_premium` is the
   // animated note glyph used at the top of the View Note screen.
-  // All custom_emoji_ids are placeholders — the bot owner can
-  // override with `/setemoji <key> <unicode> <custom_emoji_id>`.
-  order_verified: { unicode: '✅', custom_emoji_id: '5237699328843200968' },
-  order_delivered: { unicode: '🚚', custom_emoji_id: '5237699328843200968' },
+  // All custom_emoji_ids can be overridden by the bot owner via
+  // `/setemoji <key> <unicode> <custom_emoji_id>`.
+  order_verified: { unicode: '✅', custom_emoji_id: '6325645228166353066' },
+  order_delivered: { unicode: '🚚', custom_emoji_id: '5098567638565520047' },
   tutorial: { unicode: '📘', custom_emoji_id: '5215459728810641551' },
+  // Note section: header / Description label / Note label each get
+  // their own slot so the admin can swap them independently from
+  // `/setemoji note_premium / note_desc / note_text`. Defaults to
+  // the same notepad glyph everywhere.
   note_premium: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
+  note_desc: { unicode: '📄', custom_emoji_id: '5778299625370817409' },
+  note_text: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
+  // "⏳ Delivering your order…" trailer under the Payment Verified
+  // line. Same id as `email_bracket_r` per the bot-owner spec.
+  delivering: { unicode: '⏳', custom_emoji_id: '6010111371251815589' },
+  // "Items:" label inside the Order Delivered card.
+  delivered_items: { unicode: '📦', custom_emoji_id: '6156809896256867448' },
+  // "Please add your verified email" prompt shown after delivery
+  // when the buyer has no email on file.
+  email_add_l: { unicode: '📧', custom_emoji_id: '6098324862730768475' },
+  email_add_r: { unicode: '📩', custom_emoji_id: '4929214028657460019' },
+  // "Product Details and invoice sent to your mail" follow-up shown
+  // after delivery when the buyer DOES have an email on file.
+  invoice_sent_l: { unicode: '📬', custom_emoji_id: '6005930963618501222' },
+  invoice_sent_r: { unicode: '📨', custom_emoji_id: '5454113432284446338' },
+  invoice_spam: { unicode: '📥', custom_emoji_id: '6008233706039284019' },
+  invoice_email_label: { unicode: '📧', custom_emoji_id: '5357050826412018659' },
+  invoice_link_label: { unicode: '🔗', custom_emoji_id: '4929214028657460019' },
   // 12-hour email nag glyph + the Email Reports notifications row.
   email_nag: { unicode: '📧', custom_emoji_id: '5472239203590888751' },
   notify_email: { unicode: '📧', custom_emoji_id: '5472239203590888751' },
@@ -664,6 +696,10 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   send_price_list_chat: 'pdf_sent_r',
   notify_email_on: 'notify_on',
   notify_email_off: 'notify_off',
+
+  // Post-purchase email follow-up CTAs.
+  set_email_now: 'email_add_l',
+  view_invoice: 'invoice_link_label',
 };
 
 /**

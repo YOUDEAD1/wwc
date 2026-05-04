@@ -957,6 +957,406 @@ export async function sendPriceListEmail(args: {
   }
 }
 
+// ---------------------------------------------------------------------------
+//  Post-purchase invoice email
+// ---------------------------------------------------------------------------
+//
+// Fired off from `pay:wallet:<id>` immediately after a successful
+// charge. The buyer receives a polished HTML invoice + a PDF copy
+// for their records.
+//
+// Failure modes are NEVER thrown — the caller `void`s the promise.
+// Telegram's delivery card has already shown the items in chat, so
+// a transient mail outage does not block the buyer.
+
+function escapeHtmlValue(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function invoiceBody(args: {
+  email: string;
+  firstName: string | null;
+  username: string | null;
+  orderPublicId: string;
+  orderDate: string;
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  total: number;
+  discount: number;
+  paidVia: string;
+  invoiceLink: string;
+  items: string[];
+}): { html: string; text: string; subject: string } {
+  const greeting = args.firstName
+    ? `Hi ${args.firstName},`
+    : args.username
+      ? `Hi @${args.username},`
+      : 'Hello,';
+  const subject = `SafwanTiger Shop — Invoice ${args.orderPublicId}`;
+  const subtotal = args.unitPrice * args.qty;
+  const issuedAt = formatInvoiceDate(args.orderDate);
+
+  // ---------- plain-text alternative ----------
+  const textLines: string[] = [
+    greeting,
+    '',
+    `Thanks for purchasing from SafwanTiger Shop. Your invoice for ${args.orderPublicId} is below — a PDF copy is attached for your records.`,
+    '',
+    `Order ID:   ${args.orderPublicId}`,
+    `Issued:     ${issuedAt}`,
+    `Method:     ${args.paidVia}`,
+    `Status:     Paid in full`,
+    '',
+    'Line items',
+    '----------',
+    `${args.productName}  ×${args.qty}  @ ${args.unitPrice.toFixed(2)} USDT`,
+    `Subtotal:   ${subtotal.toFixed(2)} USDT`,
+  ];
+  if (args.discount > 0) {
+    textLines.push(`Discount:   −${args.discount.toFixed(2)} USDT`);
+  }
+  textLines.push(
+    `Total paid: ${args.total.toFixed(2)} USDT`,
+    '',
+  );
+  if (args.items.length > 0) {
+    textLines.push('Delivered items', '---------------');
+    for (const it of args.items) textLines.push(it);
+    textLines.push('');
+  }
+  if (args.invoiceLink) {
+    textLines.push(`Re-open this order in Telegram: ${args.invoiceLink}`, '');
+  }
+  textLines.push(
+    'Need help? Reply to this email or message @safwantigershopbot on',
+    'Telegram with your Order ID above.',
+    '',
+    '— SafwanTiger Shop',
+    'https://t.me/safwantigershopbot',
+  );
+  const text = textLines.join('\n');
+
+  // ---------- HTML body ----------
+  const lineRowHtml = `
+    <tr>
+      <td style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:14px;color:#f5f1e8;font-weight:500;">${escapeHtmlValue(args.productName)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:14px;color:#d8d3c8;text-align:right;font-variant-numeric:tabular-nums;">${args.qty}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:14px;color:#d8d3c8;text-align:right;font-variant-numeric:tabular-nums;">${args.unitPrice.toFixed(2)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:14px;color:#f5f1e8;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${(args.unitPrice * args.qty).toFixed(2)}&nbsp;USDT</td>
+    </tr>`;
+
+  const discountRowHtml =
+    args.discount > 0
+      ? `<tr>
+           <td colspan="3" style="padding:8px 16px;font-size:13px;color:#8a8378;text-align:right;">Discount</td>
+           <td style="padding:8px 16px;font-size:13px;color:#d8d3c8;text-align:right;font-variant-numeric:tabular-nums;">−${args.discount.toFixed(2)}&nbsp;USDT</td>
+         </tr>`
+      : '';
+
+  const itemsBlock =
+    args.items.length > 0
+      ? `<tr><td style="padding:0 36px 8px 36px;">
+           <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin:18px 0 10px 0;">Delivered items</div>
+           <div style="padding:14px 18px;border-radius:10px;background:#16151a;border:1px solid rgba(255,255,255,0.06);font-size:13px;color:#d8d3c8;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.7;white-space:pre-wrap;word-break:break-all;">${args.items.map((i) => escapeHtmlValue(i)).join('<br>')}</div>
+         </td></tr>`
+      : '';
+
+  const ctaBlock = args.invoiceLink
+    ? `<tr><td align="center" style="padding:8px 36px 24px 36px;">
+         <a href="${escapeHtmlValue(args.invoiceLink)}" style="display:inline-block;padding:13px 26px;border-radius:10px;background:linear-gradient(180deg,#d4a574 0%,#b88753 100%);color:#0a0a0a;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:.02em;">Re-open in Telegram</a>
+       </td></tr>`
+    : '';
+
+  const logoBlock = `
+    <!--[if mso]>
+    <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:56pt;height:56pt;" stroked="t" strokeweight="1.5pt" strokecolor="#d4a574" fillcolor="#0a0a0a"><v:fill type="frame" src="cid:${LOGO_CID}"/></v:oval>
+    <![endif]-->
+    <!--[if !mso]><!-- -->
+    <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
+    <!--<![endif]-->`;
+
+  const html = `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtmlValue(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background:#070707;font-family:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#d8d3c8;-webkit-font-smoothing:antialiased;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#070707;">
+    ${escapeHtmlValue(`Invoice ${args.orderPublicId} — ${args.total.toFixed(2)} USDT — paid in full.`)}
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#070707;padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#0f0f10;border:1px solid rgba(212,165,116,0.20);border-radius:18px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.55);">
+        <tr><td style="height:2px;line-height:2px;font-size:0;background:linear-gradient(90deg,rgba(212,165,116,0) 0%,#d4a574 50%,rgba(212,165,116,0) 100%);">&nbsp;</td></tr>
+        <tr><td align="center" style="padding:36px 36px 24px 36px;background:#0a0a0a;">
+          ${logoBlock}
+          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">SafwanTiger Shop</div>
+          <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a8378;margin-top:4px;font-weight:500;">Tax invoice / receipt</div>
+          <div style="font-size:26px;color:#f5f1e8;font-weight:600;margin-top:14px;letter-spacing:-0.015em;line-height:1.25;">Invoice ${escapeHtmlValue(args.orderPublicId)}</div>
+        </td></tr>
+        <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(212,165,116,0.16);">&nbsp;</td></tr>
+        <tr><td style="padding:28px 36px 8px 36px;">
+          <p style="margin:0 0 14px 0;color:#f5f1e8;font-size:15px;line-height:1.6;font-weight:500;">${escapeHtmlValue(greeting)}</p>
+          <p style="margin:0 0 22px 0;font-size:14px;line-height:1.7;color:#d8d3c8;">Thanks for purchasing from SafwanTiger Shop. Your receipt is below — a PDF copy is attached for your records.</p>
+        </td></tr>
+        <tr><td style="padding:0 36px 18px 36px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#16151a;border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+            <tr>
+              <td style="padding:14px 16px;font-size:11px;color:#8a8378;letter-spacing:.18em;text-transform:uppercase;font-weight:600;">Order ID</td>
+              <td style="padding:14px 16px;font-size:14px;color:#f5f1e8;text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtmlValue(args.orderPublicId)}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 16px 14px 16px;font-size:11px;color:#8a8378;letter-spacing:.18em;text-transform:uppercase;font-weight:600;">Issued</td>
+              <td style="padding:8px 16px 14px 16px;font-size:13px;color:#d8d3c8;text-align:right;">${escapeHtmlValue(issuedAt)}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 16px 14px 16px;font-size:11px;color:#8a8378;letter-spacing:.18em;text-transform:uppercase;font-weight:600;">Method</td>
+              <td style="padding:0 16px 14px 16px;font-size:13px;color:#d8d3c8;text-align:right;">${escapeHtmlValue(args.paidVia)}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 16px 14px 16px;font-size:11px;color:#8a8378;letter-spacing:.18em;text-transform:uppercase;font-weight:600;">Status</td>
+              <td style="padding:0 16px 14px 16px;font-size:13px;color:#9fdc99;text-align:right;font-weight:600;">Paid in full</td>
+            </tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:0 36px 8px 36px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#16151a;border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+            <tr>
+              <th align="left" style="padding:14px 16px 8px 16px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#d4a574;font-weight:600;">Description</th>
+              <th align="right" style="padding:14px 16px 8px 16px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#d4a574;font-weight:600;">Qty</th>
+              <th align="right" style="padding:14px 16px 8px 16px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#d4a574;font-weight:600;">Unit</th>
+              <th align="right" style="padding:14px 16px 8px 16px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#d4a574;font-weight:600;">Amount</th>
+            </tr>
+            ${lineRowHtml}
+            <tr>
+              <td colspan="3" style="padding:14px 16px 4px 16px;font-size:13px;color:#8a8378;text-align:right;">Subtotal</td>
+              <td style="padding:14px 16px 4px 16px;font-size:13px;color:#d8d3c8;text-align:right;font-variant-numeric:tabular-nums;">${subtotal.toFixed(2)}&nbsp;USDT</td>
+            </tr>
+            ${discountRowHtml}
+            <tr>
+              <td colspan="3" style="padding:6px 16px 14px 16px;font-size:14px;color:#e6c08c;text-align:right;font-weight:600;letter-spacing:.02em;">Total paid</td>
+              <td style="padding:6px 16px 14px 16px;font-size:18px;color:#f5f1e8;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${args.total.toFixed(2)}&nbsp;USDT</td>
+            </tr>
+          </table>
+        </td></tr>
+        ${itemsBlock}
+        ${ctaBlock}
+        <tr><td style="padding:0 36px 24px 36px;">
+          <div style="padding:14px 18px;border-radius:10px;background:rgba(212,165,116,0.06);border:1px solid rgba(212,165,116,0.22);font-size:13px;color:#d8d3c8;line-height:1.7;">
+            <strong style="color:#e6c08c;font-weight:600;letter-spacing:.02em;">Need help?</strong> Reply to this email or message <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:underline;text-underline-offset:2px;">@safwantigershopbot</a> on Telegram with the Order ID above.
+          </div>
+        </td></tr>
+        <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(255,255,255,0.06);">&nbsp;</td></tr>
+        <tr><td align="center" style="padding:22px 36px 26px 36px;background:#0a0a0a;">
+          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">SafwanTiger Shop Team</div>
+          <div style="margin-top:6px;font-size:13px;color:#8a8378;line-height:1.6;">
+            <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:none;">@safwantigershopbot</a>
+            <span style="color:#3a3631;">&nbsp;·&nbsp;</span>
+            <a href="mailto:shopbot@safwantiger.com" style="color:#8a8378;text-decoration:none;">shopbot@safwantiger.com</a>
+          </div>
+          <p style="margin:14px 0 0 0;font-size:11px;color:#5a5550;line-height:1.6;letter-spacing:.01em;">
+            This is an automated invoice for an order placed through the SafwanTiger Shop Telegram bot.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  return { html, text, subject };
+}
+
+function formatInvoiceDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  const m = months[d.getUTCMonth()];
+  const y = d.getUTCFullYear();
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${day} ${m} ${y}, ${hh}:${mm} UTC`;
+}
+
+export async function sendInvoiceEmail(args: {
+  email: string;
+  firstName: string | null;
+  username: string | null;
+  orderPublicId: string;
+  orderDate: string;
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  total: number;
+  discount: number;
+  paidVia: string;
+  /** Per-item delivery payload (links / accounts). May be empty. */
+  items: string[];
+  /** Deep-link back into the bot, e.g. https://t.me/<bot>?start=ord_<id>. */
+  invoiceLink: string;
+}): Promise<boolean> {
+  if (!resendConfigured() && !smtpConfigured()) {
+    logger.warn(
+      { email: args.email, order: args.orderPublicId },
+      'sendInvoiceEmail: no transport configured — set RESEND_API_KEY (preferred) or SMTP_HOST/PORT/USER/PASS',
+    );
+    return false;
+  }
+  const { html, text, subject } = invoiceBody(args);
+
+  // Build the PDF lazily — keep buildInvoicePdf import out of the
+  // hot module graph for cold starts.
+  let pdf: Buffer | null = null;
+  try {
+    const { buildInvoicePdf } = await import('./pdfReport.js');
+    pdf = await buildInvoicePdf({
+      user: {
+        telegram_id: 0,
+        first_name: args.firstName,
+        username: args.username,
+        email: args.email,
+      },
+      orderPublicId: args.orderPublicId,
+      orderDate: args.orderDate,
+      productName: args.productName,
+      qty: args.qty,
+      unitPrice: args.unitPrice,
+      subtotal: args.unitPrice * args.qty,
+      discount: args.discount,
+      total: args.total,
+      paidVia: args.paidVia,
+      items: args.items,
+    });
+  } catch (err) {
+    logger.error({ err, order: args.orderPublicId }, 'sendInvoiceEmail: PDF build failed — sending HTML-only');
+    pdf = null;
+  }
+
+  const filename = `SafwanTiger-Shop-Invoice-${args.orderPublicId}.pdf`;
+
+  if (resendConfigured()) {
+    const client = resendClient();
+    if (!client) return false;
+    const logoB64 = readLogoBase64();
+    const attachments: Array<{
+      filename: string;
+      content: string;
+      contentType: string;
+      contentId?: string;
+    }> = [];
+    if (pdf) {
+      attachments.push({
+        filename,
+        content: pdf.toString('base64'),
+        contentType: 'application/pdf',
+      });
+    }
+    if (logoB64) {
+      attachments.push({
+        filename: LOGO_FILENAME,
+        content: logoB64,
+        contentType: 'image/png',
+        contentId: LOGO_CID,
+      });
+    }
+    try {
+      const { data, error } = await client.emails.send({
+        from: fromAddress(),
+        to: args.email,
+        subject,
+        html,
+        text,
+        attachments,
+      });
+      if (error) {
+        const e = error as { name?: string; message?: string; statusCode?: number };
+        logger.error(
+          { err: error, to: args.email, order: args.orderPublicId, transport: 'resend' },
+          `sendInvoiceEmail: Resend rejected — statusCode=${e.statusCode} message="${e.message}"`,
+        );
+        return false;
+      }
+      logger.info(
+        { id: data?.id, to: args.email, order: args.orderPublicId, transport: 'resend' },
+        `sendInvoiceEmail: delivered via Resend (id=${data?.id ?? 'unknown'})`,
+      );
+      return true;
+    } catch (err) {
+      logger.error(
+        { err, to: args.email, order: args.orderPublicId, transport: 'resend' },
+        'sendInvoiceEmail: Resend send threw',
+      );
+      return false;
+    }
+  }
+
+  // SMTP fallback
+  const tx = smtpTransporter();
+  if (!tx) return false;
+  type SmtpAttachment = {
+    filename: string;
+    content?: Buffer;
+    path?: string;
+    contentType: string;
+    cid?: string;
+  };
+  const smtpAttachments: SmtpAttachment[] = [];
+  if (pdf) {
+    smtpAttachments.push({
+      filename,
+      content: pdf,
+      contentType: 'application/pdf',
+    });
+  }
+  smtpAttachments.push({
+    filename: LOGO_FILENAME,
+    path: EMAIL_LOGO_PATH,
+    contentType: 'image/png',
+    cid: LOGO_CID,
+  });
+  try {
+    const info = await tx.sendMail({
+      from: fromAddress(),
+      to: args.email,
+      subject,
+      html,
+      text,
+      attachments: smtpAttachments,
+    });
+    logger.info(
+      { messageId: info.messageId, to: args.email, order: args.orderPublicId, transport: 'smtp' },
+      'sendInvoiceEmail: delivered via SMTP',
+    );
+    return true;
+  } catch (err) {
+    logger.error(
+      { err, to: args.email, order: args.orderPublicId, transport: 'smtp' },
+      'sendInvoiceEmail: SMTP send failed',
+    );
+    return false;
+  }
+}
+
 export function logMailerStatus(): void {
   if (resendConfigured()) {
     logger.info(
