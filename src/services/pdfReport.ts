@@ -729,10 +729,12 @@ export async function buildInvoicePdf(args: {
       discount: args.discount,
       total: args.total,
     });
-    if (args.items.length > 0) {
-      drawSectionHeader(doc, 'Delivered items');
-      drawInvoiceDeliveredItems(doc, args.items);
-    }
+    // Delivered items intentionally OMITTED from the PDF receipt
+    // (mirrors the email body change). Privacy + resale-control: the
+    // delivery payload (links / accounts / codes) lives only in the
+    // in-chat Order Delivered card. `args.items` and the helper
+    // `drawInvoiceDeliveredItems` are kept on the call signature so
+    // an admin can re-enable this section later without a refactor.
     drawSectionHeader(doc, 'Notes');
     drawInfoBlock(doc, [
       'Thanks for purchasing from SafwanTiger Shop. This invoice is your',
@@ -898,7 +900,10 @@ function drawInvoiceTotals(
   doc.y = top + cardH + 18;
 }
 
-function drawInvoiceDeliveredItems(
+// Kept for forward compat — see the buildInvoicePdf comment above.
+// Renamed with a leading underscore so eslint's unused-var rule
+// (varsIgnorePattern: '^_') treats it as intentionally inert.
+function _drawInvoiceDeliveredItems(
   doc: PDFKit.PDFDocument,
   items: string[],
 ): void {

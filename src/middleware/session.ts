@@ -224,10 +224,24 @@ export type UserFlow =
        * Capture an email address sent as a message after tapping "Set
        * Email" or "Change Email". `mode` distinguishes the two so we
        * can echo the right confirmation copy.
+       *
+       * `postPurchase` is set when the flow is entered via the
+       * post-delivery `Add Verified Email` CTA (vs. Settings →
+       * Email). When true the message handler:
+       *   - auto-deletes the user's typed-email message + the saved
+       *     "Has been Saved!" confirmation card
+       *   - drops a single bold "Email has been setuped" line
+       *   - fires a retroactive invoice email for `pendingInvoiceOrderId`.
        */
       type: 'set_email';
       step: 'value';
-      data: { mode: 'set' | 'change' };
+      data: {
+        mode: 'set' | 'change';
+        postPurchase?: boolean;
+        pendingInvoiceOrderId?: number;
+        promptChatId?: number;
+        promptMessageId?: number;
+      };
     }
   | {
       /**

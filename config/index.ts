@@ -578,6 +578,15 @@ export const EMOJI: Record<string, EmojiSpec> = {
   price_list: { unicode: '📊', custom_emoji_id: '4958506272551863292' },
   // Out-of-stock cross used on the red Buy Now button.
   oos_cross: { unicode: '❌', custom_emoji_id: '5095957930537124723' },
+  // Wallet credit / debit notifications shown to a user when an admin
+  // adjusts their balance via /credit. Three slots so the admin can
+  // swap each independently via `/setemoji credit_emoji / balance_emoji /
+  // debit_emoji <unicode> <custom_emoji_id>`. They start as plain
+  // unicode glyphs (no premium id) so admins can drop in any premium
+  // pack they like without us guessing ids that might not resolve.
+  credit_emoji: '💰',
+  balance_emoji: '💳',
+  debit_emoji: '⚠️',
 };
 
 /**
