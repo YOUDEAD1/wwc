@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
-import type { DBOrder, DBDeposit, DBWalletLedger } from '../types.js';
+import type { DBOrder, DBDeposit, DBWalletLedger, DBProduct, DBPromo } from '../types.js';
 import { logger } from '../logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -668,3 +668,111 @@ function truncate(s: string, max: number): string {
 
 // Touch logger so it counts as used in non-debug builds.
 void logger;
+
+// ---------------------------------------------------------------------------
+//  Price list (Send Price List → Mail)
+// ---------------------------------------------------------------------------
+//
+// The price list is a catalog-wide PDF — there is no per-user header
+// because it's the same data for everyone. We reuse the same brand
+// chrome by passing a synthetic "Catalog" ReportUser so the PDF
+// doesn't need its own header painter.
+export interface PriceListPdfLabels {
+  /** Sub-title for the report (eg. "Live Price List"). */
+  reportTitle: string;
+  /** Section header rendered above the product cards. */
+  sectionTitle: string;
+  /** "In stock" / "Out of stock" / "Upcoming" labels. */
+  status_in_stock: string;
+  status_out_of_stock: string;
+  status_upcoming: string;
+  /** Cell label when stock is unlimited. */
+  unlimited: string;
+  /** "—" when no promo applies. */
+  promo_none: string;
+  /** Builds the promo cell text from min_qty + discount. */
+  promo_format: (min_qty: number, discount: string) => string;
+  /** Footer line printed once at the bottom. */
+  promo_footer: string;
+}
+
+export async function buildPriceListPdf(args: {
+  products: DBProduct[];
+  promos: DBPromo[];
+  labels: PriceListPdfLabels;
+}): Promise<Buffer> {
+  const reportUser: ReportUser = {
+    telegram_id: 0,
+    first_name: 'SafwanTiger Shop',
+    username: null,
+    email: null,
+  };
+  const { products, promos, labels } = args;
+  const promoByProduct = new Map<number, DBPromo[]>();
+  const globalPromos: DBPromo[] = [];
+  for (const p of promos) {
+    if (p.product_id == null) globalPromos.push(p);
+    else {
+      const arr = promoByProduct.get(p.product_id) ?? [];
+      arr.push(p);
+      promoByProduct.set(p.product_id, arr);
+    }
+  }
+  return renderPdf(labels.reportTitle, reportUser, (doc) => {
+    if (products.length === 0) {
+      drawEmpty(doc, 'Catalog is empty.');
+      return;
+    }
+    const inStock = products.filter(
+      (p) => p.active && (p.unlimited_stock || p.stock > 0),
+    ).length;
+    const outOfStock = products.filter(
+      (p) => p.active && !p.unlimited_stock && p.stock <= 0,
+    ).length;
+    const upcoming = products.filter((p) => !p.active).length;
+    drawSummary(doc, [
+      ['Total products', String(products.length)],
+      ['In stock', String(inStock)],
+      ['Out of stock', String(outOfStock)],
+      ['Upcoming', String(upcoming)],
+    ]);
+    drawSectionHeader(doc, labels.sectionTitle);
+    for (const product of products) {
+      let status = labels.status_in_stock;
+      if (!product.active) status = labels.status_upcoming;
+      else if (!product.unlimited_stock && product.stock <= 0) {
+        status = labels.status_out_of_stock;
+      }
+      const stockCell = product.unlimited_stock
+        ? labels.unlimited
+        : String(product.stock);
+      const productPromos = [
+        ...(promoByProduct.get(product.id) ?? []),
+        ...globalPromos,
+      ];
+      const cheapest = productPromos
+        .slice()
+        .sort((a, b) => a.min_qty - b.min_qty)[0];
+      const promoCell = cheapest
+        ? labels.promo_format(
+            cheapest.min_qty,
+            Number(cheapest.discount_amount).toFixed(2),
+          )
+        : labels.promo_none;
+      const cardW = PAGE_W - MARGIN_X * 2;
+      drawKvCard(
+        doc,
+        cardW,
+        [
+          ['Status', status],
+          ['Stock', stockCell],
+          ['Price', `${Number(product.price).toFixed(2)} USDT`],
+          ['Promo', promoCell],
+        ],
+        product.name,
+      );
+    }
+    drawSectionHeader(doc, 'Promo notes');
+    drawInfoBlock(doc, [labels.promo_footer]);
+  });
+}

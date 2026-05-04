@@ -512,14 +512,29 @@ export async function claimProductItems(
 }
 
 export async function decrementProductStock(id: number, qty: number): Promise<void> {
-  const { data: p } = await supabase
+  // Guard against the case where migration 0015 has NOT been applied
+  // (no `unlimited_stock` column). We attempt the columned select
+  // first and fall back to the legacy `stock`-only select on column
+  // errors so the buy flow keeps working on older schemas.
+  let unlimited = false;
+  let cur = 0;
+  const { data: full, error: fullErr } = await supabase
     .from('products')
     .select('stock, unlimited_stock')
     .eq('id', id)
     .single();
-  const unlimited = Boolean((p as { unlimited_stock?: boolean } | null)?.unlimited_stock);
+  if (fullErr) {
+    const { data: legacy } = await supabase
+      .from('products')
+      .select('stock')
+      .eq('id', id)
+      .single();
+    cur = Number((legacy as { stock?: number } | null)?.stock ?? 0);
+  } else {
+    unlimited = Boolean((full as { unlimited_stock?: boolean } | null)?.unlimited_stock);
+    cur = Number((full as { stock?: number } | null)?.stock ?? 0);
+  }
   if (unlimited) return;
-  const cur = Number((p as { stock?: number } | null)?.stock ?? 0);
   await supabase.from('products').update({ stock: Math.max(0, cur - qty) }).eq('id', id);
 }
 
@@ -1024,15 +1039,30 @@ export async function createOrder(o: {
   delivery?: string;
   delivered_items?: string | null;
 }): Promise<DBOrder> {
+  // Only include `delivered_items` in the insert payload when the
+  // caller actually supplied a value. Older deployments may not have
+  // applied migration 0015 yet — sending the column to a table that
+  // doesn't have it causes Supabase to reject the entire insert,
+  // which is what made Wallet Pay hang for the bot owner. Routing
+  // delivered_items through `setOrderDeliveredItems` after insert
+  // keeps the create path forward-compatible.
+  const payload: Record<string, unknown> = {
+    user_id: o.user_id,
+    product_id: o.product_id,
+    product_name: o.product_name,
+    qty: o.qty,
+    unit_price: o.unit_price,
+    total: o.total,
+    discount: o.discount ?? 0,
+    promo_id: o.promo_id ?? null,
+    delivery: o.delivery ?? null,
+  };
+  if (o.delivered_items !== undefined) {
+    payload.delivered_items = o.delivered_items;
+  }
   const { data, error } = await supabase
     .from('orders')
-    .insert({
-      ...o,
-      discount: o.discount ?? 0,
-      promo_id: o.promo_id ?? null,
-      delivery: o.delivery ?? null,
-      delivered_items: o.delivered_items ?? null,
-    })
+    .insert(payload)
     .select('*')
     .single();
   if (error || !data) throw error ?? new Error('createOrder failed');

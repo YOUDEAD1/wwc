@@ -33,6 +33,7 @@ import { renderMdHtml } from '../services/premium.js';
 import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
 import * as adminLog from '../services/adminLog.js';
+import { logger } from '../logger.js';
 
 /**
  * Top-level Shop home — paginated all-products list. The categories
@@ -724,7 +725,21 @@ export function registerShop(bot: Composer<AppCtx>): void {
         });
         return;
       }
-      throw e;
+      // Anything else (DB column missing, RLS, network) MUST still
+      // dismiss the loading spinner — otherwise the Wallet Pay button
+      // sits in the "loading" state forever, which is exactly what
+      // the bot owner reported. We surface a generic alert and log
+      // the underlying error so the admin can debug from the logs.
+      logger.error({ err: e, product_id: id, user: ctx.user.telegram_id }, 'pay:wallet failed');
+      try {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('shop.buy.failed'),
+          show_alert: true,
+        });
+      } catch {
+        // Fall through — Telegram sometimes rejects answerCallbackQuery
+        // when the callback is too old (>15 min). Nothing we can do.
+      }
     }
   });
 
