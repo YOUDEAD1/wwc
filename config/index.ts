@@ -447,6 +447,10 @@ export const EMOJI: Record<string, EmojiSpec> = {
   prod_qty_selected: { unicode: '🔢', custom_emoji_id: '5363964615657017717' },
   prod_total_amount: { unicode: '🧮', custom_emoji_id: '5366223171454278937' },
   prod_wallet: { unicode: '👛', custom_emoji_id: '6102840685835066490' },
+  // Promo line (qty-threshold flat-USDT discount). Reuses the
+  // existing 🎁 premium glyph from the gift-codes screen for
+  // visual consistency.
+  prod_promo: { unicode: '🎁', custom_emoji_id: '4958699241137505132' },
 
   // Custom-quantity prompt — pencil + keypad framing the bold body.
   qty_prompt_pencil: { unicode: '✏️', custom_emoji_id: '5866355487255039002' },

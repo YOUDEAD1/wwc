@@ -91,7 +91,60 @@ export type AdminFlow =
       type: 'add_gift';
       step: 'max_redemptions';
       data: { code: string; amount: number; per_user_limit: number };
-    };
+    }
+  // -------- Promo (qty-threshold flat-USDT discount) flow --------
+  // Multi-step `/promo add` wizard. The admin walks through:
+  //   scope → (user?) → (product?) → min_qty → discount → (name?)
+  // and we materialize the row at the very end. The intermediate
+  // `data` carries forward only what's been collected so far so the
+  // type narrows naturally per step.
+  | {
+      type: 'promo_add';
+      step: 'pick_user';
+      data: { scope: 'user' | 'user_product' };
+    }
+  | {
+      // Awaiting a product callback. Used both when scope is
+      // "product" (telegram_id stays null) and when scope is
+      // "user_product" (telegram_id was just resolved in pick_user).
+      type: 'promo_add';
+      step: 'pick_product';
+      data: { scope: 'product' | 'user_product'; telegram_id: number | null };
+    }
+  | {
+      type: 'promo_add';
+      step: 'min_qty';
+      data: {
+        scope: 'default' | 'product' | 'user' | 'user_product';
+        product_id: number | null;
+        telegram_id: number | null;
+      };
+    }
+  | {
+      type: 'promo_add';
+      step: 'discount';
+      data: {
+        scope: 'default' | 'product' | 'user' | 'user_product';
+        product_id: number | null;
+        telegram_id: number | null;
+        min_qty: number;
+      };
+    }
+  | {
+      type: 'promo_add';
+      step: 'name';
+      data: {
+        scope: 'default' | 'product' | 'user' | 'user_product';
+        product_id: number | null;
+        telegram_id: number | null;
+        min_qty: number;
+        discount_amount: number;
+      };
+    }
+  // Single-field edits invoked from the promo edit card.
+  | { type: 'promo_edit_qty'; step: 'value'; data: { promo_id: number } }
+  | { type: 'promo_edit_discount'; step: 'value'; data: { promo_id: number } }
+  | { type: 'promo_edit_name'; step: 'value'; data: { promo_id: number } };
 
 /**
  * Multi-step user-side flow.

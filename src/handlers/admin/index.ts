@@ -47,6 +47,11 @@ import {
   deleteGiftCode,
   listGiftCodes,
   countGiftCodeRedemptions,
+  addPromo,
+  listPromos,
+  getPromo,
+  updatePromo,
+  deletePromo,
 } from '../../db/queries.js';
 import * as cache from '../../services/cache.js';
 import { credit } from '../../services/wallet.js';
@@ -71,7 +76,7 @@ import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
-import type { DBUser } from '../../types.js';
+import type { DBUser, DBPromo } from '../../types.js';
 
 export const adminBot = new Composer<AppCtx>();
 
@@ -96,7 +101,7 @@ const requireAdmin: MiddlewareFn<AppCtx> = async (ctx, next) => {
 // Apply requireAdmin only to admin entry points.
 adminBot.callbackQuery(/^adm:/, requireAdmin, async (_ctx, next) => next());
 adminBot.command(
-  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload', 'mailerstatus', 'testemail'],
+  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload', 'mailerstatus', 'testemail', 'promo'],
   requireAdmin,
   async (_ctx, next) => next(),
 );
@@ -123,6 +128,8 @@ function rootMenu(): InlineKeyboard {
     .row()
     .text('🎁 Gift Codes', 'adm:gift')
     .text('💎 Custom Prices', 'adm:price')
+    .row()
+    .text('💸 Promos', 'adm:promo')
     .row()
     .text('🏠 Main Menu', 'adm:close');
 }
@@ -1831,6 +1838,561 @@ adminBot.callbackQuery('adm:price:csv', async (ctx) => {
 });
 
 // ============================================================
+// 💸 Promos — qty-threshold flat-USDT auto-discounts.
+//
+// Hierarchical scope: per-user-per-product → per-user → per-product
+// → default. Most specific match wins; ties on the same tier go to
+// the largest discount. Resolution + integration live in
+// `src/services/promo.ts` and the `pay:wallet:<id>` handler — this
+// section is purely the admin CRUD UI.
+//
+// Routes:
+//   adm:promo                     → list page 0
+//   adm:promo:list:<page>         → paginated list
+//   adm:promo:v:<id>              → view/edit a single promo
+//   adm:promo:new                 → start the new-promo wizard
+//   adm:promo:scope:<scope>       → scope chosen
+//   adm:promo:np:<page>           → product picker (new promo)
+//   adm:promo:npp:<product_id>    → product chosen
+//   adm:promo:nameSkip            → skip optional promo name
+//   adm:promo:toggle:<id>         → flip active flag
+//   adm:promo:editq:<id>          → start "change min qty" prompt
+//   adm:promo:editd:<id>          → start "change discount" prompt
+//   adm:promo:editn:<id>          → start "change name" prompt
+//   adm:promo:del:<id>            → delete confirmation
+//   adm:promo:delok:<id>          → confirm delete
+// ============================================================
+
+const PROMO_PAGE_SIZE = 8;
+
+/** Human-readable scope label for the list / detail views. */
+function promoScopeLabel(p: Pick<DBPromo, 'product_id' | 'telegram_id'> & { product_name?: string | null }): string {
+  if (p.telegram_id !== null && p.product_id !== null) {
+    return `User \`${p.telegram_id}\` · Product ${p.product_name ? `*${p.product_name}*` : `#${p.product_id}`}`;
+  }
+  if (p.telegram_id !== null) return `User \`${p.telegram_id}\` · _any product_`;
+  if (p.product_id !== null) return `_any user_ · Product ${p.product_name ? `*${p.product_name}*` : `#${p.product_id}`}`;
+  return '_default — every user, every product_';
+}
+
+async function showPromoList(ctx: AppCtx, page: number): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const { rows, total } = await listPromos(page, PROMO_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / PROMO_PAGE_SIZE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const lines: string[] = [
+    '💸 *Promos*',
+    '',
+    `Active rule set — page ${safePage + 1}/${totalPages}  (total ${total})`,
+  ];
+  if (rows.length === 0) {
+    lines.push('', '_No promos yet._', 'Tap *➕ Add promo* to create the first one.');
+  } else {
+    lines.push('');
+    for (const p of rows) {
+      const scope = promoScopeLabel(p);
+      const active = p.active ? '🟢' : '⏸';
+      const name = p.name?.trim() ? ` — _${p.name.trim()}_` : '';
+      lines.push(
+        `${active} \`#${p.id}\` qty ≥ *${p.min_qty}* → −*$${Number(p.discount_amount).toFixed(2)}*${name}`,
+        `   ${scope}`,
+      );
+    }
+  }
+  const kb = new InlineKeyboard().text('➕ Add promo', 'adm:promo:new').row();
+  for (const p of rows) {
+    const scope = p.telegram_id && p.product_id
+      ? 'U+P'
+      : p.telegram_id
+        ? 'User'
+        : p.product_id
+          ? 'Prod'
+          : 'Def';
+    kb.text(
+      `#${p.id} ${scope} q≥${p.min_qty} −$${Number(p.discount_amount).toFixed(2)}`,
+      `adm:promo:v:${p.id}`,
+    ).row();
+  }
+  if (safePage > 0) kb.text('◀ Prev', `adm:promo:list:${safePage - 1}`);
+  if (safePage + 1 < totalPages) kb.text('Next ▶', `adm:promo:list:${safePage + 1}`);
+  kb.row().text('⬅️ Back', 'adm:root');
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery('adm:promo', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showPromoList(ctx, 0);
+});
+
+/**
+ * Show the same paginated promo list that `adm:promo` shows, but
+ * via a fresh `ctx.reply` (used for the `/promo` slash command which
+ * doesn't have an existing message to edit).
+ */
+async function replyPromoList(ctx: AppCtx, page: number): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const { rows, total } = await listPromos(page, PROMO_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / PROMO_PAGE_SIZE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const lines: string[] = [
+    '💸 *Promos*',
+    '',
+    `Active rule set — page ${safePage + 1}/${totalPages}  (total ${total})`,
+  ];
+  if (rows.length === 0) {
+    lines.push('', '_No promos yet._', 'Tap *➕ Add promo* to create the first one.');
+  } else {
+    lines.push('');
+    for (const p of rows) {
+      const scope = promoScopeLabel(p);
+      const active = p.active ? '🟢' : '⏸';
+      const name = p.name?.trim() ? ` — _${p.name.trim()}_` : '';
+      lines.push(
+        `${active} \`#${p.id}\` qty ≥ *${p.min_qty}* → −*$${Number(p.discount_amount).toFixed(2)}*${name}`,
+        `   ${scope}`,
+      );
+    }
+  }
+  const kb = new InlineKeyboard().text('➕ Add promo', 'adm:promo:new').row();
+  for (const p of rows) {
+    const scope = p.telegram_id && p.product_id
+      ? 'U+P'
+      : p.telegram_id
+        ? 'User'
+        : p.product_id
+          ? 'Prod'
+          : 'Def';
+    kb.text(
+      `#${p.id} ${scope} q≥${p.min_qty} −$${Number(p.discount_amount).toFixed(2)}`,
+      `adm:promo:v:${p.id}`,
+    ).row();
+  }
+  if (safePage > 0) kb.text('◀ Prev', `adm:promo:list:${safePage - 1}`);
+  if (safePage + 1 < totalPages) kb.text('Next ▶', `adm:promo:list:${safePage + 1}`);
+  kb.row().text('⬅️ Back', 'adm:root');
+  await ctx.reply(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+/**
+ * `/promo [add|list|edit <id>|delete <id>]` — convenience slash
+ * command that lands on the same UI as the panel button. Subcommands
+ * are best-effort shortcuts:
+ *   /promo            → list page 0
+ *   /promo list       → list page 0
+ *   /promo add        → start the new-promo wizard (scope picker)
+ *   /promo edit <id>  → jump to the promo card (toggle / edit / delete)
+ *   /promo delete <id>→ jump to the delete confirmation
+ */
+adminBot.command('promo', async (ctx) => {
+  ctx.session.adminFlow = undefined;
+  const arg = (ctx.match ?? '').toString().trim();
+  if (!arg || /^list\b/i.test(arg)) {
+    await replyPromoList(ctx, 0);
+    return;
+  }
+  if (/^add\b/i.test(arg)) {
+    const kb = new InlineKeyboard()
+      .text('🌐 Default (everyone, every product)', 'adm:promo:scope:default')
+      .row()
+      .text('📦 Per product (any user)', 'adm:promo:scope:product')
+      .row()
+      .text('👤 Per user (any product)', 'adm:promo:scope:user')
+      .row()
+      .text('👤📦 Per user + product', 'adm:promo:scope:user_product')
+      .row()
+      .text('⬅️ Cancel', 'adm:promo');
+    await ctx.reply(
+      [
+        '➕ *New promo — Step 1/4: Scope*',
+        '',
+        'Pick how widely this discount should apply.',
+        'Most-specific scope wins at order time, so a per-user-per-product',
+        'promo overrides a per-user one, etc.',
+      ].join('\n'),
+      { parse_mode: 'Markdown', reply_markup: kb },
+    );
+    return;
+  }
+  const editMatch = arg.match(/^edit\s+(\d+)\b/i);
+  if (editMatch) {
+    const id = Number(editMatch[1]);
+    const p = await getPromo(id);
+    if (!p) {
+      await ctx.reply(`❓ Promo #${id} not found.`);
+      return;
+    }
+    let product_name: string | null = null;
+    if (p.product_id !== null) {
+      const prod = await getProduct(p.product_id);
+      product_name = prod?.name ?? null;
+    }
+    const scope = promoScopeLabel({ ...p, product_name });
+    const lines = [
+      `💸 *Promo #${p.id}*`,
+      '',
+      `Status: ${p.active ? '🟢 *Active*' : '⏸ *Paused*'}`,
+      `Scope: ${scope}`,
+      `Min qty: *${p.min_qty}*`,
+      `Discount: *$${Number(p.discount_amount).toFixed(2)}*`,
+      `Name: ${p.name?.trim() ? `_${p.name.trim()}_` : '—'}`,
+    ];
+    const kb = new InlineKeyboard()
+      .text(p.active ? '⏸ Pause' : '▶️ Activate', `adm:promo:toggle:${p.id}`)
+      .row()
+      .text('✏️ Min qty', `adm:promo:editq:${p.id}`)
+      .text('💵 Discount', `adm:promo:editd:${p.id}`)
+      .row()
+      .text('🏷 Name', `adm:promo:editn:${p.id}`)
+      .row()
+      .text('🗑 Delete', `adm:promo:del:${p.id}`)
+      .row()
+      .text('⬅️ Back to list', 'adm:promo');
+    await ctx.reply(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
+    return;
+  }
+  const delMatch = arg.match(/^(?:delete|del|rm)\s+(\d+)\b/i);
+  if (delMatch) {
+    const id = Number(delMatch[1]);
+    const p = await getPromo(id);
+    if (!p) {
+      await ctx.reply(`❓ Promo #${id} not found.`);
+      return;
+    }
+    const kb = new InlineKeyboard()
+      .text('🗑 Yes, delete', `adm:promo:delok:${id}`)
+      .text('❌ Cancel', `adm:promo:v:${id}`);
+    await ctx.reply(
+      `🗑 *Delete promo #${id}?*\n\nThis cannot be undone.`,
+      { parse_mode: 'Markdown', reply_markup: kb },
+    );
+    return;
+  }
+  await ctx.reply(
+    [
+      '💸 *Usage:*',
+      '`/promo`              — list promos',
+      '`/promo add`          — new promo wizard',
+      '`/promo edit <id>`    — open a promo',
+      '`/promo delete <id>`  — delete a promo',
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:promo:list:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showPromoList(ctx, Number(ctx.match[1]));
+});
+
+async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const p = await getPromo(promo_id);
+  if (!p) {
+    await ctx.editMessageText('❓ Promo not found.', {
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+    });
+    return;
+  }
+  // Best-effort product name lookup for nicer copy.
+  let product_name: string | null = null;
+  if (p.product_id !== null) {
+    const prod = await getProduct(p.product_id);
+    product_name = prod?.name ?? null;
+  }
+  const scope = promoScopeLabel({ ...p, product_name });
+  const lines = [
+    `💸 *Promo #${p.id}*`,
+    '',
+    `Status: ${p.active ? '🟢 *Active*' : '⏸ *Paused*'}`,
+    `Scope: ${scope}`,
+    `Min qty: *${p.min_qty}*`,
+    `Discount: *$${Number(p.discount_amount).toFixed(2)}*`,
+    `Name: ${p.name?.trim() ? `_${p.name.trim()}_` : '—'}`,
+    '',
+    `Created: ${new Date(p.created_at).toLocaleString('en-GB')}`,
+    p.created_by ? `By: \`${p.created_by}\`` : 'By: _—_',
+  ];
+  const kb = new InlineKeyboard()
+    .text(p.active ? '⏸ Pause' : '▶️ Activate', `adm:promo:toggle:${p.id}`)
+    .row()
+    .text('✏️ Min qty', `adm:promo:editq:${p.id}`)
+    .text('💵 Discount', `adm:promo:editd:${p.id}`)
+    .row()
+    .text('🏷 Name', `adm:promo:editn:${p.id}`)
+    .row()
+    .text('🗑 Delete', `adm:promo:del:${p.id}`)
+    .row()
+    .text('⬅️ Back to list', 'adm:promo');
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery(/^adm:promo:v:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showPromoCard(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:promo:toggle:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const p = await getPromo(id);
+  if (!p) {
+    await ctx.answerCallbackQuery({ text: 'Not found.', show_alert: true });
+    return;
+  }
+  await updatePromo(id, { active: !p.active });
+  await ctx.answerCallbackQuery({ text: !p.active ? 'Activated' : 'Paused' });
+  await showPromoCard(ctx, id);
+});
+
+adminBot.callbackQuery(/^adm:promo:del:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  const kb = new InlineKeyboard()
+    .text('🗑 Yes, delete', `adm:promo:delok:${id}`)
+    .text('❌ Cancel', `adm:promo:v:${id}`);
+  await ctx.editMessageText(
+    `🗑 *Delete promo #${id}?*\n\nThis cannot be undone.`,
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:promo:delok:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await deletePromo(id);
+  await ctx.answerCallbackQuery({ text: 'Deleted' });
+  await showPromoList(ctx, 0);
+});
+
+// -------- New promo wizard --------
+
+adminBot.callbackQuery('adm:promo:new', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  const kb = new InlineKeyboard()
+    .text('🌐 Default (everyone, every product)', 'adm:promo:scope:default')
+    .row()
+    .text('📦 Per product (any user)', 'adm:promo:scope:product')
+    .row()
+    .text('👤 Per user (any product)', 'adm:promo:scope:user')
+    .row()
+    .text('👤📦 Per user + product', 'adm:promo:scope:user_product')
+    .row()
+    .text('⬅️ Cancel', 'adm:promo');
+  await ctx.editMessageText(
+    [
+      '➕ *New promo — Step 1/4: Scope*',
+      '',
+      'Pick how widely this discount should apply.',
+      'Most-specific scope wins at order time, so a per-user-per-product',
+      'promo overrides a per-user one, etc.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+async function showPromoNewProductPicker(
+  ctx: AppCtx,
+  page: number,
+): Promise<void> {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'promo_add' || flow.step !== 'pick_product') {
+    await ctx.editMessageText(
+      '❓ Lost the promo flow — start over.',
+      { reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo') },
+    );
+    return;
+  }
+  const { rows, total } = await listAllProducts(page, PROMO_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / PROMO_PAGE_SIZE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const lines = [
+    '➕ *New promo — pick a product*',
+    `Page ${safePage + 1}/${totalPages}  (total ${total})`,
+    '',
+    'Tap a product to attach the promo to it.',
+  ];
+  const kb = new InlineKeyboard();
+  for (const p of rows) {
+    kb.text(
+      `${p.name.slice(0, 40)} — $${Number(p.price).toFixed(2)}`,
+      `adm:promo:npp:${p.id}`,
+    ).row();
+  }
+  if (safePage > 0) kb.text('◀ Prev', `adm:promo:np:${safePage - 1}`);
+  if (safePage + 1 < totalPages) kb.text('Next ▶', `adm:promo:np:${safePage + 1}`);
+  kb.row().text('⬅️ Cancel', 'adm:promo');
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+async function promptPromoMinQty(ctx: AppCtx): Promise<void> {
+  await ctx.editMessageText(
+    [
+      '➕ *New promo — Step 3/4: Minimum qty*',
+      '',
+      'Send the minimum quantity that triggers this promo.',
+      'Whole number ≥ 1, e.g. `10`.',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Cancel', 'adm:promo'),
+    },
+  );
+}
+
+adminBot.callbackQuery(/^adm:promo:scope:(default|product|user|user_product)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const scope = ctx.match[1] as 'default' | 'product' | 'user' | 'user_product';
+  if (scope === 'default') {
+    ctx.session.adminFlow = {
+      type: 'promo_add',
+      step: 'min_qty',
+      data: { scope, product_id: null, telegram_id: null },
+    };
+    await promptPromoMinQty(ctx);
+    return;
+  }
+  if (scope === 'product') {
+    ctx.session.adminFlow = {
+      type: 'promo_add',
+      step: 'pick_product',
+      data: { scope, telegram_id: null },
+    };
+    await showPromoNewProductPicker(ctx, 0);
+    return;
+  }
+  // user / user_product → first ask for telegram id or @username.
+  ctx.session.adminFlow = {
+    type: 'promo_add',
+    step: 'pick_user',
+    data: { scope },
+  };
+  await ctx.editMessageText(
+    [
+      '➕ *New promo — Step 2: Pick user*',
+      '',
+      'Send the user\'s numeric Telegram ID or `@username`.',
+      '',
+      '`@username` only works for users who have already started the bot at least once.',
+      'Numeric IDs work for anyone.',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Cancel', 'adm:promo'),
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:promo:np:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showPromoNewProductPicker(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:promo:npp:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'promo_add' || flow.step !== 'pick_product') {
+    await ctx.editMessageText('❓ Lost the promo flow — start over.', {
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+    });
+    return;
+  }
+  const prod = await getProduct(product_id);
+  if (!prod) {
+    await ctx.answerCallbackQuery({ text: 'Product not found.', show_alert: true });
+    return;
+  }
+  ctx.session.adminFlow = {
+    type: 'promo_add',
+    step: 'min_qty',
+    data: {
+      scope: flow.data.scope,
+      product_id,
+      telegram_id: flow.data.telegram_id,
+    },
+  };
+  await promptPromoMinQty(ctx);
+});
+
+adminBot.callbackQuery(/^adm:promo:editq:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  ctx.session.adminFlow = { type: 'promo_edit_qty', step: 'value', data: { promo_id: id } };
+  await ctx.editMessageText(
+    `✏️ *Promo #${id} — Min qty*\n\nSend the new minimum quantity (whole number ≥ 1).\n\n\`/cancel\` to abort.`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Cancel', `adm:promo:v:${id}`),
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:promo:editd:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  ctx.session.adminFlow = { type: 'promo_edit_discount', step: 'value', data: { promo_id: id } };
+  await ctx.editMessageText(
+    `💵 *Promo #${id} — Discount*\n\nSend the new flat discount in USDT (e.g. \`5\` or \`12.5\`).\n\n\`/cancel\` to abort.`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Cancel', `adm:promo:v:${id}`),
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:promo:editn:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  ctx.session.adminFlow = { type: 'promo_edit_name', step: 'value', data: { promo_id: id } };
+  await ctx.editMessageText(
+    `🏷 *Promo #${id} — Name*\n\nSend a short label shown to buyers, or \`-\` to clear it.\n\n\`/cancel\` to abort.`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Cancel', `adm:promo:v:${id}`),
+    },
+  );
+});
+
+adminBot.callbackQuery('adm:promo:nameSkip', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'promo_add' || flow.step !== 'name') {
+    await ctx.editMessageText('❓ Lost the promo flow — start over.', {
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+    });
+    return;
+  }
+  const created = await addPromo({
+    product_id: flow.data.product_id,
+    telegram_id: flow.data.telegram_id,
+    name: null,
+    min_qty: flow.data.min_qty,
+    discount_amount: flow.data.discount_amount,
+    created_by: ctx.from!.id,
+  });
+  ctx.session.adminFlow = undefined;
+  await showPromoCard(ctx, created.id);
+});
+
+// ============================================================
 // Multi-step input handler — fired for any text msg from admin
 // when session.adminFlow is set.
 // ============================================================
@@ -2440,6 +3002,191 @@ adminBot.on('message:text', async (ctx, next) => {
         { parse_mode: 'Markdown' },
       );
       await showDepositList(ctx);
+      return;
+    }
+
+    // -------- Promo flows (add wizard + single-field edits) --------
+
+    if (flow.type === 'promo_add' && flow.step === 'pick_user') {
+      // Resolve the user — numeric Telegram ID always works,
+      // @username only resolves when the user has /start-ed the bot.
+      const query = text.replace(/^@/, '');
+      const numeric = /^\d+$/.test(query);
+      let telegram_id: number | null = null;
+      if (numeric) {
+        telegram_id = Number(query);
+      } else {
+        const u = await findUserByUsername(query);
+        if (u) telegram_id = u.telegram_id;
+      }
+      if (telegram_id === null || !Number.isFinite(telegram_id) || telegram_id <= 0) {
+        await ctx.reply(
+          'Could not resolve that user. Send a numeric Telegram ID ' +
+            '(e.g. `123456789`) or `@username` of a user who has ' +
+            'previously started the bot. Or `/cancel`.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.data.scope === 'user') {
+        ctx.session.adminFlow = {
+          type: 'promo_add',
+          step: 'min_qty',
+          data: { scope: 'user', product_id: null, telegram_id },
+        };
+        await ctx.reply(
+          [
+            '➕ *New promo — Step 3/4: Minimum qty*',
+            '',
+            'Send the minimum quantity that triggers this promo.',
+            'Whole number ≥ 1, e.g. `10`.',
+            '',
+            'Send `/cancel` to abort.',
+          ].join('\n'),
+          {
+            parse_mode: 'Markdown',
+            reply_markup: new InlineKeyboard().text('⬅️ Cancel', 'adm:promo'),
+          },
+        );
+        return;
+      }
+      // user_product → next step is product picker.
+      ctx.session.adminFlow = {
+        type: 'promo_add',
+        step: 'pick_product',
+        data: { scope: 'user_product', telegram_id },
+      };
+      const { rows, total } = await listAllProducts(0, PROMO_PAGE_SIZE);
+      const totalPages = Math.max(1, Math.ceil(total / PROMO_PAGE_SIZE));
+      const kb = new InlineKeyboard();
+      for (const p of rows) {
+        kb.text(
+          `${p.name.slice(0, 40)} — $${Number(p.price).toFixed(2)}`,
+          `adm:promo:npp:${p.id}`,
+        ).row();
+      }
+      if (totalPages > 1) kb.text('Next ▶', 'adm:promo:np:1');
+      kb.row().text('⬅️ Cancel', 'adm:promo');
+      await ctx.reply(
+        [
+          '➕ *New promo — pick a product*',
+          `User: \`${telegram_id}\``,
+          `Page 1/${totalPages}  (total ${total})`,
+          '',
+          'Tap a product to attach the promo to it.',
+        ].join('\n'),
+        { parse_mode: 'Markdown', reply_markup: kb },
+      );
+      return;
+    }
+
+    if (flow.type === 'promo_add' && flow.step === 'min_qty') {
+      const min_qty = Number(text);
+      if (!Number.isInteger(min_qty) || min_qty < 1) {
+        await ctx.reply('❌ Send a whole number ≥ 1, e.g. `10`.');
+        return;
+      }
+      ctx.session.adminFlow = {
+        type: 'promo_add',
+        step: 'discount',
+        data: { ...flow.data, min_qty },
+      };
+      await ctx.reply(
+        [
+          '➕ *New promo — Step 4/4: Discount*',
+          '',
+          `Triggers when qty ≥ *${min_qty}*. Send the flat USDT discount`,
+          'taken off the line total, e.g. `5` or `12.5`.',
+          '',
+          'Send `/cancel` to abort.',
+        ].join('\n'),
+        {
+          parse_mode: 'Markdown',
+          reply_markup: new InlineKeyboard().text('⬅️ Cancel', 'adm:promo'),
+        },
+      );
+      return;
+    }
+
+    if (flow.type === 'promo_add' && flow.step === 'discount') {
+      const discount_amount = Number(text);
+      if (!Number.isFinite(discount_amount) || discount_amount < 0) {
+        await ctx.reply('❌ Send a non-negative number, e.g. `5` or `12.5`.');
+        return;
+      }
+      ctx.session.adminFlow = {
+        type: 'promo_add',
+        step: 'name',
+        data: { ...flow.data, discount_amount },
+      };
+      const kb = new InlineKeyboard()
+        .text('Skip name', 'adm:promo:nameSkip')
+        .row()
+        .text('⬅️ Cancel', 'adm:promo');
+      await ctx.reply(
+        [
+          '➕ *New promo — optional label*',
+          '',
+          'Send a short label that buyers will see on the product page',
+          '(e.g. `Bulk deal`, `VIP offer`), or tap *Skip name*.',
+        ].join('\n'),
+        { parse_mode: 'Markdown', reply_markup: kb },
+      );
+      return;
+    }
+
+    if (flow.type === 'promo_add' && flow.step === 'name') {
+      const name = text === '-' ? null : text.slice(0, 80);
+      const created = await addPromo({
+        product_id: flow.data.product_id,
+        telegram_id: flow.data.telegram_id,
+        name,
+        min_qty: flow.data.min_qty,
+        discount_amount: flow.data.discount_amount,
+        created_by: ctx.from!.id,
+      });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Promo *#${created.id}* saved.`, {
+        parse_mode: 'Markdown',
+      });
+      await showPromoCard(ctx, created.id);
+      return;
+    }
+
+    if (flow.type === 'promo_edit_qty') {
+      const min_qty = Number(text);
+      if (!Number.isInteger(min_qty) || min_qty < 1) {
+        await ctx.reply('❌ Send a whole number ≥ 1, e.g. `10`.');
+        return;
+      }
+      await updatePromo(flow.data.promo_id, { min_qty });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Min qty updated to *${min_qty}*.`, { parse_mode: 'Markdown' });
+      await showPromoCard(ctx, flow.data.promo_id);
+      return;
+    }
+
+    if (flow.type === 'promo_edit_discount') {
+      const discount_amount = Number(text);
+      if (!Number.isFinite(discount_amount) || discount_amount < 0) {
+        await ctx.reply('❌ Send a non-negative number, e.g. `5` or `12.5`.');
+        return;
+      }
+      await updatePromo(flow.data.promo_id, { discount_amount });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Discount updated to *$${discount_amount.toFixed(2)}*.`, {
+        parse_mode: 'Markdown',
+      });
+      await showPromoCard(ctx, flow.data.promo_id);
+      return;
+    }
+
+    if (flow.type === 'promo_edit_name') {
+      const name = text === '-' ? null : text.slice(0, 80);
+      await updatePromo(flow.data.promo_id, { name });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(name ? `✅ Name updated.` : `✅ Name cleared.`);
+      await showPromoCard(ctx, flow.data.promo_id);
       return;
     }
   } catch (err) {

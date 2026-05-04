@@ -109,10 +109,14 @@ export const en: Record<string, string> = {
     'Please send a whole number between *1* and *{max}*.',
 
   // ---- Buy-now → payment method picker -------------------------
+  // `{promo_line}` is filled in by the caller — either an empty
+  // string (no active promo) or the localized "Promo:" line WITH
+  // its own trailing newline so the layout stays tight.
   'shop.pay.title':
     '{prod_qty_selected} *Order summary*\n\n' +
     '*{name}*\n' +
     '{prod_qty_selected} Qty: *{qty}*\n' +
+    '{promo_line}' +
     '{prod_total_amount} Total: *{total} USDT*\n' +
     '{prod_wallet} Wallet: *{balance} USDT*\n\n' +
     'Choose a payment method:',
@@ -139,6 +143,12 @@ export const en: Record<string, string> = {
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
+  // Optional bonus line shown above Total Amount when an active
+  // promo applies. `label` is either the admin-set promo name or
+  // the auto-fallback "qty ≥ N".
+  'shop.product.line.promo':
+    '{prod_promo} *Promo:* {label} — −{discount} USDT',
+  'shop.product.line.promo.fallback_label': 'qty ≥ {min_qty}',
   'shop.product.out_of_stock_popup':
     '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
   'shop.note.title': '📝 *Product note*',

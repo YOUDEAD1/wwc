@@ -11,6 +11,7 @@ import {
   applyUserPriceToProduct,
   applyUserPriceToProducts,
 } from '../services/pricing.js';
+import { priceBreakdown, resolvePromo, type PromoMatch } from '../services/promo.js';
 import { charge } from '../services/wallet.js';
 import {
   paymentMethodKeyboard,
@@ -77,8 +78,9 @@ function productPageText(
   ctx: AppCtx,
   p: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
   qty: number,
+  promo: PromoMatch | null = null,
 ) {
-  const total = (p.price * qty).toFixed(2);
+  const { discount, total } = priceBreakdown(p.price, qty, promo);
   const lines: string[] = [
     ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
   ];
@@ -89,7 +91,22 @@ function productPageText(
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
     '',
     ctx.t('shop.product.line.qty', { qty }),
-    ctx.t('shop.product.line.total', { total }),
+  );
+  if (promo && discount > 0) {
+    const label =
+      promo.promo.name?.trim() ||
+      ctx.t('shop.product.line.promo.fallback_label', {
+        min_qty: promo.promo.min_qty,
+      });
+    lines.push(
+      ctx.t('shop.product.line.promo', {
+        label,
+        discount: discount.toFixed(2),
+      }),
+    );
+  }
+  lines.push(
+    ctx.t('shop.product.line.total', { total: total.toFixed(2) }),
     ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
   );
   return lines.join('\n');
@@ -107,6 +124,31 @@ function buildProductShareUrl(productId: number): string {
   return `https://t.me/${env.BOT_USERNAME}?start=prod_${productId}`;
 }
 
+/**
+ * Build the localized "Promo: …" order-summary line (with trailing
+ * newline) for the given promo match, or an empty string when no
+ * promo is active. Centralized so the buy / pay-wallet handlers
+ * can just splice it into the existing `shop.pay.title` template.
+ */
+function renderPromoLine(
+  ctx: AppCtx,
+  promo: PromoMatch | null,
+  discount: number,
+): string {
+  if (!promo || discount <= 0) return '';
+  const label =
+    promo.promo.name?.trim() ||
+    ctx.t('shop.product.line.promo.fallback_label', {
+      min_qty: promo.promo.min_qty,
+    });
+  return (
+    ctx.t('shop.product.line.promo', {
+      label,
+      discount: discount.toFixed(2),
+    }) + '\n'
+  );
+}
+
 async function showProduct(ctx: AppCtx, productId: number) {
   const raw = await getProduct(productId);
   if (!raw) {
@@ -115,8 +157,9 @@ async function showProduct(ctx: AppCtx, productId: number) {
   }
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
+  const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
   const shareUrl = buildProductShareUrl(p.id);
-  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty)), {
+  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo)), {
     parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
   });
@@ -153,7 +196,8 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
   // else the saved qty (or QTY_MIN) so the page is never visually
   // empty before the first tap.
   const previewQty = buf.length > 0 ? Number(buf) : ctx.session.qty[productId] ?? QTY_MIN;
-  const body = productPageText(ctx, p, previewQty);
+  const promo = await resolvePromo(ctx.user.telegram_id, p.id, previewQty, p.price);
+  const body = productPageText(ctx, p, previewQty, promo);
   const instruction = ctx.t('shop.qty.keypad.instruction', {
     current: buf.length > 0 ? buf : '—',
   });
@@ -465,12 +509,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
-    const total = (p.price * qty).toFixed(2);
+    const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
+    const { discount, total } = priceBreakdown(p.price, qty, promo);
     const text = ctx.t('shop.pay.title', {
       name: p.name,
       qty,
-      total,
+      total: total.toFixed(2),
       balance: ctx.user.balance,
+      promo_line: renderPromoLine(ctx, promo, discount),
     });
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(renderMdHtml(text), {
@@ -515,7 +561,13 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
-    const total = Number((p.price * qty).toFixed(2));
+    // Resolve the promo *server-side* — never trust the client.
+    // The product page may have rendered a promo for a different
+    // qty since the user tapped Buy Now; we always recompute here.
+    const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
+    const breakdown = priceBreakdown(p.price, qty, promo);
+    const total = breakdown.total;
+    const discount = breakdown.discount;
     if (ctx.user.balance < total) {
       await ctx.answerCallbackQuery({
         text: ctx.t('shop.buy.insufficient', { need: total, have: ctx.user.balance }),
@@ -531,6 +583,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         qty,
         unit_price: p.price,
         total,
+        discount,
         delivery: `Order #${id}-${qty} (mock delivery)`,
       });
       const newBalance = await charge(
