@@ -222,9 +222,10 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const current = ctx.session.qty[id] ?? QTY_MIN;
     const candidate = direction === 'inc' ? current + 1 : current - 1;
     if (candidate < QTY_MIN || candidate > ceiling) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('shop.qty.invalid', { max: ceiling }),
-      });
+      // Silent ack at the boundaries — pressing ➖ at qty 1 or ➕
+      // at the stock ceiling is a soft cap, not an error worth a
+      // toast.
+      await ctx.answerCallbackQuery();
       return;
     }
     ctx.session.qty[id] = candidate;
@@ -271,9 +272,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
     let buf = prev;
     if (action.startsWith('d:')) {
       const digit = action.slice(2);
-      // Cap at 4 digits — anything larger than 9999 is rejected by
-      // QTY_MAX anyway, so don't let the buffer balloon.
-      if (buf.length < 4) buf = (buf + digit).replace(/^0+(\d)/, '$1');
+      // Cap at 4 digits and at `min(QTY_MAX, stock)` so the buffer
+      // never represents a qty the user couldn't actually buy.
+      // Trailing taps past the ceiling are silently dropped (the
+      // ack still happens below, so Telegram doesn't show a spinner).
+      const ceiling = Math.min(QTY_MAX, Math.max(0, p.stock));
+      if (buf.length < 4) {
+        const candidate = (buf + digit).replace(/^0+(\d)/, '$1');
+        if (Number(candidate) <= ceiling) buf = candidate;
+      }
     } else if (action === 'back') {
       buf = buf.slice(0, -1);
     } else if (action === 'clear') {
