@@ -29,7 +29,13 @@ import {
 } from '../keyboards/shop.js';
 import { inlineBtn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
-import { renderMdHtml } from '../services/premium.js';
+import {
+  clampForTelegram,
+  escapeAttr,
+  htmlToPlain,
+  renderMdHtml,
+  sanitizeButtonUrl,
+} from '../services/premium.js';
 import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
 import * as adminLog from '../services/adminLog.js';
@@ -528,6 +534,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // Always ack first so Telegram never shows a perpetual spinner
     // even if the body below throws.
     await ctx.answerCallbackQuery();
+    let stage = 'load_product';
     try {
       const id = Number(ctx.match[1]);
       const raw = await getProduct(id);
@@ -538,24 +545,31 @@ export function registerShop(bot: Composer<AppCtx>): void {
         );
         return;
       }
+      stage = 'compose_body';
       const text = (raw.tutorial_text ?? '').trim();
       const body =
         text.length > 0
           ? ctx.t('shop.tutorial.body', { name: raw.name, body: text })
           : ctx.t('shop.tutorial.empty', { name: raw.name });
+      stage = 'build_keyboard';
+      const safeUrl = sanitizeButtonUrl(raw.tutorial_url);
       const kb = new InlineKeyboard();
-      if (raw.tutorial_url) {
-        kb.url(ctx.t('btn.tutorial_open_link'), raw.tutorial_url).row();
+      if (safeUrl) {
+        kb.url(ctx.t('btn.tutorial_open_link'), safeUrl).row();
       }
       inlineBtn(kb, ctx.lang, 'back', `prod:${id}`);
+      stage = 'render_html';
       const html = renderMdHtml(body);
+      const safeHtml = clampForTelegram(html);
       logger.info(
         {
           productId: id,
           hasText: text.length > 0,
           hasFile: Boolean(raw.tutorial_file_id && raw.tutorial_file_type),
           fileType: raw.tutorial_file_type ?? null,
-          hasUrl: Boolean(raw.tutorial_url),
+          hasUrl: Boolean(safeUrl),
+          rejectedUrl: raw.tutorial_url && !safeUrl ? raw.tutorial_url : null,
+          htmlLen: safeHtml.length,
         },
         'tut: — rendering Using Method tutorial',
       );
@@ -563,13 +577,32 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // Sending a fresh message is bulletproof — every tap shows a
       // brand-new tutorial card, and the Back button returns the
       // user to the product page.
-      await ctx.reply(html, {
-        parse_mode: 'HTML',
-        reply_markup: kb,
-        link_preview_options: { is_disabled: true },
-      });
+      stage = 'send_html';
+      try {
+        await ctx.reply(safeHtml, {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+          link_preview_options: { is_disabled: true },
+        });
+      } catch (htmlErr) {
+        // HTML parse failure (malformed admin-typed markdown, weird
+        // characters, etc.) → drop the formatting and resend the body
+        // as plain text so the tutorial still loads. The Back button
+        // and the optional URL button still come along.
+        logger.warn(
+          { err: htmlErr, productId: id },
+          'tut: HTML send failed, retrying as plain text',
+        );
+        stage = 'send_plain';
+        const plain = htmlToPlain(safeHtml);
+        await ctx.reply(plain, {
+          reply_markup: kb,
+          link_preview_options: { is_disabled: true },
+        });
+      }
       if (raw.tutorial_file_id && raw.tutorial_file_type) {
         try {
+          stage = 'send_file';
           if (raw.tutorial_file_type === 'photo') {
             await ctx.replyWithPhoto(raw.tutorial_file_id);
           } else if (raw.tutorial_file_type === 'video') {
@@ -582,10 +615,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
         }
       }
     } catch (err) {
-      logger.error({ err }, 'tut: — failed to render');
+      logger.error({ err, stage }, 'tut: — failed to render');
+      const reason = (err as Error)?.message ?? String(err);
       try {
         await ctx.reply(
-          '⚠️ <b>Failed to load Using Method tutorial.</b>\n\nThe admin needs to set this up: <code>/admin</code> → Edit Product → Tutorial Text / Tutorial File / Tutorial URL.',
+          `⚠️ <b>Couldn't load this tutorial.</b>\n\n` +
+            `Stage: <code>${escapeAttr(stage)}</code>\n` +
+            `Reason: <code>${escapeAttr(reason).slice(0, 200)}</code>\n\n` +
+            `Admin: open <code>/admin</code> → <i>Products → Edit Product → Tutorial Text / File / URL</i> and double-check the URL (must start with <code>https://</code> and contain no spaces or newlines).`,
           { parse_mode: 'HTML' },
         );
       } catch {

@@ -299,3 +299,85 @@ export function renderMdHtml(template: string, map: Record<string, string> = {})
   const scanned = autoScanPremiumEmojis(html);
   return replaceTokensHtml(scanned, map);
 }
+
+// ---------------------------------------------------------------------
+// Resilience helpers — used by handlers that send admin-authored bodies
+// (Using Method tutorial, Bot Tutorial, View Note, etc.) so a malformed
+// markdown / over-long template never deadlocks the user with a generic
+// "Failed to load" alert.
+// ---------------------------------------------------------------------
+
+/**
+ * Telegram caps text messages at 4096 UTF-16 code units. We leave a
+ * small headroom for the auto-appended truncation marker.
+ */
+const TELEGRAM_TEXT_LIMIT = 4096;
+const TRUNCATION_MARKER = '\n\n…';
+
+/**
+ * Trim a rendered HTML body down to Telegram's 4096-char message
+ * limit. We don't try to be smart about closing tags because the
+ * caller already knows we'll fall back to plain text if the HTML send
+ * fails; truncated tags will just trip the parser and trigger the
+ * fallback.
+ */
+export function clampForTelegram(html: string): string {
+  if (html.length <= TELEGRAM_TEXT_LIMIT) return html;
+  return html.slice(0, TELEGRAM_TEXT_LIMIT - TRUNCATION_MARKER.length) + TRUNCATION_MARKER;
+}
+
+/**
+ * Strip HTML tags and decode the handful of entities our renderer
+ * emits, producing a plain-text approximation suitable for sending
+ * with no `parse_mode`. Used as a last-ditch fallback so the user
+ * still sees the tutorial body when Telegram rejects the HTML.
+ */
+export function htmlToPlain(html: string): string {
+  return html
+    .replace(/<tg-emoji[^>]*>([^<]*)<\/tg-emoji>/g, '$1')
+    .replace(/<\/?(?:b|strong|i|em|u|s|del|code|pre|blockquote|tg-spoiler)[^>]*>/g, '')
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/g, '$2 ($1)')
+    .replace(/<br\s*\/?\s*>/g, '\n')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * Conservative URL sanitiser for inline `url:` keyboard buttons.
+ *
+ * Returns the trimmed URL when it parses as a valid `http(s)://` or
+ * `tg://` URL, otherwise `null` so the caller can render the body
+ * without the broken button instead of crashing the whole handler.
+ */
+export function sanitizeButtonUrl(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  // Reject anything with embedded whitespace — Telegram rejects those
+  // server-side with `BUTTON_URL_INVALID`.
+  if (/\s/.test(trimmed)) return null;
+  if (!/^(https?:\/\/|tg:\/\/)/i.test(trimmed)) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (!parsed.protocol) return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * HTML-attribute-safe escaping for short admin-facing diagnostic
+ * strings (stage names, error messages). Keeps the diagnostic readable
+ * if injected into either text bodies or `<code>` attribute slots.
+ */
+export function escapeAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

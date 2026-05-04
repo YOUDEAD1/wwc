@@ -47,7 +47,14 @@ import { redeemKeyboard } from '../keyboards/redeem.js';
 import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
-import { renderPremium, renderMdHtml } from '../services/premium.js';
+import {
+  clampForTelegram,
+  escapeAttr,
+  htmlToPlain,
+  renderMdHtml,
+  renderPremium,
+  sanitizeButtonUrl,
+} from '../services/premium.js';
 import {
   sendPriceListEmail,
   sendWelcomeEmail,
@@ -925,22 +932,30 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     // Always ack first so Telegram never shows a perpetual spinner
     // even if the body below throws.
     await ctx.answerCallbackQuery();
+    let stage = 'load_settings';
     try {
       const tut = getBotTutorial();
+      stage = 'compose_body';
       const text = (tut.text ?? '').trim();
       const titleLine = ctx.t('profile.bot_tutorial.title');
       const body =
         text.length > 0
           ? `${titleLine}\n\n${ctx.t('profile.bot_tutorial.body', { body: text })}`
           : `${titleLine}\n\n${ctx.t('profile.bot_tutorial.empty')}`;
+      stage = 'build_keyboard';
+      const safeUrl = sanitizeButtonUrl(tut.url);
+      const kb = botTutorialKeyboard(ctx.lang, safeUrl);
+      stage = 'render_html';
       const html = renderMdHtml(body);
-      const kb = botTutorialKeyboard(ctx.lang, tut.url);
+      const safeHtml = clampForTelegram(html);
       logger.info(
         {
           hasText: text.length > 0,
           hasFile: Boolean(tut.file_id && tut.file_type),
           fileType: tut.file_type ?? null,
-          hasUrl: Boolean(tut.url),
+          hasUrl: Boolean(safeUrl),
+          rejectedUrl: tut.url && !safeUrl ? tut.url : null,
+          htmlLen: safeHtml.length,
         },
         'profile:tutorial — rendering Bot Tutorial',
       );
@@ -949,13 +964,27 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       // clients; sending a fresh message is bulletproof — every
       // tap shows a brand-new tutorial card below Settings, and the
       // Back button returns the user to the same Settings page.
-      await ctx.reply(html, {
-        parse_mode: 'HTML',
-        reply_markup: kb,
-        link_preview_options: { is_disabled: true },
-      });
+      stage = 'send_html';
+      try {
+        await ctx.reply(safeHtml, {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+          link_preview_options: { is_disabled: true },
+        });
+      } catch (htmlErr) {
+        logger.warn(
+          { err: htmlErr },
+          'profile:tutorial: HTML send failed, retrying as plain text',
+        );
+        stage = 'send_plain';
+        await ctx.reply(htmlToPlain(safeHtml), {
+          reply_markup: kb,
+          link_preview_options: { is_disabled: true },
+        });
+      }
       if (tut.file_id && tut.file_type) {
         try {
+          stage = 'send_file';
           if (tut.file_type === 'photo') {
             await ctx.replyWithPhoto(tut.file_id);
           } else if (tut.file_type === 'video') {
@@ -968,10 +997,14 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         }
       }
     } catch (err) {
-      logger.error({ err }, 'profile:tutorial — failed to render');
+      logger.error({ err, stage }, 'profile:tutorial — failed to render');
+      const reason = (err as Error)?.message ?? String(err);
       try {
         await ctx.reply(
-          '⚠️ <b>Failed to load Bot Tutorial.</b>\n\nThe admin needs to set this up: <code>/admin</code> → Bot Tutorial → Set Text / Set File / Set URL.',
+          `⚠️ <b>Couldn't load the Bot Tutorial.</b>\n\n` +
+            `Stage: <code>${escapeAttr(stage)}</code>\n` +
+            `Reason: <code>${escapeAttr(reason).slice(0, 200)}</code>\n\n` +
+            `Admin: open <code>/admin</code> → <i>Bot Tutorial → Set Text / Set File / Set URL</i> and double-check the URL (must start with <code>https://</code> and contain no spaces or newlines).`,
           { parse_mode: 'HTML' },
         );
       } catch {
