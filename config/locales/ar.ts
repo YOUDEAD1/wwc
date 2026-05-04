@@ -71,11 +71,9 @@ export const ar: Record<string, string> = {
   'shop.choose_category': '*المنتجات المتاحة:*',
   'shop.qty.prompt': '🔢 اكتب الكمية (1–{max}) وأرسل.',
   'shop.qty.invalid': '❌ رقم غير صالح — أرسل قيمة بين 1 و {max}.',
-  'shop.qty.keypad.prompt':
-    '{qty_prompt_pencil} *أرسل كمية مخصّصة للمنتج* {qty_prompt_keypad}\n\n' +
-    '*{name}*\n' +
-    'متوفر: *{stock}*\n\n' +
-    'اضغط على الأرقام أو أرسل رقماً ثم اضغط تأكيد.\n\n' +
+  'shop.qty.keypad.instruction':
+    '{qty_prompt_keypad} *طريقة الاستخدام:* اضغط الأرقام أدناه أو أرسل رقماً ' +
+    'ثم اضغط ✅ تأكيد.\n' +
     'الحالي: <code>{current}</code>',
   'shop.qty.keypad.invalid':
     '{qty_invalid} *كمية غير صالحة.*\n\n' +

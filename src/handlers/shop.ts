@@ -129,6 +129,13 @@ async function showProduct(ctx: AppCtx, productId: number) {
  * `ctx.session.qtyInput[productId]` so taps and direct-typed
  * numbers feed into the same string.
  *
+ * Body mirrors the product-page layout (name + Price Base /
+ * Available Stock / Warranty / Selected Qty / Total Amount /
+ * Wallet) so the user can see the running cost while they enter
+ * the qty; the digit buffer is rendered into the "Selected Qty"
+ * (and Total Amount via `productPageText`) plus a short usage
+ * instruction line below the body.
+ *
  * The bot stores `ctx.session.userFlow = { type: 'qty_keypad', ... }`
  * while the keypad is open so the text-message middleware knows to
  * treat plain numbers as qty input (and to auto-delete the prompt
@@ -142,12 +149,15 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
   }
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const buf = currentBuf ?? ctx.session.qtyInput?.[productId] ?? '';
-  const text = ctx.t('shop.qty.keypad.prompt', {
-    name: p.name,
-    stock: p.stock,
+  // Live preview qty: buffer-as-number while the user is typing,
+  // else the saved qty (or QTY_MIN) so the page is never visually
+  // empty before the first tap.
+  const previewQty = buf.length > 0 ? Number(buf) : ctx.session.qty[productId] ?? QTY_MIN;
+  const body = productPageText(ctx, p, previewQty);
+  const instruction = ctx.t('shop.qty.keypad.instruction', {
     current: buf.length > 0 ? buf : '—',
   });
-  await ctx.editMessageText(renderMdHtml(text), {
+  await ctx.editMessageText(renderMdHtml(`${body}\n\n${instruction}`), {
     parse_mode: 'HTML',
     reply_markup: qtyKeypadKeyboard(ctx.lang, p),
   });
