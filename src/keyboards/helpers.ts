@@ -10,7 +10,6 @@ import {
 import {
   getButtonColor,
   getButtonIcon,
-  getColorPrefix,
   getEmoji,
 } from '../services/settings.js';
 import { t } from '../i18n/index.js';
@@ -18,20 +17,25 @@ import { t } from '../i18n/index.js';
 /**
  * Decorate a label with the legacy color prefix for the given button key.
  *
- * Bot API 9.4 introduced a real `style` field for buttons (see
- * `colorModeToStyle()` and `applyButtonChrome()` below) — the prefix
- * pathway is now an empty no-op for every mode but is kept so any
- * future custom ColorMode that wants to inject a glyph still has a
- * single chokepoint.
+ * Historically this function injected a coloured-square glyph (🟢 / 🔵
+ * / 🔴 / 🟡 / ⚪️) before the label whenever the admin had set a
+ * `ColorMode` for the button. The owner asked for those prefixes to
+ * be removed from every user-facing button (premium icons applied via
+ * `applyButtonChrome()` cover the same purpose without the visual
+ * noise), so this is now a no-op that always returns the label
+ * unchanged.
+ *
+ * The function signature is preserved so existing call sites continue
+ * to compile, and the admin "Set Color" / "Custom Color Glyphs"
+ * menus stay wired up — they simply have no effect on rendered
+ * buttons. `_key` and `_override` are intentionally unused.
  */
 export function colored(
   label: string,
-  key: keyof typeof BUTTON_KEYS,
-  override?: ColorMode,
+  _key: keyof typeof BUTTON_KEYS,
+  _override?: ColorMode,
 ): string {
-  const mode = override ?? getButtonColor(key);
-  const prefix = getColorPrefix(mode);
-  return prefix ? `${prefix} ${label}` : label;
+  return label;
 }
 
 /**
