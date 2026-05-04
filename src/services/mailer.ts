@@ -874,14 +874,18 @@ export async function sendReportEmail(args: {
 }
 
 /**
- * Send the live SafwanTiger Shop price list as a CSV attachment.
+ * Send the live SafwanTiger Shop price list as a PDF attachment.
  * Subject / body are intentionally simple — the customer-facing
  * spec asks for "send the file, no fancy template". Returns true
  * on transport success.
+ *
+ * The bot owner explicitly asked for a PDF (not a CSV) on the
+ * email-delivery path, so this helper now ships the rendered
+ * PriceList PDF buffer instead of the legacy CSV.
  */
 export async function sendPriceListEmail(args: {
   email: string;
-  csv: Buffer;
+  pdf: Buffer;
   firstName: string | null;
   username: string | null;
   promoFooter: string;
@@ -899,14 +903,14 @@ export async function sendPriceListEmail(args: {
   const text = [
     greeting,
     '',
-    'Attached is the live SafwanTiger Shop price list as a CSV.',
+    'Attached is the live SafwanTiger Shop price list as a PDF.',
     '',
     args.promoFooter,
     '',
     '— SafwanTiger Shop',
   ].join('\n');
-  const html = `<p>${escapeHtml(greeting)}</p><p>Attached is the live SafwanTiger Shop price list as a CSV.</p><p>${escapeHtml(args.promoFooter)}</p><p>— SafwanTiger Shop</p>`;
-  const filename = `SafwanTiger-Shop-PriceList-${new Date().toISOString().slice(0, 10)}.csv`;
+  const html = `<p>${escapeHtml(greeting)}</p><p>Attached is the live SafwanTiger Shop price list as a PDF.</p><p>${escapeHtml(args.promoFooter)}</p><p>— SafwanTiger Shop</p>`;
+  const filename = `SafwanTiger-Shop-PriceList-${new Date().toISOString().slice(0, 10)}.pdf`;
   if (resendConfigured()) {
     const client = resendClient();
     if (!client) return false;
@@ -920,8 +924,8 @@ export async function sendPriceListEmail(args: {
         attachments: [
           {
             filename,
-            content: args.csv.toString('base64'),
-            contentType: 'text/csv',
+            content: args.pdf.toString('base64'),
+            contentType: 'application/pdf',
           },
         ],
       });
@@ -944,7 +948,7 @@ export async function sendPriceListEmail(args: {
       subject,
       html,
       text,
-      attachments: [{ filename, content: args.csv, contentType: 'text/csv' }],
+      attachments: [{ filename, content: args.pdf, contentType: 'application/pdf' }],
     });
     return true;
   } catch (err) {

@@ -7,6 +7,16 @@ export type AdminFlow =
   | { type: 'add_product'; step: 'name'; data: { category_id: number } }
   | { type: 'add_product'; step: 'price'; data: { category_id: number; name: string } }
   | {
+      // After price we ask: "Unlimited stock?" via two inline buttons
+      // (Yes → set unlimited_stock=true and skip stock count; No → ask
+      // for integer count). The "stock" step below remains the
+      // integer-count step. We carry `unlimited` on data so the
+      // finalize step can persist it.
+      type: 'add_product';
+      step: 'unlimited';
+      data: { category_id: number; name: string; price: number };
+    }
+  | {
       type: 'add_product';
       step: 'stock';
       data: { category_id: number; name: string; price: number };
@@ -14,7 +24,13 @@ export type AdminFlow =
   | {
       type: 'add_product';
       step: 'warranty';
-      data: { category_id: number; name: string; price: number; stock: number };
+      data: {
+        category_id: number;
+        name: string;
+        price: number;
+        stock: number;
+        unlimited?: boolean;
+      };
     }
   | {
       type: 'add_product';
@@ -24,6 +40,7 @@ export type AdminFlow =
         name: string;
         price: number;
         stock: number;
+        unlimited?: boolean;
         warranty?: string;
       };
     }
@@ -35,10 +52,45 @@ export type AdminFlow =
         name: string;
         price: number;
         stock: number;
+        unlimited?: boolean;
         warranty?: string;
         description?: string;
       };
     }
+  | {
+      // After the note step, prompt for the per-product items pool
+      // (the actual deliverables — emails+passwords, links, etc).
+      // Multiline; one payload per line. Empty / Skip means no pool
+      // and the buyer falls back to the manual-delivery placeholder.
+      type: 'add_product';
+      step: 'items';
+      data: {
+        category_id: number;
+        name: string;
+        price: number;
+        stock: number;
+        unlimited?: boolean;
+        warranty?: string;
+        description?: string;
+        note?: string;
+      };
+    }
+  // -------- Per-product inline editor (premium-shop overhaul) --------
+  // Each step waits for ONE message of the appropriate kind.
+  | { type: 'edit_product_emoji'; step: 'premium'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_note_text'; step: 'text'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_note_file'; step: 'file'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_tutorial_text'; step: 'text'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_tutorial_file'; step: 'file'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_tutorial_url'; step: 'url'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_items'; step: 'items'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_price'; step: 'price'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_stock'; step: 'stock'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_name'; step: 'name'; data: { product_id: number; page: number } }
+  // -------- Bot Tutorial editor (Settings → Bot Tutorial → Edit) --------
+  | { type: 'edit_bot_tutorial_text'; step: 'text'; data: Record<string, never> }
+  | { type: 'edit_bot_tutorial_file'; step: 'file'; data: Record<string, never> }
+  | { type: 'edit_bot_tutorial_url'; step: 'url'; data: Record<string, never> }
   | { type: 'add_payment'; step: 'name'; data: Record<string, never> }
   | { type: 'add_payment'; step: 'instructions'; data: { name: string } }
   | {

@@ -194,12 +194,93 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
     .row()
     .text('💬 Set Admin Contact URL', 'adm:bot:contact')
     .row()
+    .text('📘 Edit Bot Tutorial', 'adm:bot:tut')
+    .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
   await ctx.editMessageText('⚙️ *Bot Settings*\n\nGeneral configuration knobs.', {
     parse_mode: 'Markdown',
     reply_markup: kb,
   });
+});
+
+// Bot Tutorial editor — surfaces the same fields as the legacy
+// `/setbottutorial` slash command, but as one-tap buttons that arm
+// adminFlow capture for the next message.
+async function showBotTutorialEditor(ctx: AppCtx): Promise<void> {
+  const t = await getBotTutorial();
+  const lines = [
+    '📘 *Bot Tutorial*',
+    '',
+    `*Text:* ${t.text ? '`set`' : '_unset_'}`,
+    `*File:* ${t.file_id ? '`' + (t.file_type ?? 'file') + '`' : '_unset_'}`,
+    `*URL:* ${t.url ? '`' + t.url + '`' : '_unset_'}`,
+    '',
+    '_Tap a button to edit. The bot will capture your next message of the appropriate kind._',
+  ];
+  const kb = new InlineKeyboard()
+    .text('📝 Set Text', 'adm:bot:tut:settxt')
+    .text('🧹 Clear Text', 'adm:bot:tut:clrtxt')
+    .row()
+    .text('🎞 Set File', 'adm:bot:tut:setfile')
+    .text('🧹 Clear File', 'adm:bot:tut:clrfile')
+    .row()
+    .text('🔗 Set URL', 'adm:bot:tut:seturl')
+    .text('🧹 Clear URL', 'adm:bot:tut:clrurl')
+    .row();
+  backRow(kb);
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery('adm:bot:tut', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showBotTutorialEditor(ctx);
+});
+
+adminBot.callbackQuery('adm:bot:tut:settxt', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'edit_bot_tutorial_text', step: 'text', data: {} };
+  await ctx.reply('📝 Send the *Bot Tutorial* text now.', { parse_mode: 'Markdown' });
+});
+
+adminBot.callbackQuery('adm:bot:tut:setfile', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'edit_bot_tutorial_file', step: 'file', data: {} };
+  await ctx.reply(
+    '🎞 Send a photo, video, or document — it will be re-sent inside the Bot Tutorial.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:tut:seturl', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'edit_bot_tutorial_url', step: 'url', data: {} };
+  await ctx.reply('🔗 Send the tutorial *URL* (`http://` or `https://`).', {
+    parse_mode: 'Markdown',
+  });
+});
+
+adminBot.callbackQuery('adm:bot:tut:clrtxt', async (ctx) => {
+  await setBotTutorialField('text', null, ctx.from!.id);
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showBotTutorialEditor(ctx);
+});
+
+adminBot.callbackQuery('adm:bot:tut:clrfile', async (ctx) => {
+  await setBotTutorialField('file_id', null, ctx.from!.id);
+  await setBotTutorialField('file_type', null, ctx.from!.id);
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showBotTutorialEditor(ctx);
+});
+
+adminBot.callbackQuery('adm:bot:tut:clrurl', async (ctx) => {
+  await setBotTutorialField('url', null, ctx.from!.id);
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showBotTutorialEditor(ctx);
 });
 
 adminBot.callbackQuery('adm:bot:emailpdf', async (ctx) => {
@@ -549,6 +630,7 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
     lines.push(`${flag} #${p.id}  ${p.name} — $${p.price}  (stock ${p.stock})`);
     kb.text(`↑ #${p.id}`, `adm:prod:up:${p.id}:${page}`)
       .text(`↓ #${p.id}`, `adm:prod:dn:${p.id}:${page}`)
+      .text(`✏️ Edit #${p.id}`, `adm:prod:edit:${p.id}:${page}`)
       .row();
     kb.text(p.active ? `👁 Hide #${p.id}` : `👁 Show #${p.id}`, `adm:prod:tog:${p.id}:${page}`)
       .text(`🗑 #${p.id}`, `adm:prod:del:${p.id}:${page}`)
@@ -611,6 +693,291 @@ adminBot.callbackQuery(/^adm:prod:(up|dn):(\d+):(\d+)$/, async (ctx) => {
     text: direction === 'up' ? '↑ Moved up' : '↓ Moved down',
   });
   await showProductList(ctx, page);
+});
+
+// ---------- Per-product inline editor ----------
+//
+// Surfaced from the product list as `✏️ Edit #N`. Renders a card
+// with every per-product asset (premium emoji, note, view-note file,
+// tutorial, items pool, unlimited-stock toggle, base price/stock/name)
+// as a button so the admin never has to copy slash commands.
+//
+// Each button either mutates the row directly (toggles, clears) or
+// arms a one-shot adminFlow that captures the next message and
+// applies the patch — e.g. tap "Set Premium Emoji", send a 🎬 premium
+// emoji message in chat, the bot reads `custom_emoji_id` and saves it.
+async function showProductEditor(
+  ctx: AppCtx,
+  product_id: number,
+  page: number,
+): Promise<void> {
+  const p = await getProduct(product_id);
+  if (!p) {
+    await ctx.editMessageText('⚠️ Product not found.', {
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+    return;
+  }
+  const itemsCount = await countAvailableProductItems(product_id);
+  const stockCell = p.unlimited_stock ? '∞' : String(p.stock);
+  const lines = [
+    `✏️ *Edit Product #${p.id}*`,
+    '',
+    `*Name:* ${p.name}`,
+    `*Price:* ${Number(p.price).toFixed(2)} USDT`,
+    `*Stock:* ${stockCell}`,
+    `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
+    `*Note Text:* ${p.note ? '`set`' : '_unset_'}`,
+    `*Note File:* ${p.note_file_id ? '`' + (p.note_file_name ?? 'set') + '`' : '_unset_'}`,
+    `*Tutorial Text:* ${p.tutorial_text ? '`set`' : '_unset_'}`,
+    `*Tutorial File:* ${p.tutorial_file_id ? '`' + p.tutorial_file_type + '`' : '_unset_'}`,
+    `*Tutorial URL:* ${p.tutorial_url ? '`' + p.tutorial_url + '`' : '_unset_'}`,
+    `*Items pool:* ${itemsCount} unconsumed`,
+    '',
+    '_Tap a button to edit. For "Set Premium Emoji" / "Set Note File" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
+  ];
+  const kb = new InlineKeyboard();
+  kb.text('🎬 Set Premium Emoji', `adm:prod:emoji:set:${p.id}:${page}`)
+    .text('🧹 Clear Emoji', `adm:prod:emoji:clr:${p.id}:${page}`)
+    .row();
+  kb.text('📝 Set Note Text', `adm:prod:note:settxt:${p.id}:${page}`)
+    .text('🧹 Clear Note', `adm:prod:note:clr:${p.id}:${page}`)
+    .row();
+  kb.text('📎 Set Note File', `adm:prod:note:setfile:${p.id}:${page}`)
+    .text('🧹 Clear File', `adm:prod:note:clrfile:${p.id}:${page}`)
+    .row();
+  kb.text('📘 Tutorial Text', `adm:prod:tut:settxt:${p.id}:${page}`)
+    .text('🎞 Tutorial File', `adm:prod:tut:setfile:${p.id}:${page}`)
+    .row();
+  kb.text('🔗 Tutorial URL', `adm:prod:tut:seturl:${p.id}:${page}`)
+    .text('🧹 Clear Tutorial', `adm:prod:tut:clr:${p.id}:${page}`)
+    .row();
+  kb.text(`📦 Add Items (pool: ${itemsCount})`, `adm:prod:items:add:${p.id}:${page}`)
+    .text('🧹 Clear Pool', `adm:prod:items:clr:${p.id}:${page}`)
+    .row();
+  kb.text(
+    p.unlimited_stock ? '♾ Unlimited: ON' : '♾ Unlimited: OFF',
+    `adm:prod:unl:tog:${p.id}:${page}`,
+  ).row();
+  kb.text('💰 Edit Price', `adm:prod:price:set:${p.id}:${page}`)
+    .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
+    .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
+    .row();
+  kb.text('⬅️ Back to list', `adm:prod:list:${page}`);
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery(/^adm:prod:edit:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showProductEditor(ctx, Number(ctx.match[1]), Number(ctx.match[2]));
+});
+
+// --- Premium emoji ---
+adminBot.callbackQuery(/^adm:prod:emoji:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_emoji',
+    step: 'premium',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '🎬 Send a single *premium* emoji as your next message — the bot will read its `custom_emoji_id` and save it.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:emoji:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, { emoji_id: null });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Note text + file ---
+adminBot.callbackQuery(/^adm:prod:note:settxt:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_note_text',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '📝 Send the *View Note* text now (any premium emojis you include are preserved). Send `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:note:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, { note: null });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+adminBot.callbackQuery(/^adm:prod:note:setfile:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_note_file',
+    step: 'file',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '📎 Drop the *.txt* (or any document) file as your next message — it will be re-sent under View Note.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:note:clrfile:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, {
+    note_file_id: null,
+    note_file_name: null,
+    note_file_mime: null,
+  });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Tutorial text/file/url ---
+adminBot.callbackQuery(/^adm:prod:tut:settxt:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_tutorial_text',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '📘 Send the *Using Method* tutorial text. Premium emojis preserved. Send `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:tut:setfile:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_tutorial_file',
+    step: 'file',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '🎞 Send a photo, video, or document as your next message — it becomes the tutorial attachment.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:tut:seturl:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_tutorial_url',
+    step: 'url',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '🔗 Send the tutorial *URL* as your next message (must start with `http://` or `https://`).',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:tut:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, {
+    tutorial_text: null,
+    tutorial_file_id: null,
+    tutorial_file_type: null,
+    tutorial_url: null,
+  });
+  await ctx.answerCallbackQuery({ text: 'Tutorial cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Items pool ---
+adminBot.callbackQuery(/^adm:prod:items:add:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_items',
+    step: 'items',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '📦 Send the deliverables as your next message — *one per line*.\n\nExample:\n```\nemail1@example.com|password123\nemail2@example.com|password456\nhttps://account-link/...\n```',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:items:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await clearProductItems(id);
+  await ctx.answerCallbackQuery({ text: 'Pool cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Unlimited toggle ---
+adminBot.callbackQuery(/^adm:prod:unl:tog:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const p = await getProduct(id);
+  if (!p) {
+    await ctx.answerCallbackQuery({ text: 'Not found' });
+    return;
+  }
+  await updateProduct(id, { unlimited_stock: !p.unlimited_stock });
+  await ctx.answerCallbackQuery({
+    text: !p.unlimited_stock ? '♾ Unlimited ON' : 'Unlimited OFF',
+  });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Edit base name/price/stock ---
+adminBot.callbackQuery(/^adm:prod:price:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_price',
+    step: 'price',
+    data: { product_id, page },
+  };
+  await ctx.reply('💰 Send the new *price* (number, e.g. `9.99`).', { parse_mode: 'Markdown' });
+});
+
+adminBot.callbackQuery(/^adm:prod:stock:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_stock',
+    step: 'stock',
+    data: { product_id, page },
+  };
+  await ctx.reply('🔢 Send the new *stock* (integer ≥ 0).', { parse_mode: 'Markdown' });
+});
+
+adminBot.callbackQuery(/^adm:prod:name:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_name',
+    step: 'name',
+    data: { product_id, page },
+  };
+  await ctx.reply('🅰️ Send the new product *name*.', { parse_mode: 'Markdown' });
 });
 
 // ---------- Payment methods ----------
@@ -2732,10 +3099,32 @@ adminBot.on('message:text', async (ctx, next) => {
         }
         ctx.session.adminFlow = {
           type: 'add_product',
-          step: 'stock',
+          step: 'unlimited',
           data: { ...flow.data, price },
         };
-        await ctx.reply('Send the *stock* quantity (integer ≥ 0).', { parse_mode: 'Markdown' });
+        // Two-button question: skips the integer count when admin
+        // picks "Unlimited". This is the new flow the bot owner
+        // explicitly asked for ("no products asking for stock brooo").
+        const kb = new InlineKeyboard()
+          .text('♾ Unlimited', 'adm:prod:unl:yes')
+          .text('🔢 Set Count', 'adm:prod:unl:no');
+        await ctx.reply(
+          [
+            '*Unlimited stock?*',
+            '',
+            'Tap *Unlimited* if you can deliver this product as many ',
+            'times as needed (no per-buy decrement). Tap *Set Count* ',
+            'to set an integer stock that decrements on each sale.',
+          ].join('\n'),
+          { parse_mode: 'Markdown', reply_markup: kb },
+        );
+      } else if (flow.step === 'unlimited') {
+        // Free-form text in this step is unexpected — the user is
+        // supposed to tap one of the inline buttons. Re-prompt.
+        await ctx.reply('Tap *Unlimited* or *Set Count* on the buttons above.', {
+          parse_mode: 'Markdown',
+        });
+        return;
       } else if (flow.step === 'stock') {
         const stock = Number(text);
         if (!Number.isInteger(stock) || stock < 0) {
@@ -2775,8 +3164,143 @@ adminBot.on('message:text', async (ctx, next) => {
           { parse_mode: 'Markdown', reply_markup: kb },
         );
       } else if (flow.step === 'note') {
-        await finalizeProduct(ctx, { ...flow.data, note: text });
+        ctx.session.adminFlow = {
+          type: 'add_product',
+          step: 'items',
+          data: { ...flow.data, note: text },
+        };
+        const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:items');
+        await ctx.reply(
+          [
+            '📦 *Send the deliverables (items pool)* — one payload per line.',
+            'These are the actual things buyers receive (acc emails+passwords, links, codes, etc).',
+            'Example:',
+            '```',
+            'email1@example.com|password123',
+            'email2@example.com|password456',
+            'https://account-link/...',
+            '```',
+            '',
+            'Or tap *Skip* to leave the pool empty (you can always add items later from the Edit screen).',
+          ].join('\n'),
+          { parse_mode: 'Markdown', reply_markup: kb },
+        );
+      } else if (flow.step === 'items') {
+        const payloads = text
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        await finalizeProduct(ctx, flow.data, payloads);
       }
+      return;
+    }
+
+    // -------- Per-product editor: text-based steps --------
+    if (flow.type === 'edit_product_emoji') {
+      // Premium emoji is sent as a `custom_emoji` entity attached to
+      // a text message — the visible text is the unicode fallback,
+      // the entity carries the `custom_emoji_id`. Read it directly
+      // off the message.
+      const ent = ctx.message.entities?.find(
+        (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
+      ) as { custom_emoji_id: string } | undefined;
+      if (!ent) {
+        await ctx.reply(
+          '❌ I didn\'t see a premium emoji in that message. Try again with a single premium emoji.',
+        );
+        return;
+      }
+      await updateProduct(flow.data.product_id, { emoji_id: ent.custom_emoji_id });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Premium emoji saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_note_text') {
+      await updateProduct(flow.data.product_id, { note: text });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Note text saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_tutorial_text') {
+      await updateProduct(flow.data.product_id, { tutorial_text: text });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Tutorial text saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_tutorial_url') {
+      if (!/^https?:\/\//.test(text)) {
+        await ctx.reply('❌ URL must start with `http://` or `https://`.');
+        return;
+      }
+      await updateProduct(flow.data.product_id, { tutorial_url: text });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Tutorial URL saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_items') {
+      const payloads = text
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      if (payloads.length === 0) {
+        await ctx.reply('❌ No payloads found.');
+        return;
+      }
+      await addProductItems(flow.data.product_id, payloads);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Added ${payloads.length} items to the pool.`);
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_price') {
+      const price = Number(text);
+      if (!Number.isFinite(price) || price < 0) {
+        await ctx.reply('❌ Bad price. Send a number like `9.99`.');
+        return;
+      }
+      await updateProduct(flow.data.product_id, { price });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Price updated.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_stock') {
+      const stock = Number(text);
+      if (!Number.isInteger(stock) || stock < 0) {
+        await ctx.reply('❌ Bad stock. Send an integer ≥ 0.');
+        return;
+      }
+      await updateProduct(flow.data.product_id, { stock });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Stock updated.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_name') {
+      await updateProduct(flow.data.product_id, { name: text });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Name updated.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_bot_tutorial_text') {
+      await setBotTutorialField('text', text, ctx.from!.id);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Bot Tutorial text saved.');
+      return;
+    }
+    if (flow.type === 'edit_bot_tutorial_url') {
+      if (!/^https?:\/\//.test(text)) {
+        await ctx.reply('❌ URL must start with `http://` or `https://`.');
+        return;
+      }
+      await setBotTutorialField('url', text, ctx.from!.id);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Bot Tutorial URL saved.');
       return;
     }
 
@@ -3516,6 +4040,100 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 });
 
+// -------- Per-product editor: file-based steps --------
+//
+// We listen for documents/photos/videos and dispatch only when an
+// `edit_product_*_file` flow is armed. Anything else passes through
+// to the next handler so other features (announcements, etc.) keep
+// working unchanged.
+adminBot.on('message:document', async (ctx, next) => {
+  const flow = ctx.session.adminFlow;
+  if (!flow) return next();
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
+  const doc = ctx.message.document;
+  if (flow.type === 'edit_product_note_file') {
+    await updateProduct(flow.data.product_id, {
+      note_file_id: doc.file_id,
+      note_file_name: doc.file_name ?? null,
+      note_file_mime: doc.mime_type ?? null,
+    });
+    ctx.session.adminFlow = undefined;
+    await ctx.reply('✅ View Note file saved.');
+    await ctx.reply(`Tap _Edit_ → ✏️ on product list to verify.`, { parse_mode: 'Markdown' });
+    return;
+  }
+  if (flow.type === 'edit_product_tutorial_file') {
+    await updateProduct(flow.data.product_id, {
+      tutorial_file_id: doc.file_id,
+      tutorial_file_type: 'document',
+    });
+    ctx.session.adminFlow = undefined;
+    await ctx.reply('✅ Tutorial document saved.');
+    return;
+  }
+  if (flow.type === 'edit_bot_tutorial_file') {
+    await setBotTutorialField('file_id', doc.file_id, ctx.from.id);
+    await setBotTutorialField('file_type', 'document', ctx.from.id);
+    ctx.session.adminFlow = undefined;
+    await ctx.reply('✅ Bot Tutorial document saved.');
+    return;
+  }
+  return next();
+});
+
+adminBot.on('message:photo', async (ctx, next) => {
+  const flow = ctx.session.adminFlow;
+  if (!flow) return next();
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
+  const photos = ctx.message.photo;
+  // Telegram sends a sized array; the last entry is the largest. We
+  // store the largest because the bot will re-send it directly and
+  // Telegram resizes per-client anyway.
+  const fileId = photos[photos.length - 1]?.file_id;
+  if (!fileId) return next();
+  if (flow.type === 'edit_product_tutorial_file') {
+    await updateProduct(flow.data.product_id, {
+      tutorial_file_id: fileId,
+      tutorial_file_type: 'photo',
+    });
+    ctx.session.adminFlow = undefined;
+    await ctx.reply('✅ Tutorial photo saved.');
+    return;
+  }
+  if (flow.type === 'edit_bot_tutorial_file') {
+    await setBotTutorialField('file_id', fileId, ctx.from.id);
+    await setBotTutorialField('file_type', 'photo', ctx.from.id);
+    ctx.session.adminFlow = undefined;
+    await ctx.reply('✅ Bot Tutorial photo saved.');
+    return;
+  }
+  return next();
+});
+
+adminBot.on('message:video', async (ctx, next) => {
+  const flow = ctx.session.adminFlow;
+  if (!flow) return next();
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
+  const fileId = ctx.message.video.file_id;
+  if (flow.type === 'edit_product_tutorial_file') {
+    await updateProduct(flow.data.product_id, {
+      tutorial_file_id: fileId,
+      tutorial_file_type: 'video',
+    });
+    ctx.session.adminFlow = undefined;
+    await ctx.reply('✅ Tutorial video saved.');
+    return;
+  }
+  if (flow.type === 'edit_bot_tutorial_file') {
+    await setBotTutorialField('file_id', fileId, ctx.from.id);
+    await setBotTutorialField('file_type', 'video', ctx.from.id);
+    ctx.session.adminFlow = undefined;
+    await ctx.reply('✅ Bot Tutorial video saved.');
+    return;
+  }
+  return next();
+});
+
 // "Skip" buttons for optional product fields
 adminBot.callbackQuery('adm:cat:skip_emoji', async (ctx) => {
   const flow = ctx.session.adminFlow;
@@ -3533,8 +4151,45 @@ adminBot.callbackQuery('adm:cat:skip_emoji', async (ctx) => {
   });
 });
 
-adminBot.callbackQuery(/^adm:prod:skip:(warranty|description|note)$/, async (ctx) => {
-  const which = ctx.match[1] as 'warranty' | 'description' | 'note';
+// "Unlimited?" buttons fired during the product creation flow,
+// right after the user enters the price. Yes → stock=0 + unlimited=true.
+// No → continue to the integer stock prompt.
+adminBot.callbackQuery('adm:prod:unl:yes', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'add_product' || flow.step !== 'unlimited') {
+    await ctx.answerCallbackQuery({ text: 'Stale flow' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'add_product',
+    step: 'warranty',
+    data: { ...flow.data, stock: 0, unlimited: true },
+  };
+  const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:warranty');
+  await ctx.reply('♾ Stock set to *Unlimited*.\n\nSend the *warranty* text (or tap Skip).', {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+adminBot.callbackQuery('adm:prod:unl:no', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'add_product' || flow.step !== 'unlimited') {
+    await ctx.answerCallbackQuery({ text: 'Stale flow' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'add_product',
+    step: 'stock',
+    data: { ...flow.data },
+  };
+  await ctx.reply('Send the *stock* quantity (integer ≥ 0).', { parse_mode: 'Markdown' });
+});
+
+adminBot.callbackQuery(/^adm:prod:skip:(warranty|description|note|items)$/, async (ctx) => {
+  const which = ctx.match[1] as 'warranty' | 'description' | 'note' | 'items';
   const flow = ctx.session.adminFlow;
   if (flow?.type !== 'add_product') {
     await ctx.answerCallbackQuery({ text: 'Stale flow' });
@@ -3564,7 +4219,23 @@ adminBot.callbackQuery(/^adm:prod:skip:(warranty|description|note)$/, async (ctx
       { parse_mode: 'Markdown', reply_markup: kb },
     );
   } else if (which === 'note' && flow.step === 'note') {
-    await finalizeProduct(ctx, flow.data);
+    ctx.session.adminFlow = {
+      type: 'add_product',
+      step: 'items',
+      data: flow.data,
+    };
+    const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:items');
+    await ctx.reply(
+      [
+        '📦 *Send the deliverables (items pool)* — one payload per line.',
+        'These are the actual things buyers receive (acc emails+passwords, links, codes, etc).',
+        '',
+        'Or tap *Skip* to leave the pool empty (you can add items later from the Edit screen).',
+      ].join('\n'),
+      { parse_mode: 'Markdown', reply_markup: kb },
+    );
+  } else if (which === 'items' && flow.step === 'items') {
+    await finalizeProduct(ctx, flow.data, []);
   }
 });
 
@@ -3575,16 +4246,47 @@ async function finalizeProduct(
     name: string;
     price: number;
     stock: number;
+    unlimited?: boolean;
     warranty?: string;
     description?: string;
     note?: string;
   },
+  items: string[] = [],
 ): Promise<void> {
   const product = await addProduct(data);
+  // If admin chose "Unlimited" earlier, persist the flag now that we
+  // have a product id. addProduct() doesn't know about the new
+  // column, so we do this as a follow-up update — graceful no-op
+  // when migration 0015 isn't applied (updateProduct will just throw
+  // and we log/swallow).
+  if (data.unlimited === true) {
+    try {
+      await updateProduct(product.id, { unlimited_stock: true });
+    } catch (err) {
+      logger.error({ err, product_id: product.id }, 'set unlimited_stock on create failed');
+    }
+  }
+  if (items.length > 0) {
+    try {
+      await addProductItems(product.id, items);
+    } catch (err) {
+      logger.error({ err, product_id: product.id }, 'addProductItems on create failed');
+    }
+  }
   ctx.session.adminFlow = undefined;
   cache.del('cats');
+  const stockBlurb = data.unlimited
+    ? 'stock ∞'
+    : `stock ${product.stock}`;
   await ctx.reply(
-    `✅ Product *${product.name}* added (id=${product.id}, $${product.price}, stock ${product.stock}).`,
+    [
+      `✅ Product *${product.name}* added (id=${product.id}, $${product.price}, ${stockBlurb}).`,
+      items.length > 0 ? `📦 ${items.length} items added to the pool.` : null,
+      '',
+      `_Tap_ ✏️ Edit #${product.id} _on the product list to add a premium emoji, view-note file, tutorial, or more items._`,
+    ]
+      .filter((s) => s !== null)
+      .join('\n'),
     { parse_mode: 'Markdown', reply_markup: rootMenu() },
   );
 }

@@ -58,6 +58,7 @@ import {
   buildOrdersPdf,
   buildDepositsPdf,
   buildStatsPdf,
+  buildPriceListPdf,
 } from '../services/pdfReport.js';
 import {
   buildOrdersCsv,
@@ -114,6 +115,23 @@ function formatShortDate(iso: string, timezone: string | null): string {
   }
   const day = String(d.getUTCDate()).padStart(2, '0');
   return `${day} ${MONTHS_SHORT[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/**
+ * Schedule deletion of a chat message after `EMAIL_AUTODELETE_MS`
+ * has elapsed. Used for "✅ Sent to your email" / mail-sent
+ * confirmations the bot owner asked us to auto-clean from chat
+ * history. Deletion errors are swallowed because Telegram throws
+ * "message can't be deleted" for messages older than 48h or already
+ * removed by the user.
+ */
+const EMAIL_AUTODELETE_MS = 5_000;
+function autoDeleteMessage(ctx: AppCtx, message_id: number): void {
+  setTimeout(() => {
+    void ctx.api.deleteMessage(ctx.chat!.id, message_id).catch(() => {
+      // Silent — user may have closed the chat or the message is gone
+    });
+  }, EMAIL_AUTODELETE_MS);
 }
 
 /**
@@ -866,7 +884,10 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  async function buildPriceListBuffer(ctx: AppCtx): Promise<Buffer | null> {
+  // The chat path keeps the CSV (lightweight, easy to inspect on
+  // mobile in any spreadsheet app); the email path now ships a PDF
+  // because the bot owner explicitly asked for it.
+  async function buildPriceListChatCsv(ctx: AppCtx): Promise<Buffer | null> {
     // Pull EVERY product (active + upcoming) so the user gets a real
     // catalog snapshot, not just the in-stock subset.
     const { rows } = await listAllProducts(0, 1000);
@@ -897,6 +918,32 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   }
 
+  async function buildPriceListMailPdf(ctx: AppCtx): Promise<Buffer | null> {
+    const { rows } = await listAllProducts(0, 1000);
+    if (rows.length === 0) return null;
+    const promos = await listActivePromos();
+    const promoFooter = ctx.t('profile.pricelist.promo_footer');
+    return buildPriceListPdf({
+      products: rows,
+      promos,
+      labels: {
+        reportTitle: ctx.t('profile.pricelist.pdf.title'),
+        sectionTitle: ctx.t('profile.pricelist.pdf.section'),
+        status_in_stock: ctx.t('profile.pricelist.csv.status.in_stock'),
+        status_out_of_stock: ctx.t('profile.pricelist.csv.status.out_of_stock'),
+        status_upcoming: ctx.t('profile.pricelist.csv.status.upcoming'),
+        unlimited: ctx.t('profile.pricelist.csv.unlimited'),
+        promo_none: ctx.t('profile.pricelist.csv.promo_none'),
+        promo_format: (min_qty: number, discount: string) =>
+          ctx.t('profile.pricelist.csv.promo_format', {
+            min_qty,
+            discount,
+          }),
+        promo_footer: promoFooter,
+      },
+    });
+  }
+
   bot.callbackQuery('profile:pricelist:mail', async (ctx) => {
     if (ctx.user.email_nag_disabled) {
       await ctx.answerCallbackQuery({
@@ -916,8 +963,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       text: ctx.t('profile.pricelist.sending'),
       show_alert: false,
     });
-    const csv = await buildPriceListBuffer(ctx);
-    if (!csv) {
+    const pdf = await buildPriceListMailPdf(ctx);
+    if (!pdf) {
       await ctx.reply(renderMdHtml(ctx.t('profile.pricelist.empty')), {
         parse_mode: 'HTML',
       });
@@ -925,12 +972,12 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     }
     const ok = await sendPriceListEmail({
       email: ctx.user.email,
-      csv,
+      pdf,
       firstName: ctx.user.first_name ?? null,
       username: ctx.user.username ?? null,
       promoFooter: ctx.t('profile.pricelist.promo_footer'),
     });
-    await ctx.reply(
+    const sent = await ctx.reply(
       renderMdHtml(
         ok
           ? ctx.t('profile.pricelist.mail_sent', { email: ctx.user.email })
@@ -938,6 +985,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       ),
       { parse_mode: 'HTML' },
     );
+    if (ok) autoDeleteMessage(ctx, sent.message_id);
   });
 
   bot.callbackQuery('profile:pricelist:chat', async (ctx) => {
@@ -945,7 +993,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       text: ctx.t('profile.pricelist.sending'),
       show_alert: false,
     });
-    const csv = await buildPriceListBuffer(ctx);
+    const csv = await buildPriceListChatCsv(ctx);
     if (!csv) {
       await ctx.reply(renderMdHtml(ctx.t('profile.pricelist.empty')), {
         parse_mode: 'HTML',

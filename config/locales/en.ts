@@ -229,6 +229,11 @@ export const en: Record<string, string> = {
   'shop.buy.insufficient':
     '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please topup first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
+  // Generic Wallet-Pay failure popup. Shown when something other
+  // than INSUFFICIENT_FUNDS goes wrong (DB error, missing migration,
+  // network) so the loading spinner is always dismissed.
+  'shop.buy.failed':
+    '❌ Payment could not be completed right now. Please try again in a moment, or contact admin if it keeps happening.',
   // Kept for backwards compat with any /settext overrides referencing
   // the old key, even though the email gate is no longer enforced.
   'shop.buy.email_required':
@@ -366,6 +371,9 @@ export const en: Record<string, string> = {
   'profile.pricelist.csv.promo_none': '\u2014',
   'profile.pricelist.csv.promo_format': 'Buy {min_qty}+ \u2212{discount} USDT',
   'profile.pricelist.csv.unlimited': '\u221e',
+  // PDF (mail-only) — title / section header used by buildPriceListPdf.
+  'profile.pricelist.pdf.title': 'SafwanTiger Shop \u2014 Price List',
+  'profile.pricelist.pdf.section': 'Catalog',
   // Footer surfaced both in the CSV body and in the email subject /
   // body. Admin can override the marketing copy via /settext
   // `profile.pricelist.promo_footer`.
