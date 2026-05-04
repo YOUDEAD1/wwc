@@ -689,6 +689,121 @@ export async function deletePromo(id: number): Promise<void> {
   }
 }
 
+/**
+ * Hydrated promo list for the admin "Full overview" + CSV export.
+ * Joins product name + default price for product-scoped promos and
+ * the user handle for user-scoped promos. `users` is left-joined
+ * because user-scoped promos can be pre-set for users who haven't
+ * `/start`-ed the bot yet.
+ *
+ * Sorted by (specificity tier desc, created_at desc) so the most
+ * specific rows surface first in the report — same ordering the
+ * runtime resolver uses to break ties.
+ */
+export async function listAllPromos(): Promise<
+  Array<
+    DBPromo & {
+      product_name: string | null;
+      product_default_price: number | null;
+      product_stock: number | null;
+      username: string | null;
+      first_name: string | null;
+      created_by_username: string | null;
+      created_by_first_name: string | null;
+    }
+  >
+> {
+  const { data, error } = await supabase
+    .from('promos')
+    .select('*, products(name, price, stock)')
+    .order('created_at', { ascending: false });
+  if (error) {
+    logger.error({ err: error }, 'listAllPromos failed');
+    return [];
+  }
+  type RawRow = DBPromo & {
+    products: { name: string; price: number; stock: number } | null;
+  };
+  const promoRows = (data ?? []) as RawRow[];
+  if (promoRows.length === 0) return [];
+
+  // Resolve user handles for telegram_id columns (target user) AND
+  // created_by columns (admin actor) in a single round trip.
+  const idSet = new Set<number>();
+  for (const p of promoRows) {
+    if (p.telegram_id !== null) idSet.add(Number(p.telegram_id));
+    if (p.created_by !== null) idSet.add(Number(p.created_by));
+  }
+  const ids = Array.from(idSet);
+  const userMap = new Map<
+    number,
+    { username: string | null; first_name: string | null }
+  >();
+  if (ids.length > 0) {
+    const { data: users } = await supabase
+      .from('users')
+      .select('telegram_id, username, first_name')
+      .in('telegram_id', ids);
+    for (const u of (users ?? []) as Array<{
+      telegram_id: number;
+      username: string | null;
+      first_name: string | null;
+    }>) {
+      userMap.set(Number(u.telegram_id), {
+        username: u.username,
+        first_name: u.first_name,
+      });
+    }
+  }
+
+  return promoRows.map((p) => {
+    const target = p.telegram_id !== null ? userMap.get(Number(p.telegram_id)) : null;
+    const actor = p.created_by !== null ? userMap.get(Number(p.created_by)) : null;
+    return {
+      ...p,
+      product_name: p.products?.name ?? null,
+      product_default_price:
+        p.products?.price !== undefined ? Number(p.products.price) : null,
+      product_stock:
+        p.products?.stock !== undefined ? Number(p.products.stock) : null,
+      username: target?.username ?? null,
+      first_name: target?.first_name ?? null,
+      created_by_username: actor?.username ?? null,
+      created_by_first_name: actor?.first_name ?? null,
+    };
+  });
+}
+
+/**
+ * Aggregate impact for a single promo: how many paid orders matched
+ * it (via `orders.promo_id`) and the total USDT discounted. Only
+ * `paid` orders count — refunded/cancelled rows shouldn't inflate
+ * the "this promo gave away" headline.
+ */
+export async function getPromoImpact(promo_id: number): Promise<{
+  orders: number;
+  total_discount: number;
+  last_used: string | null;
+}> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('discount, created_at')
+    .eq('promo_id', promo_id)
+    .eq('status', 'paid');
+  if (error) {
+    logger.error({ err: error, promo_id }, 'getPromoImpact failed');
+    return { orders: 0, total_discount: 0, last_used: null };
+  }
+  const rows = (data ?? []) as Array<{ discount: number | string; created_at: string }>;
+  let total = 0;
+  let last: string | null = null;
+  for (const r of rows) {
+    total += Number(r.discount);
+    if (last === null || r.created_at > last) last = r.created_at;
+  }
+  return { orders: rows.length, total_discount: total, last_used: last };
+}
+
 // ---------- Orders ----------
 
 export async function createOrder(o: {
@@ -700,6 +815,8 @@ export async function createOrder(o: {
   total: number;
   /** Flat USDT discount applied (0 when no promo matched). */
   discount?: number;
+  /** ID of the matched promo, when a discount was applied. */
+  promo_id?: number | null;
   delivery?: string;
 }): Promise<DBOrder> {
   const { data, error } = await supabase
@@ -707,6 +824,7 @@ export async function createOrder(o: {
     .insert({
       ...o,
       discount: o.discount ?? 0,
+      promo_id: o.promo_id ?? null,
       delivery: o.delivery ?? null,
     })
     .select('*')

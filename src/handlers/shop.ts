@@ -584,6 +584,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         unit_price: p.price,
         total,
         discount,
+        promo_id: promo?.promo.id ?? null,
         delivery: `Order #${id}-${qty} (mock delivery)`,
       });
       const newBalance = await charge(

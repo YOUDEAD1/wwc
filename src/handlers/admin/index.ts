@@ -49,7 +49,9 @@ import {
   countGiftCodeRedemptions,
   addPromo,
   listPromos,
+  listAllPromos,
   getPromo,
+  getPromoImpact,
   updatePromo,
   deletePromo,
 } from '../../db/queries.js';
@@ -1899,7 +1901,11 @@ async function showPromoList(ctx: AppCtx, page: number): Promise<void> {
       );
     }
   }
-  const kb = new InlineKeyboard().text('➕ Add promo', 'adm:promo:new').row();
+  const kb = new InlineKeyboard()
+    .text('➕ Add promo', 'adm:promo:new')
+    .row()
+    .text('📊 Full overview', 'adm:promo:report:0')
+    .row();
   for (const p of rows) {
     const scope = p.telegram_id && p.product_id
       ? 'U+P'
@@ -1916,68 +1922,13 @@ async function showPromoList(ctx: AppCtx, page: number): Promise<void> {
   if (safePage > 0) kb.text('◀ Prev', `adm:promo:list:${safePage - 1}`);
   if (safePage + 1 < totalPages) kb.text('Next ▶', `adm:promo:list:${safePage + 1}`);
   kb.row().text('⬅️ Back', 'adm:root');
-  await ctx.editMessageText(lines.join('\n'), {
-    parse_mode: 'Markdown',
-    reply_markup: kb,
-  });
+  await sendOrEdit(ctx, lines.join('\n'), kb);
 }
 
 adminBot.callbackQuery('adm:promo', async (ctx) => {
   await ctx.answerCallbackQuery();
   await showPromoList(ctx, 0);
 });
-
-/**
- * Show the same paginated promo list that `adm:promo` shows, but
- * via a fresh `ctx.reply` (used for the `/promo` slash command which
- * doesn't have an existing message to edit).
- */
-async function replyPromoList(ctx: AppCtx, page: number): Promise<void> {
-  ctx.session.adminFlow = undefined;
-  const { rows, total } = await listPromos(page, PROMO_PAGE_SIZE);
-  const totalPages = Math.max(1, Math.ceil(total / PROMO_PAGE_SIZE));
-  const safePage = Math.min(Math.max(0, page), totalPages - 1);
-  const lines: string[] = [
-    '💸 *Promos*',
-    '',
-    `Active rule set — page ${safePage + 1}/${totalPages}  (total ${total})`,
-  ];
-  if (rows.length === 0) {
-    lines.push('', '_No promos yet._', 'Tap *➕ Add promo* to create the first one.');
-  } else {
-    lines.push('');
-    for (const p of rows) {
-      const scope = promoScopeLabel(p);
-      const active = p.active ? '🟢' : '⏸';
-      const name = p.name?.trim() ? ` — _${p.name.trim()}_` : '';
-      lines.push(
-        `${active} \`#${p.id}\` qty ≥ *${p.min_qty}* → −*$${Number(p.discount_amount).toFixed(2)}*${name}`,
-        `   ${scope}`,
-      );
-    }
-  }
-  const kb = new InlineKeyboard().text('➕ Add promo', 'adm:promo:new').row();
-  for (const p of rows) {
-    const scope = p.telegram_id && p.product_id
-      ? 'U+P'
-      : p.telegram_id
-        ? 'User'
-        : p.product_id
-          ? 'Prod'
-          : 'Def';
-    kb.text(
-      `#${p.id} ${scope} q≥${p.min_qty} −$${Number(p.discount_amount).toFixed(2)}`,
-      `adm:promo:v:${p.id}`,
-    ).row();
-  }
-  if (safePage > 0) kb.text('◀ Prev', `adm:promo:list:${safePage - 1}`);
-  if (safePage + 1 < totalPages) kb.text('Next ▶', `adm:promo:list:${safePage + 1}`);
-  kb.row().text('⬅️ Back', 'adm:root');
-  await ctx.reply(lines.join('\n'), {
-    parse_mode: 'Markdown',
-    reply_markup: kb,
-  });
-}
 
 /**
  * `/promo [add|list|edit <id>|delete <id>]` — convenience slash
@@ -1993,7 +1944,7 @@ adminBot.command('promo', async (ctx) => {
   ctx.session.adminFlow = undefined;
   const arg = (ctx.match ?? '').toString().trim();
   if (!arg || /^list\b/i.test(arg)) {
-    await replyPromoList(ctx, 0);
+    await showPromoList(ctx, 0);
     return;
   }
   if (/^add\b/i.test(arg)) {
@@ -2022,41 +1973,7 @@ adminBot.command('promo', async (ctx) => {
   const editMatch = arg.match(/^edit\s+(\d+)\b/i);
   if (editMatch) {
     const id = Number(editMatch[1]);
-    const p = await getPromo(id);
-    if (!p) {
-      await ctx.reply(`❓ Promo #${id} not found.`);
-      return;
-    }
-    let product_name: string | null = null;
-    if (p.product_id !== null) {
-      const prod = await getProduct(p.product_id);
-      product_name = prod?.name ?? null;
-    }
-    const scope = promoScopeLabel({ ...p, product_name });
-    const lines = [
-      `💸 *Promo #${p.id}*`,
-      '',
-      `Status: ${p.active ? '🟢 *Active*' : '⏸ *Paused*'}`,
-      `Scope: ${scope}`,
-      `Min qty: *${p.min_qty}*`,
-      `Discount: *$${Number(p.discount_amount).toFixed(2)}*`,
-      `Name: ${p.name?.trim() ? `_${p.name.trim()}_` : '—'}`,
-    ];
-    const kb = new InlineKeyboard()
-      .text(p.active ? '⏸ Pause' : '▶️ Activate', `adm:promo:toggle:${p.id}`)
-      .row()
-      .text('✏️ Min qty', `adm:promo:editq:${p.id}`)
-      .text('💵 Discount', `adm:promo:editd:${p.id}`)
-      .row()
-      .text('🏷 Name', `adm:promo:editn:${p.id}`)
-      .row()
-      .text('🗑 Delete', `adm:promo:del:${p.id}`)
-      .row()
-      .text('⬅️ Back to list', 'adm:promo');
-    await ctx.reply(lines.join('\n'), {
-      parse_mode: 'Markdown',
-      reply_markup: kb,
-    });
+    await showPromoCard(ctx, id);
     return;
   }
   const delMatch = arg.match(/^(?:delete|del|rm)\s+(\d+)\b/i);
@@ -2093,34 +2010,137 @@ adminBot.callbackQuery(/^adm:promo:list:(\d+)$/, async (ctx) => {
   await showPromoList(ctx, Number(ctx.match[1]));
 });
 
+/**
+ * Send `text` either by editing the current callback message or, if
+ * we're being called from a `message:text` handler (no callback to
+ * edit), by replying with a fresh message. Used by every admin
+ * helper that can be reached both ways.
+ */
+async function sendOrEdit(
+  ctx: AppCtx,
+  text: string,
+  reply_markup: InlineKeyboard,
+): Promise<void> {
+  const opts = { parse_mode: 'Markdown' as const, reply_markup };
+  if (ctx.callbackQuery) {
+    try {
+      await ctx.editMessageText(text, opts);
+      return;
+    } catch {
+      // Fall through to a fresh reply if the source message can't
+      // be edited (e.g. too old, deleted by user, etc.).
+    }
+  }
+  await ctx.reply(text, opts);
+}
+
+/**
+ * Render the deep-detail card for a single promo. Mirrors the
+ * Custom Prices "user card" — beyond the raw row, also surfaces
+ * the joined product (name / default price / stock), the joined
+ * target user (handle / balance), the admin actor that created
+ * the promo, and aggregate impact stats from the orders table.
+ */
 async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
   ctx.session.adminFlow = undefined;
   const p = await getPromo(promo_id);
   if (!p) {
-    await ctx.editMessageText('❓ Promo not found.', {
-      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
-    });
+    await sendOrEdit(
+      ctx,
+      '❓ Promo not found.',
+      new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+    );
     return;
   }
-  // Best-effort product name lookup for nicer copy.
-  let product_name: string | null = null;
-  if (p.product_id !== null) {
-    const prod = await getProduct(p.product_id);
-    product_name = prod?.name ?? null;
-  }
-  const scope = promoScopeLabel({ ...p, product_name });
-  const lines = [
+  // Hydrate side-tables in parallel — none of them block on each
+  // other and only the first three are guaranteed to fire.
+  const [product, targetUser, actorUser, impact] = await Promise.all([
+    p.product_id !== null ? getProduct(p.product_id) : Promise.resolve(null),
+    p.telegram_id !== null ? findUserById(p.telegram_id) : Promise.resolve(null),
+    p.created_by !== null ? findUserById(p.created_by) : Promise.resolve(null),
+    getPromoImpact(p.id),
+  ]);
+
+  const scope = promoScopeLabel({ ...p, product_name: product?.name ?? null });
+  const lines: string[] = [
     `💸 *Promo #${p.id}*`,
     '',
     `Status: ${p.active ? '🟢 *Active*' : '⏸ *Paused*'}`,
     `Scope: ${scope}`,
     `Min qty: *${p.min_qty}*`,
-    `Discount: *$${Number(p.discount_amount).toFixed(2)}*`,
+    `Discount: *$${Number(p.discount_amount).toFixed(2)}* off the line total`,
     `Name: ${p.name?.trim() ? `_${p.name.trim()}_` : '—'}`,
+  ];
+
+  if (product) {
+    const stock = Number(product.stock);
+    const price = Number(product.price);
+    lines.push(
+      '',
+      `📦 *Product*`,
+      `   • \`#${product.id}\` ${escapeHtml(product.name)}`,
+      `   • Default price: *$${price.toFixed(2)}*`,
+      `   • In stock: *${stock}*`,
+    );
+    // Cheap "savings preview" so the admin can sanity-check the
+    // promo at a glance — what the buyer pays at the threshold qty.
+    const grossAtMin = price * p.min_qty;
+    const discountAtMin = Math.min(Number(p.discount_amount), grossAtMin);
+    const totalAtMin = grossAtMin - discountAtMin;
+    const pct =
+      grossAtMin > 0 ? `${((discountAtMin / grossAtMin) * 100).toFixed(1)}%` : 'n/a';
+    lines.push(
+      `   • At qty *${p.min_qty}*: gross *$${grossAtMin.toFixed(2)}*` +
+        ` → pay *$${totalAtMin.toFixed(2)}* (saves $${discountAtMin.toFixed(2)} / ${pct})`,
+    );
+  }
+
+  if (targetUser) {
+    const handle = targetUser.username
+      ? `@${targetUser.username}`
+      : (targetUser.first_name ?? '_no name_');
+    const balance = Number(targetUser.balance ?? 0);
+    lines.push(
+      '',
+      `👤 *Target user*`,
+      `   • \`${targetUser.telegram_id}\` _(${escapeHtml(handle)})_`,
+      `   • Wallet balance: *$${balance.toFixed(2)}*`,
+    );
+  } else if (p.telegram_id !== null) {
+    // User-scoped promo set for a tg id that hasn't /start-ed yet.
+    lines.push(
+      '',
+      `👤 *Target user*`,
+      `   • \`${p.telegram_id}\` _(hasn't started the bot)_`,
+    );
+  }
+
+  // Impact stats — only meaningful once at least one order has used
+  // this promo, but we always render the section so the admin sees
+  // "0 orders so far" for new rules.
+  lines.push(
+    '',
+    `📊 *Impact (paid orders)*`,
+    `   • Orders matched: *${impact.orders}*`,
+    `   • Total discount given: *$${impact.total_discount.toFixed(2)}*`,
+    `   • Last used: ${impact.last_used ? new Date(impact.last_used).toLocaleString('en-GB') : '—'}`,
+  );
+
+  // Audit trail.
+  const actorHandle = actorUser
+    ? actorUser.username
+      ? `@${actorUser.username}`
+      : (actorUser.first_name ?? `id ${actorUser.telegram_id}`)
+    : null;
+  lines.push(
     '',
     `Created: ${new Date(p.created_at).toLocaleString('en-GB')}`,
-    p.created_by ? `By: \`${p.created_by}\`` : 'By: _—_',
-  ];
+    p.created_by
+      ? `By: ${actorHandle ? `_${escapeHtml(actorHandle)}_ ` : ''}\`${p.created_by}\``
+      : 'By: _—_',
+    `Updated: ${new Date(p.updated_at).toLocaleString('en-GB')}`,
+  );
+
   const kb = new InlineKeyboard()
     .text(p.active ? '⏸ Pause' : '▶️ Activate', `adm:promo:toggle:${p.id}`)
     .row()
@@ -2132,10 +2152,7 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
     .text('🗑 Delete', `adm:promo:del:${p.id}`)
     .row()
     .text('⬅️ Back to list', 'adm:promo');
-  await ctx.editMessageText(lines.join('\n'), {
-    parse_mode: 'Markdown',
-    reply_markup: kb,
-  });
+  await sendOrEdit(ctx, lines.join('\n'), kb);
 }
 
 adminBot.callbackQuery(/^adm:promo:v:(\d+)$/, async (ctx) => {
@@ -2172,6 +2189,222 @@ adminBot.callbackQuery(/^adm:promo:delok:(\d+)$/, async (ctx) => {
   await deletePromo(id);
   await ctx.answerCallbackQuery({ text: 'Deleted' });
   await showPromoList(ctx, 0);
+});
+
+// -------- Full overview (paginated, grouped by scope tier) -------
+//
+// Mirrors `adm:price:report` — groups every promo into the four
+// scope tiers (default / per-product / per-user / per-user-product),
+// shows totals + impact stats per row, and offers a CSV export.
+//
+// Tier ordering matches the runtime resolver: most-specific first.
+
+const PROMO_REPORT_TIERS = [
+  { key: 'user_product', label: '👤📦 Per user + product', tier: 3 },
+  { key: 'user', label: '👤 Per user (any product)', tier: 2 },
+  { key: 'product', label: '📦 Per product (any user)', tier: 1 },
+  { key: 'default', label: '🌐 Default (everyone, every product)', tier: 0 },
+] as const;
+
+const PROMO_REPORT_PER_PAGE = 4; // 4 tier blocks per page max — keeps under Telegram's 4096-char limit comfortably.
+
+function tierOf(p: { product_id: number | null; telegram_id: number | null }): number {
+  if (p.telegram_id !== null && p.product_id !== null) return 3;
+  if (p.telegram_id !== null) return 2;
+  if (p.product_id !== null) return 1;
+  return 0;
+}
+
+adminBot.callbackQuery(/^adm:promo:report:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const page = Math.max(0, Number(ctx.match[1]));
+  const all = await listAllPromos();
+  if (all.length === 0) {
+    await ctx.editMessageText(
+      '📊 *Promos — Overview*\n\n_No promos yet._\n\nTap *➕ Add promo* on the previous screen.',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+      },
+    );
+    return;
+  }
+
+  // Resolve impact stats in parallel (one query per promo). Cheap
+  // since the partial index on orders.promo_id keeps each query
+  // tight even when there are many promos.
+  const impactArr = await Promise.all(all.map((p) => getPromoImpact(p.id)));
+  const impactMap = new Map<number, (typeof impactArr)[number]>();
+  all.forEach((p, i) => impactMap.set(p.id, impactArr[i]!));
+
+  // Group by tier — already sorted by created_at desc inside listAllPromos.
+  const buckets = new Map<number, typeof all>();
+  for (const p of all) {
+    const t = tierOf(p);
+    const arr = buckets.get(t) ?? [];
+    arr.push(p);
+    buckets.set(t, arr);
+  }
+  const populated = PROMO_REPORT_TIERS.filter((t) => (buckets.get(t.tier) ?? []).length > 0);
+  const totalPages = Math.max(1, Math.ceil(populated.length / PROMO_REPORT_PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  const start = safePage * PROMO_REPORT_PER_PAGE;
+  const end = Math.min(start + PROMO_REPORT_PER_PAGE, populated.length);
+
+  // Headline totals.
+  const totalActive = all.filter((p) => p.active).length;
+  const totalImpact = impactArr.reduce(
+    (acc, x) => ({
+      orders: acc.orders + x.orders,
+      total_discount: acc.total_discount + x.total_discount,
+    }),
+    { orders: 0, total_discount: 0 },
+  );
+
+  const header = [
+    '📊 *Promos — Overview*',
+    `Promos: *${all.length}* (active *${totalActive}*) · ` +
+      `Lifetime discounted *$${totalImpact.total_discount.toFixed(2)}* across *${totalImpact.orders}* orders` +
+      ` · Page ${safePage + 1}/${totalPages}`,
+    '',
+  ];
+
+  const sections: string[] = [];
+  for (let i = start; i < end; i++) {
+    const tierMeta = populated[i]!;
+    const rows = buckets.get(tierMeta.tier) ?? [];
+    const tierImpact = rows.reduce(
+      (acc, r) => {
+        const im = impactMap.get(r.id)!;
+        return {
+          orders: acc.orders + im.orders,
+          total_discount: acc.total_discount + im.total_discount,
+        };
+      },
+      { orders: 0, total_discount: 0 },
+    );
+    const lines: string[] = [
+      `${tierMeta.label}`,
+      `   _${rows.length} rule${rows.length === 1 ? '' : 's'} · ` +
+        `${tierImpact.orders} orders · ` +
+        `$${tierImpact.total_discount.toFixed(2)} given_`,
+    ];
+    for (const r of rows) {
+      const status = r.active ? '🟢' : '⏸';
+      const name = r.name?.trim() ? ` — _${r.name.trim()}_` : '';
+      const userPart =
+        r.telegram_id !== null
+          ? ` user \`${r.telegram_id}\`${
+              r.username ? ` (@${r.username})` : r.first_name ? ` (${escapeHtml(r.first_name)})` : ''
+            }`
+          : '';
+      const productPart =
+        r.product_id !== null
+          ? ` · *${escapeHtml(r.product_name ?? `#${r.product_id}`)}*`
+          : '';
+      const im = impactMap.get(r.id)!;
+      lines.push(
+        `   • ${status} \`#${r.id}\` qty ≥ *${r.min_qty}* → −*$${Number(r.discount_amount).toFixed(2)}*${name}` +
+          `${userPart}${productPart}`,
+        `       impact: ${im.orders} orders · $${im.total_discount.toFixed(2)}`,
+      );
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  const kb = new InlineKeyboard();
+  if (safePage > 0) kb.text('◀ Prev', `adm:promo:report:${safePage - 1}`);
+  if (safePage + 1 < totalPages) kb.text('Next ▶', `adm:promo:report:${safePage + 1}`);
+  kb.row().text('📥 Export CSV', 'adm:promo:csv').row().text('⬅️ Back', 'adm:promo');
+
+  await ctx.editMessageText([...header, ...sections].join('\n\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+adminBot.callbackQuery('adm:promo:csv', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Building CSV…' });
+  const all = await listAllPromos();
+  if (all.length === 0) {
+    await ctx.reply('📥 No promos to export — add at least one before downloading.');
+    return;
+  }
+  const impactArr = await Promise.all(all.map((p) => getPromoImpact(p.id)));
+  const header = [
+    'promo_id',
+    'scope',
+    'tier',
+    'telegram_id',
+    'username',
+    'first_name',
+    'product_id',
+    'product_name',
+    'product_default_price',
+    'product_stock',
+    'min_qty',
+    'discount_amount_usd',
+    'name',
+    'active',
+    'orders_used',
+    'total_discount_given_usd',
+    'last_used_at',
+    'created_at',
+    'updated_at',
+    'created_by_telegram_id',
+    'created_by_username',
+  ];
+  const tierName: Record<number, string> = {
+    3: 'user_product',
+    2: 'user',
+    1: 'product',
+    0: 'default',
+  };
+  const lines = [header.join(',')];
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i]!;
+    const im = impactArr[i]!;
+    const t = tierOf(r);
+    lines.push(
+      [
+        r.id,
+        tierName[t],
+        t,
+        r.telegram_id ?? '',
+        r.username ?? '',
+        r.first_name ?? '',
+        r.product_id ?? '',
+        r.product_name ?? '',
+        r.product_default_price !== null ? r.product_default_price.toFixed(2) : '',
+        r.product_stock ?? '',
+        r.min_qty,
+        Number(r.discount_amount).toFixed(2),
+        r.name ?? '',
+        r.active ? 'true' : 'false',
+        im.orders,
+        im.total_discount.toFixed(2),
+        im.last_used ?? '',
+        r.created_at,
+        r.updated_at,
+        r.created_by ?? '',
+        r.created_by_username ?? '',
+      ]
+        .map(csvEscape)
+        .join(','),
+    );
+  }
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const filename = `promos_${stamp}.csv`;
+  await ctx.replyWithDocument(
+    new InputFile(Buffer.from(lines.join('\n') + '\n', 'utf8'), filename),
+    {
+      caption:
+        `📥 *Promos — Export*\n` +
+        `Rows: *${all.length}* · ` +
+        `Generated: ${new Date().toUTCString()}`,
+      parse_mode: 'Markdown',
+    },
+  );
 });
 
 // -------- New promo wizard --------

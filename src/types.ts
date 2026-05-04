@@ -75,6 +75,8 @@ export type DBOrder = {
   total: number;
   /** Flat USDT discount applied at order time (0 if no promo matched). */
   discount: number;
+  /** ID of the promo that produced `discount`. Null when no promo applied. */
+  promo_id: number | null;
   delivery: string | null;
   status: 'paid' | 'refunded' | 'cancelled';
   created_at: string;
