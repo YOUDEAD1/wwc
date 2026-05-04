@@ -12,6 +12,8 @@ import {
   getOrder,
   getReferralEarnings,
   getUserStats,
+  listAllProducts,
+  listActivePromos,
   listDeposits,
   listOrders,
   listOrdersPaginated,
@@ -21,6 +23,7 @@ import {
   setUserEmail,
   setUserLanguage,
   setUserRegion,
+  toggleEmailReports,
   toggleNotification,
 } from '../db/queries.js';
 import {
@@ -29,10 +32,12 @@ import {
   languageKeyboard,
   statsKeyboard,
   backToSettingsKeyboard,
+  botTutorialKeyboard,
   depositsActionsKeyboard,
   emailDeleteConfirmKeyboard,
   emailHubKeyboard,
   emailScreenKeyboard,
+  priceListKeyboard,
   referKeyboard,
   whyEmailKeyboard,
 } from '../keyboards/profile.js';
@@ -43,7 +48,12 @@ import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import { renderPremium, renderMdHtml } from '../services/premium.js';
-import { sendWelcomeEmail, sendReportEmail, type ReportKind } from '../services/mailer.js';
+import {
+  sendPriceListEmail,
+  sendWelcomeEmail,
+  sendReportEmail,
+  type ReportKind,
+} from '../services/mailer.js';
 import {
   buildOrdersPdf,
   buildDepositsPdf,
@@ -52,12 +62,14 @@ import {
 import {
   buildOrdersCsv,
   buildDepositsCsv,
+  buildPriceListCsv,
   buildStatsCsv,
 } from '../services/csvReport.js';
 import { logger } from '../logger.js';
 import {
   getEmailPdfUrl,
   getAdminContactUrlWithPrefill,
+  getBotTutorial,
 } from '../services/settings.js';
 import * as adminLog from '../services/adminLog.js';
 import { InputFile } from 'grammy';
@@ -207,6 +219,9 @@ async function showNotifications(ctx: AppCtx) {
       stock_alert: ctx.user.stock_alert,
       announcements: ctx.user.announcements,
       wallet_alert: ctx.user.wallet_alert ?? true,
+      // Email Reports is stored as the inverse of `email_nag_disabled`
+      // so the rest of the toggle UX (false = OFF, true = ON) matches.
+      email_reports: !(ctx.user.email_nag_disabled ?? false),
     }),
   });
 }
@@ -290,6 +305,15 @@ async function sendReportPdfFromCallback(
   ctx: AppCtx,
   kind: ReportKind,
 ): Promise<void> {
+  // Email Reports OFF blocks every Send-PDF button so we don't keep
+  // firing emails the user explicitly muted (per the bot-owner spec).
+  if (ctx.user.email_nag_disabled) {
+    await ctx.answerCallbackQuery({
+      text: ctx.t('profile.email.reports_off_popup'),
+      show_alert: true,
+    });
+    return;
+  }
   const email = ctx.user.email;
   if (!email) {
     await ctx.answerCallbackQuery({
@@ -759,6 +783,182 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         show_alert: true,
       });
     }
+  });
+
+  // Email Reports toggle. Stored under `email_nag_disabled` (true =
+  // OFF). When OFF, the 12-hour email-add nag is muted AND the
+  // Send-PDF buttons short-circuit with a popup error.
+  bot.callbackQuery('profile:toggle_email_reports', async (ctx) => {
+    try {
+      const enabled = await toggleEmailReports(ctx.user.telegram_id);
+      ctx.user.email_nag_disabled = !enabled;
+      await ctx.answerCallbackQuery({
+        text: enabled
+          ? ctx.t('profile.notify.email_on')
+          : ctx.t('profile.notify.email_off'),
+      });
+      await showNotifications(ctx);
+      void adminLog.logNotificationToggle(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        channel: 'email_reports',
+        enabled,
+      });
+    } catch {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.notify.error'),
+        show_alert: true,
+      });
+    }
+  });
+
+  // ---------------------------------------------------------------
+  //  Bot Tutorial (Settings → Bot Tutorial)
+  //  Renders the admin-editable tutorial page (text + optional
+  //  photo / video / document attachment + optional URL button).
+  // ---------------------------------------------------------------
+  bot.callbackQuery('profile:tutorial', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const tut = getBotTutorial();
+    const text = (tut.text ?? '').trim();
+    const titleLine = ctx.t('profile.bot_tutorial.title');
+    const body = text.length > 0
+      ? `${titleLine}\n\n${ctx.t('profile.bot_tutorial.body', { body: text })}`
+      : `${titleLine}\n\n${ctx.t('profile.bot_tutorial.empty')}`;
+    await ctx.editMessageText(renderMdHtml(body), {
+      parse_mode: 'HTML',
+      reply_markup: botTutorialKeyboard(ctx.lang, tut.url),
+    });
+    if (tut.file_id && tut.file_type) {
+      try {
+        if (tut.file_type === 'photo') {
+          await ctx.replyWithPhoto(tut.file_id);
+        } else if (tut.file_type === 'video') {
+          await ctx.replyWithVideo(tut.file_id);
+        } else {
+          await ctx.replyWithDocument(tut.file_id);
+        }
+      } catch (err) {
+        // file_ids can expire across bot tokens — never crash.
+        logger.warn({ err }, 'bot_tutorial file send failed');
+      }
+    }
+  });
+
+  // ---------------------------------------------------------------
+  //  Send Price List (Settings → Send Price List)
+  //  Two delivery options: mail or chat.
+  // ---------------------------------------------------------------
+  bot.callbackQuery('profile:pricelist', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const text = [
+      ctx.t('profile.pricelist.title'),
+      '',
+      ctx.t('profile.pricelist.body'),
+    ].join('\n');
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: priceListKeyboard(ctx.lang),
+    });
+  });
+
+  async function buildPriceListBuffer(ctx: AppCtx): Promise<Buffer | null> {
+    // Pull EVERY product (active + upcoming) so the user gets a real
+    // catalog snapshot, not just the in-stock subset.
+    const { rows } = await listAllProducts(0, 1000);
+    if (rows.length === 0) return null;
+    const promos = await listActivePromos();
+    const promoFooter = ctx.t('profile.pricelist.promo_footer');
+    return buildPriceListCsv({
+      products: rows,
+      promos,
+      labels: {
+        col_name: ctx.t('profile.pricelist.csv.col.name'),
+        col_status: ctx.t('profile.pricelist.csv.col.status'),
+        col_stock: ctx.t('profile.pricelist.csv.col.stock'),
+        col_price: ctx.t('profile.pricelist.csv.col.price'),
+        col_promo: ctx.t('profile.pricelist.csv.col.promo'),
+        status_in_stock: ctx.t('profile.pricelist.csv.status.in_stock'),
+        status_out_of_stock: ctx.t('profile.pricelist.csv.status.out_of_stock'),
+        status_upcoming: ctx.t('profile.pricelist.csv.status.upcoming'),
+        promo_none: ctx.t('profile.pricelist.csv.promo_none'),
+        promo_format: (min_qty: number, discount: string) =>
+          ctx.t('profile.pricelist.csv.promo_format', {
+            min_qty,
+            discount,
+          }),
+        unlimited: ctx.t('profile.pricelist.csv.unlimited'),
+        promo_footer: promoFooter,
+      },
+    });
+  }
+
+  bot.callbackQuery('profile:pricelist:mail', async (ctx) => {
+    if (ctx.user.email_nag_disabled) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.email.reports_off_popup'),
+        show_alert: true,
+      });
+      return;
+    }
+    if (!ctx.user.email) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.pricelist.no_email_popup'),
+        show_alert: true,
+      });
+      return;
+    }
+    await ctx.answerCallbackQuery({
+      text: ctx.t('profile.pricelist.sending'),
+      show_alert: false,
+    });
+    const csv = await buildPriceListBuffer(ctx);
+    if (!csv) {
+      await ctx.reply(renderMdHtml(ctx.t('profile.pricelist.empty')), {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+    const ok = await sendPriceListEmail({
+      email: ctx.user.email,
+      csv,
+      firstName: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+      promoFooter: ctx.t('profile.pricelist.promo_footer'),
+    });
+    await ctx.reply(
+      renderMdHtml(
+        ok
+          ? ctx.t('profile.pricelist.mail_sent', { email: ctx.user.email })
+          : ctx.t('profile.pricelist.mail_failed'),
+      ),
+      { parse_mode: 'HTML' },
+    );
+  });
+
+  bot.callbackQuery('profile:pricelist:chat', async (ctx) => {
+    await ctx.answerCallbackQuery({
+      text: ctx.t('profile.pricelist.sending'),
+      show_alert: false,
+    });
+    const csv = await buildPriceListBuffer(ctx);
+    if (!csv) {
+      await ctx.reply(renderMdHtml(ctx.t('profile.pricelist.empty')), {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+    const filename = `SafwanTiger-Shop-PriceList-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    await ctx.replyWithDocument(new InputFile(csv, filename));
+    await ctx.reply(renderMdHtml(ctx.t('profile.pricelist.chat_sent')), {
+      parse_mode: 'HTML',
+    });
   });
 
   // ---- Language ----

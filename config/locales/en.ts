@@ -48,9 +48,24 @@ export const en: Record<string, string> = {
   'btn.qty.display': '📦 {qty} / {stock}',
   // Product-page extras.
   'btn.share_product': '🔗 Copy Link',
+  // `btn.view_note_file` / `btn.send_note_txt` are kept for backwards
+  // compat with /settext overrides; the new View Note screen no
+  // longer surfaces a Save button.
   'btn.view_note_file': '📥 Save Note as TXT',
   'btn.send_note_txt': '📥 Save as TXT',
-  'btn.out_of_stock': '❌ Out of Stock',
+  // Out-of-stock products still show a Buy Now button labelled with
+  // a premium ❌ glyph — tapping it surfaces the "contact admin to
+  // restock" popup (see `shop.product.out_of_stock_popup`).
+  'btn.out_of_stock': '❌ Buy Now',
+  // Premium-shop overhaul (post-order tutorial CTA + Settings rows).
+  'btn.using_method': '📘 Using Method',
+  'btn.tutorial_open_link': '🔗 Open Link',
+  'btn.bot_tutorial': '📘 Bot Tutorial',
+  'btn.send_price_list': '📊 Send Price List',
+  'btn.send_price_list.mail': '📤 Send on Mail',
+  'btn.send_price_list.chat': '📬 Send in Chat',
+  'btn.notify.email.on': '🟢 Email Reports: ON',
+  'btn.notify.email.off': '🔕 Email Reports: OFF',
   'btn.my_orders': '🧾 My Orders',
   'btn.refer': '🎁 Refer',
   'btn.notifications': '🔔 Notifications',
@@ -138,6 +153,8 @@ export const en: Record<string, string> = {
   // for premium subs, plain unicode for everyone else).
   'shop.product.line.name': '{emoji} *{name}*',
   'shop.product.line.price': '{prod_price_base} *Price Base:* {price} USDT',
+  // `{stock}` may render as either a number or the ∞ glyph (for
+  // products with `unlimited_stock = true`).
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
@@ -160,28 +177,76 @@ export const en: Record<string, string> = {
     '{prod_total_amount} *Total Amount:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
     '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
-  'shop.note.title': '📝 *Product note*',
-  'shop.note.empty': 'No note for this product.',
+  'shop.note.title': '{note_premium} *Product Note*',
+  'shop.note.empty': '_The admin hasn’t added any notes for this product yet._',
+  'shop.note.empty_description': '_No description provided._',
+  // Premium View Note layout (pic 2 reference). Token names use
+  // `note_premium` for the header glyph + `description`/`note` as
+  // the user-facing variables that get substituted by `t()` BEFORE
+  // `renderMdHtml` runs the premium-emoji pass — so a `{note}`
+  // variable here would collide with the EMOJI key of the same name.
   'shop.note.full': [
-    '*📝 Product Note — {name}*',
+    '{note_premium} *View Note — {name}*',
     '',
-    '*Price:* `{price} USDT`',
-    '*Stock:* `{stock}`',
-    '*Warranty:* `{warranty}`',
+    '{note_premium} *Description:*',
+    '> {description}',
     '',
-    '*Description:*',
-    '{description}',
-    '',
-    '*Note:*',
-    '{note}',
+    '{note_premium} *Note:*',
+    '> {note}',
   ].join('\n'),
+  // Legacy single-message confirmation — still used by /settext
+  // overrides and by the deposit credit reply. The new wallet-pay
+  // delivery card uses the two-step `payment_verified` /
+  // `order_delivered` keys below.
   'shop.buy.success':
     '✅ Purchase successful!\n\nProduct: *{name}*\nQty: *{qty}*\nTotal: *{total}*\n\nDelivery:\n```\n{delivery}\n```',
+  // Step 1 of the premium delivery card (pic 3): Payment Verified!
+  'shop.buy.payment_verified': [
+    '{order_verified} *Payment Verified!*',
+    '',
+    '*Amount:* {total} USDT',
+    '',
+    '⏳ _Delivering your order…_',
+  ].join('\n'),
+  // Step 2 of the premium delivery card (pic 3): Order Delivered!
+  'shop.buy.order_delivered': [
+    '{order_delivered} *Order Delivered!*',
+    '',
+    '*Order ID#:* `{order_id}`',
+    '*Product:* {name}',
+    '*Quantity:* {qty}',
+    '*Total Paid:* {total} USDT',
+    '',
+    '{orders_product} *Items:*',
+    '```',
+    '{items}',
+    '```',
+    '',
+    '{email_thanks} _I’ve mailed you also — Thanks for purchasing!_ {tiger}',
+  ].join('\n'),
+  'shop.buy.delivery_pending':
+    'Coming soon — admin will deliver your items manually within 12h.',
   'shop.buy.insufficient':
     '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please topup first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
+  // Kept for backwards compat with any /settext overrides referencing
+  // the old key, even though the email gate is no longer enforced.
   'shop.buy.email_required':
     'Setup email system first — we need your email to send the receipt.',
+
+  // ---------- Using Method tutorial ----------
+  // Per-product tutorial body shown when the buyer taps `📘 Using
+  // Method` under an Order Delivered card.
+  'shop.tutorial.body': [
+    '{tutorial} *Using Method — {name}*',
+    '',
+    '{body}',
+  ].join('\n'),
+  'shop.tutorial.empty': [
+    '{tutorial} *Using Method — {name}*',
+    '',
+    '_The admin hasn’t added a tutorial for this product yet. Please contact admin if you need help using your purchase._',
+  ].join('\n'),
   'shop.page.header': '🛒 *{category}*\n\n*Available Products:*\n_{total} products — page {page}/{pages}_',
 
   // ---------- Profile ----------
@@ -191,7 +256,8 @@ export const en: Record<string, string> = {
     '{notify_on} _Tune in only the alerts you love_ {notify_bell}\n\n' +
     '{notify_stock} *Stock Alerts*\n' +
     '{notify_info} *Info Alerts*\n' +
-    '{notify_wallet} *Wallet Alerts*\n\n' +
+    '{notify_wallet} *Wallet Alerts*\n' +
+    '{notify_email} *Email Reports*\n\n' +
     '{notify_on} ON\n' +
     '{notify_off} OFF',
   'profile.row.id': 'ID: `{id}`',
@@ -236,6 +302,75 @@ export const en: Record<string, string> = {
   // Misc.
   'profile.email.saved': '✅ Email saved: `{email}`',
   'profile.email.bad': '{email_invalid} *Please Enter A Valid Email*',
+  // 12-hour soft-nag reminder for users without a saved email. Sent
+  // by `services/emailNag.ts` on the first interaction after every
+  // 12-hour window. Users can mute this from Notifications →
+  // Email Reports.
+  'profile.email.nag': [
+    '{email_nag} *Please Add Your Verified Email for More Secured Experience*',
+    '',
+    '_Tap *Settings → Email Settings → Set Email* to add yours._',
+    '',
+    '{email_thanks} _Thanks!_',
+  ].join('\n'),
+  // Popup error shown on the Send-PDF buttons when Email Reports is
+  // OFF — gives the user the explicit unblock path.
+  'profile.email.reports_off_popup':
+    'Email Reports are turned OFF. Open Notifications → toggle "Email Reports: ON" first, then try again.',
+  // Toast labels for the Email Reports toggle (mirrors the other
+  // notification toggles' verbiage).
+  'profile.notify.email_on': '🟢 Email Reports: ON',
+  'profile.notify.email_off': '🔕 Email Reports: OFF',
+
+  // ---------- Bot Tutorial (Settings) ----------
+  // Admin-editable instructions screen (text + optional photo /
+  // video / document attachment + optional URL button). Body is
+  // reused verbatim from the `bot_tutorial.text` setting; the
+  // header / footer wrap it in premium emojis.
+  'profile.bot_tutorial.title': '{bot_tutorial} *Bot Tutorial*',
+  'profile.bot_tutorial.empty':
+    '_The admin hasn\u2019t added a bot tutorial yet. Please check back later._',
+  'profile.bot_tutorial.body': '{body}',
+
+  // ---------- Send Price List (Settings) ----------
+  // Two-button picker. After picking a destination the user gets a
+  // CSV with name / status / price / promo info. The mail variant
+  // pipes the same CSV through `mailer.ts`; the chat variant sends
+  // a Telegram document reply.
+  'profile.pricelist.title': '{price_list} *Send Price List*',
+  'profile.pricelist.body':
+    '{price_list} _Choose where to send the live price-list CSV._\n\n' +
+    '\u2022 *Send on Mail* \u2014 we\u2019ll email it to your saved address.\n' +
+    '\u2022 *Send in Chat* \u2014 we\u2019ll attach it here as a downloadable file.',
+  'profile.pricelist.no_email_popup':
+    'Set your email first \u2014 open Settings \u2192 Email Settings \u2192 Set Email.',
+  'profile.pricelist.empty':
+    'No products in the catalog yet \u2014 ask the admin to add some.',
+  'profile.pricelist.sending':
+    '\u23f3 Building your price list\u2026',
+  'profile.pricelist.mail_sent':
+    '{pdf_sent_l} *Price list mailed!* Check your inbox at `{email}`.',
+  'profile.pricelist.mail_failed':
+    '\u274c Failed to email the price list. Please try again later.',
+  'profile.pricelist.chat_sent':
+    '{pdf_sent_r} *Price list ready \u2014 see the CSV above.*',
+  // CSV header rows + status labels used by `services/csvReport.ts`.
+  'profile.pricelist.csv.col.name': 'Product',
+  'profile.pricelist.csv.col.price': 'Price (USDT)',
+  'profile.pricelist.csv.col.status': 'Status',
+  'profile.pricelist.csv.col.stock': 'Stock',
+  'profile.pricelist.csv.col.promo': 'Promo',
+  'profile.pricelist.csv.status.in_stock': 'In Stock',
+  'profile.pricelist.csv.status.out_of_stock': 'Out of Stock',
+  'profile.pricelist.csv.status.upcoming': 'Upcoming',
+  'profile.pricelist.csv.promo_none': '\u2014',
+  'profile.pricelist.csv.promo_format': 'Buy {min_qty}+ \u2212{discount} USDT',
+  'profile.pricelist.csv.unlimited': '\u221e',
+  // Footer surfaced both in the CSV body and in the email subject /
+  // body. Admin can override the marketing copy via /settext
+  // `profile.pricelist.promo_footer`.
+  'profile.pricelist.promo_footer':
+    'Thanks for choosing SafwanTiger Shop. Tap the bot to redeem promos and earn referral rewards. \ud83d\udc2f',
   // Email Settings hub (the new submenu opened from a single Settings button).
   'profile.email.hub.title': '{email_bracket_l} *Email Settings* {profile_email}',
   'profile.email.hub.body':

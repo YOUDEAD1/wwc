@@ -443,7 +443,7 @@ export async function logLanguageChange(api: Api, args: {
 
 export async function logNotificationToggle(api: Api, args: {
   user: LogUser;
-  channel: 'stock' | 'announcements' | 'wallet';
+  channel: 'stock' | 'announcements' | 'wallet' | 'email_reports';
   enabled: boolean;
 }): Promise<void> {
   const body = compose({

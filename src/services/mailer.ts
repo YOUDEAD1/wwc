@@ -873,6 +873,86 @@ export async function sendReportEmail(args: {
   }
 }
 
+/**
+ * Send the live SafwanTiger Shop price list as a CSV attachment.
+ * Subject / body are intentionally simple — the customer-facing
+ * spec asks for "send the file, no fancy template". Returns true
+ * on transport success.
+ */
+export async function sendPriceListEmail(args: {
+  email: string;
+  csv: Buffer;
+  firstName: string | null;
+  username: string | null;
+  promoFooter: string;
+}): Promise<boolean> {
+  if (!resendConfigured() && !smtpConfigured()) {
+    logger.warn({ email: args.email }, 'sendPriceListEmail: no transport configured');
+    return false;
+  }
+  const subject = 'SafwanTiger Shop — Price List';
+  const greeting = args.firstName
+    ? `Hi ${args.firstName},`
+    : args.username
+      ? `Hi @${args.username},`
+      : 'Hello,';
+  const text = [
+    greeting,
+    '',
+    'Attached is the live SafwanTiger Shop price list as a CSV.',
+    '',
+    args.promoFooter,
+    '',
+    '— SafwanTiger Shop',
+  ].join('\n');
+  const html = `<p>${escapeHtml(greeting)}</p><p>Attached is the live SafwanTiger Shop price list as a CSV.</p><p>${escapeHtml(args.promoFooter)}</p><p>— SafwanTiger Shop</p>`;
+  const filename = `SafwanTiger-Shop-PriceList-${new Date().toISOString().slice(0, 10)}.csv`;
+  if (resendConfigured()) {
+    const client = resendClient();
+    if (!client) return false;
+    try {
+      const { error } = await client.emails.send({
+        from: fromAddress(),
+        to: args.email,
+        subject,
+        html,
+        text,
+        attachments: [
+          {
+            filename,
+            content: args.csv.toString('base64'),
+            contentType: 'text/csv',
+          },
+        ],
+      });
+      if (error) {
+        logger.error({ err: error, to: args.email }, 'sendPriceListEmail: Resend rejected');
+        return false;
+      }
+      return true;
+    } catch (err) {
+      logger.error({ err, to: args.email }, 'sendPriceListEmail: Resend threw');
+      return false;
+    }
+  }
+  const tx = smtpTransporter();
+  if (!tx) return false;
+  try {
+    await tx.sendMail({
+      from: fromAddress(),
+      to: args.email,
+      subject,
+      html,
+      text,
+      attachments: [{ filename, content: args.csv, contentType: 'text/csv' }],
+    });
+    return true;
+  } catch (err) {
+    logger.error({ err, to: args.email }, 'sendPriceListEmail: SMTP failed');
+    return false;
+  }
+}
+
 export function logMailerStatus(): void {
   if (resendConfigured()) {
     logger.info(

@@ -188,3 +188,56 @@ export function getAdminContactUrlWithPrefill(text: string): string {
   const sep = base.includes('?') ? '&' : '?';
   return `${base}${sep}text=${encodeURIComponent(text)}`;
 }
+
+// ---------------------------------------------------------------------------
+//  Bot Tutorial (Settings → Bot Tutorial)
+//  Stored under the `bot_tutorial.*` namespace so the admin can edit
+//  it via /setsetting (or the dedicated admin flow). Each piece is
+//  independently optional — a tutorial may be text-only, file-only,
+//  or any mix of the four fields.
+// ---------------------------------------------------------------------------
+
+export interface BotTutorial {
+  text: string | null;
+  file_id: string | null;
+  file_type: 'photo' | 'video' | 'document' | null;
+  url: string | null;
+}
+
+function readString(key: string): string | null {
+  const v = cache.get(key);
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+export function getBotTutorial(): BotTutorial {
+  const fileType = readString('bot_tutorial.file_type');
+  const file_type =
+    fileType === 'photo' || fileType === 'video' || fileType === 'document'
+      ? fileType
+      : null;
+  return {
+    text: readString('bot_tutorial.text'),
+    file_id: readString('bot_tutorial.file_id'),
+    file_type,
+    url: readString('bot_tutorial.url'),
+  };
+}
+
+export async function setBotTutorialField(
+  field: keyof BotTutorial,
+  value: string | null,
+  updated_by?: number,
+): Promise<void> {
+  const key = `bot_tutorial.${field}`;
+  if (value === null || value === '') {
+    await deleteSetting(key);
+    cache.delete(key);
+    return;
+  }
+  await setSetting(key, value, updated_by);
+  cache.set(key, value);
+}
+
+export function getPriceListPromoFooter(): string | null {
+  return readString('profile.pricelist.promo_footer_override');
+}

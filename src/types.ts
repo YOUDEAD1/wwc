@@ -25,6 +25,14 @@ export type DBUser = {
   is_banned: boolean;
   banned_at: string | null;
   banned_reason: string | null;
+  /**
+   * When true, the bot suppresses the 12-hour "please add your
+   * email" nag *and* every Send-PDF-to-mail action. Drives the
+   * "Email Reports" notifications toggle.
+   */
+  email_nag_disabled: boolean;
+  /** Last time the 12h nag was sent — null if never. */
+  last_email_nag_at: string | null;
 };
 
 export type DBCategory = {
@@ -46,8 +54,32 @@ export type DBProduct = {
   stock: number;
   warranty: string | null;
   emoji: string | null;
+  /** Premium custom_emoji_id for the row icon. Falls back to `emoji`. */
+  emoji_id: string | null;
+  /** Telegram file_id of an admin-uploaded note attachment. */
+  note_file_id: string | null;
+  note_file_name: string | null;
+  note_file_mime: string | null;
+  /** Per-product Using Method tutorial body. */
+  tutorial_text: string | null;
+  /** Optional media attached to the tutorial. */
+  tutorial_file_id: string | null;
+  tutorial_file_type: 'photo' | 'video' | 'document' | null;
+  tutorial_url: string | null;
+  /** When true, the catalog row renders "(Stock: ∞)". */
+  unlimited_stock: boolean;
   active: boolean;
   sort_order: number;
+  created_at: string;
+};
+
+/** A single item in the per-product delivery pool. */
+export type DBProductItem = {
+  id: number;
+  product_id: number;
+  payload: string;
+  consumed_at: string | null;
+  consumed_order_id: number | null;
   created_at: string;
 };
 
@@ -78,6 +110,8 @@ export type DBOrder = {
   /** ID of the promo that produced `discount`. Null when no promo applied. */
   promo_id: number | null;
   delivery: string | null;
+  /** Actual delivered items (URLs / codes / creds), one per line. */
+  delivered_items: string | null;
   status: 'paid' | 'refunded' | 'cancelled';
   created_at: string;
 };

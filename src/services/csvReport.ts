@@ -17,6 +17,8 @@ import type {
   DBOrder,
   DBDeposit,
   DBWalletLedger,
+  DBProduct,
+  DBPromo,
 } from '../types.js';
 import type { ReportUser, StatsReport } from './pdfReport.js';
 import type { SupportTranscriptEntry } from './pdfReport.js';
@@ -204,5 +206,84 @@ export function buildSupportTranscriptCsv(args: {
   args.entries.forEach((e, i) => {
     rows.push([i + 1, e.at.toISOString(), e.side, e.author, e.text]);
   });
+  return csvRows(rows);
+}
+
+// ---------------------------------------------------------------------------
+//  Send Price List — emitted by Settings → Send Price List.
+//  Columns mirror what the bot owner sketched in the spec:
+//    Product | Status | Stock | Price (USDT) | Promo
+//
+//  Status is one of "In Stock" / "Out of Stock" / "Upcoming"
+//  (`active=false` rows are surfaced as Upcoming so the user knows
+//  about the product roadmap). `Promo` lists the lowest-qty active
+//  promo for that product, or "—" when none.
+// ---------------------------------------------------------------------------
+export interface PriceListLabels {
+  col_name: string;
+  col_status: string;
+  col_stock: string;
+  col_price: string;
+  col_promo: string;
+  status_in_stock: string;
+  status_out_of_stock: string;
+  status_upcoming: string;
+  promo_none: string;
+  promo_format: (min_qty: number, discount: string) => string;
+  unlimited: string;
+  promo_footer: string;
+}
+
+export function buildPriceListCsv(args: {
+  products: DBProduct[];
+  promos: DBPromo[];
+  labels: PriceListLabels;
+}): Buffer {
+  const rows: Array<Array<string | number | null | undefined>> = [
+    [args.labels.col_name, args.labels.col_status, args.labels.col_stock, args.labels.col_price, args.labels.col_promo],
+  ];
+  // Group promos by product_id so we can pick the smallest min_qty
+  // (= "first reachable") promo per product. `null` product_id =
+  // global / catalog-wide promo and applies to every row.
+  const promoByProduct = new Map<number, DBPromo[]>();
+  const globalPromos: DBPromo[] = [];
+  for (const p of args.promos) {
+    if (p.product_id == null) {
+      globalPromos.push(p);
+    } else {
+      const arr = promoByProduct.get(p.product_id) ?? [];
+      arr.push(p);
+      promoByProduct.set(p.product_id, arr);
+    }
+  }
+  for (const product of args.products) {
+    let status = args.labels.status_in_stock;
+    if (!product.active) status = args.labels.status_upcoming;
+    else if (!product.unlimited_stock && product.stock <= 0) {
+      status = args.labels.status_out_of_stock;
+    }
+    const stockCell = product.unlimited_stock
+      ? args.labels.unlimited
+      : String(product.stock);
+    const productPromos = [
+      ...(promoByProduct.get(product.id) ?? []),
+      ...globalPromos,
+    ];
+    const cheapest = productPromos
+      .slice()
+      .sort((a, b) => a.min_qty - b.min_qty)[0];
+    const promoCell = cheapest
+      ? args.labels.promo_format(cheapest.min_qty, Number(cheapest.discount_amount).toFixed(2))
+      : args.labels.promo_none;
+    rows.push([
+      product.name,
+      status,
+      stockCell,
+      Number(product.price).toFixed(2),
+      promoCell,
+    ]);
+  }
+  rows.push([]);
+  rows.push([args.labels.promo_footer]);
   return csvRows(rows);
 }

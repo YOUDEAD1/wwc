@@ -1,11 +1,13 @@
 import type { Composer } from 'grammy';
-import { InlineKeyboard, InputFile } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   createOrder,
   decrementProductStock,
   getProduct,
   listActiveProducts,
+  claimProductItems,
+  setOrderDeliveredItems,
 } from '../db/queries.js';
 import {
   applyUserPriceToProduct,
@@ -89,13 +91,17 @@ function productPageText(
 ) {
   const { gross, discount, total } = priceBreakdown(p.price, qty, promo);
   const eligible = !!promo && discount > 0;
+  // Buying-page body intentionally omits the description per the
+  // bot-owner spec — the description now lives only on the View Note
+  // screen so the buy page stays focused on the price / qty / total
+  // trio.
+  const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
   const lines: string[] = [
     ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
   ];
-  if (p.description) lines.push(p.description);
   lines.push(
     ctx.t('shop.product.line.price', { price: p.price }),
-    ctx.t('shop.product.line.stock', { stock: p.stock }),
+    ctx.t('shop.product.line.stock', { stock: stockLabel }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
   // Teaser line under Warranty.
@@ -470,13 +476,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
   });
 
   // ---- View Note ----
-  // Replaces the popup-only behaviour with a full-screen detail view.
-  // Body shows everything the user might need to know about the
-  // product (name, price, stock, warranty, description, full note).
-  // Buttons:
-  //   - 📥 Save Note as TXT — sends the same body as a `.txt` file
-  //     so the user has a downloadable copy.
-  //   - Back → returns to the product page.
+  // Premium full-screen note view. The body is a single header
+  // (`{prod_view_note} View Note`) plus the product description and
+  // any admin-typed note text, rendered in a quoted/code block for
+  // visual focus. When the admin uploaded a `.txt` (or any document)
+  // we resend it as a Telegram document immediately after editing
+  // the message — matches the pic-2 reference UX.
+  //
+  // Buttons: just `Back`. The legacy `📥 Save Note as TXT` button is
+  // gone per the bot-owner spec.
   bot.callbackQuery(/^note:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
@@ -486,59 +494,77 @@ export function registerShop(bot: Composer<AppCtx>): void {
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
     await ctx.answerCallbackQuery();
+    const noteText = (p.note ?? '').trim();
+    const desc = (p.description ?? '').trim();
     const body = ctx.t('shop.note.full', {
       name: p.name,
-      price: p.price,
-      stock: p.stock,
-      warranty: p.warranty ?? '—',
-      description: p.description ?? '—',
-      note: p.note && p.note.length > 0 ? p.note : ctx.t('shop.note.empty'),
+      description: desc.length > 0 ? desc : ctx.t('shop.note.empty_description'),
+      note: noteText.length > 0 ? noteText : ctx.t('shop.note.empty'),
     });
     const kb = new InlineKeyboard();
-    inlineBtn(kb, ctx.lang, 'view_note_file', `note:txt:${p.id}`);
-    kb.row();
     inlineBtn(kb, ctx.lang, 'back', `prod:${p.id}`);
     await ctx.editMessageText(renderMdHtml(body), {
       parse_mode: 'HTML',
       reply_markup: kb,
     });
+    // When the admin uploaded a document for this product, forward
+    // it to the user as a separate document message so Telegram
+    // renders it with its native green file card (pic 2). The body
+    // above already references the file in the locale string.
+    if (p.note_file_id) {
+      try {
+        await ctx.replyWithDocument(p.note_file_id);
+      } catch {
+        // file_id can expire across bot tokens; surface a polite
+        // fallback rather than crashing the callback.
+      }
+    }
   });
 
-  // Send the full product note as a downloadable `.txt` attachment.
-  // Uses Telegram's native document viewer so the user can save it,
-  // forward it to friends, etc. without any third-party hosting.
-  bot.callbackQuery(/^note:txt:(\d+)$/, async (ctx) => {
+  // ---- Using Method tutorial ----
+  // Surfaced as a `📘 Using Method` button under every Order
+  // Delivered card (and also accessible as a deep-link `/start tut_<id>`
+  // from outside chats). Renders the admin-configured tutorial body
+  // plus an optional photo / video / document attachment + an
+  // optional URL button. When nothing has been configured yet we
+  // surface a polite placeholder so the button isn't a dead end.
+  bot.callbackQuery(/^tut:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
     if (!raw) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
-    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
     await ctx.answerCallbackQuery();
-    const lines = [
-      `Product: ${p.name}`,
-      `Price: ${p.price} USDT`,
-      `Stock: ${p.stock}`,
-      `Warranty: ${p.warranty ?? '—'}`,
-      '',
-      'Description:',
-      p.description ?? '—',
-      '',
-      'Note:',
-      p.note ?? '—',
-      '',
-      `— SafwanTiger Shop · ${new Date().toUTCString()}`,
-    ].join('\n');
-    const safeName = p.name.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40) || 'product';
-    const filename = `${safeName}_note.txt`;
-    await ctx.replyWithDocument(
-      new InputFile(Buffer.from(lines, 'utf8'), filename),
-      {
-        caption: `📄 ${p.name} — note`,
-        parse_mode: 'HTML',
-      },
-    );
+    const text = (raw.tutorial_text ?? '').trim();
+    const body =
+      text.length > 0
+        ? ctx.t('shop.tutorial.body', { name: raw.name, body: text })
+        : ctx.t('shop.tutorial.empty', { name: raw.name });
+    const kb = new InlineKeyboard();
+    if (raw.tutorial_url) {
+      kb.url(ctx.t('btn.tutorial_open_link'), raw.tutorial_url).row();
+    }
+    inlineBtn(kb, ctx.lang, 'back', `prod:${id}`);
+    // When a media attachment is configured, send it FIRST as a
+    // standalone message (Telegram caps caption length at 1024
+    // chars; a separate text message removes that constraint and
+    // keeps the layout consistent across long tutorials). The text
+    // body lands second carrying the URL/Back keyboard.
+    if (raw.tutorial_file_id && raw.tutorial_file_type) {
+      try {
+        if (raw.tutorial_file_type === 'photo') {
+          await ctx.replyWithPhoto(raw.tutorial_file_id);
+        } else if (raw.tutorial_file_type === 'video') {
+          await ctx.replyWithVideo(raw.tutorial_file_id);
+        } else {
+          await ctx.replyWithDocument(raw.tutorial_file_id);
+        }
+      } catch {
+        // file_id can expire across bot tokens; degrade gracefully.
+      }
+    }
+    await ctx.reply(renderMdHtml(body), { parse_mode: 'HTML', reply_markup: kb });
   });
 
   // *Buy Now* on the product page no longer charges immediately —
@@ -553,7 +579,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (p.stock <= 0) {
+    if (!p.unlimited_stock && p.stock <= 0) {
       await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
       return;
     }
@@ -588,27 +614,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // so the price the user saw on the product page is the price
     // they're actually billed.
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (p.stock <= 0) {
+    if (!p.unlimited_stock && p.stock <= 0) {
       await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
       return;
     }
-    // Email gate — purchase requires a saved email so receipts/invoices
-    // can be delivered. New users land here with `ctx.user.email` null.
-    if (!ctx.user.email) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('shop.buy.email_required'),
-        show_alert: true,
-      });
-      // Bounce them straight into the Set-Email flow.
-      ctx.session.userFlow = { type: 'set_email', step: 'value', data: { mode: 'set' } };
-      const text = [
-        ctx.t('profile.email.set.title'),
-        '',
-        ctx.t('profile.email.set.body'),
-      ].join('\n');
-      await ctx.reply(renderMdHtml(text), { parse_mode: 'HTML' });
-      return;
-    }
+    // Email is no longer a hard gate — the bot-owner spec relaxed
+    // checkout so users without a saved email can still buy. The
+    // 12-hour nag (see `services/emailNag.ts`) handles the soft
+    // reminder without blocking the purchase flow.
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     // Resolve the promo *server-side* — never trust the client.
     // The product page may have rendered a promo for a different
@@ -634,7 +647,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         total,
         discount,
         promo_id: promo?.promo.id ?? null,
-        delivery: `Order #${id}-${qty} (mock delivery)`,
+        delivery: `Order #${id}-${qty}`,
       });
       const newBalance = await charge(
         ctx.from!.id,
@@ -645,17 +658,44 @@ export function registerShop(bot: Composer<AppCtx>): void {
       ctx.user.balance = newBalance;
       await decrementProductStock(id, qty);
       delete ctx.session.qty[id];
+      // Pull the actual delivery payload off the per-product items
+      // pool. When the pool is empty (or short), fall back to a
+      // "manual delivery" placeholder; the admin gets pinged via
+      // logOrderCreated either way.
+      const claimed = await claimProductItems(p.id, qty, order.id);
+      const deliveredItems =
+        claimed.length > 0
+          ? claimed.join('\n')
+          : ctx.t('shop.buy.delivery_pending');
+      if (claimed.length > 0) {
+        await setOrderDeliveredItems(order.id, deliveredItems);
+      }
       await ctx.answerCallbackQuery();
+      const publicId = publicOrderId(order);
+      // Two-message premium delivery card per pic 3:
+      //   1) Payment Verified! (amount + ⏳ Delivering your order…)
+      //   2) Order Delivered! (Order ID, product, qty, total, items)
       await ctx.reply(
         renderMdHtml(
-          ctx.t('shop.buy.success', {
-            name: p.name,
-            qty,
-            total,
-            delivery: order.delivery ?? '—',
+          ctx.t('shop.buy.payment_verified', {
+            total: total.toFixed(2),
           }),
         ),
         { parse_mode: 'HTML' },
+      );
+      const deliveredKb = new InlineKeyboard();
+      inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
+      await ctx.reply(
+        renderMdHtml(
+          ctx.t('shop.buy.order_delivered', {
+            order_id: publicId,
+            name: p.name,
+            qty,
+            total: total.toFixed(2),
+            items: deliveredItems,
+          }),
+        ),
+        { parse_mode: 'HTML', reply_markup: deliveredKb },
       );
       // Notify admin with the deep-detail order block.
       void adminLog.logOrderCreated(ctx.api, {
