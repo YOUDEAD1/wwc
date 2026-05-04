@@ -64,11 +64,12 @@ export function shopProductsKeyboard(
 }
 
 /**
- * The product-detail page keyboard. The legacy +/- qty adder has
- * been removed in favour of a 🔢 *Custom Quantity* button that
+ * The product-detail page keyboard. The 🔢 *Custom Quantity* button
  * opens a numeric keypad (digits accumulate — tapping `1` then `1`
- * sets qty to `11`). The 🔄 *Refresh* button next to it re-renders
- * the page so the user sees the latest stock / wallet balance.
+ * sets qty to `11`); the inline `➖ N ➕` adder lets the user nudge
+ * the qty one step at a time without leaving the product page; and
+ * the 🔄 *Refresh* button re-renders the page so the user sees the
+ * latest stock / wallet balance.
  *
  * Back returns to the Shop home (page 0) since the categories step
  * has been removed.
@@ -76,7 +77,7 @@ export function shopProductsKeyboard(
 export function productKeyboard(
   lang: Lang,
   product: DBProduct,
-  _qty: number,
+  qty: number,
   shareUrl: string,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
@@ -86,11 +87,19 @@ export function productKeyboard(
   } else {
     inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
     kb.row();
-    // 1) Custom Quantity opens the numeric keypad. 2) Refresh
-    // re-fetches and re-renders the product page so any out-of-band
-    // stock / wallet balance updates show up.
-    inlineBtn(kb, lang, 'custom_qty', `qty:${product.id}:custom`);
+    // Inline qty stepper: ➖ on the left, the live qty in the
+    // middle (tap is a no-op — it's a label), ➕ on the right.
+    // Clamping to `[1, min(QTY_MAX, stock)]` happens in the
+    // callback handler so the keyboard stays presentation-only.
+    inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:dec`);
+    kb.text(String(qty), 'noop:qty');
+    inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
+    kb.row();
+    // 1) Refresh re-fetches and re-renders the product page so any
+    // out-of-band stock / wallet balance updates show up. 2) Custom
+    // Quantity opens the numeric keypad.
     inlineBtn(kb, lang, 'refresh', `prod:${product.id}`);
+    inlineBtn(kb, lang, 'custom_qty', `qty:${product.id}:custom`);
     kb.row();
   }
   // Topup Wallet removed; replaced with a 1-tap *copy* link to
