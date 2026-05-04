@@ -11,7 +11,13 @@ import {
   applyUserPriceToProduct,
   applyUserPriceToProducts,
 } from '../services/pricing.js';
-import { priceBreakdown, resolvePromo, type PromoMatch } from '../services/promo.js';
+import {
+  nextPromoTeaser,
+  priceBreakdown,
+  resolvePromo,
+  type PromoMatch,
+} from '../services/promo.js';
+import type { DBPromo } from '../types.js';
 import { charge } from '../services/wallet.js';
 import {
   paymentMethodKeyboard,
@@ -79,8 +85,10 @@ function productPageText(
   p: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
   qty: number,
   promo: PromoMatch | null = null,
+  teaser: DBPromo | null = null,
 ) {
-  const { discount, total } = priceBreakdown(p.price, qty, promo);
+  const { gross, discount, total } = priceBreakdown(p.price, qty, promo);
+  const eligible = !!promo && discount > 0;
   const lines: string[] = [
     ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
   ];
@@ -89,26 +97,34 @@ function productPageText(
     ctx.t('shop.product.line.price', { price: p.price }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
-    '',
-    ctx.t('shop.product.line.qty', { qty }),
   );
-  if (promo && discount > 0) {
-    const label =
-      promo.promo.name?.trim() ||
-      ctx.t('shop.product.line.promo.fallback_label', {
-        min_qty: promo.promo.min_qty,
-      });
+  // Show the teaser line under Warranty when an upcoming promo
+  // exists for this user/product but they haven't reached the
+  // threshold qty yet. Suppressed once the promo is actually
+  // applying — the strikethrough Total below carries that info.
+  if (!eligible && teaser) {
     lines.push(
-      ctx.t('shop.product.line.promo', {
-        label,
-        discount: discount.toFixed(2),
+      ctx.t('shop.product.line.promo.teaser', {
+        min_qty: teaser.min_qty,
+        discount: Number(teaser.discount_amount).toFixed(2),
       }),
     );
   }
-  lines.push(
-    ctx.t('shop.product.line.total', { total: total.toFixed(2) }),
-    ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
-  );
+  lines.push('', ctx.t('shop.product.line.qty', { qty }));
+  // Total Amount: when a promo applies, render gross → effective as
+  // a strikethrough so the buyer sees the saving inline. When no
+  // promo applies, fall back to the plain total line.
+  if (eligible) {
+    lines.push(
+      ctx.t('shop.product.line.total.discounted', {
+        gross: gross.toFixed(2),
+        total: total.toFixed(2),
+      }),
+    );
+  } else {
+    lines.push(ctx.t('shop.product.line.total', { total: total.toFixed(2) }));
+  }
+  lines.push(ctx.t('shop.product.line.balance', { balance: ctx.user.balance }));
   return lines.join('\n');
 }
 
@@ -157,9 +173,12 @@ async function showProduct(ctx: AppCtx, productId: number) {
   }
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
-  const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
+  const [promo, teaser] = await Promise.all([
+    resolvePromo(ctx.user.telegram_id, p.id, qty, p.price),
+    nextPromoTeaser(ctx.user.telegram_id, p.id, qty),
+  ]);
   const shareUrl = buildProductShareUrl(p.id);
-  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo)), {
+  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser)), {
     parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
   });
@@ -196,8 +215,11 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
   // else the saved qty (or QTY_MIN) so the page is never visually
   // empty before the first tap.
   const previewQty = buf.length > 0 ? Number(buf) : ctx.session.qty[productId] ?? QTY_MIN;
-  const promo = await resolvePromo(ctx.user.telegram_id, p.id, previewQty, p.price);
-  const body = productPageText(ctx, p, previewQty, promo);
+  const [promo, teaser] = await Promise.all([
+    resolvePromo(ctx.user.telegram_id, p.id, previewQty, p.price),
+    nextPromoTeaser(ctx.user.telegram_id, p.id, previewQty),
+  ]);
+  const body = productPageText(ctx, p, previewQty, promo, teaser);
   const instruction = ctx.t('shop.qty.keypad.instruction', {
     current: buf.length > 0 ? buf : '—',
   });
@@ -414,10 +436,17 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // Re-open the product page as a fresh message (the prompt was
     // just deleted, so we can't editMessageText into it).
     const shareUrl = buildProductShareUrl(p.id);
-    await ctx.reply(renderMdHtml(productPageText(ctx, p, next_)), {
-      parse_mode: 'HTML',
-      reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl),
-    });
+    const [promo, teaser] = await Promise.all([
+      resolvePromo(ctx.user.telegram_id, p.id, next_, p.price),
+      nextPromoTeaser(ctx.user.telegram_id, p.id, next_),
+    ]);
+    await ctx.reply(
+      renderMdHtml(productPageText(ctx, p, next_, promo, teaser)),
+      {
+        parse_mode: 'HTML',
+        reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl),
+      },
+    );
   });
 
   // ---- View Note ----

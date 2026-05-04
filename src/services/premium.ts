@@ -203,9 +203,10 @@ function autoScanPremiumEmojis(html: string): string {
  *   - `` `code` ``               → `<code>code</code>`
  *   - `*bold*`                   → `<b>bold</b>`
  *   - `_italic_`                 → `<i>italic</i>`
+ *   - `~~strike~~`               → `<s>strike</s>`
  *
  * The implementation goes in that order so backticks "win" over
- * `*`/`_`.
+ * `*`/`_`/`~~`.
  */
 function mdToHtml(md: string): string {
   // 1) HTML-escape the whole input first.
@@ -217,13 +218,18 @@ function mdToHtml(md: string): string {
   // 3) Inline backtick code.
   s = s.replace(/`([^`\n]+?)`/g, (_m, body: string) => `<code>${body}</code>`);
 
-  // 4) Bold *text* — non-greedy, doesn't span newlines, requires
+  // 4) Strikethrough ~~text~~ — runs before bold/italic so the
+  //    enclosed `*` / `_` chars don't accidentally get matched as
+  //    formatting markers. Non-greedy, single-line.
+  s = s.replace(/~~([^~\n]+?)~~/g, (_m, body: string) => `<s>${body}</s>`);
+
+  // 5) Bold *text* — non-greedy, doesn't span newlines, requires
   //    at least one non-whitespace char inside.
   s = s.replace(/(^|[^*\w])\*([^*\n]+?)\*(?=$|[^*\w])/g, (_m, lead: string, body: string) =>
     `${lead}<b>${body}</b>`,
   );
 
-  // 5) Italic _text_ — same heuristics as bold.
+  // 6) Italic _text_ — same heuristics as bold.
   s = s.replace(/(^|[^_\w])_([^_\n]+?)_(?=$|[^_\w])/g, (_m, lead: string, body: string) =>
     `${lead}<i>${body}</i>`,
   );

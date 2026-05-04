@@ -105,6 +105,10 @@ export const vi: Record<string, string> = {
   'shop.product.line.promo':
     '{prod_promo} *Khuyến mãi:* {label} — −{discount} USDT',
   'shop.product.line.promo.fallback_label': 'số lượng ≥ {min_qty}',
+  'shop.product.line.promo.teaser':
+    '{prod_promo} *Khuyến mãi:* Mua {min_qty}+ giảm −${discount}',
+  'shop.product.line.total.discounted':
+    '{prod_total_amount} *Tổng tiền:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
     '❌ Sản phẩm này hiện đã hết hàng. Vui lòng liên hệ quản trị viên để bổ sung kho hoặc chọn sản phẩm tương tự.',
   'shop.note.title': '📝 *Ghi chú sản phẩm*',
