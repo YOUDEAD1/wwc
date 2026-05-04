@@ -82,6 +82,7 @@ export const ar: Record<string, string> = {
     '{prod_qty_selected} *ملخص الطلب*\n\n' +
     '*{name}*\n' +
     '{prod_qty_selected} الكمية: *{qty}*\n' +
+    '{promo_line}' +
     '{prod_total_amount} الإجمالي: *{total} USDT*\n' +
     '{prod_wallet} المحفظة: *{balance} USDT*\n\n' +
     'اختر طريقة الدفع:',
@@ -101,6 +102,9 @@ export const ar: Record<string, string> = {
   'shop.product.line.qty': '{prod_qty_selected} *الكمية المختارة:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance} USDT',
+  'shop.product.line.promo':
+    '{prod_promo} *عرض ترويجي:* {label} — −{discount} USDT',
+  'shop.product.line.promo.fallback_label': 'الكمية ≥ {min_qty}',
   'shop.product.out_of_stock_popup':
     '❌ هذا المنتج غير متوفر حاليًا. الرجاء التواصل مع الإدارة لإعادة تجديد المخزون أو اختيار منتج مشابه.',
   'shop.note.title': '📝 *ملاحظة المنتج*',

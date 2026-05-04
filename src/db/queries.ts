@@ -14,6 +14,7 @@ import type {
   DBGiftCode,
   DBGiftCodeRedemption,
   DBUserPriceOverride,
+  DBPromo,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -565,6 +566,129 @@ export async function clearAllUserPriceOverrides(
   return count ?? 0;
 }
 
+// ---------- Promos ----------
+
+/**
+ * Fetch every *active* promo whose scope matches the given user +
+ * product and whose `min_qty` is satisfied. Scope tier resolution
+ * (most-specific wins; ties go to largest discount) lives in
+ * `services/promo.ts` so this query stays a dumb filter.
+ *
+ * The two `or()` calls are AND-combined by Supabase, so the row is
+ * kept iff both:
+ *   (product_id IS NULL OR product_id = ?)
+ *   (telegram_id IS NULL OR telegram_id = ?)
+ */
+export async function findApplicablePromos(
+  telegram_id: number,
+  product_id: number,
+  qty: number,
+): Promise<DBPromo[]> {
+  const { data, error } = await supabase
+    .from('promos')
+    .select('*')
+    .eq('active', true)
+    .lte('min_qty', qty)
+    .or(`product_id.is.null,product_id.eq.${product_id}`)
+    .or(`telegram_id.is.null,telegram_id.eq.${telegram_id}`);
+  if (error) {
+    logger.error({ err: error, telegram_id, product_id, qty }, 'findApplicablePromos failed');
+    return [];
+  }
+  return (data ?? []) as DBPromo[];
+}
+
+/** Fetch a single promo by id, for the admin edit/delete screens. */
+export async function getPromo(id: number): Promise<DBPromo | null> {
+  const { data } = await supabase.from('promos').select('*').eq('id', id).maybeSingle();
+  return (data as DBPromo | null) ?? null;
+}
+
+/**
+ * Paginated promo list for the admin overview. Newest first. Joins
+ * the optional product so the admin UI can show the product name
+ * inline without a second roundtrip.
+ */
+export async function listPromos(
+  page: number,
+  pageSize: number,
+): Promise<{
+  rows: Array<DBPromo & { product_name: string | null }>;
+  total: number;
+}> {
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+  const { data, count, error } = await supabase
+    .from('promos')
+    .select('*, products(name)', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  if (error) {
+    logger.error({ err: error, page }, 'listPromos failed');
+    return { rows: [], total: 0 };
+  }
+  type RawRow = DBPromo & { products: { name: string } | null };
+  const rows = ((data ?? []) as RawRow[]).map(({ products, ...rest }) => ({
+    ...rest,
+    product_name: products?.name ?? null,
+  }));
+  return { rows, total: count ?? 0 };
+}
+
+export async function addPromo(args: {
+  product_id: number | null;
+  telegram_id: number | null;
+  name: string | null;
+  min_qty: number;
+  discount_amount: number;
+  created_by: number;
+}): Promise<DBPromo> {
+  const { data, error } = await supabase
+    .from('promos')
+    .insert({
+      product_id: args.product_id,
+      telegram_id: args.telegram_id,
+      name: args.name,
+      min_qty: args.min_qty,
+      discount_amount: args.discount_amount,
+      created_by: args.created_by,
+    })
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, args }, 'addPromo failed');
+    throw error ?? new Error('addPromo failed');
+  }
+  return data as DBPromo;
+}
+
+export async function updatePromo(
+  id: number,
+  patch: Partial<{
+    name: string | null;
+    min_qty: number;
+    discount_amount: number;
+    active: boolean;
+  }>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('promos')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) {
+    logger.error({ err: error, id, patch }, 'updatePromo failed');
+    throw error;
+  }
+}
+
+export async function deletePromo(id: number): Promise<void> {
+  const { error } = await supabase.from('promos').delete().eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'deletePromo failed');
+    throw error;
+  }
+}
+
 // ---------- Orders ----------
 
 export async function createOrder(o: {
@@ -574,11 +698,17 @@ export async function createOrder(o: {
   qty: number;
   unit_price: number;
   total: number;
+  /** Flat USDT discount applied (0 when no promo matched). */
+  discount?: number;
   delivery?: string;
 }): Promise<DBOrder> {
   const { data, error } = await supabase
     .from('orders')
-    .insert({ ...o, delivery: o.delivery ?? null })
+    .insert({
+      ...o,
+      discount: o.discount ?? 0,
+      delivery: o.delivery ?? null,
+    })
     .select('*')
     .single();
   if (error || !data) throw error ?? new Error('createOrder failed');

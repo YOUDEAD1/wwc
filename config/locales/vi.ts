@@ -82,6 +82,7 @@ export const vi: Record<string, string> = {
     '{prod_qty_selected} *Tóm tắt đơn hàng*\n\n' +
     '*{name}*\n' +
     '{prod_qty_selected} Số lượng: *{qty}*\n' +
+    '{promo_line}' +
     '{prod_total_amount} Tổng: *{total} USDT*\n' +
     '{prod_wallet} Ví: *{balance} USDT*\n\n' +
     'Chọn phương thức thanh toán:',
@@ -101,6 +102,9 @@ export const vi: Record<string, string> = {
   'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
+  'shop.product.line.promo':
+    '{prod_promo} *Khuyến mãi:* {label} — −{discount} USDT',
+  'shop.product.line.promo.fallback_label': 'số lượng ≥ {min_qty}',
   'shop.product.out_of_stock_popup':
     '❌ Sản phẩm này hiện đã hết hàng. Vui lòng liên hệ quản trị viên để bổ sung kho hoặc chọn sản phẩm tương tự.',
   'shop.note.title': '📝 *Ghi chú sản phẩm*',

@@ -73,9 +73,33 @@ export type DBOrder = {
   qty: number;
   unit_price: number;
   total: number;
+  /** Flat USDT discount applied at order time (0 if no promo matched). */
+  discount: number;
   delivery: string | null;
   status: 'paid' | 'refunded' | 'cancelled';
   created_at: string;
+};
+
+/**
+ * Quantity-threshold flat-USDT promo. Either or both of `product_id`
+ * / `telegram_id` may be `null` — `null` means "applies to any". The
+ * resolution code picks the most specific scope tier that matches.
+ *
+ * `min_qty` is the threshold qty for the promo to fire;
+ * `discount_amount` is the flat USDT taken off the line total
+ * (clamped at the line total at apply time so we never go negative).
+ */
+export type DBPromo = {
+  id: number;
+  product_id: number | null;
+  telegram_id: number | null;
+  name: string | null;
+  min_qty: number;
+  discount_amount: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by: number | null;
 };
 
 export type DBDeposit = {
