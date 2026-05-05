@@ -264,6 +264,11 @@ export async function logTopupSubmitted(api: Api, args: {
   user: LogUser;
   depositDbId: number;
   method: string;
+  /**
+   * Legacy 6-digit Binance Pay note code. Empty string for the new
+   * Pay-ID flow that doesn't ask for a note code anymore — we just
+   * skip the line in the rendered log when it's empty.
+   */
   noteCode: string;
   orderId: string;
 }): Promise<void> {
@@ -277,8 +282,10 @@ export async function logTopupSubmitted(api: Api, args: {
     bodyLines: [
       '💸 <b>Top-up</b>',
       `Method: ${escapeHtml(args.method)}`,
-      `Note code: <code>${args.noteCode}</code>`,
-      `Binance Order ID: <code>${escapeHtml(args.orderId)}</code>`,
+      ...(args.noteCode
+        ? [`Note code: <code>${escapeHtml(args.noteCode)}</code>`]
+        : []),
+      `Reference: <code>${escapeHtml(args.orderId)}</code>`,
       `Status: <b>pending</b>`,
     ],
   });

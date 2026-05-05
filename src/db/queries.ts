@@ -15,6 +15,7 @@ import type {
   DBGiftCodeRedemption,
   DBUserPriceOverride,
   DBPromo,
+  PaymentProvider,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -1165,7 +1166,8 @@ export async function addPaymentMethod(p: {
   name: string;
   instructions: string;
   min_amount?: number;
-  provider?: 'manual' | 'binance_pay';
+  provider?: PaymentProvider;
+  address?: string | null;
 }): Promise<DBPaymentMethod> {
   const { data, error } = await supabase
     .from('payment_methods')
@@ -1174,11 +1176,20 @@ export async function addPaymentMethod(p: {
       instructions: p.instructions,
       min_amount: p.min_amount ?? 1,
       provider: p.provider ?? 'manual',
+      address: p.address ?? null,
     })
     .select('*')
     .single();
   if (error || !data) throw error ?? new Error('addPaymentMethod failed');
   return data as DBPaymentMethod;
+}
+
+/** Update the wallet address on an existing payment method row. */
+export async function setPaymentMethodAddress(
+  id: number,
+  address: string | null,
+): Promise<void> {
+  await supabase.from('payment_methods').update({ address }).eq('id', id);
 }
 
 /** Look up a deposit by its merchantTradeNo (stored in `reference`). */
@@ -1193,20 +1204,51 @@ export async function findDepositByReference(reference: string): Promise<DBDepos
   return (data as DBDeposit) ?? null;
 }
 
+/**
+ * Look up a deposit by its on-chain transaction hash. Used to dedupe
+ * tx submissions before we credit the wallet again.
+ */
+export async function findDepositByTxHash(
+  tx_hash: string,
+): Promise<DBDeposit | null> {
+  const { data } = await supabase
+    .from('deposits')
+    .select('*')
+    .eq('tx_hash', tx_hash)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as DBDeposit) ?? null;
+}
+
 export async function createDeposit(d: {
   user_id: number;
   method: string;
   amount: number;
   reference?: string;
   note?: string;
+  tx_hash?: string;
 }): Promise<DBDeposit> {
   const { data, error } = await supabase
     .from('deposits')
-    .insert({ ...d, reference: d.reference ?? null, note: d.note ?? null })
+    .insert({
+      ...d,
+      reference: d.reference ?? null,
+      note: d.note ?? null,
+      tx_hash: d.tx_hash ?? null,
+    })
     .select('*')
     .single();
   if (error || !data) throw error ?? new Error('createDeposit failed');
   return data as DBDeposit;
+}
+
+/** Persist the on-chain tx hash on an existing deposit row. */
+export async function setDepositTxHash(
+  id: number,
+  tx_hash: string,
+): Promise<void> {
+  await supabase.from('deposits').update({ tx_hash }).eq('id', id);
 }
 
 export async function listDeposits(user_id: number, limit = 10): Promise<DBDeposit[]> {
@@ -1608,6 +1650,11 @@ export async function setDepositStatus(
 
 export async function setDepositAmount(id: number, amount: number): Promise<void> {
   await supabase.from('deposits').update({ amount }).eq('id', id);
+}
+
+/** Update the free-text `note` column on a deposit row. */
+export async function setDepositNote(id: number, note: string | null): Promise<void> {
+  await supabase.from('deposits').update({ note }).eq('id', id);
 }
 
 // ---------- User management (admin) ----------

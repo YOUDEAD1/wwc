@@ -146,6 +146,12 @@ export type DBDeposit = {
   status: 'pending' | 'approved' | 'rejected';
   reference: string | null;
   note: string | null;
+  /**
+   * On-chain transaction hash (USDT TRC20 / BEP20) or
+   * Binance Pay merchantTradeNo. Unique once set so the same tx
+   * cannot be re-submitted to credit a second deposit.
+   */
+  tx_hash: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -179,6 +185,26 @@ export type DBWalletLedger = {
   created_at: string;
 };
 
+/**
+ * Payment provider tag.
+ *
+ *   `manual`       – admin-described instructions, manually approved.
+ *   `binance_pay`  – Binance Pay. Auto-approved via webhook callback
+ *                    when the merchant `createOrder` flow is used, or
+ *                    via `queryOrder` lookup when the user submits
+ *                    their Order ID for the direct Pay-ID flow.
+ *   `usdt_trc20`   – On-chain USDT on TRON. Auto-approved by looking
+ *                    up the user-submitted tx hash on TronGrid.
+ *   `usdt_bep20`   – On-chain USDT on BSC. Auto-approved by looking
+ *                    up the user-submitted tx hash on a public BSC
+ *                    JSON-RPC endpoint.
+ */
+export type PaymentProvider =
+  | 'manual'
+  | 'binance_pay'
+  | 'usdt_trc20'
+  | 'usdt_bep20';
+
 export type DBPaymentMethod = {
   id: number;
   name: string;
@@ -186,6 +212,11 @@ export type DBPaymentMethod = {
   min_amount: number;
   active: boolean;
   sort_order: number;
-  provider: 'manual' | 'binance_pay';
+  provider: PaymentProvider;
+  /**
+   * Wallet address users send funds to. Required for
+   * `usdt_trc20` / `usdt_bep20`; null for the others.
+   */
+  address: string | null;
   created_at: string;
 };

@@ -97,6 +97,20 @@ export type AdminFlow =
       step: 'min_amount';
       data: { name: string; instructions: string };
     }
+  // -------- Add USDT (TRC20 / BEP20) auto-verifying payment method --------
+  // Two-step flow: admin sends the wallet address, then the minimum
+  // amount in USDT. The bot inserts a `payment_methods` row with the
+  // appropriate auto-verifying provider tag.
+  | {
+      type: 'add_chain_payment';
+      step: 'address';
+      data: { provider: 'usdt_trc20' | 'usdt_bep20' };
+    }
+  | {
+      type: 'add_chain_payment';
+      step: 'min_amount';
+      data: { provider: 'usdt_trc20' | 'usdt_bep20'; address: string };
+    }
   | { type: 'set_text'; step: 'key'; data: Record<string, never> }
   | { type: 'set_text'; step: 'value'; data: { key: string } }
   | { type: 'set_emoji'; step: 'key'; data: Record<string, never> }
@@ -217,6 +231,25 @@ export type UserFlow =
         note_code: string;
         /** ms-since-epoch when the user opened the screen; used to enforce a 30-min window */
         opened_at: number;
+      };
+    }
+  | {
+      /**
+       * On-chain USDT top-up — TRC20 or BEP20. The user is shown a
+       * wallet address; their next plain-text reply is treated as a
+       * transaction hash and looked up on the corresponding chain
+       * via `services/depositVerify`. On a clean match the bot
+       * credits the wallet immediately; on any mismatch the deposit
+       * stays in the admin-pending queue for manual verification.
+       */
+      type: 'chain_topup';
+      step: 'tx_hash';
+      data: {
+        method_id: number;
+        method_name: string;
+        provider: 'usdt_trc20' | 'usdt_bep20';
+        address: string;
+        min_amount: number;
       };
     }
   | {

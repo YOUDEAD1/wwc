@@ -146,3 +146,85 @@ export function makeMerchantTradeNo(userId: number): string {
   const suffix = crypto.randomBytes(4).toString('hex').toUpperCase();
   return `STG${userId}${Date.now().toString(36).toUpperCase()}${suffix}`.slice(0, 32);
 }
+
+// ---------------------------------------------------------------------
+//  Order query — used by the auto-verify path in the Pay-ID top-up
+//  flow. The user pastes their Binance Pay Order ID (= merchantTradeNo
+//  for orders we created via createOrder, or a payer-side txn id for
+//  pure Pay-ID transfers). We try `merchantTradeNo` first because
+//  that's the merchant-side identifier the API actually understands.
+//  Pay-ID-only transfers will return a "not found" response — those
+//  remain a manual-verify case.
+// ---------------------------------------------------------------------
+
+export type BinanceQueryOrderResponse = {
+  status: 'SUCCESS' | 'FAIL';
+  code: string;
+  data?: {
+    merchantId?: string;
+    prepayId?: string;
+    transactionId?: string;
+    merchantTradeNo?: string;
+    /**
+     * Order lifecycle: INITIAL | PENDING | PAID | CANCELED | ERROR |
+     *                  REFUNDING | REFUNDED | EXPIRED.
+     */
+    status?: string;
+    currency?: string;
+    orderAmount?: string;
+    /** ISO ms timestamp when the order was created. */
+    createTime?: number;
+    /** ISO ms timestamp when the order was paid (only when status=PAID). */
+    transactTime?: number;
+  };
+  errorMessage?: string;
+};
+
+/**
+ * Query a Binance Pay order by `merchantTradeNo`. Returns the response
+ * data on a successful HTTP+API call (the caller should still inspect
+ * `data.status === 'PAID'`). Throws only on transport failure or when
+ * the API returns a non-FOUND error code we cannot interpret.
+ *
+ * Returns `null` when Binance reports the trade number doesn't exist.
+ */
+export async function queryOrder(args: {
+  merchantTradeNo: string;
+}): Promise<BinanceQueryOrderResponse['data'] | null> {
+  if (!binanceEnabled()) throw new Error('Binance Pay not configured');
+
+  const body = { merchantTradeNo: args.merchantTradeNo };
+  const rawBody = JSON.stringify(body);
+  const timestamp = String(Date.now());
+  const nonce = makeNonce();
+  const signature = sign(timestamp, nonce, rawBody);
+
+  const res = await fetch(`${BINANCE_PAY_BASE}/binancepay/openapi/v2/order/query`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'BinancePay-Timestamp': timestamp,
+      'BinancePay-Nonce': nonce,
+      'BinancePay-Certificate-SN': env.BINANCE_PAY_API_KEY || '',
+      'BinancePay-Signature': signature,
+    },
+    body: rawBody,
+  });
+  const json = (await res.json()) as BinanceQueryOrderResponse;
+  // 400000 = order not found (or merchant has no permission to view).
+  // Treat that as a soft "not found" instead of a hard error so the
+  // caller can fall back to manual verification.
+  if (json.status === 'FAIL' && json.code && /400000|400001/.test(json.code)) {
+    return null;
+  }
+  if (!res.ok || json.status !== 'SUCCESS' || !json.data) {
+    logger.warn(
+      { json, http: res.status, merchantTradeNo: args.merchantTradeNo },
+      'Binance Pay queryOrder failed',
+    );
+    throw new Error(
+      json.errorMessage || `Binance Pay queryOrder error: ${json.code || res.status}`,
+    );
+  }
+  return json.data;
+}
