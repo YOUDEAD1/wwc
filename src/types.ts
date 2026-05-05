@@ -147,11 +147,24 @@ export type DBDeposit = {
   reference: string | null;
   note: string | null;
   /**
-   * On-chain transaction hash (USDT TRC20 / BEP20) or
+   * On-chain transaction hash (USDT TRC20 / BEP20 / TON / LTC) or
    * Binance Pay merchantTradeNo. Unique once set so the same tx
    * cannot be re-submitted to credit a second deposit.
    */
   tx_hash: string | null;
+  /**
+   * For LTC quote-on-display top-ups: the LTC amount the user
+   * committed to send when the quote was generated. The verifier
+   * compares the on-chain output value against this with a small
+   * tolerance for fee dust. Null for every other provider.
+   */
+  expected_amount: number | null;
+  /**
+   * For LTC quote-on-display top-ups: ISO timestamp when the rate
+   * quote stops being valid (10 minutes after deposit creation).
+   * Null for every other provider.
+   */
+  quote_expires_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -188,13 +201,24 @@ export type DBWalletLedger = {
 /**
  * Payment provider tag.
  *
- * Currently only `manual` is wired up — the user is shown the
- * admin-defined instructions and submits a top-up request that the
- * admin approves manually. The column itself is kept on the row so
- * a future auto-verification flow can re-introduce more values
- * without another schema migration.
+ * Each non-`manual` value triggers a different verifier path:
+ *   - `binance_pay`  Binance Pay queryOrder lookup (Order ID input)
+ *   - `usdt_trc20`   TronGrid REST tx lookup (tx hash input)
+ *   - `usdt_bep20`   BSC public RPC tx lookup (tx hash input)
+ *   - `usdt_ton`     TonCenter REST tx lookup (tx hash input)
+ *   - `ltc`          BlockCypher REST tx lookup (USD amount input →
+ *                    quote LTC amount, then tx hash)
+ *
+ * `manual` skips auto-verification and falls back to the
+ * legacy admin-approval flow.
  */
-export type PaymentProvider = 'manual' | 'binance_pay' | 'usdt_trc20' | 'usdt_bep20';
+export type PaymentProvider =
+  | 'manual'
+  | 'binance_pay'
+  | 'usdt_trc20'
+  | 'usdt_bep20'
+  | 'usdt_ton'
+  | 'ltc';
 
 export type DBPaymentMethod = {
   id: number;
@@ -205,9 +229,9 @@ export type DBPaymentMethod = {
   sort_order: number;
   provider: PaymentProvider;
   /**
-   * Optional wallet / account address. Currently unused by any flow
-   * (kept on the row so a future auto-verification provider can
-   * pick it up without a schema change).
+   * Wallet / account address. Required for every non-manual
+   * provider (chain providers verify the recipient against this;
+   * Binance Pay stores the merchant Pay ID here for display).
    */
   address: string | null;
   created_at: string;

@@ -1228,6 +1228,13 @@ export async function createDeposit(d: {
   reference?: string;
   note?: string;
   tx_hash?: string;
+  /**
+   * LTC quote-on-display: amount in LTC the user committed to send.
+   * Verifier compares the on-chain output value against this.
+   */
+  expected_amount?: number;
+  /** ISO timestamp when an LTC quote stops being valid. */
+  quote_expires_at?: string;
 }): Promise<DBDeposit> {
   const { data, error } = await supabase
     .from('deposits')
@@ -1236,6 +1243,8 @@ export async function createDeposit(d: {
       reference: d.reference ?? null,
       note: d.note ?? null,
       tx_hash: d.tx_hash ?? null,
+      expected_amount: d.expected_amount ?? null,
+      quote_expires_at: d.quote_expires_at ?? null,
     })
     .select('*')
     .single();

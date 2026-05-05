@@ -262,6 +262,30 @@ export async function logOrderCreated(api: Api, args: {
 
 
 
+export async function logTopupSubmitted(api: Api, args: {
+  user: LogUser;
+  depositDbId: number;
+  method: string;
+  /** Auto-verify reference (Order ID for Binance Pay, tx hash for chains). */
+  reference: string;
+  /** Optional reason auto-verify deferred to manual (verifier message). */
+  reason?: string;
+}): Promise<void> {
+  const body = compose({
+    tag: 'TOPUP',
+    title: 'Top-up Submitted (manual review)',
+    user: args.user,
+    headerLines: [`🆔 Deposit DB ID: ${args.depositDbId}`],
+    bodyLines: [
+      '💸 <b>Top-up</b>',
+      `Method: ${escapeHtml(args.method)}`,
+      `Reference: <code>${escapeHtml(args.reference)}</code>`,
+      ...(args.reason ? [`Auto-verify deferred: ${escapeHtml(args.reason)}`] : []),
+    ],
+  });
+  await send(api, body);
+}
+
 export async function logTopupResolved(api: Api, args: {
   user: LogUser;
   depositDbId: number;

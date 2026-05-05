@@ -196,7 +196,35 @@ export type AdminFlow =
   // Single-field edits invoked from the promo edit card.
   | { type: 'promo_edit_qty'; step: 'value'; data: { promo_id: number } }
   | { type: 'promo_edit_discount'; step: 'value'; data: { promo_id: number } }
-  | { type: 'promo_edit_name'; step: 'value'; data: { promo_id: number } };
+  | { type: 'promo_edit_name'; step: 'value'; data: { promo_id: number } }
+  // -------- Auto-verify payment-method wizards --------
+  // Each provider wizard captures a display name then a wallet
+  // address (or Binance Pay merchant ID). `provider` distinguishes
+  // which network the address must validate against.
+  | {
+      type: 'add_chain_payment';
+      step: 'name';
+      data: {
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay';
+      };
+    }
+  | {
+      type: 'add_chain_payment';
+      step: 'address';
+      data: {
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay';
+        name: string;
+      };
+    }
+  | {
+      type: 'add_chain_payment';
+      step: 'min_amount';
+      data: {
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay';
+        name: string;
+        address: string;
+      };
+    };
 
 /**
  * Multi-step user-side flow.
@@ -260,6 +288,69 @@ export type UserFlow =
         productId: number;
         promptChatId: number;
         promptMessageId?: number;
+      };
+    }
+  | {
+      /**
+       * Binance Pay top-up: user has been shown the Pay ID and is
+       * expected to paste their Order ID back as text. We auto-verify
+       * via `queryOrder` and fall back to manual approval otherwise.
+       */
+      type: 'binance_payid_topup';
+      step: 'order_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        opened_at: number;
+      };
+    }
+  | {
+      /**
+       * USDT chain (BEP20 / TRC20 / TON) top-up: user has seen the
+       * deposit address and is expected to paste the on-chain tx
+       * hash. We verify recipient + USDT contract + amount on-chain
+       * and credit on success.
+       */
+      type: 'chain_topup';
+      step: 'tx_hash';
+      data: {
+        method_id: number;
+        method_name: string;
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton';
+        address: string;
+        min_amount: number;
+      };
+    }
+  | {
+      /**
+       * LTC quote-on-display top-up — three steps:
+       *   `usd_amount`  – user types the USD amount they want.
+       *   `tx_hash`     – after we lock the LTC quote, user sends
+       *                   that exact LTC amount and pastes the tx
+       *                   hash (within the 10-min window).
+       */
+      type: 'ltc_topup';
+      step: 'usd_amount';
+      data: {
+        method_id: number;
+        method_name: string;
+        address: string;
+        min_amount: number;
+      };
+    }
+  | {
+      type: 'ltc_topup';
+      step: 'tx_hash';
+      data: {
+        method_id: number;
+        method_name: string;
+        address: string;
+        min_amount: number;
+        deposit_id: number;
+        usd_amount: number;
+        ltc_amount: number;
+        ltc_rate: number;
+        expires_at_ms: number;
       };
     }
   | {
