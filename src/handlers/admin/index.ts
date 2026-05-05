@@ -59,7 +59,15 @@ import {
   countAvailableProductItems,
   listAvailableProductItems,
   clearProductItems,
+  setDepositNote,
 } from '../../db/queries.js';
+import { verifyAndCreditDeposit } from '../../services/depositVerify.js';
+import {
+  isValidTronAddress,
+  isValidBscAddress,
+  isValidTonAddress,
+  isValidLtcAddress,
+} from '../../services/chainVerify.js';
 import * as cache from '../../services/cache.js';
 import { credit } from '../../services/wallet.js';
 import {
@@ -1091,14 +1099,24 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = undefined;
   const kb = new InlineKeyboard()
-    .text('➕ Add Payment Method', 'adm:pay:add')
-    .text('📋 List & Manage', 'adm:pay:list');
+    .text('➕ Manual Method', 'adm:pay:add')
+    .text('📋 List & Manage', 'adm:pay:list')
+    .row()
+    .text('🟡 Add Binance Pay', 'adm:pay:add:binance_pay')
+    .row()
+    .text('🟢 Add USDT (TRC20)', 'adm:pay:add:usdt_trc20')
+    .text('🟡 Add USDT (BEP20)', 'adm:pay:add:usdt_bep20')
+    .row()
+    .text('🔵 Add USDT (TON)', 'adm:pay:add:usdt_ton')
+    .text('⚪ Add LTC', 'adm:pay:add:ltc');
   backRow(kb);
   await ctx.editMessageText(
     [
       '💳 *Payment Methods*',
       '',
-      'Add a payment method by giving it a name, on-screen instructions, and a minimum top-up amount. Users will see the instructions when they tap the method, then submit a deposit request you approve from the *Deposits* tab.',
+      '*Manual* — name, instructions, min amount. Users submit a deposit request you approve from the *Deposits* tab.',
+      '',
+      '*Auto-verify* — pick a provider, set the wallet address (or Binance Pay ID), and the bot verifies the user\'s tx hash / Order ID on-chain and credits the wallet automatically.',
     ].join('\n'),
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -1112,6 +1130,72 @@ adminBot.callbackQuery('adm:pay:add', async (ctx) => {
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
 });
+
+// ---------- Auto-verify payment-method wizards ----------
+const CHAIN_WIZARD_INFO: Record<
+  'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay',
+  { title: string; namePlaceholder: string; addressPrompt: string }
+> = {
+  usdt_trc20: {
+    title: '🟢 *Add USDT (TRC20)*',
+    namePlaceholder: 'USDT (TRC20)',
+    addressPrompt:
+      'Send the *TRON wallet address* (starts with `T…`, 34 chars) that USDT TRC20 deposits should land in.',
+  },
+  usdt_bep20: {
+    title: '🟡 *Add USDT (BEP20)*',
+    namePlaceholder: 'USDT (BEP20)',
+    addressPrompt:
+      'Send the *BSC wallet address* (starts with `0x…`, 42 chars) that USDT BEP20 deposits should land in.',
+  },
+  usdt_ton: {
+    title: '🔵 *Add USDT (TON)*',
+    namePlaceholder: 'USDT (TON)',
+    addressPrompt:
+      'Send the *TON wallet address* (`EQ…` or `UQ…`, 48 chars) that USDT (TON Jetton) deposits should land in.',
+  },
+  ltc: {
+    title: '⚪ *Add LTC (Litecoin)*',
+    namePlaceholder: 'LTC',
+    addressPrompt:
+      'Send the *Litecoin address* (`L…` / `M…` / `ltc1…`) that LTC deposits should land in.',
+  },
+  binance_pay: {
+    title: '🟡 *Add Binance Pay (auto-verify)*',
+    namePlaceholder: 'Binance Pay',
+    addressPrompt:
+      'Send your *Binance Pay merchant ID* (the numeric Pay ID users will see on the top-up screen).',
+  },
+};
+
+adminBot.callbackQuery(
+  /^adm:pay:add:(usdt_trc20|usdt_bep20|usdt_ton|ltc|binance_pay)$/,
+  async (ctx) => {
+    const provider = ctx.match[1] as
+      | 'usdt_trc20'
+      | 'usdt_bep20'
+      | 'usdt_ton'
+      | 'ltc'
+      | 'binance_pay';
+    await ctx.answerCallbackQuery();
+    ctx.session.adminFlow = {
+      type: 'add_chain_payment',
+      step: 'name',
+      data: { provider },
+    };
+    const info = CHAIN_WIZARD_INFO[provider];
+    await ctx.editMessageText(
+      [
+        info.title,
+        '',
+        `Send the *display name* shown in the user-facing top-up menu (e.g. \`${info.namePlaceholder}\`).`,
+        '',
+        'Or `/cancel` to abort.',
+      ].join('\n'),
+      { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+    );
+  },
+);
 
 adminBot.callbackQuery('adm:pay:list', async (ctx) => {
   await ctx.answerCallbackQuery();
@@ -1129,7 +1213,22 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
   const lines = ['💳 *Payment Methods*', ''];
   const kb = new InlineKeyboard();
   for (const m of methods) {
-    lines.push(`#${m.id}  ${m.name}  (min $${m.min_amount})`);
+    const tag =
+      m.provider === 'manual'
+        ? 'manual'
+        : m.provider === 'binance_pay'
+          ? 'auto • Binance Pay'
+          : m.provider === 'usdt_trc20'
+            ? 'auto • TRC20'
+            : m.provider === 'usdt_bep20'
+              ? 'auto • BEP20'
+              : m.provider === 'usdt_ton'
+                ? 'auto • TON'
+                : 'auto • LTC';
+    lines.push(`#${m.id}  ${m.name}  (min $${m.min_amount}) — _${tag}_`);
+    if (m.address) {
+      lines.push(`     \`${m.address}\``);
+    }
     kb.text(`🗑 #${m.id} ${m.name}`.slice(0, 60), `adm:pay:del:${m.id}`).row();
   }
   backRow(kb);
@@ -1165,14 +1264,21 @@ async function showDepositList(ctx: AppCtx): Promise<void> {
         ? `_(amount not set)_`
         : `$${d.amount}`;
     const refLine = d.reference ? `\n     ref: \`${d.reference}\`` : '';
+    const txLine = d.tx_hash && d.tx_hash !== d.reference ? `\n     tx: \`${d.tx_hash}\`` : '';
     const noteLine = d.note ? `\n     ${d.note}` : '';
     lines.push(
-      `#${d.id}  user \`${d.user_id}\`  ${d.method}  ${amountStr}` + refLine + noteLine,
+      `#${d.id}  user \`${d.user_id}\`  ${d.method}  ${amountStr}` +
+        refLine +
+        txLine +
+        noteLine,
     );
     kb.text(`💲 Set Amount #${d.id}`, `adm:dep:amt:${d.id}`).row();
     kb.text(`✅ Approve #${d.id}`, `adm:dep:ok:${d.id}`)
       .text(`❌ Reject #${d.id}`, `adm:dep:no:${d.id}`)
       .row();
+    if (d.tx_hash) {
+      kb.text(`🔁 Re-verify #${d.id}`, `adm:dep:rv:${d.id}`).row();
+    }
   }
   backRow(kb);
   await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
@@ -1294,6 +1400,62 @@ adminBot.callbackQuery(/^adm:dep:no:(\d+)$/, async (ctx) => {
     balanceAfter: null,
     resolvedBy: ctx.from!.id,
   });
+  await showDepositList(ctx);
+});
+
+adminBot.callbackQuery(/^adm:dep:rv:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const dep = await getDeposit(id);
+  if (!dep || dep.status !== 'pending') {
+    await ctx.answerCallbackQuery({ text: 'Deposit no longer pending.' });
+    await showDepositList(ctx);
+    return;
+  }
+  if (!dep.tx_hash) {
+    await ctx.answerCallbackQuery({
+      text: 'No tx hash / order id stored — nothing to re-verify.',
+      show_alert: true,
+    });
+    return;
+  }
+  await ctx.answerCallbackQuery({ text: 'Re-running auto-verify…' });
+  const looksLikeBinanceOrderId = /^\d+$/.test(dep.tx_hash);
+  let result;
+  try {
+    result = await verifyAndCreditDeposit({
+      api: ctx.api,
+      deposit: dep,
+      submission: looksLikeBinanceOrderId
+        ? { merchantTradeNo: dep.tx_hash }
+        : { txHash: dep.tx_hash },
+      logUser: {
+        telegram_id: dep.user_id,
+        username: null,
+        first_name: null,
+        email: null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, depId: id }, 're-verify threw');
+    result = { ok: false as const, reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}` };
+  }
+  if (result.ok) {
+    try {
+      await ctx.api.sendMessage(
+        dep.user_id,
+        `✅ Your deposit *#${id}* of *$${result.amount.toFixed(2)}* has been credited.\nNew balance: *$${Number(result.newBalance).toFixed(2)}*`,
+        { parse_mode: 'Markdown' },
+      );
+    } catch (err) {
+      logger.warn({ err }, 'Could not DM depositor');
+    }
+  } else {
+    try {
+      await setDepositNote(id, `auto-verify failed: ${result.reason}`);
+    } catch {
+      /* noop */
+    }
+  }
   await showDepositList(ctx);
 });
 
@@ -3571,6 +3733,92 @@ adminBot.on('message:text', async (ctx, next) => {
           parse_mode: 'Markdown',
           reply_markup: rootMenu(),
         });
+      }
+      return;
+    }
+
+    if (flow.type === 'add_chain_payment') {
+      const provider = flow.data.provider;
+      const info = CHAIN_WIZARD_INFO[provider];
+      if (flow.step === 'name') {
+        if (!text || text.length < 2 || text.length > 60) {
+          await ctx.reply('❌ Name must be 2–60 chars. Try again or `/cancel`.');
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_chain_payment',
+          step: 'address',
+          data: { provider, name: text },
+        };
+        await ctx.reply(info.addressPrompt, { parse_mode: 'Markdown' });
+        return;
+      }
+      if (flow.step === 'address') {
+        const addr = text.trim();
+        if (provider === 'usdt_trc20' && !isValidTronAddress(addr)) {
+          await ctx.reply(
+            '❌ Not a valid TRON address. Should start with `T` and be 34 chars. Try again or `/cancel`.',
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+        if (provider === 'usdt_bep20' && !isValidBscAddress(addr)) {
+          await ctx.reply(
+            '❌ Not a valid BSC address. Should be `0x` + 40 hex chars. Try again or `/cancel`.',
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+        if (provider === 'usdt_ton' && !isValidTonAddress(addr)) {
+          await ctx.reply(
+            '❌ Not a valid TON address. Should be `EQ…` or `UQ…` 48 chars. Try again or `/cancel`.',
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+        if (provider === 'ltc' && !isValidLtcAddress(addr)) {
+          await ctx.reply(
+            '❌ Not a valid Litecoin address. Should start with `L`, `M`, `3`, or `ltc1`. Try again or `/cancel`.',
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+        if (provider === 'binance_pay' && !/^[0-9]{6,30}$/.test(addr)) {
+          await ctx.reply(
+            '❌ Not a valid Binance Pay merchant ID. Should be 6–30 digits. Try again or `/cancel`.',
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_chain_payment',
+          step: 'min_amount',
+          data: { provider, name: flow.data.name, address: addr },
+        };
+        await ctx.reply(
+          'Send the *minimum top-up amount* in USD (e.g. `1` or `5`).',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'min_amount') {
+        const min = Number(text);
+        if (!Number.isFinite(min) || min < 0) {
+          await ctx.reply('❌ Bad amount. Send a non-negative number.');
+          return;
+        }
+        const m = await addPaymentMethod({
+          name: flow.data.name,
+          instructions: '(auto-verify — instructions are rendered by the bot)',
+          min_amount: min,
+          provider,
+          address: flow.data.address,
+        });
+        ctx.session.adminFlow = undefined;
+        await ctx.reply(
+          `✅ *${m.name}* added (id=${m.id})\nProvider: \`${provider}\`\nAddress: \`${flow.data.address}\`\nMin: $${min}`,
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
       }
       return;
     }

@@ -144,6 +144,51 @@ const schema = z.object({
     .trim()
     .optional()
     .transform(logChannelTransformer(DEFAULT_ORDER_LOG_CHAT)),
+
+  // ----------------------------------------------------------------
+  //  Binance Pay (auto-verification)
+  // ----------------------------------------------------------------
+  // When both key and secret are set, the bot calls the Binance Pay
+  // queryOrder API to auto-credit Pay-ID top-ups whose Order ID
+  // resolves to a PAID order on the merchant account. When unset,
+  // the Pay-ID flow falls back to manual admin approval — the rest
+  // of the bot still works fine.
+  BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
+  BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  TonCenter (TON USDT jetton verification)
+  // ----------------------------------------------------------------
+  // Optional API key for https://toncenter.com . Without it the
+  // free-tier rate limit (1 req/sec) still works, but a key buys
+  // higher throughput and avoids 429 throttles when many users
+  // submit TON top-ups in parallel.
+  TONCENTER_API_KEY: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  TronGrid (USDT TRC20 verification)
+  // ----------------------------------------------------------------
+  // Optional API key for https://www.trongrid.io . The verifier
+  // works without one but rate-limits aggressively under load.
+  TRONGRID_API_KEY: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  BlockCypher (LTC verification)
+  // ----------------------------------------------------------------
+  // Optional API token for https://www.blockcypher.com . The free
+  // tier allows ~3 req/sec which is fine for low-volume bots; set
+  // this when you start seeing 429 responses from the verifier.
+  BLOCKCYPHER_TOKEN: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  CoinGecko (LTC/USD rate quote)
+  // ----------------------------------------------------------------
+  // Optional API key for https://www.coingecko.com . The free
+  // public endpoint works without one but is rate-limited to a few
+  // requests per minute. Set this on production so the LTC quote
+  // never fails to fetch when many users open the LTC top-up
+  // screen at once.
+  COINGECKO_API_KEY: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.
