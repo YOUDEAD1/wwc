@@ -13,8 +13,6 @@ import { renderMdHtml } from '../services/premium.js';
 import {
   BINANCE_PAY_ID,
   BINANCE_PAY_NAME,
-  BINANCE_TOPUP_WINDOW_MINUTES,
-  generateNoteCode,
 } from '../services/binance.js';
 import { verifyAndCreditDeposit } from '../services/depositVerify.js';
 import { logger } from '../logger.js';
@@ -38,20 +36,22 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
 
     if (m.provider === 'binance_pay') {
-      // Open a Pay-ID top-up session. The 6-digit note code is the
-      // user's proof of ownership when they later submit an Order ID.
-      const noteCode = generateNoteCode();
+      // Open a Pay-ID top-up session. We don't ask for any note code
+      // anymore — the user just sends to the Pay ID and pastes back
+      // the Order ID. Auto-verify (`queryOrder`) handles attribution
+      // when API keys are configured; otherwise the admin verifies
+      // the Order ID manually on Binance.
       ctx.session.userFlow = {
         type: 'binance_payid_topup',
         step: 'order_id',
         data: {
           method_id: m.id,
           method_name: m.name,
-          note_code: noteCode,
+          note_code: '',
           opened_at: Date.now(),
         },
       };
-      await ctx.editMessageText(renderMdHtml(buildPayIdScreen(noteCode)), {
+      await ctx.editMessageText(renderMdHtml(buildPayIdScreen()), {
         parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
       });
@@ -156,20 +156,6 @@ async function handleBinancePayIdSubmit(
   flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'binance_payid_topup' }>,
   text: string,
 ): Promise<void> {
-  // Enforce the 30-minute submission window.
-  const elapsedMs = Date.now() - flow.data.opened_at;
-  const windowMs = BINANCE_TOPUP_WINDOW_MINUTES * 60_000;
-  if (elapsedMs > windowMs) {
-    ctx.session.userFlow = undefined;
-    await ctx.reply(
-      renderMdHtml(
-        `⏰ This top-up window expired (${BINANCE_TOPUP_WINDOW_MINUTES} min limit). Please reopen Binance Pay top-up to get a fresh note code.`,
-      ),
-      { parse_mode: 'HTML' },
-    );
-    return;
-  }
-
   const orderId = text.replace(/\s+/g, '');
   if (!/^[A-Za-z0-9]{6,64}$/.test(orderId)) {
     await ctx.reply(
@@ -184,17 +170,29 @@ async function handleBinancePayIdSubmit(
   // Record a pending deposit. Amount starts as a placeholder (0.01)
   // so the database CHECK (amount > 0) passes — auto-verify will
   // overwrite it with the real Binance order amount on success.
+  // The Order ID is stored as both `reference` (for cross-lookup)
+  // and `tx_hash` (for the unique-constraint dedupe).
   let depId: number;
   try {
     const dep = await createDeposit({
       user_id: ctx.user.telegram_id,
       method: flow.data.method_name,
       amount: 0.01,
-      reference: flow.data.note_code,
-      note: `Order ID: ${orderId}`,
+      reference: orderId,
+      tx_hash: orderId,
+      note: `Binance Pay Order ID: ${orderId}`,
     });
     depId = dep.id;
   } catch (err) {
+    const msg = (err as { message?: string })?.message ?? '';
+    if (/23505|duplicate/i.test(msg)) {
+      await ctx.reply(
+        renderMdHtml('⚠️ This Order ID has already been submitted.'),
+        { parse_mode: 'HTML' },
+      );
+      ctx.session.userFlow = undefined;
+      return;
+    }
     logger.error({ err }, 'Pay-ID deposit insert failed');
     await ctx.reply(
       '⚠️ Could not record your submission. Please try again or contact support.',
@@ -206,9 +204,10 @@ async function handleBinancePayIdSubmit(
 
   // Try auto-verify via Binance Pay queryOrder. If it succeeds the
   // user gets an instant credit; if not (e.g. direct Pay-ID transfers
-  // that the merchant API can't introspect), we fall back to the
-  // existing manual-verify message + admin log entry.
-  const dep = await findDepositByReference(flow.data.note_code);
+  // that the merchant API can't introspect, or API keys aren't
+  // configured), we fall back to the existing manual-verify message
+  // + admin log entry.
+  const dep = await findDepositByReference(orderId);
   let autoOk = false;
   if (dep) {
     try {
@@ -258,7 +257,6 @@ async function handleBinancePayIdSubmit(
           `✅ *Submitted (#${depId}).*`,
           '',
           `Order ID: \`${orderId}\``,
-          `Note code: \`${flow.data.note_code}\``,
           '',
           "Admin will verify your payment on the Binance Pay dashboard and credit your wallet shortly. You'll get a confirmation message when it's done.",
         ].join('\n'),
@@ -277,7 +275,7 @@ async function handleBinancePayIdSubmit(
       },
       depositDbId: depId,
       method: flow.data.method_name,
-      noteCode: flow.data.note_code,
+      noteCode: '',
       orderId,
     });
   }
@@ -433,27 +431,24 @@ async function handleChainTopupSubmit(
 }
 
 /**
- * Build the Pay-ID top-up screen body. The note code is highlighted
- * because it MUST be pasted into Binance Pay's Remark field — without
- * it the admin has no way to attribute the transfer to this user.
+ * Build the Pay-ID top-up screen. Mirrors the simple two-step UX
+ * the user sketched (no note code): show Pay ID + Pay Name, ask for
+ * the Order ID. Attribution is handled by `queryOrder` when API keys
+ * exist; otherwise the admin verifies on Binance manually.
  */
-function buildPayIdScreen(noteCode: string): string {
+function buildPayIdScreen(): string {
   return [
-    '💎 *Binance Pay — Deposit*',
+    '🟡 *Binance Pay*',
     '',
     `*Pay ID:* \`${BINANCE_PAY_ID}\``,
-    `*Binance Pay Name:* *${BINANCE_PAY_NAME}*`,
-    `*Your note code:* \`${noteCode}\``,
+    `*Binance Pay Name:* ${BINANCE_PAY_NAME}`,
     '',
-    `1️⃣ Open Binance Pay → *Send* → enter Pay ID \`${BINANCE_PAY_ID}\`.`,
-    '2️⃣ Send any USDT amount.',
-    `3️⃣ Paste the note code \`${noteCode}\` into the *Remark* / *Note* field — without this, your payment cannot be credited.`,
-    '4️⃣ Copy the Binance *Order ID* from the receipt and paste it below.',
+    '1️⃣ Send any USDT amount to the Pay ID above',
+    '2️⃣ Paste your *Order ID* below',
     '',
-    `⏰ Only payments completed within *${BINANCE_TOPUP_WINDOW_MINUTES} minutes* of opening this screen will be credited.`,
-    '⚠️ Up to *2 decimal places* will be credited (USDT amounts are stored to 2 decimals).',
+    '⚠️ _Only up to *3 decimal places* will be credited to your wallet._',
     '',
-    '*Send your Order ID below.*',
+    '*Please send your Order ID below:*',
   ].join('\n');
 }
 
@@ -463,25 +458,28 @@ function buildChainTopupScreen(m: {
   min_amount: number;
   provider: string;
 }): string {
-  const network = m.provider === 'usdt_trc20' ? 'TRON (TRC20)' : 'BSC (BEP20)';
-  const explorer =
-    m.provider === 'usdt_trc20' ? 'https://tronscan.org/#/transaction/' : 'https://bscscan.com/tx/';
-  return [
-    `🟢 *${m.name}*`,
+  const isBep = m.provider === 'usdt_bep20';
+  const heading = isBep ? '🟢 *USDT (BEP-20) Top-Up*' : '🟢 *USDT (TRC-20) Top-Up*';
+  const lines: string[] = [
+    heading,
     '',
-    `*Network:* ${network}`,
-    `*Address:*`,
-    `\`${m.address ?? '(not set)'}\``,
-    `*Minimum:* $${m.min_amount}`,
+    `\`${m.address ?? '(address not set)'}\``,
     '',
-    '1️⃣ Send any USDT amount to the address above.',
-    '2️⃣ Wait for *1 confirmation* on-chain.',
-    `3️⃣ Copy the *transaction hash* from your wallet (or [explorer](${explorer})) and paste it below.`,
+    '1️⃣ Send any USDT amount to the address above',
+    '2️⃣ Paste your *Transaction Hash (TXID)* below',
     '',
-    'The bot will automatically verify the transfer on-chain and credit your wallet — no admin approval needed.',
-    '',
-    '*Send your TX hash below.*',
-  ].join('\n');
+  ];
+  if (isBep) {
+    lines.push(
+      '⚠️ _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._',
+    );
+  }
+  lines.push('⚠️ _Up to *3 decimal places* only._');
+  lines.push('');
+  lines.push('_Only up to 3 decimal places will be credited to your wallet._');
+  lines.push('');
+  lines.push('*Please send your TX hash below:*');
+  return lines.join('\n');
 }
 
 async function showTopupMenu(ctx: AppCtx, asEdit = false) {
@@ -495,9 +493,9 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
   const kb = new InlineKeyboard();
   methods.forEach((m, i) => {
     let label: string;
-    if (m.provider === 'binance_pay') label = `💎 ${m.name}`;
+    if (m.provider === 'binance_pay') label = `🟡 ${m.name}`;
     else if (m.provider === 'usdt_trc20') label = `🟢 ${m.name}`;
-    else if (m.provider === 'usdt_bep20') label = `🟡 ${m.name}`;
+    else if (m.provider === 'usdt_bep20') label = `🟢 ${m.name}`;
     else label = `💳 ${m.name}`;
     kb.text(label, `topup:method:${m.id}`);
     if (i % 2 === 1) kb.row();
