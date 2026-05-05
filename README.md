@@ -291,45 +291,7 @@ Examples:
 
 ---
 
-## 8. Automatic Payment Verification
-
-The bot auto-credits user wallets without admin approval for three
-payment providers. Add them from `/admin → 💳 Payments`:
-
-| Provider              | Verification source                                | Admin button                  |
-| --------------------- | -------------------------------------------------- | ----------------------------- |
-| **Binance Pay**       | Binance Pay merchant API (`queryOrder`) + webhook  | `💎 Add Binance Pay (auto)`   |
-| **USDT (TRC20)**      | TronGrid public REST API                           | `🟢 Add USDT (TRC20)`         |
-| **USDT (BEP20)**      | Public BSC JSON-RPC (no API key required)          | `🟡 Add USDT (BEP20)`         |
-
-How each one works for the user:
-
-- **Binance Pay** — user is shown your hard-coded Pay ID + a 6-digit
-  note code, sends the transfer in their Binance app, then pastes
-  the **Order ID** back. The bot calls Binance Pay `queryOrder`
-  with that id; if `status === PAID` the wallet is credited
-  immediately. Pure Pay-ID transfers that the merchant API can't see
-  fall back to the existing manual-approval queue (Deposits panel).
-- **USDT (TRC20 / BEP20)** — admin configures the receiving wallet
-  address once. Users send any amount and paste the **transaction
-  hash**. The bot looks up the tx on-chain, verifies the contract is
-  the official USDT token, the recipient matches the configured
-  address, the amount ≥ minimum, and credits the wallet. Each tx
-  hash can credit at most one deposit (DB-level unique index).
-
-Failed auto-verifications still show up in the Deposits panel with
-the verifier's reason inline. The admin can either approve manually
-or tap **🔁 Re-verify** to re-run the checker (useful when the chain
-hasn't confirmed yet at the moment of submission).
-
-The TRC20 verifier uses public TronGrid endpoints (no API key); the
-BEP20 verifier hops between several public BSC RPCs with automatic
-failover. Zero env config beyond the existing `BINANCE_PAY_API_KEY`
-/ `BINANCE_PAY_API_SECRET` pair.
-
----
-
-## 9. About Inline-Button "Colors"
+## 8. About Inline-Button "Colors"
 
 The Telegram **Bot API does not expose a per-button color property**.
 What looks like coloured buttons in some bots is actually a unicode prefix
@@ -345,7 +307,7 @@ This bot does the same, fully driven by config:
 
 ---
 
-## 10. About Premium Emojis
+## 9. About Premium Emojis
 
 Telegram allows bots to attach `custom_emoji` `MessageEntity`s referencing
 emoji IDs from premium packs. Premium subscribers see the animated/styled
@@ -363,7 +325,7 @@ pair via:
 
 ---
 
-## 11. Roadmap / Out-of-Scope
+## 10. Roadmap / Out-of-Scope
 
 These are intentionally left as straightforward extensions:
 

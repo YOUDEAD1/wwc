@@ -260,37 +260,7 @@ export async function logOrderCreated(api: Api, args: {
   await send(api, body, 'orders');
 }
 
-export async function logTopupSubmitted(api: Api, args: {
-  user: LogUser;
-  depositDbId: number;
-  method: string;
-  /**
-   * Legacy 6-digit Binance Pay note code. Empty string for the new
-   * Pay-ID flow that doesn't ask for a note code anymore — we just
-   * skip the line in the rendered log when it's empty.
-   */
-  noteCode: string;
-  orderId: string;
-}): Promise<void> {
-  const body = compose({
-    tag: 'TOPUP',
-    title: 'Top-up Submitted (pending)',
-    user: args.user,
-    headerLines: [
-      `🆔 Deposit DB ID: ${args.depositDbId}`,
-    ],
-    bodyLines: [
-      '💸 <b>Top-up</b>',
-      `Method: ${escapeHtml(args.method)}`,
-      ...(args.noteCode
-        ? [`Note code: <code>${escapeHtml(args.noteCode)}</code>`]
-        : []),
-      `Reference: <code>${escapeHtml(args.orderId)}</code>`,
-      `Status: <b>pending</b>`,
-    ],
-  });
-  await send(api, body);
-}
+
 
 export async function logTopupResolved(api: Api, args: {
   user: LogUser;

@@ -97,20 +97,6 @@ export type AdminFlow =
       step: 'min_amount';
       data: { name: string; instructions: string };
     }
-  // -------- Add USDT (TRC20 / BEP20) auto-verifying payment method --------
-  // Two-step flow: admin sends the wallet address, then the minimum
-  // amount in USDT. The bot inserts a `payment_methods` row with the
-  // appropriate auto-verifying provider tag.
-  | {
-      type: 'add_chain_payment';
-      step: 'address';
-      data: { provider: 'usdt_trc20' | 'usdt_bep20' };
-    }
-  | {
-      type: 'add_chain_payment';
-      step: 'min_amount';
-      data: { provider: 'usdt_trc20' | 'usdt_bep20'; address: string };
-    }
   | { type: 'set_text'; step: 'key'; data: Record<string, never> }
   | { type: 'set_text'; step: 'value'; data: { key: string } }
   | { type: 'set_emoji'; step: 'key'; data: Record<string, never> }
@@ -214,44 +200,8 @@ export type AdminFlow =
 
 /**
  * Multi-step user-side flow.
- *
- * `binance_payid_topup` is the Pay-ID + Order-ID flow. The user is
- * shown a one-time 6-digit note code which they paste into Binance
- * Pay's Remark field when sending USDT. They then send their Binance
- * order ID back to the bot, which records a pending deposit for an
- * admin to verify.
  */
 export type UserFlow =
-  | {
-      type: 'binance_payid_topup';
-      step: 'order_id';
-      data: {
-        method_id: number;
-        method_name: string;
-        note_code: string;
-        /** ms-since-epoch when the user opened the screen; used to enforce a 30-min window */
-        opened_at: number;
-      };
-    }
-  | {
-      /**
-       * On-chain USDT top-up — TRC20 or BEP20. The user is shown a
-       * wallet address; their next plain-text reply is treated as a
-       * transaction hash and looked up on the corresponding chain
-       * via `services/depositVerify`. On a clean match the bot
-       * credits the wallet immediately; on any mismatch the deposit
-       * stays in the admin-pending queue for manual verification.
-       */
-      type: 'chain_topup';
-      step: 'tx_hash';
-      data: {
-        method_id: number;
-        method_name: string;
-        provider: 'usdt_trc20' | 'usdt_bep20';
-        address: string;
-        min_amount: number;
-      };
-    }
   | {
       /**
        * Capture an email address sent as a message after tapping "Set
@@ -351,7 +301,7 @@ export type SessionData = {
   qtyInput?: Record<number, string>;
   /** Multi-step admin input flow, if any */
   adminFlow?: AdminFlow;
-  /** Multi-step user input flow, if any (e.g. Binance Pay top-up). */
+  /** Multi-step user input flow, if any. */
   userFlow?: UserFlow;
   /**
    * Whether we've already silently cleared any leftover persistent
