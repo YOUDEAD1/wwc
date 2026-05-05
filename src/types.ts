@@ -188,22 +188,13 @@ export type DBWalletLedger = {
 /**
  * Payment provider tag.
  *
- *   `manual`       – admin-described instructions, manually approved.
- *   `binance_pay`  – Binance Pay. Auto-approved via webhook callback
- *                    when the merchant `createOrder` flow is used, or
- *                    via `queryOrder` lookup when the user submits
- *                    their Order ID for the direct Pay-ID flow.
- *   `usdt_trc20`   – On-chain USDT on TRON. Auto-approved by looking
- *                    up the user-submitted tx hash on TronGrid.
- *   `usdt_bep20`   – On-chain USDT on BSC. Auto-approved by looking
- *                    up the user-submitted tx hash on a public BSC
- *                    JSON-RPC endpoint.
+ * Currently only `manual` is wired up — the user is shown the
+ * admin-defined instructions and submits a top-up request that the
+ * admin approves manually. The column itself is kept on the row so
+ * a future auto-verification flow can re-introduce more values
+ * without another schema migration.
  */
-export type PaymentProvider =
-  | 'manual'
-  | 'binance_pay'
-  | 'usdt_trc20'
-  | 'usdt_bep20';
+export type PaymentProvider = 'manual' | 'binance_pay' | 'usdt_trc20' | 'usdt_bep20';
 
 export type DBPaymentMethod = {
   id: number;
@@ -214,8 +205,9 @@ export type DBPaymentMethod = {
   sort_order: number;
   provider: PaymentProvider;
   /**
-   * Wallet address users send funds to. Required for
-   * `usdt_trc20` / `usdt_bep20`; null for the others.
+   * Optional wallet / account address. Currently unused by any flow
+   * (kept on the row so a future auto-verification provider can
+   * pick it up without a schema change).
    */
   address: string | null;
   created_at: string;

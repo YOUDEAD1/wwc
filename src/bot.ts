@@ -11,7 +11,6 @@ import { registerSupport, restoreLiveSupportSession } from './handlers/support.j
 import { registerTopup } from './handlers/topup.js';
 import { adminBot } from './handlers/admin/index.js';
 import { refreshSettings } from './services/settings.js';
-import { seedDefaultPaymentMethods } from './services/seed.js';
 
 export async function buildBot(): Promise<Bot<AppCtx>> {
   const bot = new Bot<AppCtx>(env.BOT_TOKEN);
@@ -39,10 +38,6 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
 
   // Pre-load admin-editable settings into memory.
   await refreshSettings();
-
-  // First-run seed: drop in default Binance Pay + USDT (BEP-20)
-  // payment methods if the table is empty.
-  await seedDefaultPaymentMethods();
 
   // Rehydrate any in-flight Live Support session from the DB so a
   // Render redeploy mid-session doesn't break the user→admin relay.

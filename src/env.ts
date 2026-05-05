@@ -69,15 +69,6 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().optional().or(z.literal('')),
   OPENAI_MODEL: z.string().default('gpt-4o-mini'),
 
-  // Binance Pay (auto-approval). When both key and secret are set, the
-  // bot exposes Binance Pay as a payment provider and listens for
-  // webhook callbacks at PUBLIC_BASE_URL/webhook/binance.
-  BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
-  BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
-  // Public HTTPS URL of this bot service (e.g. Railway domain). Used
-  // as the Binance Pay returnUrl + webhookUrl. No trailing slash.
-  PUBLIC_BASE_URL: z.string().url().optional().or(z.literal('')),
-
   // ----------------------------------------------------------------
   //  Outbound email (welcome / receipts / password-style notices)
   // ----------------------------------------------------------------

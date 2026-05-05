@@ -1092,93 +1092,13 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
   ctx.session.adminFlow = undefined;
   const kb = new InlineKeyboard()
     .text('➕ Add Payment Method', 'adm:pay:add')
-    .text('📋 List & Manage', 'adm:pay:list')
-    .row()
-    .text('💎 Add Binance Pay (auto)', 'adm:pay:add_binance')
-    .row()
-    .text('🟢 Add USDT (TRC20)', 'adm:pay:add_trc20')
-    .text('🟡 Add USDT (BEP20)', 'adm:pay:add_bep20');
+    .text('📋 List & Manage', 'adm:pay:list');
   backRow(kb);
   await ctx.editMessageText(
     [
       '💳 *Payment Methods*',
       '',
-      '_Auto-verifying methods do not require admin approval — the bot looks up each transaction on-chain or via the Binance Pay API and credits the user instantly._',
-      '',
-      '• *Binance Pay* — users submit their Order ID; the bot calls Binance `queryOrder`. Pure Pay-ID transfers fall back to manual approval.',
-      '• *USDT (TRC20 / BEP20)* — users paste the on-chain tx hash; the bot looks it up on TronGrid / a public BSC RPC and verifies the recipient + amount.',
-    ].join('\n'),
-    { parse_mode: 'Markdown', reply_markup: kb },
-  );
-});
-
-adminBot.callbackQuery('adm:pay:add_trc20', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = {
-    type: 'add_chain_payment',
-    step: 'address',
-    data: { provider: 'usdt_trc20' },
-  };
-  await ctx.editMessageText(
-    [
-      '🟢 *Add USDT (TRC20) — Auto-verify*',
-      '',
-      'Send the *TRON wallet address* (starts with `T…`, 34 chars) that users should send USDT to.',
-      '',
-      'The bot will verify each top-up against this address via TronGrid and credit the user automatically — no manual approval needed.',
-      '',
-      'Or `/cancel`.',
-    ].join('\n'),
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-  );
-});
-
-adminBot.callbackQuery('adm:pay:add_bep20', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = {
-    type: 'add_chain_payment',
-    step: 'address',
-    data: { provider: 'usdt_bep20' },
-  };
-  await ctx.editMessageText(
-    [
-      '🟡 *Add USDT (BEP20) — Auto-verify*',
-      '',
-      'Send the *BSC wallet address* (starts with `0x…`, 42 chars) that users should send USDT to.',
-      '',
-      'The bot will verify each top-up against this address via a public BSC RPC and credit the user automatically — no manual approval needed.',
-      '',
-      'Or `/cancel`.',
-    ].join('\n'),
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-  );
-});
-
-adminBot.callbackQuery('adm:pay:add_binance', async (ctx) => {
-  await ctx.answerCallbackQuery();
-
-  // Don't add a duplicate Binance Pay row if one already exists.
-  const existing = (await listPaymentMethods()).find((p) => p.provider === 'binance_pay');
-  const m =
-    existing ??
-    (await addPaymentMethod({
-      name: 'Binance Pay',
-      instructions: 'Send USDT to the Pay ID and submit the Order ID for admin verification.',
-      min_amount: 1,
-      provider: 'binance_pay',
-    }));
-
-  const { BINANCE_PAY_ID, BINANCE_PAY_NAME } = await import('../../services/binance.js');
-  const kb = new InlineKeyboard().text('⬅️ Back', 'adm:pay');
-  await ctx.editMessageText(
-    [
-      existing
-        ? `✅ *Binance Pay already configured* (id ${m.id})`
-        : `✅ *Binance Pay added* (id ${m.id})`,
-      '',
-      `Pay ID: \`${BINANCE_PAY_ID}\` (${BINANCE_PAY_NAME})`,
-      '',
-      'Users will see this Pay ID + a unique 6-digit note code under *Topup → Binance Pay*. They paste their Binance Order ID back, then you verify the transfer on https://merchant.binance.com / your Binance Pay app and approve from the *Deposits* tab.',
+      'Add a payment method by giving it a name, on-screen instructions, and a minimum top-up amount. Users will see the instructions when they tap the method, then submit a deposit request you approve from the *Deposits* tab.',
     ].join('\n'),
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -1245,19 +1165,11 @@ async function showDepositList(ctx: AppCtx): Promise<void> {
         ? `_(amount not set)_`
         : `$${d.amount}`;
     const refLine = d.reference ? `\n     ref: \`${d.reference}\`` : '';
-    const txLine = d.tx_hash ? `\n     tx: \`${d.tx_hash}\`` : '';
     const noteLine = d.note ? `\n     ${d.note}` : '';
     lines.push(
-      `#${d.id}  user \`${d.user_id}\`  ${d.method}  ${amountStr}` +
-        refLine +
-        txLine +
-        noteLine,
+      `#${d.id}  user \`${d.user_id}\`  ${d.method}  ${amountStr}` + refLine + noteLine,
     );
-    kb.text(`💲 Set Amount #${d.id}`, `adm:dep:amt:${d.id}`);
-    if (d.tx_hash) {
-      kb.text(`🔁 Re-verify #${d.id}`, `adm:dep:rv:${d.id}`);
-    }
-    kb.row();
+    kb.text(`💲 Set Amount #${d.id}`, `adm:dep:amt:${d.id}`).row();
     kb.text(`✅ Approve #${d.id}`, `adm:dep:ok:${d.id}`)
       .text(`❌ Reject #${d.id}`, `adm:dep:no:${d.id}`)
       .row();
@@ -1265,60 +1177,6 @@ async function showDepositList(ctx: AppCtx): Promise<void> {
   backRow(kb);
   await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
 }
-
-// Re-run the auto-verifier on a pending deposit. Useful when the
-// admin set/changed the wallet address after the user submitted, or
-// when chain confirmations were too slow on first attempt.
-adminBot.callbackQuery(/^adm:dep:rv:(\d+)$/, async (ctx) => {
-  const id = Number(ctx.match[1]);
-  const dep = await getDeposit(id);
-  if (!dep || dep.status !== 'pending') {
-    await ctx.answerCallbackQuery({ text: 'Deposit no longer pending.' });
-    await showDepositList(ctx);
-    return;
-  }
-  if (!dep.tx_hash) {
-    await ctx.answerCallbackQuery({
-      text: 'No tx hash on this deposit.',
-      show_alert: true,
-    });
-    return;
-  }
-  await ctx.answerCallbackQuery({ text: 'Re-verifying…' });
-  const { verifyAndCreditDeposit } = await import('../../services/depositVerify.js');
-  // Find the matching payment method to decide whether tx_hash is a
-  // chain hash or a Binance Pay merchantTradeNo.
-  const methods = await listPaymentMethods();
-  const m = methods.find((x) => x.name === dep.method);
-  const submission =
-    m?.provider === 'binance_pay'
-      ? { merchantTradeNo: dep.tx_hash }
-      : { txHash: dep.tx_hash };
-  const result = await verifyAndCreditDeposit({
-    api: ctx.api,
-    deposit: dep,
-    submission,
-  });
-  if (result.ok) {
-    try {
-      await ctx.api.sendMessage(
-        dep.user_id,
-        `✅ Your deposit *#${id}* of *$${result.amount.toFixed(2)}* was auto-verified and credited.\nNew balance: *$${Number(result.newBalance).toFixed(2)}*`,
-        { parse_mode: 'Markdown' },
-      );
-    } catch (err) {
-      logger.warn({ err }, 'Could not DM depositor after re-verify');
-    }
-    await ctx.reply(
-      `✅ Re-verified #${id}: credited $${result.amount.toFixed(2)}.`,
-    );
-  } else {
-    await ctx.reply(
-      `⚠️ Re-verify failed for #${id}: ${result.reason}`,
-    );
-  }
-  await showDepositList(ctx);
-});
 
 adminBot.callbackQuery(/^adm:dep:amt:(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
@@ -3713,72 +3571,6 @@ adminBot.on('message:text', async (ctx, next) => {
           parse_mode: 'Markdown',
           reply_markup: rootMenu(),
         });
-      }
-      return;
-    }
-
-    if (flow.type === 'add_chain_payment') {
-      const { isValidTronAddress, isValidBscAddress } = await import(
-        '../../services/chainVerify.js'
-      );
-      if (flow.step === 'address') {
-        const addr = text.trim();
-        const ok =
-          flow.data.provider === 'usdt_trc20'
-            ? isValidTronAddress(addr)
-            : isValidBscAddress(addr);
-        if (!ok) {
-          await ctx.reply(
-            flow.data.provider === 'usdt_trc20'
-              ? '❌ That isn\'t a valid TRON address. Expected a 34-char base58 string starting with `T`.'
-              : '❌ That isn\'t a valid BSC address. Expected `0x` followed by 40 hex chars.',
-            { parse_mode: 'Markdown' },
-          );
-          return;
-        }
-        ctx.session.adminFlow = {
-          type: 'add_chain_payment',
-          step: 'min_amount',
-          data: { provider: flow.data.provider, address: addr },
-        };
-        await ctx.reply(
-          'Send the *minimum top-up amount* in USDT (e.g. `1`).',
-          { parse_mode: 'Markdown' },
-        );
-        return;
-      }
-      if (flow.step === 'min_amount') {
-        const min = Number(text);
-        if (!Number.isFinite(min) || min < 0) {
-          await ctx.reply('❌ Bad amount.');
-          return;
-        }
-        const provider = flow.data.provider;
-        const name =
-          provider === 'usdt_trc20'
-            ? 'USDT (TRC20)'
-            : 'USDT (BEP20)';
-        const network = provider === 'usdt_trc20' ? 'TRON' : 'BSC';
-        const m = await addPaymentMethod({
-          name,
-          instructions: `Send USDT on ${network} to the address shown, then paste the transaction hash. The bot will verify on-chain and credit your wallet automatically.`,
-          min_amount: min,
-          provider,
-          address: flow.data.address,
-        });
-        ctx.session.adminFlow = undefined;
-        await ctx.reply(
-          [
-            `✅ *${m.name}* added (id ${m.id}).`,
-            '',
-            `Address: \`${flow.data.address}\``,
-            `Min: $${min}`,
-            '',
-            '_Top-ups via this method will be auto-verified on-chain._',
-          ].join('\n'),
-          { parse_mode: 'Markdown', reply_markup: rootMenu() },
-        );
-        return;
       }
       return;
     }
