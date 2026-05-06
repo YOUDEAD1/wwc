@@ -587,7 +587,7 @@ export const en: Record<string, string> = {
   'topup.title': '👛 *Topup Wallet*',
   'topup.choose_method': 'Choose a payment method:',
   'topup.empty_methods': 'No payment methods configured. Please contact support.',
-  'topup.method.body': '*{name}*\n\n{instructions}\n\nMin amount: *{min}*',
+  'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested':
     '✅ Topup request submitted (#{id}).\nAdmin will verify and credit your wallet shortly.',
 

@@ -1176,7 +1176,7 @@ export async function addPaymentMethod(p: {
     .insert({
       name: p.name,
       instructions: p.instructions,
-      min_amount: p.min_amount ?? 1,
+      min_amount: p.min_amount ?? 0,
       provider: p.provider ?? 'manual',
       address: p.address ?? null,
       pay_name: p.pay_name ?? null,

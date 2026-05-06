@@ -195,13 +195,6 @@ export async function verifyAndCreditDeposit(args: {
       return { ok: false, reason: `binance returned non-positive amount: ${tx.amount}` };
     }
     const amount = truncate3(rawAmount);
-    const minAmount = Number(method.min_amount) || 0;
-    if (amount < minAmount) {
-      return {
-        ok: false,
-        reason: `amount ${amount} below minimum $${minAmount}`,
-      };
-    }
 
     // Dedupe on the Binance internal transactionId. Stored in the
     // existing `tx_hash` column whose partial-unique index already
@@ -234,16 +227,17 @@ export async function verifyAndCreditDeposit(args: {
     const dedupeOk = await checkDedupe(txHash, deposit.id);
     if (!dedupeOk.ok) return dedupeOk;
 
-    const minAmount = Number(method.min_amount) || 0;
+    // Minimum-amount enforcement was removed at the user's request —
+    // verifiers now accept any non-zero on-chain amount.
     const expectedAddress = method.address;
 
     let result;
     if (provider === 'usdt_trc20') {
-      result = await verifyTrc20Tx({ txHash, expectedAddress, minAmount });
+      result = await verifyTrc20Tx({ txHash, expectedAddress, minAmount: 0 });
     } else if (provider === 'usdt_bep20') {
-      result = await verifyBep20Tx({ txHash, expectedAddress, minAmount });
+      result = await verifyBep20Tx({ txHash, expectedAddress, minAmount: 0 });
     } else {
-      result = await verifyTonUsdtTx({ txHash, expectedAddress, minAmount });
+      result = await verifyTonUsdtTx({ txHash, expectedAddress, minAmount: 0 });
     }
     if (!result.ok) return { ok: false, reason: result.reason };
 

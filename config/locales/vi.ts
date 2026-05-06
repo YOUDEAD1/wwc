@@ -229,7 +229,7 @@ export const vi: Record<string, string> = {
   'topup.title': '👛 *Nạp ví*',
   'topup.choose_method': 'Chọn phương thức thanh toán:',
   'topup.empty_methods': 'Chưa cấu hình phương thức thanh toán. Vui lòng liên hệ hỗ trợ.',
-  'topup.method.body': '*{name}*\n\n{instructions}\n\nTối thiểu: *{min}*',
+  'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested':
     '✅ Yêu cầu nạp đã gửi (#{id}).\nQuản trị viên sẽ xác nhận và cộng tiền sớm.',
 
