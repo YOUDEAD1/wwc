@@ -26,6 +26,7 @@
  * try/catch and only logs at `warn` on failure.
  */
 import type { Api, InputFile } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 
@@ -157,6 +158,7 @@ async function send(
   api: Api,
   body: string,
   channel: LogChannel = 'main',
+  replyMarkup?: InlineKeyboard,
 ): Promise<void> {
   const chain = chatChain(channel);
   for (let i = 0; i < chain.length; i++) {
@@ -165,6 +167,7 @@ async function send(
       await api.sendMessage(chat, body, {
         parse_mode: 'HTML',
         link_preview_options: { is_disabled: true },
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       });
       return;
     } catch (err) {
@@ -281,9 +284,22 @@ export async function logTopupSubmitted(api: Api, args: {
       `Method: ${escapeHtml(args.method)}`,
       `Reference: <code>${escapeHtml(args.reference)}</code>`,
       ...(args.reason ? [`Auto-verify deferred: ${escapeHtml(args.reason)}`] : []),
+      '',
+      '<i>Tap a button below to set the verified amount, then approve / reject without leaving this notification.</i>',
     ],
   });
-  await send(api, body);
+  // One-tap approve / reject keyboard so the admin doesn't have to
+  // open the full deposit list to action a manual-review entry.
+  // Mirrors the per-row keyboard in `showDepositList()` (admin/index.ts):
+  //   adm:dep:amt:N → set verified amount (required before Approve)
+  //   adm:dep:ok:N  → approve + credit
+  //   adm:dep:no:N  → reject
+  const kb = new InlineKeyboard()
+    .text(`💲 Set Amount #${args.depositDbId}`, `adm:dep:amt:${args.depositDbId}`)
+    .row()
+    .text(`✅ Approve #${args.depositDbId}`, `adm:dep:ok:${args.depositDbId}`)
+    .text(`❌ Reject #${args.depositDbId}`, `adm:dep:no:${args.depositDbId}`);
+  await send(api, body, 'main', kb);
 }
 
 export async function logTopupResolved(api: Api, args: {

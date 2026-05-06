@@ -37,12 +37,12 @@ const DEFAULT_EXPECTED_MS = 30_000;
 /** How often the message is re-rendered (Telegram's edit rate-limit). */
 const TICK_MS = 1_000;
 
-/**
- * Final result message stays on screen for this long before being
- * auto-deleted. Matches the user's spec: "after verification
- * [done / decline] need to auto delete this msg in 5 sec".
- */
-const FINAL_LIFETIME_MS = 5_000;
+// (Auto-delete of the final result message was removed per a
+// follow-up user request: "don't del this msg and payment approve
+// msg". Keeping the disapproval and the success cards on screen
+// makes sure the inline keyboard's `🆘 Admin Help` (rejection) and
+// `Back` (success) buttons remain tappable, and gives the user a
+// permanent record of how their deposit / direct-pay was resolved.)
 
 const BAR_WIDTH = 10;
 const FILLED = '▓';
@@ -61,7 +61,9 @@ export interface VerifyingMessage {
   messageId: number;
   /**
    * Stop the animation and rewrite the message to the supplied
-   * final body + keyboard. The message auto-deletes 5s later.
+   * final body + keyboard. The message stays on screen indefinitely
+   * (no auto-delete) so the user keeps a record of the verification
+   * result and any inline-keyboard buttons remain tappable.
    */
   done(opts: {
     text: string;
@@ -155,14 +157,8 @@ export async function startVerifyingMessage(args: {
       } catch (err) {
         logger.debug({ err, chatId, messageId }, 'verifying-msg final edit failed');
       }
-      setTimeout(() => {
-        void api.deleteMessage(chatId, messageId).catch((err) => {
-          logger.debug(
-            { err, chatId, messageId },
-            'verifying-msg auto-delete failed (likely already gone)',
-          );
-        });
-      }, FINAL_LIFETIME_MS);
+      // Final card stays on screen — see comment at the top of this
+      // module for the rationale.
     },
   };
 }

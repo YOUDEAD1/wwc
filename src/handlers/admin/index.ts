@@ -4820,7 +4820,22 @@ adminBot.on('message:text', async (ctx, next) => {
       );
       return;
     }
+    // Special-case the icon flow: an unexpected exception here used
+    // to fall through to the generic "Something went wrong.
+    // Cancelled." reply *and* discard the flow, forcing the admin
+    // to re-tap 🌟 Icon. Keep the flow armed and surface a
+    // friendlier hint so they can simply re-send the right input.
+    if (flow?.type === 'edit_payment_icon') {
+      await ctx.reply(
+        '⚠️ Couldn\'t set that as the icon. Send a single emoji ' +
+          '(or a *premium* custom emoji message), `clear` to reset, ' +
+          'or `/cancel` to abort.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
     await ctx.reply('⚠️ Something went wrong. Cancelled.', { reply_markup: rootMenu() });
+    ctx.session.adminFlow = undefined;
   }
 });
 
@@ -4849,6 +4864,15 @@ adminBot.on('message:document', async (ctx, next) => {
     await setBotTutorialField('file_type', 'document', ctx.from.id);
     ctx.session.adminFlow = undefined;
     await ctx.reply('✅ Bot Tutorial document saved.');
+    return;
+  }
+  if (flow.type === 'edit_payment_icon') {
+    await ctx.reply(
+      '⚠️ That\'s a document, not an emoji.\n\n' +
+        'Send a single emoji (or a *premium* custom emoji message). ' +
+        'Type `clear` to reset to default, or `/cancel` to abort.',
+      { parse_mode: 'Markdown' },
+    );
     return;
   }
   return next();
@@ -4951,7 +4975,41 @@ adminBot.on('message:video', async (ctx, next) => {
     await ctx.reply('✅ Bot Tutorial video saved.');
     return;
   }
+  if (flow.type === 'edit_payment_icon') {
+    await ctx.reply(
+      '⚠️ That\'s a video, not an emoji.\n\n' +
+        'Send a single emoji (or a *premium* custom emoji message). ' +
+        'Type `clear` to reset to default, or `/cancel` to abort.',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
   return next();
+});
+
+// Belt-and-braces catch-all for any *other* message type (voice,
+// video_note, audio, dice, poll, contact, location, venue, game…)
+// while the admin is in the edit_payment_icon flow. Without this,
+// a stray message would fall through every specific handler, hit
+// no branch, and bubble up to the generic "Something went wrong.
+// Cancelled." reply at the bottom of the text-message handler —
+// which is the exact bug the user reported. This handler keeps the
+// flow armed so the admin can simply re-send the correct emoji.
+adminBot.on('message', async (ctx, next) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'edit_payment_icon') return next();
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
+  // Plain text messages have already been routed by the dedicated
+  // text handler above (which knows how to validate and persist a
+  // single emoji or a custom-emoji entity). Anything else lands here
+  // and gets the polite retry hint.
+  if ('text' in ctx.message && ctx.message.text) return next();
+  await ctx.reply(
+    '⚠️ That message isn\'t an emoji.\n\n' +
+      'Send a single emoji (or a *premium* custom emoji message). ' +
+      'Type `clear` to reset to default, or `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
 });
 
 // "Skip" buttons for optional product fields

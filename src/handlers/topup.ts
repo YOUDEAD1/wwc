@@ -7,7 +7,7 @@ import {
   setDepositNote,
   setDepositStatus,
 } from '../db/queries.js';
-import { btn } from '../keyboards/helpers.js';
+import { btn, inlineBtn, inlineUrl } from '../keyboards/helpers.js';
 import { paymentMethodsKeyboard } from '../keyboards/payMethods.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
@@ -35,29 +35,32 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     await showTopupMenu(ctx, /* asEdit */ true);
   });
 
-  // "Others" payment method — opens a small support card whose CTA
-  // deep-links the user to the admin DM with a prefilled message
-  // asking about adding another payment method. The :origin suffix
-  // tells us which "Back" callback to use (top-up screen vs
-  // direct-pay screen).
+  // "Others" payment method — opens a slim "Payment Support" card
+  // that mirrors the main Support screen (Contact Admin / Live
+  // Support / Back) but is scoped to payment-method requests. The
+  // Contact Admin URL deep-links to the admin DM with a prefilled
+  // message about another payment method; Live Support reuses the
+  // existing single-slot live-chat flow. The :origin suffix tells
+  // us which "Back" callback to use (top-up screen vs direct-pay
+  // screen).
   bot.callbackQuery(/^pay:others:(topup|direct(?::\d+(?::\d+)?)?)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const origin = ctx.match[1] ?? 'topup';
     const backCallback = origin === 'topup' ? 'topup:open' : `pdpm:${origin.replace(/^direct:/, '')}`;
-    const url = getAdminContactUrlWithPrefill(
+    const contactUrl = getAdminContactUrlWithPrefill(
       'Hey Admin i need help about another payment method for bot payment method name is : ',
     );
     const text = [
-      '💡 *Other payment method*',
+      '🆘 *Payment Support*',
       '',
-      'Please support, Us For another payment method.',
-      '',
-      'Tap the button below to message admin and let us know which method you\'d like — we\'ll add it as soon as we can.',
+      '_*If the payment method you need isn\'t listed, tap Contact Admin to request it. For real-time help, use Live Support to chat with an admin directly.*_',
     ].join('\n');
-    const kb = new InlineKeyboard()
-      .url('💬 Message Admin', url)
-      .row()
-      .text(btn(ctx.lang, 'back'), backCallback);
+    const kb = new InlineKeyboard();
+    inlineUrl(kb, ctx.lang, 'support_contact', contactUrl);
+    kb.row();
+    inlineBtn(kb, ctx.lang, 'support_live', 'support:live:start');
+    kb.row();
+    kb.text(btn(ctx.lang, 'back'), backCallback);
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
       reply_markup: kb,
