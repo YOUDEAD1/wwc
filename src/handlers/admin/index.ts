@@ -1106,7 +1106,9 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
     .text('🟡 Add USDT (BEP20)', 'adm:pay:add:usdt_bep20')
     .row()
     .text('🔵 Add USDT (TON)', 'adm:pay:add:usdt_ton')
-    .text('⚪ Add LTC', 'adm:pay:add:ltc');
+    .text('⚪ Add LTC', 'adm:pay:add:ltc')
+    .row()
+    .text('🟡 Add Binance Pay', 'adm:pay:add:binance_pay');
   backRow(kb);
   await ctx.editMessageText(
     [
@@ -1188,6 +1190,25 @@ adminBot.callbackQuery(
   },
 );
 
+adminBot.callbackQuery('adm:pay:add:binance_pay', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'add_binance_payment',
+    step: 'name',
+    data: {},
+  };
+  await ctx.editMessageText(
+    [
+      '🟡 *Add Binance Pay*',
+      '',
+      'Send the *display name* shown in the user-facing top-up menu (e.g. `Binance Pay`).',
+      '',
+      'Or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
 adminBot.callbackQuery('adm:pay:list', async (ctx) => {
   await ctx.answerCallbackQuery();
   await showPaymentList(ctx);
@@ -1213,10 +1234,16 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
             ? 'auto • BEP20'
             : m.provider === 'usdt_ton'
               ? 'auto • TON'
-              : 'auto • LTC';
+              : m.provider === 'ltc'
+                ? 'auto • LTC'
+                : 'auto • Binance Pay';
     lines.push(`#${m.id}  ${m.name}  (min $${m.min_amount}) — _${tag}_`);
     if (m.address) {
-      lines.push(`     \`${m.address}\``);
+      const addrLabel = m.provider === 'binance_pay' ? 'Pay ID' : 'addr';
+      lines.push(`     ${addrLabel}: \`${m.address}\``);
+    }
+    if (m.provider === 'binance_pay' && m.pay_name) {
+      lines.push(`     Pay Name: \`${m.pay_name}\``);
     }
     kb.text(`🗑 #${m.id} ${m.name}`.slice(0, 60), `adm:pay:del:${m.id}`).row();
   }
@@ -3719,6 +3746,98 @@ adminBot.on('message:text', async (ctx, next) => {
           parse_mode: 'Markdown',
           reply_markup: rootMenu(),
         });
+      }
+      return;
+    }
+
+    if (flow.type === 'add_binance_payment') {
+      if (flow.step === 'name') {
+        if (!text || text.length < 2 || text.length > 60) {
+          await ctx.reply('❌ Name must be 2–60 chars. Try again or `/cancel`.');
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_binance_payment',
+          step: 'pay_id',
+          data: { name: text },
+        };
+        await ctx.reply(
+          [
+            'Send the *Binance Pay ID* — your 10-digit numeric ID (e.g. `1101801594`). The verifier rejects orders sent to any other Pay ID.',
+            '',
+            'You can find it in the Binance app → *Pay* → *Receive* → it\'s the long number above your QR code.',
+          ].join('\n'),
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'pay_id') {
+        const cleaned = text.replace(/\s+/g, '');
+        if (!/^\d{6,15}$/.test(cleaned)) {
+          await ctx.reply(
+            '❌ Pay ID should be 6–15 digits, no spaces. Try again or `/cancel`.',
+          );
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_binance_payment',
+          step: 'pay_name',
+          data: { name: flow.data.name, pay_id: cleaned },
+        };
+        await ctx.reply(
+          'Send the *Binance Pay Name* — the display string shown next to your Pay ID (e.g. `urweebboii`). Users see this on the deposit screen so they know they\'re paying the right account.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'pay_name') {
+        const trimmed = text.trim();
+        if (!trimmed || trimmed.length < 2 || trimmed.length > 64) {
+          await ctx.reply(
+            '❌ Pay Name must be 2–64 chars. Try again or `/cancel`.',
+          );
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_binance_payment',
+          step: 'min_amount',
+          data: {
+            name: flow.data.name,
+            pay_id: flow.data.pay_id,
+            pay_name: trimmed,
+          },
+        };
+        await ctx.reply(
+          'Send the *minimum top-up amount* in USDT (e.g. `1` or `5`).',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'min_amount') {
+        const min = Number(text);
+        if (!Number.isFinite(min) || min < 0) {
+          await ctx.reply('❌ Bad amount. Send a non-negative number.');
+          return;
+        }
+        const m = await addPaymentMethod({
+          name: flow.data.name,
+          instructions: '(auto-verify — instructions are rendered by the bot)',
+          min_amount: min,
+          provider: 'binance_pay',
+          address: flow.data.pay_id,
+          pay_name: flow.data.pay_name,
+        });
+        ctx.session.adminFlow = undefined;
+        await ctx.reply(
+          [
+            `✅ *${m.name}* added (id=${m.id})`,
+            `Provider: \`binance_pay\``,
+            `Pay ID: \`${flow.data.pay_id}\``,
+            `Pay Name: \`${flow.data.pay_name}\``,
+            `Min: $${min}`,
+          ].join('\n'),
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
       }
       return;
     }

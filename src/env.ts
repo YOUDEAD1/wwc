@@ -178,6 +178,30 @@ const schema = z.object({
   // never fails to fetch when many users open the LTC top-up
   // screen at once.
   COINGECKO_API_KEY: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  Binance Pay auto-verify (personal-account Spot API)
+  // ----------------------------------------------------------------
+  // Read-only API key + secret pair generated from
+  // https://www.binance.com/en/my/settings/api-management . The
+  // Binance Pay top-up screen polls the personal-account
+  // `GET /sapi/v1/pay/transactions` endpoint, matches the user's
+  // pasted Order ID against the merchant's incoming Pay history,
+  // and credits on a clean match. Only the `Reading` permission is
+  // required — Trade and Withdraw must stay OFF for safety.
+  //
+  // Both env vars are OPTIONAL. When either is unset the
+  // `binance_pay` admin wizard still works but the verifier
+  // gracefully falls back to manual admin approval (same as if the
+  // user pasted an unrelated order ID).
+  //
+  // NOTE: `api.binance.com` returns HTTP 451 from many cloud
+  // regions (Azure / Railway included). This integration assumes
+  // outbound traffic from the bot host is routed through a VPN to
+  // an exit IP Binance allows (e.g. ProtonVPN Netherlands). See
+  // README "VPN sidecar" section for the Railway setup.
+  BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
+  BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

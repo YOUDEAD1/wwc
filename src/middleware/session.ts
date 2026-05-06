@@ -224,6 +224,31 @@ export type AdminFlow =
         name: string;
         address: string;
       };
+    }
+  // -------- Binance Pay payment-method wizard --------
+  // Four-step wizard: name → pay_id → pay_name → min_amount.
+  // The pay_id (10-digit numeric Binance Pay ID) is stored on
+  // payment_methods.address; the pay_name (display string like
+  // "urweebboii") on payment_methods.pay_name.
+  | {
+      type: 'add_binance_payment';
+      step: 'name';
+      data: Record<string, never>;
+    }
+  | {
+      type: 'add_binance_payment';
+      step: 'pay_id';
+      data: { name: string };
+    }
+  | {
+      type: 'add_binance_payment';
+      step: 'pay_name';
+      data: { name: string; pay_id: string };
+    }
+  | {
+      type: 'add_binance_payment';
+      step: 'min_amount';
+      data: { name: string; pay_id: string; pay_name: string };
     };
 
 /**
@@ -305,6 +330,29 @@ export type UserFlow =
         provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton';
         address: string;
         min_amount: number;
+      };
+    }
+  | {
+      /**
+       * Binance Pay top-up: user has seen the merchant Pay ID + Pay
+       * Name screen and is expected to paste the Order ID returned
+       * by the Binance Pay app after sending. The verifier looks up
+       * `/sapi/v1/pay/transactions`, validates receiver / currency /
+       * window, and credits on success.
+       *
+       * `deposit_id` is created upfront when the user opens the
+       * screen so the 30-minute window is anchored to a real
+       * `deposits.created_at` row.
+       */
+      type: 'binance_pay_topup';
+      step: 'order_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        pay_id: string;
+        pay_name: string;
+        min_amount: number;
+        deposit_id: number;
       };
     }
   | {

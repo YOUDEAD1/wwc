@@ -699,6 +699,7 @@ function buildChainDirectScreen(
 function labelForMethod(m: DBPaymentMethod): string {
   const icon: Record<PaymentProvider, string> = {
     manual: '💳',
+    binance_pay: '🟡',
     usdt_trc20: '🟢',
     usdt_bep20: '🟡',
     usdt_ton: '🔵',

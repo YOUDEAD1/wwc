@@ -1169,6 +1169,7 @@ export async function addPaymentMethod(p: {
   min_amount?: number;
   provider?: PaymentProvider;
   address?: string | null;
+  pay_name?: string | null;
 }): Promise<DBPaymentMethod> {
   const { data, error } = await supabase
     .from('payment_methods')
@@ -1178,6 +1179,7 @@ export async function addPaymentMethod(p: {
       min_amount: p.min_amount ?? 1,
       provider: p.provider ?? 'manual',
       address: p.address ?? null,
+      pay_name: p.pay_name ?? null,
     })
     .select('*')
     .single();
