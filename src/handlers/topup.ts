@@ -11,6 +11,8 @@ import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
 import { verifyAndCreditDeposit } from '../services/depositVerify.js';
+import { friendlyReason } from '../services/verifyReason.js';
+import { consume, formatRetryAfter } from '../services/rateLimit.js';
 import { logger } from '../logger.js';
 import * as adminLog from '../services/adminLog.js';
 import type { DBPaymentMethod, PaymentProvider } from '../types.js';
@@ -352,7 +354,7 @@ async function handleChainTopupSubmit(
           `⏳ *Submitted (#${depId}) — pending admin review.*`,
           '',
           `Tx: \`${txHash}\``,
-          `Reason auto-verify deferred: _${result.reason}_`,
+          `_${friendlyReason(result.reason)}_`,
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
@@ -564,7 +566,7 @@ async function handleLtcTxHash(
           `⏳ *Submitted (#${flow.data.deposit_id}) — pending admin review.*`,
           '',
           `Tx: \`${cleaned}\``,
-          `Reason auto-verify deferred: _${result.reason}_`,
+          `_${friendlyReason(result.reason)}_`,
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
@@ -626,6 +628,21 @@ async function handleBinancePayOrderId(
   }
   const orderId = cleaned;
   const depId = flow.data.deposit_id;
+
+  // Rate-limit Binance Pay order-id submissions per user to prevent
+  // brute-force lookups. 5 attempts / 60s is generous for a real
+  // user (one paste per deposit) and tight enough to make scripted
+  // probing useless.
+  const rl = consume(`binance_pay:${ctx.user.telegram_id}`, 5, 60_000);
+  if (!rl.ok) {
+    await ctx.reply(
+      renderMdHtml(
+        `⏱ Too many Order ID attempts. Please try again in ${formatRetryAfter(rl.retryAfterMs)}.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
   ctx.session.userFlow = undefined;
 
   const dep = await getDeposit(depId);
@@ -709,7 +726,7 @@ async function handleBinancePayOrderId(
           `⏳ *Submitted (#${depId}) — pending admin review.*`,
           '',
           `Order ID: \`${orderId}\``,
-          `Reason auto-verify deferred: _${result.reason}_`,
+          `_${friendlyReason(result.reason)}_`,
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),

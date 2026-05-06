@@ -196,6 +196,21 @@ export async function verifyAndCreditDeposit(args: {
     }
     const amount = truncate3(rawAmount);
 
+    // Direct-pay amount guard. When the deposit carries an order
+    // intent, the user is paying for a *specific* product —
+    // anything less than the locked total must defer so we never
+    // fulfil an order for less than its price. Allow a tiny epsilon
+    // for floating-point rounding.
+    if (deposit.order_intent) {
+      const required = Number(deposit.order_intent.total);
+      if (Number.isFinite(required) && amount + 0.005 < required) {
+        return {
+          ok: false,
+          reason: `paid amount $${amount.toFixed(3)} is less than order total $${required.toFixed(2)}`,
+        };
+      }
+    }
+
     // Dedupe on the Binance internal transactionId. Stored in the
     // existing `tx_hash` column whose partial-unique index already
     // prevents double-credit across providers.
@@ -240,6 +255,23 @@ export async function verifyAndCreditDeposit(args: {
       result = await verifyTonUsdtTx({ txHash, expectedAddress, minAmount: 0 });
     }
     if (!result.ok) return { ok: false, reason: result.reason };
+
+    // Direct-pay amount guard. Same logic as the binance_pay branch:
+    // never fulfil an order if the user paid less than the locked
+    // total. The chain verifiers report the on-chain USDT amount,
+    // which is 1:1 with USD for our purposes.
+    if (deposit.order_intent) {
+      const required = Number(deposit.order_intent.total);
+      if (
+        Number.isFinite(required) &&
+        Number(result.amount) + 0.01 < required
+      ) {
+        return {
+          ok: false,
+          reason: `paid amount $${Number(result.amount).toFixed(2)} is less than order total $${required.toFixed(2)}`,
+        };
+      }
+    }
 
     return finalizeApproval({
       api: args.api,

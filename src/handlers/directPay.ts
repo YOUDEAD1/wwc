@@ -37,6 +37,8 @@ import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
 import { verifyAndCreditDeposit } from '../services/depositVerify.js';
+import { friendlyReason } from '../services/verifyReason.js';
+import { consume, formatRetryAfter } from '../services/rateLimit.js';
 import {
   applyUserPriceToProduct,
 } from '../services/pricing.js';
@@ -204,6 +206,70 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       return;
     }
 
+    if (m.provider === 'binance_pay') {
+      if (!m.address || !m.pay_name) {
+        await ctx.editMessageText(
+          renderMdHtml(
+            '⚠️ This Binance Pay method has no Pay ID / Pay Name configured. Please pick another network.',
+          ),
+          {
+            parse_mode: 'HTML',
+            reply_markup: new InlineKeyboard().text(
+              btn(ctx.lang, 'back'),
+              `pay:direct:${productId}`,
+            ),
+          },
+        );
+        return;
+      }
+
+      // Anchor the 30-minute acceptance window on a real deposit row,
+      // and lock the OrderIntent into it so the verifier can fulfil
+      // the order on success instead of crediting the wallet.
+      let depId: number;
+      try {
+        const dep = await createDeposit({
+          user_id: ctx.user.telegram_id,
+          method: m.name,
+          amount: intent.total,
+          note: 'Direct-pay Binance Pay screen opened — awaiting order id',
+          order_intent: intent,
+        });
+        depId = dep.id;
+      } catch (err) {
+        logger.error({ err }, 'direct-pay Binance Pay deposit insert failed');
+        await ctx.editMessageText(
+          '⚠️ Could not start the Binance Pay payment. Please try again or pick another network.',
+        );
+        return;
+      }
+
+      ctx.session.userFlow = {
+        type: 'direct_binance',
+        step: 'order_id',
+        data: {
+          method_id: m.id,
+          method_name: m.name,
+          pay_id: m.address,
+          pay_name: m.pay_name,
+          deposit_id: depId,
+          intent,
+        },
+      };
+
+      await ctx.editMessageText(
+        renderMdHtml(buildBinanceDirectScreen(m, intent)),
+        {
+          parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard().text(
+            btn(ctx.lang, 'back'),
+            `pay:direct:${productId}`,
+          ),
+        },
+      );
+      return;
+    }
+
     if (m.provider === 'ltc') {
       if (!m.address) {
         await ctx.editMessageText(
@@ -354,8 +420,154 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       await handleLtcDirectSubmit(ctx, flow, text);
       return;
     }
+    if (flow.type === 'direct_binance') {
+      await handleBinanceDirectSubmit(ctx, flow, text);
+      return;
+    }
     return next();
   });
+}
+
+// ----- Binance Pay direct -------------------------------------------------
+
+async function handleBinanceDirectSubmit(
+  ctx: AppCtx,
+  flow: Extract<
+    NonNullable<AppCtx['session']['userFlow']>,
+    { type: 'direct_binance' }
+  >,
+  text: string,
+): Promise<void> {
+  const cleaned = text.replace(/\s+/g, '');
+  if (!/^\d{6,}$/.test(cleaned)) {
+    await ctx.reply(
+      renderMdHtml(
+        "❌ That doesn't look like a Binance Pay Order ID. It should be the 18-digit numeric ID shown on the Binance Pay receipt (e.g. `430098765432109876`).",
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  const orderId = cleaned;
+  const depId = flow.data.deposit_id;
+
+  // Rate-limit per user (shares the same key namespace as topup so
+  // a single user can't probe via both flows in parallel).
+  const rl = consume(`binance_pay:${ctx.user.telegram_id}`, 5, 60_000);
+  if (!rl.ok) {
+    await ctx.reply(
+      renderMdHtml(
+        `⏱ Too many Order ID attempts. Please try again in ${formatRetryAfter(rl.retryAfterMs)}.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  ctx.session.userFlow = undefined;
+
+  const dep = await getDeposit(depId);
+  if (!dep) {
+    await ctx.reply('⚠️ Internal error: deposit row missing. Please reopen the screen.');
+    return;
+  }
+  if (dep.status !== 'pending') {
+    await ctx.reply(
+      renderMdHtml(
+        `⚠️ This deposit has already been ${dep.status}. Open a fresh direct-pay screen if you want to pay again.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  try {
+    await setDepositNote(depId, `Direct-pay Binance Pay order id submitted: ${orderId}`);
+  } catch {
+    /* noop */
+  }
+
+  const status = await ctx.reply(
+    renderMdHtml(`🔎 *Looking up your Binance Pay order…* (#${depId})`),
+    { parse_mode: 'HTML' },
+  );
+
+  let result;
+  try {
+    result = await verifyAndCreditDeposit({
+      api: ctx.api,
+      deposit: dep,
+      submission: { orderId },
+      logUser: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, depId, orderId }, 'direct binance auto-verify threw');
+    result = {
+      ok: false as const,
+      reason: 'verifier crashed — admin will check manually',
+    };
+  }
+
+  if (result.ok) {
+    await ctx.api.editMessageText(
+      status.chat.id,
+      status.message_id,
+      renderMdHtml(
+        [
+          `✅ *Direct-pay verified (deposit #${depId}).*`,
+          '',
+          `Order ID: \`${orderId}\``,
+          `Charged: *$${Number(result.amount).toFixed(3)}*`,
+        ].join('\n'),
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
+      },
+    );
+  } else {
+    try {
+      await setDepositNote(
+        depId,
+        `auto-verify failed: ${result.reason} (order id ${orderId})`,
+      );
+    } catch {
+      /* noop */
+    }
+    await ctx.api.editMessageText(
+      status.chat.id,
+      status.message_id,
+      renderMdHtml(
+        [
+          `⏳ *Submitted (#${depId}) — pending admin review.*`,
+          '',
+          `Order ID: \`${orderId}\``,
+          `_${friendlyReason(result.reason)}_`,
+          '',
+          'Your order will be delivered as soon as admin verifies the payment manually.',
+        ].join('\n'),
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
+      },
+    );
+    void adminLog.logTopupSubmitted(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      depositDbId: depId,
+      method: flow.data.method_name,
+      reference: orderId,
+      reason: result.reason,
+    });
+  }
 }
 
 // ----- USDT chain direct (BEP20 / TRC20 / TON) ---------------------------
@@ -506,7 +718,7 @@ async function handleChainDirectSubmit(
           `⏳ *Submitted (#${depId}) — pending admin review.*`,
           '',
           `Tx: \`${txHash}\``,
-          `Reason auto-verify deferred: _${result.reason}_`,
+          `_${friendlyReason(result.reason)}_`,
           '',
           'Your order will be delivered as soon as admin verifies the payment manually.',
         ].join('\n'),
@@ -632,7 +844,7 @@ async function handleLtcDirectSubmit(
           `⏳ *Submitted (#${flow.data.deposit_id}) — pending admin review.*`,
           '',
           `Tx: \`${cleaned}\``,
-          `Reason auto-verify deferred: _${result.reason}_`,
+          `_${friendlyReason(result.reason)}_`,
           '',
           'Your order will be delivered as soon as admin verifies the payment manually.',
         ].join('\n'),
@@ -658,6 +870,28 @@ async function handleLtcDirectSubmit(
 }
 
 // ----- Screen builders ----------------------------------------------------
+
+function buildBinanceDirectScreen(
+  m: DBPaymentMethod,
+  intent: OrderIntent,
+): string {
+  return [
+    '🟡 *Binance Pay — Direct Pay*',
+    '',
+    `*${intent.product_name}*  ×  *${intent.qty}*`,
+    `Total to pay: *$${intent.total.toFixed(2)}*`,
+    '',
+    `*Pay ID:* \`${m.address ?? '(not set)'}\``,
+    `*Binance Pay Name:* \`${m.pay_name ?? '(not set)'}\``,
+    '',
+    `1️⃣ Send *exactly $${intent.total.toFixed(2)}* in USDT to the Pay ID above`,
+    '2️⃣ Paste your *Order ID* below',
+    '',
+    '⏰ _Only payments completed within 30 minutes of opening this screen are auto-verified. Earlier or later payments still go to manual admin review._',
+    '',
+    '*Please send your Order ID below:*',
+  ].join('\n');
+}
 
 function buildChainDirectScreen(
   m: DBPaymentMethod,
