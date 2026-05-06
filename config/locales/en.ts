@@ -31,6 +31,7 @@ export const en: Record<string, string> = {
   'btn.qty_keypad_confirm': '✅ Confirm',
   // Buy-now payment-method screen.
   'btn.pay_wallet': '👛 Wallet Pay',
+  'btn.pay_direct': '💸 Pay Directly',
   'btn.pay_topup': '🪙 Top Up',
   'btn.qty.max': '🎯 Max',
   'btn.qty.reset': '🔄 Reset',

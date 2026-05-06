@@ -26,6 +26,7 @@ export const ar: Record<string, string> = {
   'btn.qty_keypad_clear': '🗑 مسح',
   'btn.qty_keypad_confirm': '✅ تأكيد',
   'btn.pay_wallet': '👛 الدفع من المحفظة',
+  'btn.pay_direct': '💸 ادفع مباشرة',
   'btn.pay_topup': '🪙 إيداع',
   'btn.qty.max': '🎯 الحد الأقصى',
   'btn.qty.reset': '🔄 إعادة',

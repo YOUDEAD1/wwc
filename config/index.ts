@@ -187,6 +187,7 @@ export const BUTTON_KEYS = {
   qty_keypad_confirm: 'btn.qty_keypad_confirm',
   // ---- Buy-now payment-method screen ----------------------------
   pay_wallet: 'btn.pay_wallet',
+  pay_direct: 'btn.pay_direct',
   pay_topup: 'btn.pay_topup',
 
   // ---- Premium-shop overhaul ----------------------------------
@@ -332,6 +333,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 
   // Buy-now payment-method screen.
   pay_wallet: 'green',
+  pay_direct: 'yellow',
   pay_topup: 'blue',
 
   // Premium-shop overhaul. `using_method` is the post-order
@@ -696,6 +698,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 
   // Buy-now payment-method screen — wallet on Pay, topup on Top Up.
   pay_wallet: 'prod_wallet',
+  pay_direct: 'prod_total_amount',
   pay_topup: 'deposits_wallet',
 
   // Premium-shop overhaul. Out-of-stock Buy Now uses the red cross

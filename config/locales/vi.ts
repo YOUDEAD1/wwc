@@ -26,6 +26,7 @@ export const vi: Record<string, string> = {
   'btn.qty_keypad_clear': '🗑 Xóa',
   'btn.qty_keypad_confirm': '✅ Xác nhận',
   'btn.pay_wallet': '👛 Thanh toán Ví',
+  'btn.pay_direct': '💸 Thanh toán trực tiếp',
   'btn.pay_topup': '🪙 Nạp tiền',
   'btn.qty.max': '🎯 Tối đa',
   'btn.qty.reset': '🔄 Đặt lại',

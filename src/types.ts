@@ -165,8 +165,30 @@ export type DBDeposit = {
    * Null for every other provider.
    */
   quote_expires_at: string | null;
+  /**
+   * For per-order direct-pay deposits: locked-in order context the
+   * verifier uses to fulfil the order on success (instead of
+   * crediting the wallet). Null for normal wallet top-ups.
+   */
+  order_intent: OrderIntent | null;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * Locked-in order context attached to a *direct-pay* deposit.
+ * When non-null on a deposit row, the verifier creates the order
+ * and fulfils it (decrement stock, claim items, deliver) instead
+ * of crediting the user's wallet.
+ */
+export type OrderIntent = {
+  product_id: number;
+  product_name: string;
+  qty: number;
+  unit_price: number;
+  discount: number;
+  promo_id: number | null;
+  total: number;
 };
 
 export type DBGiftCode = {
