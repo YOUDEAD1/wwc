@@ -48,8 +48,6 @@ import type { DBDeposit, OrderIntent, PaymentProvider } from '../types.js';
  */
 function paidViaLabel(provider: PaymentProvider, methodName: string): string {
   switch (provider) {
-    case 'binance_pay':
-      return `Binance Pay (${methodName})`;
     case 'usdt_trc20':
       return `USDT TRC20 (${methodName})`;
     case 'usdt_bep20':

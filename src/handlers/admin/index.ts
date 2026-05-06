@@ -1102,8 +1102,6 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
     .text('➕ Manual Method', 'adm:pay:add')
     .text('📋 List & Manage', 'adm:pay:list')
     .row()
-    .text('🟡 Add Binance Pay', 'adm:pay:add:binance_pay')
-    .row()
     .text('🟢 Add USDT (TRC20)', 'adm:pay:add:usdt_trc20')
     .text('🟡 Add USDT (BEP20)', 'adm:pay:add:usdt_bep20')
     .row()
@@ -1116,7 +1114,7 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
       '',
       '*Manual* — name, instructions, min amount. Users submit a deposit request you approve from the *Deposits* tab.',
       '',
-      '*Auto-verify* — pick a provider, set the wallet address (or Binance Pay ID), and the bot verifies the user\'s tx hash / Order ID on-chain and credits the wallet automatically.',
+      '*Auto-verify* — pick a provider, set the wallet address, and the bot verifies the user\'s on-chain tx hash and credits the wallet automatically.',
     ].join('\n'),
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -1133,7 +1131,7 @@ adminBot.callbackQuery('adm:pay:add', async (ctx) => {
 
 // ---------- Auto-verify payment-method wizards ----------
 const CHAIN_WIZARD_INFO: Record<
-  'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay',
+  'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc',
   { title: string; namePlaceholder: string; addressPrompt: string }
 > = {
   usdt_trc20: {
@@ -1160,23 +1158,16 @@ const CHAIN_WIZARD_INFO: Record<
     addressPrompt:
       'Send the *Litecoin address* (`L…` / `M…` / `ltc1…`) that LTC deposits should land in.',
   },
-  binance_pay: {
-    title: '🟡 *Add Binance Pay (auto-verify)*',
-    namePlaceholder: 'Binance Pay',
-    addressPrompt:
-      'Send your *Binance Pay merchant ID* (the numeric Pay ID users will see on the top-up screen).',
-  },
 };
 
 adminBot.callbackQuery(
-  /^adm:pay:add:(usdt_trc20|usdt_bep20|usdt_ton|ltc|binance_pay)$/,
+  /^adm:pay:add:(usdt_trc20|usdt_bep20|usdt_ton|ltc)$/,
   async (ctx) => {
     const provider = ctx.match[1] as
       | 'usdt_trc20'
       | 'usdt_bep20'
       | 'usdt_ton'
-      | 'ltc'
-      | 'binance_pay';
+      | 'ltc';
     await ctx.answerCallbackQuery();
     ctx.session.adminFlow = {
       type: 'add_chain_payment',
@@ -1216,15 +1207,13 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
     const tag =
       m.provider === 'manual'
         ? 'manual'
-        : m.provider === 'binance_pay'
-          ? 'auto • Binance Pay'
-          : m.provider === 'usdt_trc20'
-            ? 'auto • TRC20'
-            : m.provider === 'usdt_bep20'
-              ? 'auto • BEP20'
-              : m.provider === 'usdt_ton'
-                ? 'auto • TON'
-                : 'auto • LTC';
+        : m.provider === 'usdt_trc20'
+          ? 'auto • TRC20'
+          : m.provider === 'usdt_bep20'
+            ? 'auto • BEP20'
+            : m.provider === 'usdt_ton'
+              ? 'auto • TON'
+              : 'auto • LTC';
     lines.push(`#${m.id}  ${m.name}  (min $${m.min_amount}) — _${tag}_`);
     if (m.address) {
       lines.push(`     \`${m.address}\``);
@@ -1307,7 +1296,7 @@ adminBot.callbackQuery(/^adm:dep:amt:(\d+)$/, async (ctx) => {
       dep.reference ? `Note code: \`${dep.reference}\`` : '',
       dep.note ? dep.note : '',
       '',
-      'Send the *USDT amount you verified on the Binance dashboard* (e.g. `5.12`). The deposit row will be updated, but you still need to tap *Approve* to credit the user.',
+      'Send the *USDT amount you verified on-chain* (e.g. `5.12`). The deposit row will be updated, but you still need to tap *Approve* to credit the user.',
     ]
       .filter(Boolean)
       .join('\n'),
@@ -1413,21 +1402,18 @@ adminBot.callbackQuery(/^adm:dep:rv:(\d+)$/, async (ctx) => {
   }
   if (!dep.tx_hash) {
     await ctx.answerCallbackQuery({
-      text: 'No tx hash / order id stored — nothing to re-verify.',
+      text: 'No tx hash stored — nothing to re-verify.',
       show_alert: true,
     });
     return;
   }
   await ctx.answerCallbackQuery({ text: 'Re-running auto-verify…' });
-  const looksLikeBinanceOrderId = /^\d+$/.test(dep.tx_hash);
   let result;
   try {
     result = await verifyAndCreditDeposit({
       api: ctx.api,
       deposit: dep,
-      submission: looksLikeBinanceOrderId
-        ? { merchantTradeNo: dep.tx_hash }
-        : { txHash: dep.tx_hash },
+      submission: { txHash: dep.tx_hash },
       logUser: {
         telegram_id: dep.user_id,
         username: null,
@@ -3779,13 +3765,6 @@ adminBot.on('message:text', async (ctx, next) => {
         if (provider === 'ltc' && !isValidLtcAddress(addr)) {
           await ctx.reply(
             '❌ Not a valid Litecoin address. Should start with `L`, `M`, `3`, or `ltc1`. Try again or `/cancel`.',
-            { parse_mode: 'Markdown' },
-          );
-          return;
-        }
-        if (provider === 'binance_pay' && !/^[0-9]{6,30}$/.test(addr)) {
-          await ctx.reply(
-            '❌ Not a valid Binance Pay merchant ID. Should be 6–30 digits. Try again or `/cancel`.',
             { parse_mode: 'Markdown' },
           );
           return;

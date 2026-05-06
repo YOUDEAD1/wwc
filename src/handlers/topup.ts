@@ -2,7 +2,6 @@ import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import {
   createDeposit,
-  findDepositByReference,
   getDeposit,
   listPaymentMethods,
   setDepositNote,
@@ -34,23 +33,6 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       return;
     }
     await ctx.answerCallbackQuery();
-
-    if (m.provider === 'binance_pay') {
-      ctx.session.userFlow = {
-        type: 'binance_payid_topup',
-        step: 'order_id',
-        data: {
-          method_id: m.id,
-          method_name: m.name,
-          opened_at: Date.now(),
-        },
-      };
-      await ctx.editMessageText(renderMdHtml(buildBinancePayScreen(m)), {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
-      });
-      return;
-    }
 
     if (
       m.provider === 'usdt_trc20' ||
@@ -162,10 +144,6 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       return next();
     }
 
-    if (flow.type === 'binance_payid_topup') {
-      await handleBinancePayIdSubmit(ctx, flow, text);
-      return;
-    }
     if (flow.type === 'chain_topup') {
       await handleChainTopupSubmit(ctx, flow, text);
       return;
@@ -183,136 +161,6 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     return next();
   });
 }
-
-// ----- Binance Pay Order-ID flow -----------------------------------------
-
-async function handleBinancePayIdSubmit(
-  ctx: AppCtx,
-  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'binance_payid_topup' }>,
-  text: string,
-): Promise<void> {
-  const orderId = text.replace(/\s+/g, '');
-  if (!/^[A-Za-z0-9]{6,64}$/.test(orderId)) {
-    await ctx.reply(
-      renderMdHtml(
-        "❌ That doesn't look like a valid Binance Pay Order ID. Please paste only the order ID (digits/letters, 6–64 chars).",
-      ),
-      { parse_mode: 'HTML' },
-    );
-    return;
-  }
-
-  let depId: number;
-  try {
-    const dep = await createDeposit({
-      user_id: ctx.user.telegram_id,
-      method: flow.data.method_name,
-      amount: 0.01,
-      reference: orderId,
-      tx_hash: orderId,
-      note: `Binance Pay Order ID: ${orderId}`,
-    });
-    depId = dep.id;
-  } catch (err) {
-    const msg = (err as { message?: string })?.message ?? '';
-    if (/23505|duplicate/i.test(msg)) {
-      await ctx.reply(
-        renderMdHtml('⚠️ This Order ID has already been submitted.'),
-        { parse_mode: 'HTML' },
-      );
-      ctx.session.userFlow = undefined;
-      return;
-    }
-    logger.error({ err }, 'Pay-ID deposit insert failed');
-    await ctx.reply(
-      '⚠️ Could not record your submission. Please try again or contact support.',
-    );
-    ctx.session.userFlow = undefined;
-    return;
-  }
-  ctx.session.userFlow = undefined;
-
-  const dep = await findDepositByReference(orderId);
-  let autoOk = false;
-  let lastReason: string | null = null;
-  if (dep) {
-    try {
-      const result = await verifyAndCreditDeposit({
-        api: ctx.api,
-        deposit: dep,
-        submission: { merchantTradeNo: orderId },
-        logUser: {
-          telegram_id: ctx.user.telegram_id,
-          username: ctx.user.username ?? null,
-          first_name: ctx.user.first_name ?? null,
-          email: ctx.user.email ?? null,
-        },
-      });
-      if (result.ok) {
-        autoOk = true;
-        await ctx.reply(
-          renderMdHtml(
-            [
-              `✅ *Auto-verified (#${depId}).*`,
-              '',
-              `Order ID: \`${orderId}\``,
-              `Credited: *$${result.amount.toFixed(2)}*`,
-              `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
-            ].join('\n'),
-          ),
-          {
-            parse_mode: 'HTML',
-            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-          },
-        );
-      } else {
-        lastReason = result.reason;
-        logger.info({ depId, reason: result.reason }, 'Binance Pay auto-verify deferred');
-      }
-    } catch (err) {
-      lastReason = (err as Error)?.message ?? String(err);
-      logger.warn({ err }, 'Binance Pay auto-verify threw');
-    }
-  }
-
-  if (!autoOk) {
-    if (lastReason) {
-      try {
-        await setDepositNote(depId, `auto-verify failed: ${lastReason}`);
-      } catch {
-        /* noop */
-      }
-    }
-    await ctx.reply(
-      renderMdHtml(
-        [
-          `✅ *Submitted (#${depId}).*`,
-          '',
-          `Order ID: \`${orderId}\``,
-          '',
-          "Admin will verify your payment on the Binance Pay dashboard and credit your wallet shortly. You'll get a confirmation message when it's done.",
-        ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
-    );
-    void adminLog.logTopupSubmitted(ctx.api, {
-      user: {
-        telegram_id: ctx.user.telegram_id,
-        username: ctx.user.username ?? null,
-        first_name: ctx.user.first_name ?? null,
-        email: ctx.user.email ?? null,
-      },
-      depositDbId: depId,
-      method: flow.data.method_name,
-      reference: orderId,
-      reason: lastReason ?? undefined,
-    });
-  }
-}
-
 // ----- USDT chain flow (BEP20 / TRC20 / TON) -----------------------------
 
 async function handleChainTopupSubmit(
@@ -703,23 +551,6 @@ async function handleLtcTxHash(
 
 // ----- Screen builders ---------------------------------------------------
 
-function buildBinancePayScreen(m: DBPaymentMethod): string {
-  const lines = [
-    '🟡 *Binance Pay Top-Up*',
-    '',
-    `*Pay ID:* \`${m.address ?? '(not configured)'}\``,
-    `*Pay Name:* ${m.name}`,
-    '',
-    '1️⃣ Send any USDT amount to the Pay ID above',
-    '2️⃣ Paste your *Order ID* below',
-    '',
-    `_Minimum:_ *$${m.min_amount}*`,
-    '',
-    '*Please send your Order ID below:*',
-  ];
-  return lines.join('\n');
-}
-
 function buildChainTopupScreen(m: DBPaymentMethod): string {
   const heading =
     m.provider === 'usdt_bep20'
@@ -794,7 +625,6 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
 function labelForMethod(m: DBPaymentMethod): string {
   const icon: Record<PaymentProvider, string> = {
     manual: '💳',
-    binance_pay: '🟡',
     usdt_trc20: '🟢',
     usdt_bep20: '🟡',
     usdt_ton: '🔵',

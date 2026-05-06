@@ -146,17 +146,6 @@ const schema = z.object({
     .transform(logChannelTransformer(DEFAULT_ORDER_LOG_CHAT)),
 
   // ----------------------------------------------------------------
-  //  Binance Pay (auto-verification)
-  // ----------------------------------------------------------------
-  // When both key and secret are set, the bot calls the Binance Pay
-  // queryOrder API to auto-credit Pay-ID top-ups whose Order ID
-  // resolves to a PAID order on the merchant account. When unset,
-  // the Pay-ID flow falls back to manual admin approval — the rest
-  // of the bot still works fine.
-  BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
-  BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
-
-  // ----------------------------------------------------------------
   //  TonCenter (TON USDT jetton verification)
   // ----------------------------------------------------------------
   // Optional API key for https://toncenter.com . Without it the

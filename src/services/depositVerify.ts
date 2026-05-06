@@ -4,9 +4,8 @@
  * The user-facing top-up flow calls into `verifyAndCreditDeposit()`.
  * It:
  *   1. Looks at the deposit's payment method to pick a verifier
- *      (TRC20 / BEP20 / TON / LTC / Binance Pay).
- *   2. Calls the verifier with the user-submitted reference (tx hash
- *      or merchant trade number).
+ *      (TRC20 / BEP20 / TON / LTC).
+ *   2. Calls the verifier with the user-submitted tx hash.
  *   3. On success, atomically updates the deposit's amount + status
  *      to `approved`, persists the tx hash for dedupe, and credits
  *      the user's wallet via the existing `credit()` helper.
@@ -33,7 +32,6 @@ import {
   verifyTonUsdtTx,
   verifyLtcTx,
 } from './chainVerify.js';
-import { binanceEnabled, queryOrder } from './binance.js';
 import { fulfilOrderForDeposit } from './orderFulfill.js';
 
 export type AutoVerifyResult =
@@ -76,7 +74,7 @@ async function resolveMethod(deposit: DBDeposit): Promise<DBPaymentMethod | null
 export async function verifyAndCreditDeposit(args: {
   api: Api;
   deposit: DBDeposit;
-  submission: { txHash?: string; merchantTradeNo?: string };
+  submission: { txHash?: string };
   logUser?: {
     telegram_id: number;
     username: string | null;
@@ -175,48 +173,6 @@ export async function verifyAndCreditDeposit(args: {
       amount: usdToCredit,
       txHash,
       sender: result.sender,
-      logUser: args.logUser,
-    });
-  }
-
-  // ----- Binance Pay queryOrder -----
-  if (provider === 'binance_pay') {
-    if (!binanceEnabled()) {
-      return { ok: false, reason: 'Binance Pay API keys not configured' };
-    }
-    const tradeNo = submission.merchantTradeNo?.trim();
-    if (!tradeNo) return { ok: false, reason: 'order id required' };
-    let data;
-    try {
-      data = await queryOrder({ merchantTradeNo: tradeNo });
-    } catch (err) {
-      logger.warn({ err, tradeNo }, 'Binance queryOrder threw');
-      return { ok: false, reason: `Binance API error: ${stringifyErr(err)}` };
-    }
-    if (!data) {
-      return {
-        ok: false,
-        reason:
-          'Binance has no record of that Order ID for our merchant account — admin will verify manually.',
-      };
-    }
-    if (data.status !== 'PAID') {
-      return { ok: false, reason: `Binance status: ${data.status ?? 'unknown'}` };
-    }
-    const amount = Number(data.orderAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return { ok: false, reason: 'Binance returned no orderAmount' };
-    }
-    if (amount + 1e-9 < Number(method.min_amount || 0)) {
-      return { ok: false, reason: `amount ${amount.toFixed(2)} < min ${method.min_amount}` };
-    }
-    return finalizeApproval({
-      api: args.api,
-      deposit,
-      method,
-      amount: round2(amount),
-      txHash: tradeNo,
-      sender: null,
       logUser: args.logUser,
     });
   }
@@ -375,12 +331,6 @@ async function finalizeApproval(args: {
   };
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
 
-function stringifyErr(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  return JSON.stringify(err);
-}
+
+
