@@ -110,3 +110,96 @@ export async function queryOrder(args: {
   }
   return json.data;
 }
+
+export type BinanceCreateOrderResponse = {
+  status: 'SUCCESS' | 'FAIL';
+  code: string;
+  data?: {
+    /** Used by the Binance app deep-link / web checkout. */
+    prepayId: string;
+    /** Terminal type echoed back. */
+    terminalType?: string;
+    /** ms-since-epoch order expiration. */
+    expireTime?: number;
+    /** Hosted-image URL for a QR code that opens the Binance app. */
+    qrcodeLink?: string;
+    /** Raw QR payload (a deep-link URL the wallet can open). */
+    qrContent?: string;
+    /** Hosted web checkout URL — works on desktop browsers. */
+    checkoutUrl?: string;
+    /** App deep-link `bnc://...` — opens the Binance app on phones. */
+    deeplink?: string;
+    /** Universal link variant — fallback for some wallets. */
+    universalUrl?: string;
+  };
+  errorMessage?: string;
+};
+
+/**
+ * Create a Binance Pay merchant order. Returns the checkout payload
+ * (deep-link / QR / web URL) the user follows to pay.
+ *
+ * Throws on transport / HTTP errors and on Binance API errors. Code
+ * 401 / 451 from Binance generally means the merchant account is in
+ * a region the merchant API doesn't support — surface that error
+ * verbatim so the caller can show a graceful "use another method"
+ * fallback.
+ */
+export async function createOrder(args: {
+  merchantTradeNo: string;
+  amount: number;
+  currency?: string;
+  goodsName: string;
+  goodsId: string | number;
+  /** Optional URLs the user is redirected to after pay/cancel. */
+  returnUrl?: string;
+  cancelUrl?: string;
+  /** Optional webhook URL for `PAY_SUCCESS` callbacks. */
+  webhookUrl?: string;
+}): Promise<NonNullable<BinanceCreateOrderResponse['data']>> {
+  if (!binanceEnabled()) throw new Error('Binance Pay not configured');
+  const body: Record<string, unknown> = {
+    env: { terminalType: 'WEB' },
+    merchantTradeNo: args.merchantTradeNo,
+    orderAmount: args.amount.toFixed(2),
+    currency: args.currency ?? 'USDT',
+    goods: {
+      goodsType: '02',
+      goodsCategory: 'Z000',
+      referenceGoodsId: String(args.goodsId).slice(0, 32),
+      goodsName: args.goodsName.slice(0, 256),
+    },
+  };
+  if (args.returnUrl) body.returnUrl = args.returnUrl;
+  if (args.cancelUrl) body.cancelUrl = args.cancelUrl;
+  if (args.webhookUrl) body.webhookUrl = args.webhookUrl;
+
+  const rawBody = JSON.stringify(body);
+  const timestamp = String(Date.now());
+  const nonce = makeNonce();
+  const signature = sign(timestamp, nonce, rawBody);
+
+  const res = await fetch(`${BINANCE_PAY_BASE}/binancepay/openapi/v3/order`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'BinancePay-Timestamp': timestamp,
+      'BinancePay-Nonce': nonce,
+      'BinancePay-Certificate-SN': env.BINANCE_PAY_API_KEY || '',
+      'BinancePay-Signature': signature,
+    },
+    body: rawBody,
+  });
+  const json = (await res.json()) as BinanceCreateOrderResponse;
+  if (!res.ok || json.status !== 'SUCCESS' || !json.data) {
+    logger.warn(
+      { json, http: res.status, merchantTradeNo: args.merchantTradeNo },
+      'Binance Pay createOrder failed',
+    );
+    throw new Error(
+      json.errorMessage ||
+        `Binance Pay createOrder error: ${json.code || res.status}`,
+    );
+  }
+  return json.data;
+}
