@@ -128,10 +128,17 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       `buy:${p.id}`,
     );
 
-    // Premium-emoji-aware order-summary card. Token map keys are
-    // EMOJI registry entries (see config/index.ts → direct_pay_*) so
-    // the admin can rotate the icon for each line independently via
-    // `/setemoji direct_pay_qty …` etc.
+    // Direct-Pay "Select payment method" card — minimal layout per
+    // user spec:
+    //
+    //   💸 Select payment method
+    //   <product-glyph> Product name × Qty
+    //   💳 Total: 2.00 USDT
+    //   🔎 Please send the exact amount for verification.
+    //
+    // The Order-summary block stays on the *Buy Now* card (shop.ts);
+    // this screen is only the actual pay-method picker, so it just
+    // re-states the product + total before the keyboard.
     //
     // The product glyph uses the product's own premium emoji_id (with
     // the unicode emoji as fallback). We can't register it in the
@@ -143,8 +150,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     const productUnicode = p.emoji && p.emoji.length > 0 ? p.emoji : '🎁';
     // Defensive HTML-escape of the product fields so a stray `"` /
     // `<` in admin-typed values can't break out of the attribute or
-    // smuggle markup. The unicode is also escaped because some
-    // legacy products store HTML-meaningful chars there.
+    // smuggle markup.
     const escAttr = (s: string): string =>
       s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
     const escText = (s: string): string =>
@@ -156,21 +162,15 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     const body = [
       '{title} *Select payment method*',
       '',
-      '{summary} *Order summary*',
-      '',
-      `${PRODUCT_GLYPH_PLACEHOLDER} *${intent.product_name}*`,
-      `{qty} *Qty:* ${intent.qty}`,
+      `${PRODUCT_GLYPH_PLACEHOLDER} *${intent.product_name}* × *${intent.qty}*`,
       `{total} *Total:* ${intent.total.toFixed(2)} USDT`,
-      `{wallet} *Wallet:* ${Number(ctx.user.balance).toFixed(2)} USDT`,
       '',
-      'Choose a pay method:',
+      '{verify} Please send the exact amount for verification.',
     ].join('\n');
     const html = renderMdHtml(body, {
       title: 'direct_pay_title',
-      summary: 'direct_pay_summary',
-      qty: 'direct_pay_qty',
       total: 'direct_pay_total',
-      wallet: 'direct_pay_wallet',
+      verify: 'direct_pay_verify',
     }).replace(PRODUCT_GLYPH_PLACEHOLDER, productGlyphHtml);
 
     await ctx.answerCallbackQuery();
