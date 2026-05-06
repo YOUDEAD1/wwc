@@ -224,6 +224,12 @@ export type DBWalletLedger = {
  * Payment provider tag.
  *
  * Each non-`manual` value triggers a different verifier path:
+ *   - `binance_pay`  Personal-account Binance Spot API
+ *                    `/sapi/v1/pay/transactions` lookup, matched by
+ *                    a user-pasted Pay Order ID. Recipient (the
+ *                    merchant Pay ID) is stored in
+ *                    `payment_methods.address`; the human-readable
+ *                    Binance Pay Name is stored in `pay_name`.
  *   - `usdt_trc20`   TronGrid REST tx lookup (tx hash input)
  *   - `usdt_bep20`   BSC public RPC tx lookup (tx hash input)
  *   - `usdt_ton`     TonCenter REST tx lookup (tx hash input)
@@ -235,6 +241,7 @@ export type DBWalletLedger = {
  */
 export type PaymentProvider =
   | 'manual'
+  | 'binance_pay'
   | 'usdt_trc20'
   | 'usdt_bep20'
   | 'usdt_ton'
@@ -251,7 +258,15 @@ export type DBPaymentMethod = {
   /**
    * Wallet / account address. Required for every non-manual
    * provider — chain providers verify the recipient against this.
+   * For `binance_pay` rows this stores the merchant's 10-digit
+   * Binance Pay ID (e.g. `"1101801594"`).
    */
   address: string | null;
+  /**
+   * Human-readable Binance Pay Name shown next to the Pay ID on the
+   * user-facing top-up screen (e.g. `"urweebboii"`). Only set for
+   * `binance_pay` provider rows; null for every other provider.
+   */
+  pay_name: string | null;
   created_at: string;
 };

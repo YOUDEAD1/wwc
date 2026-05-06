@@ -69,6 +69,55 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       return;
     }
 
+    if (m.provider === 'binance_pay') {
+      if (!m.address || !m.pay_name) {
+        await ctx.editMessageText(
+          renderMdHtml(
+            '⚠️ This Binance Pay method has no Pay ID / Pay Name configured. Please contact support.',
+          ),
+          {
+            parse_mode: 'HTML',
+            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+          },
+        );
+        return;
+      }
+      // Anchor the 30-minute acceptance window on a real deposit row.
+      let deposit_id: number;
+      try {
+        const dep = await createDeposit({
+          user_id: ctx.user.telegram_id,
+          method: m.name,
+          amount: 0.01,
+          note: 'Binance Pay screen opened — awaiting order id',
+        });
+        deposit_id = dep.id;
+      } catch (err) {
+        logger.error({ err }, 'Binance Pay: pre-deposit insert failed');
+        await ctx.editMessageText(
+          '⚠️ Could not start the Binance Pay top-up. Please try again or contact support.',
+        );
+        return;
+      }
+      ctx.session.userFlow = {
+        type: 'binance_pay_topup',
+        step: 'order_id',
+        data: {
+          method_id: m.id,
+          method_name: m.name,
+          pay_id: m.address,
+          pay_name: m.pay_name,
+          min_amount: Number(m.min_amount) || 0,
+          deposit_id,
+        },
+      };
+      await ctx.editMessageText(renderMdHtml(buildBinancePayTopupScreen(m)), {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+      });
+      return;
+    }
+
     if (m.provider === 'ltc') {
       if (!m.address) {
         await ctx.editMessageText(
@@ -146,6 +195,10 @@ export function registerTopup(bot: Composer<AppCtx>): void {
 
     if (flow.type === 'chain_topup') {
       await handleChainTopupSubmit(ctx, flow, text);
+      return;
+    }
+    if (flow.type === 'binance_pay_topup') {
+      await handleBinancePayOrderId(ctx, flow, text);
       return;
     }
     if (flow.type === 'ltc_topup') {
@@ -551,6 +604,151 @@ async function handleLtcTxHash(
 
 // ----- Screen builders ---------------------------------------------------
 
+function buildBinancePayTopupScreen(m: DBPaymentMethod): string {
+  return [
+    '🟡 *Binance Pay — Deposit*',
+    '',
+    `*Pay ID:* \`${m.address ?? '(not set)'}\``,
+    `*Binance Pay Name:* \`${m.pay_name ?? '(not set)'}\``,
+    '',
+    'Send any USDT amount to the Pay ID above, then paste your *Order ID* below.',
+    '',
+    `_Minimum:_ *$${m.min_amount}*`,
+    '',
+    '⏰ _Only payments started after opening this screen and completed within 30 minutes will be credited._',
+    '',
+    '*Please send your Order ID below:*',
+  ].join('\n');
+}
+
+async function handleBinancePayOrderId(
+  ctx: AppCtx,
+  flow: Extract<
+    NonNullable<AppCtx['session']['userFlow']>,
+    { type: 'binance_pay_topup' }
+  >,
+  text: string,
+): Promise<void> {
+  const cleaned = text.replace(/\s+/g, '');
+  if (!/^\d{6,}$/.test(cleaned)) {
+    await ctx.reply(
+      renderMdHtml(
+        "❌ That doesn't look like a Binance Pay Order ID. It should be the 18-digit numeric ID shown on the Binance Pay receipt (e.g. `430098765432109876`).",
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  const orderId = cleaned;
+  const depId = flow.data.deposit_id;
+  ctx.session.userFlow = undefined;
+
+  const dep = await getDeposit(depId);
+  if (!dep) {
+    await ctx.reply('⚠️ Internal error: deposit row missing. Please reopen the screen.');
+    return;
+  }
+  if (dep.status !== 'pending') {
+    await ctx.reply(
+      renderMdHtml(
+        `⚠️ This deposit has already been ${dep.status}. Open a fresh Binance Pay screen to submit a new order id.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  // Persist the user-pasted order id on the deposit row's reference
+  // for admin-side traceability. The verifier will overwrite tx_hash
+  // with the Binance internal transactionId on success.
+  try {
+    await setDepositNote(depId, `Binance Pay order id submitted: ${orderId}`);
+  } catch {
+    /* noop */
+  }
+
+  const status = await ctx.reply(
+    renderMdHtml(`🔎 *Looking up your Binance Pay order…* (#${depId})`),
+    { parse_mode: 'HTML' },
+  );
+
+  let result;
+  try {
+    result = await verifyAndCreditDeposit({
+      api: ctx.api,
+      deposit: dep,
+      submission: { orderId },
+      logUser: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, depId, orderId }, 'binance_pay auto-verify threw');
+    result = {
+      ok: false as const,
+      reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}`,
+    };
+  }
+
+  if (result.ok) {
+    await ctx.api.editMessageText(
+      status.chat.id,
+      status.message_id,
+      renderMdHtml(
+        [
+          `✅ *Transaction Confirmed!* (#${depId})`,
+          '',
+          `Order ID: \`${orderId}\``,
+          `Credited: *$${result.amount.toFixed(3)}*`,
+          `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
+        ].join('\n'),
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
+      },
+    );
+  } else {
+    try {
+      await setDepositNote(depId, `auto-verify failed: ${result.reason} (order id ${orderId})`);
+    } catch {
+      /* noop */
+    }
+    await ctx.api.editMessageText(
+      status.chat.id,
+      status.message_id,
+      renderMdHtml(
+        [
+          `⏳ *Submitted (#${depId}) — pending admin review.*`,
+          '',
+          `Order ID: \`${orderId}\``,
+          `Reason auto-verify deferred: _${result.reason}_`,
+          '',
+          'Admin will check your payment manually and credit your wallet shortly.',
+        ].join('\n'),
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
+      },
+    );
+    void adminLog.logTopupSubmitted(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      depositDbId: depId,
+      method: flow.data.method_name,
+      reference: orderId,
+      reason: result.reason,
+    });
+  }
+}
+
 function buildChainTopupScreen(m: DBPaymentMethod): string {
   const heading =
     m.provider === 'usdt_bep20'
@@ -625,6 +823,7 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
 function labelForMethod(m: DBPaymentMethod): string {
   const icon: Record<PaymentProvider, string> = {
     manual: '💳',
+    binance_pay: '🟡',
     usdt_trc20: '🟢',
     usdt_bep20: '🟡',
     usdt_ton: '🔵',

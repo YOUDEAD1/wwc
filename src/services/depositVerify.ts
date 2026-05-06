@@ -4,8 +4,9 @@
  * The user-facing top-up flow calls into `verifyAndCreditDeposit()`.
  * It:
  *   1. Looks at the deposit's payment method to pick a verifier
- *      (TRC20 / BEP20 / TON / LTC).
- *   2. Calls the verifier with the user-submitted tx hash.
+ *      (Binance Pay / TRC20 / BEP20 / TON / LTC).
+ *   2. Calls the verifier with the user-submitted tx hash or
+ *      Binance Pay Order ID.
  *   3. On success, atomically updates the deposit's amount + status
  *      to `approved`, persists the tx hash for dedupe, and credits
  *      the user's wallet via the existing `credit()` helper.
@@ -32,7 +33,29 @@ import {
   verifyTonUsdtTx,
   verifyLtcTx,
 } from './chainVerify.js';
+import { findPayTransactionByOrderId, isBinancePayEnabled } from './binance.js';
 import { fulfilOrderForDeposit } from './orderFulfill.js';
+
+/**
+ * How long after a deposit row is created can a Binance Pay Order ID
+ * still be accepted. Matches the in-bot copy: "Only payments started
+ * after opening this screen and completed within 30 minutes will be
+ * credited."
+ */
+const BINANCE_PAY_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * Lenient pre-window slack — the Binance `transactionTime` may land
+ * a few seconds before the deposit row's `created_at` because of
+ * clock skew between Binance and Supabase, so we accept anything
+ * within a 5-minute pre-window.
+ */
+const BINANCE_PAY_PRE_WINDOW_SLACK_MS = 5 * 60 * 1000;
+
+/** Truncate a decimal value to 3 places (matches the Loguetown UX). */
+function truncate3(n: number): number {
+  return Math.floor(n * 1000) / 1000;
+}
 
 export type AutoVerifyResult =
   | {
@@ -74,7 +97,7 @@ async function resolveMethod(deposit: DBDeposit): Promise<DBPaymentMethod | null
 export async function verifyAndCreditDeposit(args: {
   api: Api;
   deposit: DBDeposit;
-  submission: { txHash?: string };
+  submission: { txHash?: string; orderId?: string };
   logUser?: {
     telegram_id: number;
     username: string | null;
@@ -93,6 +116,109 @@ export async function verifyAndCreditDeposit(args: {
   const provider = method.provider;
   if (provider === 'manual') {
     return { ok: false, reason: 'manual provider — no auto-verify' };
+  }
+
+  // ----- Binance Pay (personal-account /sapi/v1/pay/transactions) -----
+  if (provider === 'binance_pay') {
+    const orderId = submission.orderId?.trim();
+    if (!orderId) return { ok: false, reason: 'binance pay order id required' };
+    if (!method.address) {
+      return { ok: false, reason: 'merchant pay id not configured on payment method' };
+    }
+    if (!isBinancePayEnabled()) {
+      return {
+        ok: false,
+        reason: 'binance api credentials not set on this deployment',
+      };
+    }
+
+    // Pre-window slack absorbs clock skew. The post-window cap is
+    // the user-visible promise ("completed within 30 minutes").
+    const depositCreatedAt = new Date(deposit.created_at).getTime();
+    if (!Number.isFinite(depositCreatedAt)) {
+      return { ok: false, reason: 'deposit created_at unparseable' };
+    }
+    const startTime = depositCreatedAt - BINANCE_PAY_PRE_WINDOW_SLACK_MS;
+    const endTime = depositCreatedAt + BINANCE_PAY_WINDOW_MS;
+
+    const result = await findPayTransactionByOrderId(orderId, { startTime, endTime });
+    if (!result.ok) return { ok: false, reason: result.reason };
+    const tx = result.data;
+    if (!tx) {
+      return {
+        ok: false,
+        reason:
+          'order id not found in your Binance Pay history within the 30-minute window',
+      };
+    }
+
+    if (tx.orderType !== 'C2C') {
+      return {
+        ok: false,
+        reason: `unsupported binance pay order type: ${tx.orderType}`,
+      };
+    }
+    if (tx.currency !== 'USDT') {
+      return {
+        ok: false,
+        reason: `only USDT binance pay deposits are auto-verified (got ${tx.currency})`,
+      };
+    }
+    const receiverPayId = tx.receiverInfo?.binanceId;
+    if (receiverPayId === undefined || String(receiverPayId) !== String(method.address)) {
+      return {
+        ok: false,
+        reason:
+          "order receiver doesn't match the merchant pay id — transaction belongs to another account",
+      };
+    }
+
+    const txTime = Number(tx.transactionTime);
+    if (!Number.isFinite(txTime)) {
+      return { ok: false, reason: 'binance returned non-numeric transactionTime' };
+    }
+    if (txTime < depositCreatedAt - BINANCE_PAY_PRE_WINDOW_SLACK_MS) {
+      return {
+        ok: false,
+        reason: 'order was paid before this deposit screen was opened',
+      };
+    }
+    if (txTime > depositCreatedAt + BINANCE_PAY_WINDOW_MS) {
+      return {
+        ok: false,
+        reason: 'order was paid more than 30 minutes after this deposit screen was opened',
+      };
+    }
+
+    const rawAmount = Number(tx.amount);
+    if (!Number.isFinite(rawAmount) || rawAmount <= 0) {
+      return { ok: false, reason: `binance returned non-positive amount: ${tx.amount}` };
+    }
+    const amount = truncate3(rawAmount);
+    const minAmount = Number(method.min_amount) || 0;
+    if (amount < minAmount) {
+      return {
+        ok: false,
+        reason: `amount ${amount} below minimum $${minAmount}`,
+      };
+    }
+
+    // Dedupe on the Binance internal transactionId. Stored in the
+    // existing `tx_hash` column whose partial-unique index already
+    // prevents double-credit across providers.
+    const txId = String(tx.transactionId);
+    const dedupeOk = await checkDedupe(txId, deposit.id);
+    if (!dedupeOk.ok) return dedupeOk;
+
+    return finalizeApproval({
+      api: args.api,
+      deposit,
+      method,
+      amount,
+      txHash: txId,
+      sender: tx.payerInfo?.name ?? null,
+      logUser: args.logUser,
+    });
   }
 
   // ----- USDT chain providers (TRC20 / BEP20 / TON) -----
