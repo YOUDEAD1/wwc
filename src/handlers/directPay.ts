@@ -23,21 +23,23 @@
  * order is approved later the same `fulfilOrderForDeposit` path
  * runs and the user gets their items.
  */
-import type { Composer } from 'grammy';
+import crypto from 'node:crypto';
+import type { Api, Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import {
   createDeposit,
-  findDepositByReference,
   getDeposit,
   getProduct,
   listPaymentMethods,
   setDepositNote,
+  setDepositStatus,
 } from '../db/queries.js';
 import { btn, inlineBtn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
 import { verifyAndCreditDeposit } from '../services/depositVerify.js';
+import { createOrder as binanceCreateOrder } from '../services/binance.js';
 import {
   applyUserPriceToProduct,
 } from '../services/pricing.js';
@@ -162,26 +164,13 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
 
     if (m.provider === 'binance_pay') {
-      ctx.session.userFlow = {
-        type: 'direct_binance_payid',
-        step: 'order_id',
-        data: {
-          method_id: m.id,
-          method_name: m.name,
-          opened_at: Date.now(),
-          intent,
-        },
-      };
-      await ctx.editMessageText(
-        renderMdHtml(buildBinanceDirectScreen(m, intent)),
-        {
-          parse_mode: 'HTML',
-          reply_markup: new InlineKeyboard().text(
-            btn(ctx.lang, 'back'),
-            `pay:direct:${productId}`,
-          ),
-        },
-      );
+      // Merchant Checkout flow: bot calls createOrder to mint a
+      // unique merchantTradeNo + checkout URL, then polls queryOrder
+      // until PAID. Pasting an Order ID is no longer required —
+      // every direct-pay session has a server-generated tradeNo so
+      // wrong / replayed IDs are impossible.
+      ctx.session.userFlow = undefined;
+      await startBinanceMerchantCheckout(ctx, m, intent, productId);
       return;
     }
 
@@ -360,7 +349,20 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     );
   });
 
-  // Step 3 — text submissions for in-flight direct-pay flows.
+  // Step 3a — Binance direct-pay user-tap "Check Payment".
+  bot.callbackQuery(/^dpbc:(\d+)$/, async (ctx) => {
+    const depositId = Number(ctx.match[1]);
+    await handleBinanceCheckTap(ctx, depositId);
+  });
+
+  // Step 3b — Binance direct-pay user-tap "Cancel".
+  bot.callbackQuery(/^dpbx:(\d+)$/, async (ctx) => {
+    const depositId = Number(ctx.match[1]);
+    await handleBinanceCancelTap(ctx, depositId);
+  });
+
+  // Step 4 — text submissions for in-flight direct-pay flows
+  // (chain / LTC; Binance no longer needs user text input).
   bot.on('message:text', async (ctx, next) => {
     const flow = ctx.session.userFlow;
     if (!flow) return next();
@@ -371,10 +373,6 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       return next();
     }
 
-    if (flow.type === 'direct_binance_payid') {
-      await handleBinanceDirectSubmit(ctx, flow, text);
-      return;
-    }
     if (flow.type === 'direct_chain') {
       await handleChainDirectSubmit(ctx, flow, text);
       return;
@@ -387,79 +385,229 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
   });
 }
 
-// ----- Binance Pay direct -------------------------------------------------
+// ----- Binance Pay direct (Merchant Checkout flow) -----------------------
+//
+// Replaces the legacy "send to Pay ID + paste Order ID" UX with a
+// proper merchant checkout: the bot mints a unique merchantTradeNo,
+// calls Binance `createOrder` to get a checkout deep-link, shows
+// the user a tap-to-pay button, and polls `queryOrder` in the
+// background until the order is PAID or the 10-minute window
+// expires. There is no user-typed Order ID — wrong / replayed IDs
+// are architecturally impossible.
 
-async function handleBinanceDirectSubmit(
+const BINANCE_POLL_INTERVAL_MS = 10_000;
+const BINANCE_POLL_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Active poll handles, keyed by deposit id, so the user-tap and
+ * background paths can cancel each other once a deposit reaches a
+ * terminal state.
+ */
+const activePolls = new Map<number, NodeJS.Timeout>();
+
+function stopPoll(depositId: number): void {
+  const handle = activePolls.get(depositId);
+  if (handle) {
+    clearTimeout(handle);
+    activePolls.delete(depositId);
+  }
+}
+
+function makeMerchantTradeNo(): string {
+  // Binance accepts up to 32 alphanumerics. Use a timestamp prefix +
+  // random hex so trade numbers are sortable in our admin tools.
+  const ts = Date.now().toString(36).toUpperCase();
+  const rnd = crypto.randomBytes(8).toString('hex').toUpperCase();
+  return `STB${ts}${rnd}`.slice(0, 32);
+}
+
+async function startBinanceMerchantCheckout(
   ctx: AppCtx,
-  flow: Extract<
-    NonNullable<AppCtx['session']['userFlow']>,
-    { type: 'direct_binance_payid' }
-  >,
-  text: string,
+  m: DBPaymentMethod,
+  intent: OrderIntent,
+  productId: number,
 ): Promise<void> {
-  const orderId = text.replace(/\s+/g, '');
-  if (!/^[A-Za-z0-9]{6,64}$/.test(orderId)) {
-    await ctx.reply(
+  const tradeNo = makeMerchantTradeNo();
+
+  // Try to mint the order with Binance first. If the merchant
+  // account / API region rejects createOrder we surface a graceful
+  // fallback so we don't leave a half-baked deposit row behind.
+  let order: Awaited<ReturnType<typeof binanceCreateOrder>>;
+  try {
+    order = await binanceCreateOrder({
+      merchantTradeNo: tradeNo,
+      amount: intent.total,
+      goodsName: intent.product_name,
+      goodsId: intent.product_id,
+    });
+  } catch (err) {
+    const reason = (err as Error)?.message ?? String(err);
+    logger.warn({ err, tradeNo }, 'Binance createOrder failed for direct-pay');
+    await ctx.editMessageText(
       renderMdHtml(
-        "❌ That doesn't look like a valid Binance Pay Order ID. Please paste only the order ID (digits/letters, 6–64 chars).",
+        [
+          '⚠️ *Binance Pay direct-pay is not available right now.*',
+          '',
+          `Reason: _${reason}_`,
+          '',
+          'Please pick another network — USDT (BEP-20 / TRC-20 / TON) or LTC.',
+        ].join('\n'),
       ),
-      { parse_mode: 'HTML' },
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(
+          btn(ctx.lang, 'back'),
+          `pay:direct:${productId}`,
+        ),
+      },
     );
     return;
   }
 
-  const intent = flow.data.intent;
+  // Persist the deposit BEFORE we show the checkout link so the
+  // poll loop has something to look up. The merchantTradeNo doubles
+  // as the dedupe key (`tx_hash`) so the same Binance order can
+  // never deliver more than once.
   let depId: number;
   try {
     const dep = await createDeposit({
       user_id: ctx.user.telegram_id,
-      method: flow.data.method_name,
+      method: m.name,
       amount: intent.total,
-      reference: orderId,
-      tx_hash: orderId,
-      note: `Direct-pay Binance Order ID: ${orderId}`,
+      reference: tradeNo,
+      tx_hash: tradeNo,
+      note: `Direct-pay Binance merchant checkout — prepayId=${order.prepayId}`,
       order_intent: intent,
     });
     depId = dep.id;
   } catch (err) {
-    const msg = (err as { message?: string })?.message ?? '';
-    if (/23505|duplicate/i.test(msg)) {
-      await ctx.reply(
-        renderMdHtml('⚠️ This Order ID has already been submitted.'),
-        { parse_mode: 'HTML' },
-      );
-      ctx.session.userFlow = undefined;
-      return;
-    }
-    logger.error({ err }, 'Direct-pay Binance deposit insert failed');
-    await ctx.reply(
-      '⚠️ Could not record your payment. Please try again or contact support.',
+    logger.error({ err, tradeNo }, 'Direct-pay Binance deposit insert failed');
+    await ctx.editMessageText(
+      renderMdHtml(
+        [
+          '⚠️ *Could not record the payment.*',
+          '',
+          'Please try again or contact support.',
+        ].join('\n'),
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(
+          btn(ctx.lang, 'back'),
+          `pay:direct:${productId}`,
+        ),
+      },
     );
-    ctx.session.userFlow = undefined;
     return;
   }
-  ctx.session.userFlow = undefined;
 
-  const dep = await findDepositByReference(orderId);
-  if (!dep) {
-    await ctx.reply('⚠️ Internal error: deposit row missing right after insert.');
-    return;
+  const expiresAtMs = Date.now() + BINANCE_POLL_WINDOW_MS;
+  const checkoutUrl = order.checkoutUrl ?? order.universalUrl ?? '';
+  const kb = new InlineKeyboard();
+  if (checkoutUrl) {
+    kb.url('💳 Pay with Binance Pay', checkoutUrl).row();
   }
+  kb.text('🔁 Check Payment', `dpbc:${depId}`).row();
+  kb.text('❌ Cancel', `dpbx:${depId}`);
+
+  await ctx.editMessageText(
+    renderMdHtml(
+      [
+        '🟡 *Binance Pay — Direct Pay*',
+        '',
+        `*${intent.product_name}*  ×  *${intent.qty}*`,
+        `Total: *$${intent.total.toFixed(2)} USDT*`,
+        '',
+        '1️⃣ Tap *Pay with Binance Pay* below — it opens the Binance app',
+        '2️⃣ Confirm the payment in the Binance app',
+        '3️⃣ The bot will detect the payment automatically (within ~30 sec) and deliver your order',
+        '',
+        `_Order expires:_ 10 min from now`,
+        '',
+        '_Or tap *🔁 Check Payment* once you\'ve paid to verify immediately._',
+      ].join('\n'),
+    ),
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+
+  // Kick off the background poll. The user-tap callback uses the
+  // same `runBinancePollOnce` helper so they share the dedupe path.
+  schedulePoll(ctx.api, depId, expiresAtMs, m.name, ctx.user.telegram_id, {
+    username: ctx.user.username ?? null,
+    first_name: ctx.user.first_name ?? null,
+    email: ctx.user.email ?? null,
+  });
+}
+
+function schedulePoll(
+  api: Api,
+  depositId: number,
+  expiresAtMs: number,
+  methodName: string,
+  userTgId: number,
+  logUser: {
+    username: string | null;
+    first_name: string | null;
+    email: string | null;
+  },
+): void {
+  stopPoll(depositId);
+  if (Date.now() >= expiresAtMs) return;
+  const handle = setTimeout(() => {
+    void runBinancePollOnce(
+      api,
+      depositId,
+      expiresAtMs,
+      methodName,
+      userTgId,
+      logUser,
+    );
+  }, BINANCE_POLL_INTERVAL_MS);
+  activePolls.set(depositId, handle);
+}
+
+/**
+ * Single poll attempt. Reads the deposit row, runs the verifier
+ * once, and either fulfils, schedules another poll, or expires the
+ * order. Used by both the background poll and the user-tap "Check
+ * Payment" callback.
+ */
+async function runBinancePollOnce(
+  api: Api,
+  depositId: number,
+  expiresAtMs: number,
+  methodName: string,
+  userTgId: number,
+  logUser: {
+    username: string | null;
+    first_name: string | null;
+    email: string | null;
+  },
+): Promise<{
+  done: 'paid' | 'pending' | 'expired' | 'gone';
+  reason?: string;
+}> {
+  const dep = await getDeposit(depositId);
+  if (!dep || dep.status !== 'pending') {
+    stopPoll(depositId);
+    return { done: 'gone' };
+  }
+
   let result;
   try {
     result = await verifyAndCreditDeposit({
-      api: ctx.api,
+      api,
       deposit: dep,
-      submission: { merchantTradeNo: orderId },
+      submission: { merchantTradeNo: dep.tx_hash ?? dep.reference ?? '' },
       logUser: {
-        telegram_id: ctx.user.telegram_id,
-        username: ctx.user.username ?? null,
-        first_name: ctx.user.first_name ?? null,
-        email: ctx.user.email ?? null,
+        telegram_id: userTgId,
+        username: logUser.username,
+        first_name: logUser.first_name,
+        email: logUser.email,
       },
     });
   } catch (err) {
-    logger.error({ err, depId, orderId }, 'direct Binance auto-verify threw');
+    logger.error({ err, depositId }, 'Binance direct-pay verifier crashed');
     result = {
       ok: false as const,
       reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}`,
@@ -467,38 +615,140 @@ async function handleBinanceDirectSubmit(
   }
 
   if (result.ok) {
-    // The fulfilment path in `services/orderFulfill.ts` already sent
-    // the Payment Verified + Order Delivered cards. We just confirm
-    // the chain side here so the user knows the bot is done.
-    await ctx.reply(
-      renderMdHtml(
-        [
-          `✅ *Direct-pay verified (deposit #${depId}).*`,
-          '',
-          `Order ID: \`${orderId}\``,
-          `Charged: *$${result.amount.toFixed(2)}*`,
-        ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
+    stopPoll(depositId);
+    return { done: 'paid' };
+  }
+
+  // Verifier returned a soft "not paid yet" — keep polling until
+  // the 10-minute window closes. Hard errors (e.g. Binance API
+  // 451) end the loop early and notify the user once.
+  const reason = result.reason || '';
+  const isPending =
+    /not_paid|pending|INITIAL|status:\s*INITIAL|status:\s*PENDING|no record/i.test(
+      reason,
     );
-  } else {
+
+  if (Date.now() >= expiresAtMs) {
+    stopPoll(depositId);
     try {
-      await setDepositNote(depId, `auto-verify failed: ${result.reason}`);
-    } catch {
-      /* noop */
+      await setDepositNote(depositId, `direct-pay expired: ${reason || 'no payment in window'}`);
+      await setDepositStatus(depositId, 'rejected');
+    } catch (err) {
+      logger.warn({ err, depositId }, 'failed to mark expired deposit');
     }
+    try {
+      await api.sendMessage(
+        userTgId,
+        renderMdHtml(
+          [
+            `⏰ *Direct-pay window expired (deposit #${depositId}).*`,
+            '',
+            'No payment was detected within 10 minutes. The order has been cancelled — no charge has been made.',
+            '',
+            'You can start a new direct-pay any time from the product page.',
+          ].join('\n'),
+        ),
+        { parse_mode: 'HTML' },
+      );
+    } catch (err) {
+      logger.warn({ err, userTgId }, 'failed to dm user about expired direct-pay');
+    }
+    return { done: 'expired', reason };
+  }
+
+  if (!isPending) {
+    // Hard verifier error — log it but keep polling in case it's a
+    // transient API hiccup. The deposit will eventually expire.
+    logger.warn(
+      { reason, depositId },
+      'Binance direct-pay verifier returned non-pending error; will retry',
+    );
+  }
+
+  schedulePoll(api, depositId, expiresAtMs, methodName, userTgId, logUser);
+  return { done: 'pending', reason };
+}
+
+async function handleBinanceCheckTap(ctx: AppCtx, depositId: number): Promise<void> {
+  const dep = await getDeposit(depositId);
+  if (!dep || dep.user_id !== ctx.user.telegram_id) {
+    await ctx.answerCallbackQuery({ text: 'Deposit not found.', show_alert: true });
+    return;
+  }
+  if (dep.status !== 'pending') {
+    await ctx.answerCallbackQuery({
+      text: `This order is already ${dep.status}.`,
+      show_alert: true,
+    });
+    return;
+  }
+  await ctx.answerCallbackQuery({ text: 'Checking…' });
+
+  const expiresAtMs = Date.now() + BINANCE_POLL_WINDOW_MS;
+  const r = await runBinancePollOnce(
+    ctx.api,
+    depositId,
+    expiresAtMs,
+    dep.method,
+    ctx.user.telegram_id,
+    {
+      username: ctx.user.username ?? null,
+      first_name: ctx.user.first_name ?? null,
+      email: ctx.user.email ?? null,
+    },
+  );
+  if (r.done === 'paid') {
+    // The fulfilment path already sent Payment Verified + Order
+    // Delivered cards via `services/orderFulfill.ts`. The original
+    // checkout message can stay — most of its buttons are now
+    // no-ops, but we hide them by stripping the keyboard.
+    try {
+      await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+    } catch {
+      /* message might be too old to edit; harmless */
+    }
+  } else if (r.done === 'pending') {
     await ctx.reply(
       renderMdHtml(
         [
-          `⏳ *Submitted (#${depId}) — pending admin review.*`,
+          '⏳ *Payment not detected yet.*',
           '',
-          `Order ID: \`${orderId}\``,
-          `Reason auto-verify deferred: _${result.reason}_`,
+          'If you just paid, give it a few seconds and tap *🔁 Check Payment* again. The bot is also checking automatically every 10 sec.',
+        ].join('\n'),
+      ),
+      { parse_mode: 'HTML' },
+    );
+  }
+}
+
+async function handleBinanceCancelTap(ctx: AppCtx, depositId: number): Promise<void> {
+  const dep = await getDeposit(depositId);
+  if (!dep || dep.user_id !== ctx.user.telegram_id) {
+    await ctx.answerCallbackQuery({ text: 'Deposit not found.', show_alert: true });
+    return;
+  }
+  if (dep.status !== 'pending') {
+    await ctx.answerCallbackQuery({
+      text: `This order is already ${dep.status}.`,
+      show_alert: true,
+    });
+    return;
+  }
+  stopPoll(depositId);
+  try {
+    await setDepositNote(depositId, 'direct-pay cancelled by user');
+    await setDepositStatus(depositId, 'rejected');
+  } catch (err) {
+    logger.warn({ err, depositId }, 'failed to cancel direct-pay deposit');
+  }
+  await ctx.answerCallbackQuery({ text: 'Cancelled.' });
+  try {
+    await ctx.editMessageText(
+      renderMdHtml(
+        [
+          `❌ *Direct-pay cancelled (deposit #${depositId}).*`,
           '',
-          'Your order will be delivered as soon as admin verifies the payment manually.',
+          'No payment was processed.',
         ].join('\n'),
       ),
       {
@@ -506,18 +756,8 @@ async function handleBinanceDirectSubmit(
         reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
       },
     );
-    void adminLog.logTopupSubmitted(ctx.api, {
-      user: {
-        telegram_id: ctx.user.telegram_id,
-        username: ctx.user.username ?? null,
-        first_name: ctx.user.first_name ?? null,
-        email: ctx.user.email ?? null,
-      },
-      depositDbId: depId,
-      method: flow.data.method_name,
-      reference: orderId,
-      reason: result.reason,
-    });
+  } catch {
+    /* message might be too old to edit; harmless */
   }
 }
 
@@ -821,26 +1061,6 @@ async function handleLtcDirectSubmit(
 }
 
 // ----- Screen builders ----------------------------------------------------
-
-function buildBinanceDirectScreen(
-  m: DBPaymentMethod,
-  intent: OrderIntent,
-): string {
-  return [
-    '🟡 *Binance Pay — Direct Pay*',
-    '',
-    `*${intent.product_name}*  ×  *${intent.qty}*`,
-    `Total to pay: *$${intent.total.toFixed(2)}*`,
-    '',
-    `*Pay ID:* \`${m.address ?? '(not configured)'}\``,
-    `*Pay Name:* ${m.name}`,
-    '',
-    `1️⃣ Send *exactly $${intent.total.toFixed(2)}* in USDT to the Pay ID above`,
-    '2️⃣ Paste your *Order ID* below',
-    '',
-    '*Please send your Order ID below:*',
-  ].join('\n');
-}
 
 function buildChainDirectScreen(
   m: DBPaymentMethod,
