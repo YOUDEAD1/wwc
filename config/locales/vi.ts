@@ -227,7 +227,7 @@ export const vi: Record<string, string> = {
   'profile.stats.rel.days': '{n} ngày trước',
 
   'topup.title': '👛 *Nạp ví*',
-  'topup.choose_method': 'Chọn phương thức thanh toán:',
+  'topup.choose_method': '👛 *Nạp ví*',
   'topup.empty_methods': 'Chưa cấu hình phương thức thanh toán. Vui lòng liên hệ hỗ trợ.',
   'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested':
