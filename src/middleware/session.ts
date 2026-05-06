@@ -402,6 +402,25 @@ export type UserFlow =
     }
   | {
       /**
+       * Direct-pay (Phase B) — Binance Pay variant. The deposit row
+       * is created up front so its `created_at` anchors the 30-min
+       * acceptance window in the same way the wallet-topup flow does.
+       * The user then pastes their Binance Pay Order ID, which the
+       * verifier looks up via /sapi/v1/pay/transactions.
+       */
+      type: 'direct_binance';
+      step: 'order_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        pay_id: string;
+        pay_name: string;
+        deposit_id: number;
+        intent: import('../types.js').OrderIntent;
+      };
+    }
+  | {
+      /**
        * User is in a Live Support relay session. While this flow is
        * active, every non-command message they send is forwarded to
        * the admin (and admin's replies come back here).
