@@ -34,18 +34,33 @@ import {
   verifyLtcTx,
 } from './chainVerify.js';
 import { binanceEnabled, queryOrder } from './binance.js';
+import { fulfilOrderForDeposit } from './orderFulfill.js';
 
 export type AutoVerifyResult =
   | {
       ok: true;
       /**
-       * Amount credited to the wallet, in USD. For LTC deposits
-       * this is the locked-in USD quote (NOT the on-chain LTC value).
+       * Amount processed in USD. For LTC deposits this is the
+       * locked-in USD quote (NOT the on-chain LTC value).
        */
       amount: number;
+      /**
+       * Wallet balance after credit. Only meaningful when the
+       * deposit was a wallet top-up OR when a direct-pay deposit
+       * fell back to a wallet refund (e.g. out-of-stock). For a
+       * delivered direct-pay order this is the user's existing
+       * balance (untouched).
+       */
       newBalance: number;
       sender?: string | null;
       provider: DBPaymentMethod['provider'];
+      /**
+       * When the deposit was a per-order direct-pay and the order
+       * was delivered, the public order ID for the user-facing
+       * confirmation message. Null for plain wallet top-ups and for
+       * direct-pay orders that fell back to a wallet refund.
+       */
+      orderPublicId?: string | null;
     }
   | { ok: false; reason: string };
 
@@ -111,7 +126,7 @@ export async function verifyAndCreditDeposit(args: {
     return finalizeApproval({
       api: args.api,
       deposit,
-      provider,
+      method,
       amount: result.amount,
       txHash,
       sender: result.sender,
@@ -156,7 +171,7 @@ export async function verifyAndCreditDeposit(args: {
     return finalizeApproval({
       api: args.api,
       deposit,
-      provider,
+      method,
       amount: usdToCredit,
       txHash,
       sender: result.sender,
@@ -198,7 +213,7 @@ export async function verifyAndCreditDeposit(args: {
     return finalizeApproval({
       api: args.api,
       deposit,
-      provider,
+      method,
       amount: round2(amount),
       txHash: tradeNo,
       sender: null,
@@ -223,7 +238,7 @@ async function checkDedupe(
 async function finalizeApproval(args: {
   api: Api;
   deposit: DBDeposit;
-  provider: DBPaymentMethod['provider'];
+  method: DBPaymentMethod;
   amount: number;
   txHash: string;
   sender: string | null;
@@ -234,12 +249,89 @@ async function finalizeApproval(args: {
     email: string | null;
   };
 }): Promise<AutoVerifyResult> {
-  const { api, deposit } = args;
+  const { api, deposit, method } = args;
   if (Number(deposit.amount) !== args.amount) {
     await setDepositAmount(deposit.id, args.amount);
   }
   await setDepositTxHash(deposit.id, args.txHash);
   await setDepositStatus(deposit.id, 'approved');
+
+  // ----- Direct-pay branch (per-order) -----
+  // When the deposit carries an `order_intent`, we deliver the order
+  // directly instead of crediting the wallet. fulfilOrderForDeposit
+  // refunds to the wallet when the product is gone / out of stock,
+  // so the user is never out of money.
+  if (deposit.order_intent) {
+    const intent = deposit.order_intent;
+    let orderPublicId: string | null = null;
+    let refundedToWallet = false;
+    try {
+      const result = await fulfilOrderForDeposit({
+        api,
+        deposit,
+        intent,
+        provider: method.provider,
+        methodName: method.name,
+      });
+      if (result.ok) {
+        orderPublicId = result.orderPublicId;
+      } else if (result.refundedToWallet) {
+        refundedToWallet = true;
+      }
+    } catch (err) {
+      logger.error(
+        { err, deposit_id: deposit.id },
+        'finalizeApproval: direct-pay fulfilment threw — refunding to wallet',
+      );
+      await credit(
+        deposit.user_id,
+        Number(intent.total),
+        `deposit:${deposit.id}:fulfil_error`,
+        'deposit_credit',
+      );
+      refundedToWallet = true;
+    }
+
+    void adminLog
+      .logTopupResolved(api, {
+        user: args.logUser ?? {
+          telegram_id: deposit.user_id,
+          username: null,
+          first_name: null,
+          email: null,
+        },
+        depositDbId: deposit.id,
+        method: deposit.method,
+        amount: args.amount,
+        status: 'approved',
+        balanceAfter: null,
+        resolvedBy: 0,
+      })
+      .catch((err) => logger.warn({ err }, 'auto-verify: adminLog failed'));
+
+    logger.info(
+      {
+        deposit_id: deposit.id,
+        user: deposit.user_id,
+        amount: args.amount,
+        provider: method.provider,
+        orderPublicId,
+        refundedToWallet,
+      },
+      'Direct-pay deposit auto-approved',
+    );
+
+    return {
+      ok: true,
+      amount: args.amount,
+      newBalance: 0,
+      sender: args.sender,
+      provider: method.provider,
+      orderPublicId,
+    };
+  }
+
+  // ----- Wallet top-up branch (legacy) -----
   const newBalance = await credit(
     deposit.user_id,
     args.amount,
@@ -252,7 +344,7 @@ async function finalizeApproval(args: {
       user: deposit.user_id,
       amount: args.amount,
       newBalance,
-      provider: args.provider,
+      provider: method.provider,
     },
     'Deposit auto-approved',
   );
@@ -279,7 +371,7 @@ async function finalizeApproval(args: {
     amount: args.amount,
     newBalance,
     sender: args.sender,
-    provider: args.provider,
+    provider: method.provider,
   };
 }
 

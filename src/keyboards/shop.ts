@@ -211,10 +211,12 @@ export function qtyKeypadKeyboard(
 
 /**
  * Payment-method picker shown after the user taps *Buy Now* on the
- * product page. Renders the order summary above two buttons:
+ * product page. Renders the order summary above three buttons:
  * 👛 *Wallet Pay* (charges the user's wallet via the existing
- * `pay:wallet:<id>` flow) and 🪙 *Top Up* (deep-links into the
- * top-up flow at `topup:open`).
+ * `pay:wallet:<id>` flow), 💸 *Pay Directly* (Phase B per-order
+ * crypto direct-pay, fulfils the order on tx confirmation without
+ * touching the wallet), and 🪙 *Top Up* (deep-links into the top-up
+ * flow at `topup:open`).
  */
 export function paymentMethodKeyboard(
   lang: Lang,
@@ -222,6 +224,8 @@ export function paymentMethodKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'pay_wallet', `pay:wallet:${product.id}`);
+  kb.row();
+  inlineBtn(kb, lang, 'pay_direct', `pay:direct:${product.id}`);
   kb.row();
   inlineBtn(kb, lang, 'pay_topup', 'topup:open');
   kb.row();

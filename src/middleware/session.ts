@@ -355,6 +355,58 @@ export type UserFlow =
     }
   | {
       /**
+       * Direct-pay (Phase B) — Binance Pay variant. Same shape as
+       * `binance_payid_topup` but carries an OrderIntent so the
+       * verifier delivers the order on success instead of crediting
+       * the wallet.
+       */
+      type: 'direct_binance_payid';
+      step: 'order_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        opened_at: number;
+        intent: import('../types.js').OrderIntent;
+      };
+    }
+  | {
+      /**
+       * Direct-pay (Phase B) — USDT chain variant (BEP20 / TRC20 /
+       * TON). Same shape as `chain_topup` but with an OrderIntent.
+       */
+      type: 'direct_chain';
+      step: 'tx_hash';
+      data: {
+        method_id: number;
+        method_name: string;
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton';
+        address: string;
+        intent: import('../types.js').OrderIntent;
+      };
+    }
+  | {
+      /**
+       * Direct-pay (Phase B) — LTC variant. Unlike top-ups, the USD
+       * amount is fixed at the order total, so there is no
+       * `usd_amount` step — we lock the quote and create the
+       * deposit immediately when the user picks LTC.
+       */
+      type: 'direct_ltc';
+      step: 'tx_hash';
+      data: {
+        method_id: number;
+        method_name: string;
+        address: string;
+        deposit_id: number;
+        usd_amount: number;
+        ltc_amount: number;
+        ltc_rate: number;
+        expires_at_ms: number;
+        intent: import('../types.js').OrderIntent;
+      };
+    }
+  | {
+      /**
        * User is in a Live Support relay session. While this flow is
        * active, every non-command message they send is forwarded to
        * the admin (and admin's replies come back here).

@@ -16,6 +16,7 @@ import type {
   DBUserPriceOverride,
   DBPromo,
   PaymentProvider,
+  OrderIntent,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -1235,6 +1236,12 @@ export async function createDeposit(d: {
   expected_amount?: number;
   /** ISO timestamp when an LTC quote stops being valid. */
   quote_expires_at?: string;
+  /**
+   * Per-order direct-pay only: locked-in order context the verifier
+   * uses to fulfil the order on success. When set, the verifier
+   * skips the legacy wallet-credit path entirely.
+   */
+  order_intent?: OrderIntent;
 }): Promise<DBDeposit> {
   const { data, error } = await supabase
     .from('deposits')
@@ -1245,6 +1252,7 @@ export async function createDeposit(d: {
       tx_hash: d.tx_hash ?? null,
       expected_amount: d.expected_amount ?? null,
       quote_expires_at: d.quote_expires_at ?? null,
+      order_intent: d.order_intent ?? null,
     })
     .select('*')
     .single();
