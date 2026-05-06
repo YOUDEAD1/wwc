@@ -190,16 +190,56 @@ export async function createOrder(args: {
     },
     body: rawBody,
   });
-  const json = (await res.json()) as BinanceCreateOrderResponse;
-  if (!res.ok || json.status !== 'SUCCESS' || !json.data) {
+
+  // Capture the raw body BEFORE attempting to parse JSON. When the
+  // request is blocked at the CDN/WAF layer (CloudFront, Akamai)
+  // the response body is HTML, not JSON, and `res.json()` would
+  // throw without surfacing the actual block reason. We log the
+  // raw text + a few diagnostic headers (cf-ray / x-amz-cf-id /
+  // server) so we can tell whether the 451 came from Binance's
+  // app server or from a fronting CDN.
+  const rawText = await res.text();
+  const diagHeaders: Record<string, string> = {};
+  for (const k of [
+    'server',
+    'cf-ray',
+    'cf-cache-status',
+    'x-amz-cf-id',
+    'x-amz-cf-pop',
+    'x-cache',
+    'x-served-by',
+    'via',
+    'content-type',
+  ]) {
+    const v = res.headers.get(k);
+    if (v) diagHeaders[k] = v;
+  }
+
+  let json: BinanceCreateOrderResponse | null = null;
+  try {
+    json = JSON.parse(rawText) as BinanceCreateOrderResponse;
+  } catch {
+    /* HTML / non-JSON body — leave json=null so we log the raw text */
+  }
+
+  if (!res.ok || !json || json.status !== 'SUCCESS' || !json.data) {
     logger.warn(
-      { json, http: res.status, merchantTradeNo: args.merchantTradeNo },
+      {
+        http: res.status,
+        merchantTradeNo: args.merchantTradeNo,
+        rawBodyHead: rawText.slice(0, 800),
+        rawBodyLen: rawText.length,
+        headers: diagHeaders,
+        json,
+      },
       'Binance Pay createOrder failed',
     );
-    throw new Error(
-      json.errorMessage ||
-        `Binance Pay createOrder error: ${json.code || res.status}`,
-    );
+    const reason = json?.errorMessage
+      ? json.errorMessage
+      : json?.code
+        ? `code=${json.code}`
+        : `http=${res.status} body=${rawText.slice(0, 200)}`;
+    throw new Error(`Binance Pay createOrder error: ${reason}`);
   }
   return json.data;
 }
