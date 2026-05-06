@@ -199,20 +199,20 @@ export type AdminFlow =
   | { type: 'promo_edit_name'; step: 'value'; data: { promo_id: number } }
   // -------- Auto-verify payment-method wizards --------
   // Each provider wizard captures a display name then a wallet
-  // address (or Binance Pay merchant ID). `provider` distinguishes
-  // which network the address must validate against.
+  // address. `provider` distinguishes which network the address
+  // must validate against.
   | {
       type: 'add_chain_payment';
       step: 'name';
       data: {
-        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay';
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc';
       };
     }
   | {
       type: 'add_chain_payment';
       step: 'address';
       data: {
-        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay';
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc';
         name: string;
       };
     }
@@ -220,7 +220,7 @@ export type AdminFlow =
       type: 'add_chain_payment';
       step: 'min_amount';
       data: {
-        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc' | 'binance_pay';
+        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc';
         name: string;
         address: string;
       };
@@ -292,20 +292,6 @@ export type UserFlow =
     }
   | {
       /**
-       * Binance Pay top-up: user has been shown the Pay ID and is
-       * expected to paste their Order ID back as text. We auto-verify
-       * via `queryOrder` and fall back to manual approval otherwise.
-       */
-      type: 'binance_payid_topup';
-      step: 'order_id';
-      data: {
-        method_id: number;
-        method_name: string;
-        opened_at: number;
-      };
-    }
-  | {
-      /**
        * USDT chain (BEP20 / TRC20 / TON) top-up: user has seen the
        * deposit address and is expected to paste the on-chain tx
        * hash. We verify recipient + USDT contract + amount on-chain
@@ -351,22 +337,6 @@ export type UserFlow =
         ltc_amount: number;
         ltc_rate: number;
         expires_at_ms: number;
-      };
-    }
-  | {
-      /**
-       * Direct-pay (Phase B) — Binance Pay variant. Same shape as
-       * `binance_payid_topup` but carries an OrderIntent so the
-       * verifier delivers the order on success instead of crediting
-       * the wallet.
-       */
-      type: 'direct_binance_payid';
-      step: 'order_id';
-      data: {
-        method_id: number;
-        method_name: string;
-        opened_at: number;
-        intent: import('../types.js').OrderIntent;
       };
     }
   | {

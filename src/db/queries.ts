@@ -1193,7 +1193,7 @@ export async function setPaymentMethodAddress(
   await supabase.from('payment_methods').update({ address }).eq('id', id);
 }
 
-/** Look up a deposit by its merchantTradeNo (stored in `reference`). */
+/** Look up a deposit by its `reference` field. */
 export async function findDepositByReference(reference: string): Promise<DBDeposit | null> {
   const { data } = await supabase
     .from('deposits')

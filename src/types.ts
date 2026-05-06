@@ -147,9 +147,9 @@ export type DBDeposit = {
   reference: string | null;
   note: string | null;
   /**
-   * On-chain transaction hash (USDT TRC20 / BEP20 / TON / LTC) or
-   * Binance Pay merchantTradeNo. Unique once set so the same tx
-   * cannot be re-submitted to credit a second deposit.
+   * On-chain transaction hash (USDT TRC20 / BEP20 / TON / LTC).
+   * Unique once set so the same tx cannot be re-submitted to
+   * credit a second deposit.
    */
   tx_hash: string | null;
   /**
@@ -224,7 +224,6 @@ export type DBWalletLedger = {
  * Payment provider tag.
  *
  * Each non-`manual` value triggers a different verifier path:
- *   - `binance_pay`  Binance Pay queryOrder lookup (Order ID input)
  *   - `usdt_trc20`   TronGrid REST tx lookup (tx hash input)
  *   - `usdt_bep20`   BSC public RPC tx lookup (tx hash input)
  *   - `usdt_ton`     TonCenter REST tx lookup (tx hash input)
@@ -236,7 +235,6 @@ export type DBWalletLedger = {
  */
 export type PaymentProvider =
   | 'manual'
-  | 'binance_pay'
   | 'usdt_trc20'
   | 'usdt_bep20'
   | 'usdt_ton'
@@ -252,8 +250,7 @@ export type DBPaymentMethod = {
   provider: PaymentProvider;
   /**
    * Wallet / account address. Required for every non-manual
-   * provider (chain providers verify the recipient against this;
-   * Binance Pay stores the merchant Pay ID here for display).
+   * provider — chain providers verify the recipient against this.
    */
   address: string | null;
   created_at: string;

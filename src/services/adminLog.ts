@@ -266,7 +266,7 @@ export async function logTopupSubmitted(api: Api, args: {
   user: LogUser;
   depositDbId: number;
   method: string;
-  /** Auto-verify reference (Order ID for Binance Pay, tx hash for chains). */
+  /** Auto-verify reference (on-chain tx hash). */
   reference: string;
   /** Optional reason auto-verify deferred to manual (verifier message). */
   reason?: string;
