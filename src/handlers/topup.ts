@@ -889,7 +889,10 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     'pay:others:topup',
     'main:open',
   );
-  const text = `${ctx.t('topup.title')}\n\n${ctx.t('topup.choose_method')}`;
+  // `topup.choose_method` is now the user-facing heading
+  // ("👛 Top Up Wallet") — no need to prepend the legacy title key
+  // since the locale already includes the wallet emoji.
+  const text = ctx.t('topup.choose_method');
   const html = renderMdHtml(text);
   if (asEdit) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
