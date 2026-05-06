@@ -268,5 +268,21 @@ export type DBPaymentMethod = {
    * `binance_pay` provider rows; null for every other provider.
    */
   pay_name: string | null;
+  /**
+   * Per-method Bot API 9.4 button style. Maps via `colorModeToStyle`:
+   *   blue → primary, green → success, red → danger, yellow/none →
+   *   app default. Defaults to 'none' so existing rows look the same.
+   */
+  color_mode: 'none' | 'blue' | 'green' | 'red' | 'yellow';
+  /**
+   * Fallback unicode glyph rendered on non-premium Telegram clients
+   * (e.g. '🟡', '💎'). Null falls back to the per-provider default.
+   */
+  emoji_unicode: string | null;
+  /**
+   * Telegram premium custom_emoji_id used as the button's
+   * `icon_custom_emoji_id`. Null falls back to a per-provider default.
+   */
+  emoji_id: string | null;
   created_at: string;
 };
