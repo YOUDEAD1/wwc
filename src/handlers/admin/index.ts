@@ -4180,6 +4180,20 @@ adminBot.on('message:text', async (ctx, next) => {
         );
         return;
       }
+      // Sanity-check unicode length — a plain emoji is at most ~8
+      // UTF-16 code units (e.g. ZWJ-joined family emojis). A long
+      // word / sentence almost certainly isn't an emoji and would
+      // make the button label look weird, so reject it early and
+      // keep the flow armed for a retry.
+      if (!customId && unicode.length > 8) {
+        await ctx.reply(
+          '⚠️ That doesn\'t look like a single emoji.\n\n' +
+            'Send a single emoji (or a *premium* custom emoji message). ' +
+            'Type `clear` to reset to default, or `/cancel` to abort.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
       await setPaymentMethodIcon(flow.data.method_id, unicode, customId);
       ctx.session.adminFlow = undefined;
       const idLine = customId ? ` (premium id \`${customId}\`)` : '';
@@ -4864,6 +4878,53 @@ adminBot.on('message:photo', async (ctx, next) => {
     await setBotTutorialField('file_type', 'photo', ctx.from.id);
     ctx.session.adminFlow = undefined;
     await ctx.reply('✅ Bot Tutorial photo saved.');
+    return;
+  }
+  if (flow.type === 'edit_payment_icon') {
+    // Photos / images aren't valid Telegram emoji icons. Tell the
+    // admin to send an actual emoji instead. Keep the flow armed so
+    // they can retry without re-tapping the icon button.
+    await ctx.reply(
+      '⚠️ That looks like a photo, not an emoji.\n\n' +
+        'Send a single emoji (or a *premium* custom emoji message) — ' +
+        'photos / images / stickers can\'t be used as button icons.\n\n' +
+        'Send `clear` to reset to the per-provider default, or `/cancel` to abort.',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+  return next();
+});
+
+// Stickers / animations aren't valid emoji icons either. Redirect
+// the admin to send a plain emoji or premium custom emoji message.
+adminBot.on('message:sticker', async (ctx, next) => {
+  const flow = ctx.session.adminFlow;
+  if (!flow) return next();
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
+  if (flow.type === 'edit_payment_icon') {
+    await ctx.reply(
+      '⚠️ That\'s a sticker, not an emoji.\n\n' +
+        'Send a single emoji (or a *premium* custom emoji message) — ' +
+        'stickers can\'t be used as button icons.\n\n' +
+        'Send `clear` to reset to the per-provider default, or `/cancel` to abort.',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+  return next();
+});
+
+adminBot.on('message:animation', async (ctx, next) => {
+  const flow = ctx.session.adminFlow;
+  if (!flow) return next();
+  if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
+  if (flow.type === 'edit_payment_icon') {
+    await ctx.reply(
+      '⚠️ That\'s an animation, not an emoji.\n\n' +
+        'Send a single emoji (or a *premium* custom emoji message).',
+      { parse_mode: 'Markdown' },
+    );
     return;
   }
   return next();
