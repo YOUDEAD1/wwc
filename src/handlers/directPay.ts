@@ -128,25 +128,56 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       `buy:${p.id}`,
     );
 
+    // Premium-emoji-aware order-summary card. Token map keys are
+    // EMOJI registry entries (see config/index.ts → direct_pay_*) so
+    // the admin can rotate the icon for each line independently via
+    // `/setemoji direct_pay_qty …` etc.
+    //
+    // The product glyph uses the product's own premium emoji_id (with
+    // the unicode emoji as fallback). We can't register it in the
+    // EMOJI map (it's per-product / dynamic), so we render via a
+    // placeholder token that's safe across the markdown→HTML pipeline
+    // (alphanumerics + underscore aren't HTML-escaped), then swap it
+    // post-render for the raw `<tg-emoji>` HTML.
+    const PRODUCT_GLYPH_PLACEHOLDER = 'XPRODUCTGLYPHX';
+    const productUnicode = p.emoji && p.emoji.length > 0 ? p.emoji : '🎁';
+    // Defensive HTML-escape of the product fields so a stray `"` /
+    // `<` in admin-typed values can't break out of the attribute or
+    // smuggle markup. The unicode is also escaped because some
+    // legacy products store HTML-meaningful chars there.
+    const escAttr = (s: string): string =>
+      s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const escText = (s: string): string =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const productGlyphHtml =
+      p.emoji_id && p.emoji_id.length > 0
+        ? `<tg-emoji emoji-id="${escAttr(p.emoji_id)}">${escText(productUnicode)}</tg-emoji>`
+        : escText(productUnicode);
+    const body = [
+      '{title} *Select payment method*',
+      '',
+      '{summary} *Order summary*',
+      '',
+      `${PRODUCT_GLYPH_PLACEHOLDER} *${intent.product_name}*`,
+      `{qty} *Qty:* ${intent.qty}`,
+      `{total} *Total:* ${intent.total.toFixed(2)} USDT`,
+      `{wallet} *Wallet:* ${Number(ctx.user.balance).toFixed(2)} USDT`,
+      '',
+      'Choose a pay method:',
+    ].join('\n');
+    const html = renderMdHtml(body, {
+      title: 'direct_pay_title',
+      summary: 'direct_pay_summary',
+      qty: 'direct_pay_qty',
+      total: 'direct_pay_total',
+      wallet: 'direct_pay_wallet',
+    }).replace(PRODUCT_GLYPH_PLACEHOLDER, productGlyphHtml);
+
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(
-      renderMdHtml(
-        [
-          '💸 *Select payment method*',
-          '',
-          '*Order summary*',
-          `*${intent.product_name}*  ×  *${intent.qty}*`,
-          `*Total:* $${intent.total.toFixed(2)} USDT`,
-          `*Wallet:* $${Number(ctx.user.balance).toFixed(2)} USDT`,
-          '',
-          'Choose a pay method below. The order is delivered as soon as your transaction confirms — no top-up required.',
-        ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: kb,
-      },
-    );
+    await ctx.editMessageText(html, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
   });
 
   // Step 2 — user picked a network. Branch on provider and either

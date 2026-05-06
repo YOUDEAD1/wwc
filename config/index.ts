@@ -593,6 +593,15 @@ export const EMOJI: Record<string, EmojiSpec> = {
   credit_emoji: { unicode: '💰', custom_emoji_id: '5931293928186713205' },
   balance_emoji: { unicode: '💳', custom_emoji_id: '5926961826603472005' },
   debit_emoji: '⚠️',
+
+  // ---- Direct-Pay "Select payment method" summary (PR: direct-pay
+  //      summary). Each label gets its own premium-emoji slot so the
+  //      admin can rotate them independently via `/setemoji`.
+  direct_pay_title: { unicode: '💸', custom_emoji_id: '5008248651038852115' },
+  direct_pay_summary: { unicode: '🧾', custom_emoji_id: '5363964615657017717' },
+  direct_pay_qty: { unicode: '🛒', custom_emoji_id: '5226929552319594190' },
+  direct_pay_total: { unicode: '💵', custom_emoji_id: '5366223171454278937' },
+  direct_pay_wallet: { unicode: '👛', custom_emoji_id: '6102840685835066490' },
 };
 
 /**
