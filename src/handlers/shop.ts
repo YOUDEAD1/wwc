@@ -27,7 +27,7 @@ import {
   qtyKeypadKeyboard,
   shopProductsKeyboard,
 } from '../keyboards/shop.js';
-import { inlineBtn } from '../keyboards/helpers.js';
+import { btn, inlineBtn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import {
   clampForTelegram,
@@ -664,10 +664,63 @@ export function registerShop(bot: Composer<AppCtx>): void {
     });
   });
 
-  // Wallet-payment branch of the new payment-method picker. Mirrors
-  // the legacy `buy:<id>` charge logic — email gate, balance check,
-  // order creation, wallet charge, stock decrement, admin log.
+  // Wallet-payment branch of the new payment-method picker. Shows a
+  // confirmation card first ("Are you sure you want to buy this with
+  // your wallet?") and only performs the actual charge once the user
+  // taps the confirm button (`pay:wallet:do:<id>`).
   bot.callbackQuery(/^pay:wallet:(\d+)$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const raw = await getProduct(id);
+    if (!raw) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    if (!p.unlimited_stock && p.stock <= 0) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.buy.no_stock'),
+        show_alert: true,
+      });
+      return;
+    }
+    const qty = ctx.session.qty[id] ?? QTY_MIN;
+    const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
+    const { discount, total } = priceBreakdown(p.price, qty, promo);
+    if (ctx.user.balance < total) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.buy.insufficient', { need: total, have: ctx.user.balance }),
+        show_alert: true,
+      });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const text = [
+      '👛 *Confirm wallet payment*',
+      '',
+      '*Order summary*',
+      `*${p.name}*  ×  *${qty}*`,
+      `*Total:* $${total.toFixed(2)} USDT`,
+      `*Wallet:* $${Number(ctx.user.balance).toFixed(2)} USDT`,
+      discount > 0 ? `*Discount:* -$${discount.toFixed(2)}` : '',
+      '',
+      'Are you sure you want to buy this with your wallet? *${total} USDT* will be deducted from your balance.'
+        .replace('${total}', total.toFixed(2)),
+    ]
+      .filter((s) => s.length > 0)
+      .join('\n');
+    const kb = new InlineKeyboard()
+      .text('✅ Yes, charge my wallet', `pay:wallet:do:${id}`)
+      .row()
+      .text(btn(ctx.lang, 'back'), `buy:${id}`);
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  });
+
+  // Actually performs the wallet charge. Only reachable after the
+  // user confirmed via the `pay:wallet:<id>` confirmation card.
+  bot.callbackQuery(/^pay:wallet:do:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
     if (!raw) {

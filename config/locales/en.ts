@@ -10,7 +10,7 @@ export const en: Record<string, string> = {
   // ---------- Buttons ----------
   'btn.main_menu': '⬅️ Back',
   'btn.shop': '🛍 Shop',
-  'btn.topup': '🪙 Topup',
+  'btn.topup': '👛 Top-up Wallet',
   'btn.profile': '⚙️ Settings',
   'btn.support': '💬 Support',
   'btn.ai_support': '🥝 Kiwi Ai',
@@ -19,7 +19,7 @@ export const en: Record<string, string> = {
   'btn.prev': '◀️ Prev',
   'btn.refresh': '🔄 Refresh',
   'btn.buy_now': '✅ Buy Now',
-  'btn.topup_wallet': '👛 Topup Wallet',
+  'btn.topup_wallet': '👛 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
@@ -32,7 +32,7 @@ export const en: Record<string, string> = {
   // Buy-now payment-method screen.
   'btn.pay_wallet': '👛 Wallet Pay',
   'btn.pay_direct': '💸 Pay Directly',
-  'btn.pay_topup': '🪙 Top Up',
+  'btn.pay_topup': '👛 Top-up Wallet',
   'btn.qty.max': '🎯 Max',
   'btn.qty.reset': '🔄 Reset',
   'btn.qty.confirm': '✅ Confirm',
@@ -261,7 +261,7 @@ export const en: Record<string, string> = {
   'shop.buy.delivery_pending':
     'Coming soon — admin will deliver your items manually within 12h.',
   'shop.buy.insufficient':
-    '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please topup first.',
+    '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please top up first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
   // Generic Wallet-Pay failure popup. Shown when something other
   // than INSUFFICIENT_FUNDS goes wrong (DB error, missing migration,
@@ -584,7 +584,7 @@ export const en: Record<string, string> = {
   'profile.stats.rel.days': '{n}d ago',
 
   // ---------- Topup ----------
-  'topup.title': '👛 *Topup Wallet*',
+  'topup.title': '👛 *Top Up Wallet*',
   'topup.choose_method': 'Choose a payment method:',
   'topup.empty_methods': 'No payment methods configured. Please contact support.',
   'topup.method.body': '*{name}*\n\n{instructions}',

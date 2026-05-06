@@ -192,6 +192,12 @@ export type AdminFlow =
   | { type: 'promo_edit_qty'; step: 'value'; data: { promo_id: number } }
   | { type: 'promo_edit_discount'; step: 'value'; data: { promo_id: number } }
   | { type: 'promo_edit_name'; step: 'value'; data: { promo_id: number } }
+  // -------- Per-payment-method chrome editor --------
+  // Admin entered the chrome editor for a specific row in the
+  // Payment Methods list. `step:'icon'` waits for ONE message (any
+  // emoji — premium custom emoji or unicode glyph). `step:'color'`
+  // waits for a callback to pick a color.
+  | { type: 'edit_payment_icon'; step: 'icon'; data: { method_id: number } }
   // -------- Auto-verify payment-method wizards --------
   // Each provider wizard captures a display name then a wallet
   // address. `provider` distinguishes which network the address

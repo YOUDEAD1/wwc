@@ -13,6 +13,8 @@ import {
   recordLedger,
   deleteCategory,
   deletePaymentMethod,
+  setPaymentMethodColor,
+  setPaymentMethodIcon,
   deleteProduct,
   demoteAdmin,
   findAdjacentProduct,
@@ -59,6 +61,7 @@ import {
   countAvailableProductItems,
   listAvailableProductItems,
   clearProductItems,
+  deleteProductItem,
   setDepositNote,
 } from '../../db/queries.js';
 import { verifyAndCreditDeposit } from '../../services/depositVerify.js';
@@ -991,6 +994,7 @@ async function showStockInspectionPage(
     'Items below are listed in the order the next purchase will pull from (top = next).',
     '',
   ];
+  const kb = new InlineKeyboard();
   slice.forEach((row, idx) => {
     const globalIdx = safePage * STOCK_PAGE_SIZE + idx + 1;
     // Truncate very long payloads (e.g. wall-of-text proxy creds) so
@@ -1004,8 +1008,18 @@ async function showStockInspectionPage(
     // inside a Markdown inline-code span.
     const safe = trimmed.replace(/`/g, "'");
     lines.push(`> *${globalIdx}.* \`${safe}\``);
+    // Per-item delete button so the admin can prune a specific row
+    // (e.g. a duplicate that snuck into the pool) without wiping
+    // everything. The button label echoes the global index so the
+    // admin can match it to the listing above. `products.stock` is
+    // auto-resynced after the delete via `syncProductStockToPool`.
+    kb.text(
+      `🗑 #${globalIdx}`,
+      `adm:prod:items:del:${product_id}:${productPage}:${safePage}:${row.id}`,
+    );
+    if ((idx + 1) % 4 === 0) kb.row();
   });
-  const kb = new InlineKeyboard();
+  if (slice.length % 4 !== 0) kb.row();
   if (pageCount > 1) {
     if (safePage > 0) {
       kb.text(
@@ -1039,6 +1053,38 @@ adminBot.callbackQuery(
       Number(ctx.match[2]),
       Number(ctx.match[3]),
     );
+  },
+);
+
+// Per-item delete from the Stock Inspection screen. After the row is
+// removed from the pool, `deleteProductItem` re-syncs `products.stock`
+// to the new pool size (skipped for unlimited products). The screen
+// is then re-rendered so the admin sees the updated count.
+adminBot.callbackQuery(
+  /^adm:prod:items:del:(\d+):(\d+):(\d+):(\d+)$/,
+  async (ctx) => {
+    const product_id = Number(ctx.match[1]);
+    const productPage = Number(ctx.match[2]);
+    const itemsPage = Number(ctx.match[3]);
+    const item_id = Number(ctx.match[4]);
+    try {
+      await deleteProductItem(item_id);
+      await ctx.answerCallbackQuery({ text: 'Item removed.' });
+    } catch (err) {
+      logger.error({ err, item_id }, 'admin delete product item failed');
+      await ctx.answerCallbackQuery({
+        text: 'Could not delete that item. Try again.',
+        show_alert: true,
+      });
+      return;
+    }
+    // Re-render. If the page is now empty, fall back to the editor.
+    const remaining = await countAvailableProductItems(product_id);
+    if (remaining === 0) {
+      await showProductEditor(ctx, product_id, productPage);
+      return;
+    }
+    await showStockInspectionPage(ctx, product_id, productPage, itemsPage);
   },
 );
 
@@ -1245,6 +1291,20 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
     if (m.provider === 'binance_pay' && m.pay_name) {
       lines.push(`     Pay Name: \`${m.pay_name}\``);
     }
+    // Per-method chrome controls. The button row reads "🎨 Color"
+    // (cycles through none/blue/green/red/yellow) and "🌟 Icon"
+    // (waits for the admin's next emoji message — supports premium
+    // custom emojis). Delete is on its own row so a stray tap can't
+    // wipe the row.
+    const colorTag = m.color_mode && m.color_mode !== 'none' ? m.color_mode : 'default';
+    const iconTag = m.emoji_id ? '⭐' : (m.emoji_unicode ?? 'default');
+    kb.text(
+      `🎨 #${m.id} ${colorTag}`,
+      `adm:pay:color:${m.id}`,
+    ).text(
+      `🌟 #${m.id} ${iconTag}`,
+      `adm:pay:icon:${m.id}`,
+    ).row();
     kb.text(`🗑 #${m.id} ${m.name}`.slice(0, 60), `adm:pay:del:${m.id}`).row();
   }
   backRow(kb);
@@ -1256,6 +1316,55 @@ adminBot.callbackQuery(/^adm:pay:del:(\d+)$/, async (ctx) => {
   await deletePaymentMethod(id);
   await ctx.answerCallbackQuery({ text: `Deleted #${id}` });
   await showPaymentList(ctx);
+});
+
+// Cycle the per-method color through the supported modes. Matches
+// the order in the keyboard helpers' `colorModeToStyle` map.
+adminBot.callbackQuery(/^adm:pay:color:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const methods = await listPaymentMethods();
+  const m = methods.find((x) => x.id === id);
+  if (!m) {
+    await ctx.answerCallbackQuery({ text: 'Method not found.', show_alert: true });
+    return;
+  }
+  const order: Array<'none' | 'blue' | 'green' | 'red' | 'yellow'> = [
+    'none',
+    'blue',
+    'green',
+    'red',
+    'yellow',
+  ];
+  const cur = (m.color_mode ?? 'none') as (typeof order)[number];
+  const next = order[(order.indexOf(cur) + 1) % order.length]!;
+  await setPaymentMethodColor(id, next);
+  await ctx.answerCallbackQuery({ text: `Color → ${next}` });
+  await showPaymentList(ctx);
+});
+
+// Prompt admin to send the next emoji message, which we capture via
+// the text-message handler below. Sending a plain unicode emoji sets
+// `emoji_unicode`; sending a premium custom emoji sets `emoji_id`
+// (with a unicode fallback). Sending the literal text `clear` resets
+// both fields back to the per-provider defaults.
+adminBot.callbackQuery(/^adm:pay:icon:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  ctx.session.adminFlow = {
+    type: 'edit_payment_icon',
+    step: 'icon',
+    data: { method_id: id },
+  };
+  await ctx.answerCallbackQuery();
+  await ctx.reply(
+    [
+      `🌟 *Set icon for payment method #${id}*`,
+      '',
+      'Send the next emoji message — premium custom emojis are supported.',
+      '',
+      'Send `clear` to reset to the per-provider default.',
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
 });
 
 // ---------- Deposits ----------
@@ -4035,6 +4144,48 @@ adminBot.on('message:text', async (ctx, next) => {
       await ctx.reply(
         `✅ Emoji \`${flow.data.key}\` updated → ${unicode}${idLine}.`,
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+
+    if (flow.type === 'edit_payment_icon') {
+      // Per-payment-method icon override. Mirrors the `set_btnicon`
+      // shape but writes to `payment_methods.{emoji_id, emoji_unicode}`
+      // instead of the shared `btnicon.<key>` settings table. Plain
+      // unicode emojis are accepted (they go into `emoji_unicode`),
+      // and premium custom emojis populate both fields.
+      const trimmed = text.trim();
+      if (trimmed.toLowerCase() === 'clear' || trimmed === '/clear') {
+        await setPaymentMethodIcon(flow.data.method_id, null, null);
+        ctx.session.adminFlow = undefined;
+        await ctx.reply('🧹 Icon reset to per-provider default.');
+        return;
+      }
+      const ce = (ctx.message.entities ?? []).find(
+        (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
+      ) as { offset: number; length: number; custom_emoji_id: string } | undefined;
+      let unicode: string | null = null;
+      let customId: string | null = null;
+      if (ce) {
+        const raw = ctx.message.text;
+        unicode = raw.slice(ce.offset, ce.offset + ce.length);
+        customId = ce.custom_emoji_id;
+      } else {
+        unicode = trimmed;
+      }
+      if (!unicode) {
+        await ctx.reply(
+          '❌ Couldn\'t read an emoji. Send a single emoji or `clear` to reset.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      await setPaymentMethodIcon(flow.data.method_id, unicode, customId);
+      ctx.session.adminFlow = undefined;
+      const idLine = customId ? ` (premium id \`${customId}\`)` : '';
+      await ctx.reply(
+        `✅ Payment method #${flow.data.method_id} icon → ${unicode}${idLine}.`,
+        { parse_mode: 'Markdown' },
       );
       return;
     }

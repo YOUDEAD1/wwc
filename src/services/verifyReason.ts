@@ -68,3 +68,62 @@ export function friendlyReason(reason: string): string {
   // Fallback — show the raw reason.
   return reason;
 }
+
+/**
+ * Classify a deferral reason into one of three buckets so the
+ * top-up / direct-pay handlers can show the right UX:
+ *
+ *   * `'duplicate'` — the user resubmitted a hash / order id that
+ *      was already used. We show a hard error popup ("already used")
+ *      and DON'T mark the deposit rejected (the original deposit
+ *      still owns this tx).
+ *   * `'reject'` — the verifier proved the tx is wrong / not a
+ *      match for our address / wrong amount / wrong asset / etc.
+ *      We auto-disapprove the deposit (status = `rejected`) and
+ *      show the reason — no admin review needed.
+ *   * `'defer'` — transient error (network blip, region block,
+ *      service down) where the user's payment may well be valid;
+ *      defer to admin review.
+ */
+export function classifyReason(reason: string): 'duplicate' | 'reject' | 'defer' {
+  const r = reason.toLowerCase();
+
+  // Already-used tx hash / Binance order id.
+  if (r.includes('tx already used by deposit')) return 'duplicate';
+
+  // Hard rejections — verifier proved the tx is invalid for us.
+  const rejectMatchers = [
+    'tx not found',
+    'transaction not found',
+    'unable to find tx',
+    "doesn't match the merchant pay id",
+    'belongs to another account',
+    'recipient address mismatch',
+    'wrong recipient',
+    'amount mismatch',
+    'on-chain amount',
+    'less than minimum',
+    'less than order total',
+    'paid amount',
+    'wrong asset',
+    'wrong contract',
+    'usdt contract address mismatch',
+    'token mismatch',
+    'only usdt',
+    'unsupported binance pay order type',
+    'paid before this deposit',
+    'more than 30 minutes after',
+    'order id not found',
+    'tx not confirmed',
+    'failed transaction',
+    'reverted',
+  ];
+  for (const m of rejectMatchers) {
+    if (r.includes(m)) return 'reject';
+  }
+
+  // Everything else (region block, missing creds, verifier crashed,
+  // missing config, network errors, …) — defer to manual review.
+  return 'defer';
+}
+

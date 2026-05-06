@@ -8,7 +8,7 @@ export const ar: Record<string, string> = {
 
   'btn.main_menu': '⬅️ رجوع',
   'btn.shop': '🛍 المتجر',
-  'btn.topup': '🪙 شحن',
+  'btn.topup': '👛 شحن المحفظة',
   'btn.profile': '⚙️ الإعدادات',
   'btn.support': '💬 الدعم',
   'btn.ai_support': '🥝 Kiwi Ai',
@@ -27,7 +27,7 @@ export const ar: Record<string, string> = {
   'btn.qty_keypad_confirm': '✅ تأكيد',
   'btn.pay_wallet': '👛 الدفع من المحفظة',
   'btn.pay_direct': '💸 ادفع مباشرة',
-  'btn.pay_topup': '🪙 إيداع',
+  'btn.pay_topup': '👛 شحن المحفظة',
   'btn.qty.max': '🎯 الحد الأقصى',
   'btn.qty.reset': '🔄 إعادة',
   'btn.qty.confirm': '✅ تأكيد',

@@ -448,6 +448,12 @@ export async function addProductItems(
     logger.error({ err: error, product_id }, 'addProductItems failed');
     throw error;
   }
+  await syncProductStockToPool(product_id).catch((err) => {
+    logger.warn(
+      { err, product_id },
+      'syncProductStockToPool after addProductItems failed',
+    );
+  });
   return rows.length;
 }
 
@@ -503,6 +509,66 @@ export async function clearProductItems(product_id: number): Promise<void> {
     logger.error({ err: error, product_id }, 'clearProductItems failed');
     throw error;
   }
+  await syncProductStockToPool(product_id).catch((err) => {
+    logger.warn({ err, product_id }, 'syncProductStockToPool after clear failed');
+  });
+}
+
+/**
+ * Delete a single (still-unconsumed) item from the pool. Used by the
+ * admin Stock Inspection screen so the bot owner can prune accidental
+ * uploads without wiping the whole pool. Re-syncs `products.stock`
+ * after deletion so the catalog count never lies.
+ */
+export async function deleteProductItem(item_id: number): Promise<number | null> {
+  const { data: row, error: fetchErr } = await supabase
+    .from('product_items')
+    .select('id, product_id')
+    .eq('id', item_id)
+    .maybeSingle();
+  if (fetchErr) {
+    logger.error({ err: fetchErr, item_id }, 'deleteProductItem fetch failed');
+    throw fetchErr;
+  }
+  if (!row) return null;
+  const product_id = Number(row.product_id);
+  const { error } = await supabase
+    .from('product_items')
+    .delete()
+    .eq('id', item_id);
+  if (error) {
+    logger.error({ err: error, item_id }, 'deleteProductItem failed');
+    throw error;
+  }
+  await syncProductStockToPool(product_id).catch((err) => {
+    logger.warn(
+      { err, product_id },
+      'syncProductStockToPool after deleteProductItem failed',
+    );
+  });
+  return product_id;
+}
+
+/**
+ * Bring `products.stock` back in line with the live count of
+ * unconsumed items in the pool. No-op when the product is marked
+ * `unlimited_stock` (the catalog renders ∞ and we don't track a
+ * count for those rows). Skips silently on legacy schemas missing
+ * the `unlimited_stock` column.
+ */
+export async function syncProductStockToPool(product_id: number): Promise<void> {
+  const remaining = await countAvailableProductItems(product_id);
+  let unlimited = false;
+  const { data: full, error: fullErr } = await supabase
+    .from('products')
+    .select('unlimited_stock')
+    .eq('id', product_id)
+    .maybeSingle();
+  if (!fullErr && full) {
+    unlimited = Boolean((full as { unlimited_stock?: boolean }).unlimited_stock);
+  }
+  if (unlimited) return;
+  await supabase.from('products').update({ stock: remaining }).eq('id', product_id);
 }
 
 /**
@@ -1160,7 +1226,17 @@ export async function listPaymentMethods(): Promise<DBPaymentMethod[]> {
     .select('*')
     .eq('active', true)
     .order('sort_order', { ascending: true });
-  return (data ?? []) as DBPaymentMethod[];
+  // Backfill the new chrome columns (added in migration 0021) with
+  // safe defaults so callers can rely on them existing even on
+  // legacy DBs where the migration hasn't been applied yet.
+  return ((data ?? []) as Array<Partial<DBPaymentMethod> & { id: number }>).map(
+    (row) => ({
+      ...(row as DBPaymentMethod),
+      color_mode: (row as DBPaymentMethod).color_mode ?? 'none',
+      emoji_unicode: (row as DBPaymentMethod).emoji_unicode ?? null,
+      emoji_id: (row as DBPaymentMethod).emoji_id ?? null,
+    }),
+  );
 }
 
 export async function addPaymentMethod(p: {
@@ -1193,6 +1269,41 @@ export async function setPaymentMethodAddress(
   address: string | null,
 ): Promise<void> {
   await supabase.from('payment_methods').update({ address }).eq('id', id);
+}
+
+/**
+ * Update the per-method button color mode. Falls back to 'none' on
+ * legacy DBs that haven't applied 0021 yet (we swallow the column-
+ * does-not-exist error to keep the admin flow non-fatal).
+ */
+export async function setPaymentMethodColor(
+  id: number,
+  color_mode: 'none' | 'blue' | 'green' | 'red' | 'yellow',
+): Promise<void> {
+  const { error } = await supabase
+    .from('payment_methods')
+    .update({ color_mode })
+    .eq('id', id);
+  if (error && !/column.+color_mode/i.test(error.message ?? '')) throw error;
+}
+
+/**
+ * Update the per-method button icon (premium custom_emoji_id +
+ * unicode fallback). Pass null/null to reset to the per-provider
+ * default. Same column-fallback handling as `setPaymentMethodColor`.
+ */
+export async function setPaymentMethodIcon(
+  id: number,
+  emoji_unicode: string | null,
+  emoji_id: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('payment_methods')
+    .update({ emoji_unicode, emoji_id })
+    .eq('id', id);
+  if (error && !/column.+(emoji_id|emoji_unicode)/i.test(error.message ?? '')) {
+    throw error;
+  }
 }
 
 /** Look up a deposit by its `reference` field. */

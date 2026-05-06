@@ -5,17 +5,26 @@ import {
   getDeposit,
   listPaymentMethods,
   setDepositNote,
+  setDepositStatus,
 } from '../db/queries.js';
-import { btn, inlineBtn } from '../keyboards/helpers.js';
+import { btn } from '../keyboards/helpers.js';
+import { paymentMethodsKeyboard } from '../keyboards/payMethods.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
 import { verifyAndCreditDeposit } from '../services/depositVerify.js';
-import { friendlyReason } from '../services/verifyReason.js';
+import { classifyReason, friendlyReason } from '../services/verifyReason.js';
+import { startVerifyingMessage } from '../services/verifyingMsg.js';
+import {
+  manualReviewKeyboard,
+  rejectionKeyboard,
+  successKeyboard,
+} from '../keyboards/verifyResult.js';
 import { consume, formatRetryAfter } from '../services/rateLimit.js';
 import { logger } from '../logger.js';
 import * as adminLog from '../services/adminLog.js';
-import type { DBPaymentMethod, PaymentProvider } from '../types.js';
+import type { DBPaymentMethod } from '../types.js';
+import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -24,6 +33,35 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
     ctx.session.userFlow = undefined;
     await showTopupMenu(ctx, /* asEdit */ true);
+  });
+
+  // "Others" payment method — opens a small support card whose CTA
+  // deep-links the user to the admin DM with a prefilled message
+  // asking about adding another payment method. The :origin suffix
+  // tells us which "Back" callback to use (top-up screen vs
+  // direct-pay screen).
+  bot.callbackQuery(/^pay:others:(topup|direct(?::\d+(?::\d+)?)?)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const origin = ctx.match[1] ?? 'topup';
+    const backCallback = origin === 'topup' ? 'topup:open' : `pdpm:${origin.replace(/^direct:/, '')}`;
+    const url = getAdminContactUrlWithPrefill(
+      'Hey Admin i need help about another payment method for bot payment method name is : ',
+    );
+    const text = [
+      '💡 *Other payment method*',
+      '',
+      'Please support, Us For another payment method.',
+      '',
+      'Tap the button below to message admin and let us know which method you\'d like — we\'ll add it as soon as we can.',
+    ].join('\n');
+    const kb = new InlineKeyboard()
+      .url('💬 Message Admin', url)
+      .row()
+      .text(btn(ctx.lang, 'back'), backCallback);
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
   });
 
   bot.callbackQuery(/^topup:method:(\d+)$/, async (ctx) => {
@@ -276,7 +314,9 @@ async function handleChainTopupSubmit(
     const msg = (err as { message?: string })?.message ?? '';
     if (/23505|duplicate/i.test(msg)) {
       await ctx.reply(
-        renderMdHtml('⚠️ This transaction hash has already been submitted.'),
+        renderMdHtml(
+          '❌ *Already-used transaction.*\n\nThis transaction hash has already been used to credit a previous deposit. Each transaction can only be used once.',
+        ),
         { parse_mode: 'HTML' },
       );
       ctx.session.userFlow = undefined;
@@ -296,10 +336,11 @@ async function handleChainTopupSubmit(
     await ctx.reply('⚠️ Internal error: deposit row missing right after insert.');
     return;
   }
-  const status = await ctx.reply(
-    renderMdHtml(`🔎 *Looking up tx on-chain…* (#${depId})`),
-    { parse_mode: 'HTML' },
-  );
+  const verifying = await startVerifyingMessage({
+    api: ctx.api,
+    chatId: ctx.chat!.id,
+    txId: txHash,
+  });
 
   let result;
   try {
@@ -323,34 +364,49 @@ async function handleChainTopupSubmit(
   }
 
   if (result.ok) {
-    await ctx.api.editMessageText(
-      status.chat.id,
-      status.message_id,
-      renderMdHtml(
-        [
-          `✅ *Auto-verified (#${depId}).*`,
-          '',
-          `Tx: \`${txHash}\``,
-          `Credited: *$${result.amount.toFixed(2)}*`,
-          `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
-        ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
-    );
+    await verifying.done({
+      text: [
+        `✅ *Auto-verified (#${depId}).*`,
+        '',
+        `Tx: \`${txHash}\``,
+        `Credited: *$${result.amount.toFixed(2)}*`,
+        `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
+      ].join('\n'),
+      reply_markup: successKeyboard(ctx.lang),
+    });
   } else {
+    const klass = classifyReason(result.reason);
     try {
       await setDepositNote(depId, `auto-verify failed: ${result.reason}`);
     } catch {
       /* noop */
     }
-    await ctx.api.editMessageText(
-      status.chat.id,
-      status.message_id,
-      renderMdHtml(
-        [
+    if (klass === 'duplicate') {
+      await verifying.done({
+        text: [
+          `❌ *Already-used transaction (#${depId}).*`,
+          '',
+          `Tx: \`${txHash}\``,
+          '_This transaction has already been used to credit a previous deposit. Each transaction can only be used once._',
+        ].join('\n'),
+        reply_markup: successKeyboard(ctx.lang),
+      });
+    } else if (klass === 'reject') {
+      await setDepositStatus(depId, 'rejected').catch(() => undefined);
+      await verifying.done({
+        text: [
+          `❌ *Disapproved (#${depId}).*`,
+          '',
+          `Tx: \`${txHash}\``,
+          `_${friendlyReason(result.reason)}_`,
+          '',
+          'This transaction did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
+        ].join('\n'),
+        reply_markup: rejectionKeyboard(ctx.lang, depId, txHash, result.reason),
+      });
+    } else {
+      await verifying.done({
+        text: [
           `⏳ *Submitted (#${depId}) — pending admin review.*`,
           '',
           `Tx: \`${txHash}\``,
@@ -358,24 +414,21 @@ async function handleChainTopupSubmit(
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
-    );
-    void adminLog.logTopupSubmitted(ctx.api, {
-      user: {
-        telegram_id: ctx.user.telegram_id,
-        username: ctx.user.username ?? null,
-        first_name: ctx.user.first_name ?? null,
-        email: ctx.user.email ?? null,
-      },
-      depositDbId: depId,
-      method: flow.data.method_name,
-      reference: txHash,
-      reason: result.reason,
-    });
+        reply_markup: manualReviewKeyboard(ctx.lang, depId, txHash),
+      });
+      void adminLog.logTopupSubmitted(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        depositDbId: depId,
+        method: flow.data.method_name,
+        reference: txHash,
+        reason: result.reason,
+      });
+    }
   }
 }
 
@@ -501,17 +554,19 @@ async function handleLtcTxHash(
   }
 
   ctx.session.userFlow = undefined;
-  const status = await ctx.reply(
-    renderMdHtml(`🔎 *Looking up tx on Litecoin network…* (#${flow.data.deposit_id})`),
-    { parse_mode: 'HTML' },
-  );
+  const depId = flow.data.deposit_id;
 
   // Persist the tx hash on the existing deposit row so dedupe works.
-  const dep = await getDeposit(flow.data.deposit_id);
+  const dep = await getDeposit(depId);
   if (!dep) {
     await ctx.reply('⚠️ Internal error: deposit row missing.');
     return;
   }
+  const verifying = await startVerifyingMessage({
+    api: ctx.api,
+    chatId: ctx.chat!.id,
+    txId: cleaned,
+  });
 
   let result;
   try {
@@ -527,7 +582,7 @@ async function handleLtcTxHash(
       },
     });
   } catch (err) {
-    logger.error({ err, depId: flow.data.deposit_id }, 'LTC auto-verify threw');
+    logger.error({ err, depId }, 'LTC auto-verify threw');
     result = {
       ok: false as const,
       reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}`,
@@ -535,59 +590,71 @@ async function handleLtcTxHash(
   }
 
   if (result.ok) {
-    await ctx.api.editMessageText(
-      status.chat.id,
-      status.message_id,
-      renderMdHtml(
-        [
-          `✅ *Auto-verified (#${flow.data.deposit_id}).*`,
-          '',
-          `Tx: \`${cleaned}\``,
-          `Credited: *$${result.amount.toFixed(2)}*`,
-          `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
-        ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
-    );
+    await verifying.done({
+      text: [
+        `✅ *Auto-verified (#${depId}).*`,
+        '',
+        `Tx: \`${cleaned}\``,
+        `Credited: *$${result.amount.toFixed(2)}*`,
+        `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
+      ].join('\n'),
+      reply_markup: successKeyboard(ctx.lang),
+    });
   } else {
+    const klass = classifyReason(result.reason);
     try {
-      await setDepositNote(flow.data.deposit_id, `auto-verify failed: ${result.reason}`);
+      await setDepositNote(depId, `auto-verify failed: ${result.reason}`);
     } catch {
       /* noop */
     }
-    await ctx.api.editMessageText(
-      status.chat.id,
-      status.message_id,
-      renderMdHtml(
-        [
-          `⏳ *Submitted (#${flow.data.deposit_id}) — pending admin review.*`,
+    if (klass === 'duplicate') {
+      await verifying.done({
+        text: [
+          `❌ *Already-used transaction (#${depId}).*`,
+          '',
+          `Tx: \`${cleaned}\``,
+          '_This transaction has already been used to credit a previous deposit. Each transaction can only be used once._',
+        ].join('\n'),
+        reply_markup: successKeyboard(ctx.lang),
+      });
+    } else if (klass === 'reject') {
+      await setDepositStatus(depId, 'rejected').catch(() => undefined);
+      await verifying.done({
+        text: [
+          `❌ *Disapproved (#${depId}).*`,
+          '',
+          `Tx: \`${cleaned}\``,
+          `_${friendlyReason(result.reason)}_`,
+          '',
+          'This transaction did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
+        ].join('\n'),
+        reply_markup: rejectionKeyboard(ctx.lang, depId, cleaned, result.reason),
+      });
+    } else {
+      await verifying.done({
+        text: [
+          `⏳ *Submitted (#${depId}) — pending admin review.*`,
           '',
           `Tx: \`${cleaned}\``,
           `_${friendlyReason(result.reason)}_`,
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
-    );
-    void adminLog.logTopupSubmitted(ctx.api, {
-      user: {
-        telegram_id: ctx.user.telegram_id,
-        username: ctx.user.username ?? null,
-        first_name: ctx.user.first_name ?? null,
-        email: ctx.user.email ?? null,
-      },
-      depositDbId: flow.data.deposit_id,
-      method: flow.data.method_name,
-      reference: cleaned,
-      reason: result.reason,
-    });
+        reply_markup: manualReviewKeyboard(ctx.lang, depId, cleaned),
+      });
+      void adminLog.logTopupSubmitted(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        depositDbId: depId,
+        method: flow.data.method_name,
+        reference: cleaned,
+        reason: result.reason,
+      });
+    }
   }
 }
 
@@ -668,10 +735,11 @@ async function handleBinancePayOrderId(
     /* noop */
   }
 
-  const status = await ctx.reply(
-    renderMdHtml(`🔎 *Looking up your Binance Pay order…* (#${depId})`),
-    { parse_mode: 'HTML' },
-  );
+  const verifying = await startVerifyingMessage({
+    api: ctx.api,
+    chatId: ctx.chat!.id,
+    txId: orderId,
+  });
 
   let result;
   try {
@@ -695,34 +763,49 @@ async function handleBinancePayOrderId(
   }
 
   if (result.ok) {
-    await ctx.api.editMessageText(
-      status.chat.id,
-      status.message_id,
-      renderMdHtml(
-        [
-          `✅ *Transaction Confirmed!* (#${depId})`,
-          '',
-          `Order ID: \`${orderId}\``,
-          `Credited: *$${result.amount.toFixed(3)}*`,
-          `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
-        ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
-    );
+    await verifying.done({
+      text: [
+        `✅ *Transaction Confirmed!* (#${depId})`,
+        '',
+        `Order ID: \`${orderId}\``,
+        `Credited: *$${result.amount.toFixed(3)}*`,
+        `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
+      ].join('\n'),
+      reply_markup: successKeyboard(ctx.lang),
+    });
   } else {
+    const klass = classifyReason(result.reason);
     try {
       await setDepositNote(depId, `auto-verify failed: ${result.reason} (order id ${orderId})`);
     } catch {
       /* noop */
     }
-    await ctx.api.editMessageText(
-      status.chat.id,
-      status.message_id,
-      renderMdHtml(
-        [
+    if (klass === 'duplicate') {
+      await verifying.done({
+        text: [
+          `❌ *Already-used order (#${depId}).*`,
+          '',
+          `Order ID: \`${orderId}\``,
+          '_This Binance Pay order has already been used to credit a previous deposit. Each order can only be used once._',
+        ].join('\n'),
+        reply_markup: successKeyboard(ctx.lang),
+      });
+    } else if (klass === 'reject') {
+      await setDepositStatus(depId, 'rejected').catch(() => undefined);
+      await verifying.done({
+        text: [
+          `❌ *Disapproved (#${depId}).*`,
+          '',
+          `Order ID: \`${orderId}\``,
+          `_${friendlyReason(result.reason)}_`,
+          '',
+          'This order did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
+        ].join('\n'),
+        reply_markup: rejectionKeyboard(ctx.lang, depId, orderId, result.reason),
+      });
+    } else {
+      await verifying.done({
+        text: [
           `⏳ *Submitted (#${depId}) — pending admin review.*`,
           '',
           `Order ID: \`${orderId}\``,
@@ -730,24 +813,21 @@ async function handleBinancePayOrderId(
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
-      },
-    );
-    void adminLog.logTopupSubmitted(ctx.api, {
-      user: {
-        telegram_id: ctx.user.telegram_id,
-        username: ctx.user.username ?? null,
-        first_name: ctx.user.first_name ?? null,
-        email: ctx.user.email ?? null,
-      },
-      depositDbId: depId,
-      method: flow.data.method_name,
-      reference: orderId,
-      reason: result.reason,
-    });
+        reply_markup: manualReviewKeyboard(ctx.lang, depId, orderId),
+      });
+      void adminLog.logTopupSubmitted(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        depositDbId: depId,
+        method: flow.data.method_name,
+        reference: orderId,
+        reason: result.reason,
+      });
+    }
   }
 }
 
@@ -802,13 +882,13 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     else await ctx.reply(text);
     return;
   }
-  const kb = new InlineKeyboard();
-  methods.forEach((m, i) => {
-    kb.text(labelForMethod(m), `topup:method:${m.id}`);
-    if (i % 2 === 1) kb.row();
-  });
-  if (methods.length % 2 === 1) kb.row();
-  inlineBtn(kb, ctx.lang, 'back', 'main:open');
+  const kb = paymentMethodsKeyboard(
+    ctx.lang,
+    methods,
+    (id) => `topup:method:${id}`,
+    'pay:others:topup',
+    'main:open',
+  );
   const text = `${ctx.t('topup.title')}\n\n${ctx.t('topup.choose_method')}`;
   const html = renderMdHtml(text);
   if (asEdit) {
@@ -818,14 +898,4 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
   }
 }
 
-function labelForMethod(m: DBPaymentMethod): string {
-  const icon: Record<PaymentProvider, string> = {
-    manual: '💳',
-    binance_pay: '🟡',
-    usdt_trc20: '🟢',
-    usdt_bep20: '🟡',
-    usdt_ton: '🔵',
-    ltc: '⚪',
-  };
-  return `${icon[m.provider]} ${m.name}`;
-}
+

@@ -8,7 +8,7 @@ export const vi: Record<string, string> = {
 
   'btn.main_menu': '⬅️ Quay lại',
   'btn.shop': '🛍 Cửa hàng',
-  'btn.topup': '🪙 Nạp',
+  'btn.topup': '👛 Nạp ví',
   'btn.profile': '⚙️ Cài đặt',
   'btn.support': '💬 Hỗ trợ',
   'btn.ai_support': '🥝 Kiwi Ai',
@@ -27,7 +27,7 @@ export const vi: Record<string, string> = {
   'btn.qty_keypad_confirm': '✅ Xác nhận',
   'btn.pay_wallet': '👛 Thanh toán Ví',
   'btn.pay_direct': '💸 Thanh toán trực tiếp',
-  'btn.pay_topup': '🪙 Nạp tiền',
+  'btn.pay_topup': '👛 Nạp ví',
   'btn.qty.max': '🎯 Tối đa',
   'btn.qty.reset': '🔄 Đặt lại',
   'btn.qty.confirm': '✅ Xác nhận',
