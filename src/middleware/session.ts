@@ -92,11 +92,6 @@ export type AdminFlow =
   | { type: 'edit_bot_tutorial_url'; step: 'url'; data: Record<string, never> }
   | { type: 'add_payment'; step: 'name'; data: Record<string, never> }
   | { type: 'add_payment'; step: 'instructions'; data: { name: string } }
-  | {
-      type: 'add_payment';
-      step: 'min_amount';
-      data: { name: string; instructions: string };
-    }
   | { type: 'set_text'; step: 'key'; data: Record<string, never> }
   | { type: 'set_text'; step: 'value'; data: { key: string } }
   | { type: 'set_emoji'; step: 'key'; data: Record<string, never> }
@@ -216,17 +211,8 @@ export type AdminFlow =
         name: string;
       };
     }
-  | {
-      type: 'add_chain_payment';
-      step: 'min_amount';
-      data: {
-        provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc';
-        name: string;
-        address: string;
-      };
-    }
   // -------- Binance Pay payment-method wizard --------
-  // Four-step wizard: name → pay_id → pay_name → min_amount.
+  // Three-step wizard: name → pay_id → pay_name.
   // The pay_id (10-digit numeric Binance Pay ID) is stored on
   // payment_methods.address; the pay_name (display string like
   // "urweebboii") on payment_methods.pay_name.
@@ -244,11 +230,6 @@ export type AdminFlow =
       type: 'add_binance_payment';
       step: 'pay_name';
       data: { name: string; pay_id: string };
-    }
-  | {
-      type: 'add_binance_payment';
-      step: 'min_amount';
-      data: { name: string; pay_id: string; pay_name: string };
     };
 
 /**
@@ -329,7 +310,6 @@ export type UserFlow =
         method_name: string;
         provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton';
         address: string;
-        min_amount: number;
       };
     }
   | {
@@ -351,7 +331,6 @@ export type UserFlow =
         method_name: string;
         pay_id: string;
         pay_name: string;
-        min_amount: number;
         deposit_id: number;
       };
     }
@@ -369,7 +348,6 @@ export type UserFlow =
         method_id: number;
         method_name: string;
         address: string;
-        min_amount: number;
       };
     }
   | {
@@ -379,7 +357,6 @@ export type UserFlow =
         method_id: number;
         method_name: string;
         address: string;
-        min_amount: number;
         deposit_id: number;
         usd_amount: number;
         ltc_amount: number;

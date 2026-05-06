@@ -1237,7 +1237,7 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
               : m.provider === 'ltc'
                 ? 'auto • LTC'
                 : 'auto • Binance Pay';
-    lines.push(`#${m.id}  ${m.name}  (min $${m.min_amount}) — _${tag}_`);
+    lines.push(`#${m.id}  ${m.name} — _${tag}_`);
     if (m.address) {
       const addrLabel = m.provider === 'binance_pay' ? 'Pay ID' : 'addr';
       lines.push(`     ${addrLabel}: \`${m.address}\``);
@@ -3724,22 +3724,10 @@ adminBot.on('message:text', async (ctx, next) => {
           { parse_mode: 'Markdown' },
         );
       } else if (flow.step === 'instructions') {
-        ctx.session.adminFlow = {
-          type: 'add_payment',
-          step: 'min_amount',
-          data: { ...flow.data, instructions: text },
-        };
-        await ctx.reply('Send the *minimum amount* (number).', { parse_mode: 'Markdown' });
-      } else if (flow.step === 'min_amount') {
-        const min = Number(text);
-        if (!Number.isFinite(min) || min < 0) {
-          await ctx.reply('❌ Bad amount.');
-          return;
-        }
         const m = await addPaymentMethod({
           name: flow.data.name,
-          instructions: flow.data.instructions,
-          min_amount: min,
+          instructions: text,
+          min_amount: 0,
         });
         ctx.session.adminFlow = undefined;
         await ctx.reply(`✅ Payment method *${m.name}* added (id=${m.id}).`, {
@@ -3798,34 +3786,13 @@ adminBot.on('message:text', async (ctx, next) => {
           );
           return;
         }
-        ctx.session.adminFlow = {
-          type: 'add_binance_payment',
-          step: 'min_amount',
-          data: {
-            name: flow.data.name,
-            pay_id: flow.data.pay_id,
-            pay_name: trimmed,
-          },
-        };
-        await ctx.reply(
-          'Send the *minimum top-up amount* in USDT (e.g. `1` or `5`).',
-          { parse_mode: 'Markdown' },
-        );
-        return;
-      }
-      if (flow.step === 'min_amount') {
-        const min = Number(text);
-        if (!Number.isFinite(min) || min < 0) {
-          await ctx.reply('❌ Bad amount. Send a non-negative number.');
-          return;
-        }
         const m = await addPaymentMethod({
           name: flow.data.name,
           instructions: '(auto-verify — instructions are rendered by the bot)',
-          min_amount: min,
+          min_amount: 0,
           provider: 'binance_pay',
           address: flow.data.pay_id,
-          pay_name: flow.data.pay_name,
+          pay_name: trimmed,
         });
         ctx.session.adminFlow = undefined;
         await ctx.reply(
@@ -3833,11 +3800,11 @@ adminBot.on('message:text', async (ctx, next) => {
             `✅ *${m.name}* added (id=${m.id})`,
             `Provider: \`binance_pay\``,
             `Pay ID: \`${flow.data.pay_id}\``,
-            `Pay Name: \`${flow.data.pay_name}\``,
-            `Min: $${min}`,
+            `Pay Name: \`${trimmed}\``,
           ].join('\n'),
           { parse_mode: 'Markdown', reply_markup: rootMenu() },
         );
+        return;
       }
       return;
     }
@@ -3888,35 +3855,19 @@ adminBot.on('message:text', async (ctx, next) => {
           );
           return;
         }
-        ctx.session.adminFlow = {
-          type: 'add_chain_payment',
-          step: 'min_amount',
-          data: { provider, name: flow.data.name, address: addr },
-        };
-        await ctx.reply(
-          'Send the *minimum top-up amount* in USD (e.g. `1` or `5`).',
-          { parse_mode: 'Markdown' },
-        );
-        return;
-      }
-      if (flow.step === 'min_amount') {
-        const min = Number(text);
-        if (!Number.isFinite(min) || min < 0) {
-          await ctx.reply('❌ Bad amount. Send a non-negative number.');
-          return;
-        }
         const m = await addPaymentMethod({
           name: flow.data.name,
           instructions: '(auto-verify — instructions are rendered by the bot)',
-          min_amount: min,
+          min_amount: 0,
           provider,
-          address: flow.data.address,
+          address: addr,
         });
         ctx.session.adminFlow = undefined;
         await ctx.reply(
-          `✅ *${m.name}* added (id=${m.id})\nProvider: \`${provider}\`\nAddress: \`${flow.data.address}\`\nMin: $${min}`,
+          `✅ *${m.name}* added (id=${m.id})\nProvider: \`${provider}\`\nAddress: \`${addr}\``,
           { parse_mode: 'Markdown', reply_markup: rootMenu() },
         );
+        return;
       }
       return;
     }
@@ -4657,6 +4608,46 @@ adminBot.on('message:text', async (ctx, next) => {
       const detail = e?.message ?? String(err);
       await ctx.reply(
         '⚠️ *Promo flow failed*\n\n' +
+          `\`\`\`\n${detail.slice(0, 500)}\n\`\`\`\n` +
+          (e?.hint ? `_Hint: ${escapeHtml(e.hint)}_\n` : '') +
+          '\nCheck the bot logs for the full stack trace.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+    // Surface DB errors for payment-method wizards (mirrors the
+    // promo-flow handler above) so missing migrations are visible
+    // instead of a generic "Cancelled" reply.
+    const isPaymentFlow =
+      flow.type === 'add_payment' ||
+      flow.type === 'add_chain_payment' ||
+      flow.type === 'add_binance_payment';
+    if (isPaymentFlow && (e?.code === '42P01' || e?.code === '42703')) {
+      await ctx.reply(
+        '⚠️ *Payment-methods schema not migrated*\n\n' +
+          `The database is missing a column or table needed for this provider: \`${escapeHtml(
+            e.message ?? '',
+          )}\`.\n\nRun the latest \`supabase/migrations/*.sql\` files (in particular ` +
+          '`0020_binance_pay_restore.sql`) on your Supabase project, then retry.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+    if (isPaymentFlow && e?.code === '23514') {
+      // check_violation — most likely the provider CHECK constraint
+      // hasn't been widened yet to accept this provider value.
+      await ctx.reply(
+        '⚠️ *Provider not allowed by the database*\n\n' +
+          'The Postgres CHECK constraint on `payment_methods.provider` rejected this row. ' +
+          'Apply the latest migration (`0020_binance_pay_restore.sql`) so the constraint includes `binance_pay`.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+    if (isPaymentFlow) {
+      const detail = e?.message ?? String(err);
+      await ctx.reply(
+        '⚠️ *Payment-method wizard failed*\n\n' +
           `\`\`\`\n${detail.slice(0, 500)}\n\`\`\`\n` +
           (e?.hint ? `_Hint: ${escapeHtml(e.hint)}_\n` : '') +
           '\nCheck the bot logs for the full stack trace.',

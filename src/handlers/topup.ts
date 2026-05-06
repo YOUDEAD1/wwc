@@ -59,7 +59,6 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           method_name: m.name,
           provider: m.provider,
           address: m.address,
-          min_amount: Number(m.min_amount) || 0,
         },
       };
       await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m)), {
@@ -107,7 +106,6 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           method_name: m.name,
           pay_id: m.address,
           pay_name: m.pay_name,
-          min_amount: Number(m.min_amount) || 0,
           deposit_id,
         },
       };
@@ -138,7 +136,6 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           method_id: m.id,
           method_name: m.name,
           address: m.address,
-          min_amount: Number(m.min_amount) || 1,
         },
       };
       await ctx.editMessageText(renderMdHtml(buildLtcUsdAmountScreen(m)), {
@@ -152,7 +149,6 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     const methodBody = ctx.t('topup.method.body', {
       name: m.name,
       instructions: m.instructions,
-      min: m.min_amount,
     });
     await ctx.editMessageText(renderMdHtml(methodBody), {
       parse_mode: 'HTML',
@@ -174,7 +170,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     const dep = await createDeposit({
       user_id: ctx.user.telegram_id,
       method: m.name,
-      amount: m.min_amount,
+      amount: 0,
     });
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(renderMdHtml(ctx.t('topup.requested', { id: dep.id })), {
@@ -396,15 +392,6 @@ async function handleLtcUsdAmount(
     );
     return;
   }
-  if (usd < flow.data.min_amount) {
-    await ctx.reply(
-      renderMdHtml(
-        `❌ Minimum top-up for this method is *$${flow.data.min_amount}*.`,
-      ),
-      { parse_mode: 'HTML' },
-    );
-    return;
-  }
 
   let rate: number;
   try {
@@ -613,8 +600,6 @@ function buildBinancePayTopupScreen(m: DBPaymentMethod): string {
     '',
     'Send any USDT amount to the Pay ID above, then paste your *Order ID* below.',
     '',
-    `_Minimum:_ *$${m.min_amount}*`,
-    '',
     '⏰ _Only payments started after opening this screen and completed within 30 minutes will be credited._',
     '',
     '*Please send your Order ID below:*',
@@ -775,8 +760,6 @@ function buildChainTopupScreen(m: DBPaymentMethod): string {
       '⚠️ _Make sure you send USDT (TON Jetton), not native TON. Paste the tx hash from Tonviewer / Tonscan._',
     );
   }
-  lines.push(`_Minimum:_ *$${m.min_amount}*`);
-  lines.push('');
   lines.push('*Please send your TX hash below:*');
   return lines.join('\n');
 }
@@ -788,8 +771,6 @@ function buildLtcUsdAmountScreen(m: DBPaymentMethod): string {
     `*Receiving address:* \`${m.address ?? '(not configured)'}\``,
     '',
     'Litecoin is a volatile coin, so we lock a USD↔LTC rate for *10 minutes* before you send.',
-    '',
-    `_Minimum top-up:_ *$${m.min_amount}*`,
     '',
     '*How much (in USD) do you want to top up?*',
     '_Reply with just the amount, e.g._ `10` _or_ `25.50`',

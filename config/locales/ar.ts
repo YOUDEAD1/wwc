@@ -228,7 +228,7 @@ export const ar: Record<string, string> = {
   'topup.title': '👛 *شحن المحفظة*',
   'topup.choose_method': 'اختر طريقة الدفع:',
   'topup.empty_methods': 'لا توجد طرق دفع مكوّنة. يرجى التواصل مع الدعم.',
-  'topup.method.body': '*{name}*\n\n{instructions}\n\nالحد الأدنى: *{min}*',
+  'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested': '✅ تم تقديم طلب الشحن (#{id}).\nسيتم التحقق وإضافة الرصيد قريبًا.',
 
   'support.title': '{support_title} الدعم',

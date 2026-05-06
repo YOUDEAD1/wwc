@@ -1387,9 +1387,7 @@ async function buildStoreContextBlock(): Promise<string> {
       lines.push('  • No payment methods configured yet.');
     } else {
       for (const m of payments) {
-        lines.push(
-          `  - ${m.name} (min ${Number(m.min_amount).toFixed(2)} USDT)`,
-        );
+        lines.push(`  - ${m.name}`);
       }
     }
     const channel = getChannelUrl();
