@@ -48,6 +48,7 @@ import {
   createGiftCode,
   deleteGiftCode,
   listGiftCodes,
+  getGiftCode,
   countGiftCodeRedemptions,
   addPromo,
   listPromos,
@@ -2157,12 +2158,21 @@ adminBot.callbackQuery('adm:usr:find', async (ctx) => {
 async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
   const isAdminUser = await isAdmin(user.telegram_id);
   const summary = await getUserOrderSummary(user.telegram_id);
+  // Markdown V1 treats `_` and `*` as formatting delimiters — a
+  // username like `lais_one` or a banned-reason that contains either
+  // would unbalance the message and Telegram would reject it with
+  // `can't parse entities`, surfacing as the generic "Something
+  // went wrong". Escape any user-supplied text we splice in here.
+  const safeUsername = user.username ? escapeMd(user.username) : null;
+  const safeFirst = user.first_name ? escapeMd(user.first_name) : '';
+  const safeLast = user.last_name ? escapeMd(user.last_name) : '';
+  const safeReason = user.banned_reason ? escapeMd(user.banned_reason) : null;
   const lines = [
     `👤 *User Details*`,
     '',
     `ID: \`${user.telegram_id}\``,
-    user.username ? `Username: @${user.username}` : 'Username: _none_',
-    `Name: ${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Name: _none_',
+    safeUsername ? `Username: @${safeUsername}` : 'Username: _none_',
+    `Name: ${safeFirst} ${safeLast}`.trim() || 'Name: _none_',
     `Balance: *$${Number(user.balance).toFixed(2)}*`,
     `Language: ${user.language}`,
     `Joined: ${new Date(user.joined_at).toLocaleDateString('en-GB')}`,
@@ -2173,7 +2183,7 @@ async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
           user.banned_at
             ? ` (since ${new Date(user.banned_at).toLocaleDateString('en-GB')})`
             : ''
-        }${user.banned_reason ? `\nReason: _${user.banned_reason}_` : ''}`
+        }${safeReason ? `\nReason: _${safeReason}_` : ''}`
       : 'Banned: ❌',
   ];
   const kb = new InlineKeyboard()
@@ -2357,8 +2367,13 @@ async function showCustomPriceUserCard(
   const handle = targetUser?.username
     ? `@${targetUser.username}`
     : (targetUser?.first_name ?? `id ${telegram_id}`);
+  // The whole card uses Markdown V1, which treats `_` as italic
+  // delimiter. Usernames such as `@lais_one` carry a literal
+  // underscore that would unbalance the surrounding `_(…)_` italic
+  // block and surface as the generic "Something went wrong.
+  // Cancelled." toast. `escapeMd` neutralises `_*\`[]` for V1.
   const lines: string[] = [
-    `💎 *Custom Prices for* \`${telegram_id}\` _(${escapeHtml(handle)})_`,
+    `💎 *Custom Prices for* \`${telegram_id}\` _(${escapeMd(handle)})_`,
     '',
   ];
   if (overrides.length === 0) {
@@ -3995,6 +4010,24 @@ adminBot.on('message:text', async (ctx, next) => {
           return;
         }
         const code = text.toUpperCase();
+        // Pre-check existence so the admin gets actionable feedback
+        // BEFORE we walk them through amount / per-user / cap. The
+        // table's primary key is `code`, so re-using one would later
+        // crash the insert with `23505` and surface a misleading
+        // "operator must apply migration 0007_gift_codes.sql" copy.
+        // Keep the flow armed at step `code` so they can just send
+        // a fresh code without restarting the wizard.
+        const existing = await getGiftCode(code).catch(() => null);
+        if (existing) {
+          await ctx.reply(
+            `⚠️ A gift code <code>${escapeHtml(code)}</code> already exists ` +
+              `(${existing.amount} USDT). Send a different code, or ` +
+              `<code>/cancel</code> and delete the existing one from ` +
+              `🎁 Gift Codes first.`,
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
         ctx.session.adminFlow = { type: 'add_gift', step: 'amount', data: { code } };
         await ctx.reply(
           `Send the <b>amount in USDT</b> to credit when <code>${escapeHtml(code)}</code> is redeemed.`,
@@ -4061,20 +4094,49 @@ adminBot.on('message:text', async (ctx, next) => {
             { parse_mode: 'HTML', reply_markup: rootMenu() },
           );
         } catch (err) {
-          // Most likely cause: migration 0007 not applied → the
-          // `gift_codes` table doesn't exist. Surface this so the
-          // operator knows to run it instead of seeing the generic
-          // "Something went wrong" copy.
-          ctx.session.adminFlow = undefined;
+          // Distinguish the actual failure modes instead of always
+          // blaming a missing migration:
+          //   • 23505           → code already exists (PK violation).
+          //                       Keep flow at step `code` so the admin
+          //                       can retype a fresh code without
+          //                       restarting the wizard.
+          //   • 42P01 / PGRST204 / PGRST205 → table or schema-cache miss
+          //                       → migration 0007 isn't applied (or the
+          //                       PostgREST cache is stale).
+          //   • everything else → surface the real DB error so the
+          //                       operator can self-diagnose.
           const e = err as { code?: string; message?: string } | undefined;
           const detail = e?.message
             ? ` <i>(${escapeHtml(e.code ?? 'err')}: ${escapeHtml(e.message)})</i>`
             : '';
+          if (e?.code === '23505') {
+            // Keep the flow alive — drop back to the `code` step so the
+            // admin doesn't lose the partial wizard input.
+            ctx.session.adminFlow = { type: 'add_gift', step: 'code', data: {} };
+            await ctx.reply(
+              `⚠️ A gift code <code>${escapeHtml(flow.data.code)}</code> ` +
+                `already exists. Send a different code, or ` +
+                `<code>/cancel</code> and delete the existing one from ` +
+                `🎁 Gift Codes first.`,
+              { parse_mode: 'HTML' },
+            );
+            return;
+          }
+          ctx.session.adminFlow = undefined;
+          if (e?.code === '42P01' || e?.code === 'PGRST204' || e?.code === 'PGRST205') {
+            await ctx.reply(
+              '⚠️ Could not create gift code — the bot operator must apply ' +
+                'migration <code>0007_gift_codes.sql</code>. ' +
+                'If already applied, reload the API schema in Supabase ' +
+                '(Project Settings → API → Restart server, or run ' +
+                "<code>select pg_notify('pgrst', 'reload schema');</code>)." +
+                detail,
+              { parse_mode: 'HTML', reply_markup: rootMenu() },
+            );
+            return;
+          }
           await ctx.reply(
-            '⚠️ Could not create gift code — the bot operator must apply ' +
-              'migration <code>0007_gift_codes.sql</code>. ' +
-              'If already applied, reload the API schema in Supabase.' +
-              detail,
+            '⚠️ Could not create gift code.' + detail,
             { parse_mode: 'HTML', reply_markup: rootMenu() },
           );
         }
