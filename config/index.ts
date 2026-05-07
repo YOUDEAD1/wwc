@@ -189,6 +189,13 @@ export const BUTTON_KEYS = {
   pay_wallet: 'btn.pay_wallet',
   pay_direct: 'btn.pay_direct',
   pay_topup: 'btn.pay_topup',
+  // "Others" + "Back" rows on the shared payment-methods keyboard
+  // (Top-Up Wallet & Direct-Pay both use this keyboard). Promoted
+  // out of the previous hard-coded `kb.text('💡 Others', …)` /
+  // `btn.back` rendering so they pick up the standard premium-emoji
+  // icon override + Bot API 9.4 button style applied by `inlineBtn`.
+  paymethod_others: 'btn.paymethod_others',
+  paymethod_back: 'btn.paymethod_back',
   // Wallet-payment confirmation card (page 2 of the buy flow):
   // green Confirm + red back-arrow Cancel.
   confirm_pay: 'btn.confirm_pay',
@@ -339,6 +346,12 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   pay_wallet: 'green',
   pay_direct: 'yellow',
   pay_topup: 'blue',
+  // Payment-methods keyboard chrome — Others sits below the per-
+  // method buttons as the catch-all entry, Back returns to the
+  // previous screen. Blue + red read consistently with the rest of
+  // the bot (primary action / destructive-style back).
+  paymethod_others: 'blue',
+  paymethod_back: 'red',
   // Wallet-confirm screen.
   confirm_pay: 'green',
   cancel_pay: 'red',
@@ -621,6 +634,16 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // gets the familiar premium animation.
   pay_confirm: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
   pay_cancel: { unicode: '◀️', custom_emoji_id: '5440509136259267820' },
+
+  // ---- Payment-methods keyboard (Others / Back rows) -----------
+  // `paymethod_others` is the bot-owner-supplied premium glyph that
+  // replaces the legacy free 💡 unicode emoji on the Others row
+  // (premium subscribers see the animated icon, non-premium users
+  // fall back to 💡). `paymethod_back` re-uses the same animated
+  // back-arrow as the Cancel button on the wallet-confirm card so
+  // the back action reads identically across the buy / top-up flow.
+  paymethod_others: { unicode: '💡', custom_emoji_id: '5188540541922480562' },
+  paymethod_back: { unicode: '◀️', custom_emoji_id: '5440509136259267820' },
 };
 
 /**
@@ -748,6 +771,13 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // Post-purchase email follow-up CTAs.
   set_email_now: 'email_add_l',
   view_invoice: 'invoice_link_label',
+
+  // Payment-methods keyboard chrome — premium icon + Bot API 9.4
+  // style come from the dedicated EMOJI / DEFAULT_BUTTON_COLORS
+  // entries above so the admin can swap either via /setemoji /
+  // /setcolor without touching the keyboard code.
+  paymethod_others: 'paymethod_others',
+  paymethod_back: 'paymethod_back',
 };
 
 /**

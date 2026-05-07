@@ -33,7 +33,7 @@
 
 import { InlineKeyboard } from 'grammy';
 import type { Lang } from '../../config/index.js';
-import { btn } from './helpers.js';
+import { inlineBtn } from './helpers.js';
 import { colorModeToStyle, type ColorMode } from '../../config/index.js';
 import type { DBPaymentMethod, PaymentProvider } from '../types.js';
 
@@ -118,11 +118,17 @@ export function paymentMethodsKeyboard(
     i += 1;
   }
 
-  // Others — primary blue, premium icon if admin set one under
-  // `btnicon.paymethod_others` (handled by inlineBtn elsewhere). The
-  // unicode 💡 fallback matches the mock-up.
-  kb.text('💡 Others', othersCallback).style('primary');
+  // Others — primary-blue button. Goes through `inlineBtn` so the
+  // configured premium icon (`btnicon.paymethod_others` or the
+  // compile-time default mapping to `EMOJI.paymethod_others`) is
+  // applied via Bot API 9.4 `icon_custom_emoji_id`. Premium
+  // subscribers see the animated glyph; non-premium users see the
+  // unicode fallback baked into the locale label.
+  inlineBtn(kb, lang, 'paymethod_others', othersCallback);
   kb.row();
-  kb.text(btn(lang, 'back'), backCallback);
+  // Back — same `inlineBtn` treatment so the row gets the configured
+  // colour (red by default — matches the Cancel-pay arrow on the
+  // wallet-confirm card) plus the premium back-arrow icon.
+  inlineBtn(kb, lang, 'paymethod_back', backCallback);
   return kb;
 }

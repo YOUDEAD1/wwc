@@ -30,6 +30,11 @@ export const ar: Record<string, string> = {
   'btn.pay_topup': '🪙 شحن',
   'btn.confirm_pay': '✅ تأكيد',
   'btn.cancel_pay': '◀️ إلغاء',
+  // صفوف "أخرى" و"رجوع" في لوحة طرق الدفع — الرمز المتميز
+  // المعرف في EMOJI.paymethod_others / paymethod_back يظهر للمشتركين
+  // المميزين، والباقي يرى الرمز التقليدي أدناه كاحتياطي.
+  'btn.paymethod_others': '💡 أخرى',
+  'btn.paymethod_back': '◀️ رجوع',
   'btn.qty.max': '🎯 الحد الأقصى',
   'btn.qty.reset': '🔄 إعادة',
   'btn.qty.confirm': '✅ تأكيد',

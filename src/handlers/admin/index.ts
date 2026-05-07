@@ -106,6 +106,7 @@ import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
+import { env } from '../../env.js';
 import type { DBUser, DBPromo } from '../../types.js';
 
 export const adminBot = new Composer<AppCtx>();
@@ -942,7 +943,121 @@ adminBot.callbackQuery(/^adm:prod:tut:clrfile:(\d+):(\d+)$/, async (ctx) => {
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
 
-// --- Items pool ---
+// --- Items pool (bulk-add staging flow) ---
+//
+// Bot-owner request: instead of typing one short batch and immediately
+// committing, allow accumulating large batches across messages — paste
+// 100 at once, OR forward several vendor messages one-by-one, OR drop
+// a `.txt` file. Everything piles up in `flow.data.staged[]` and only
+// hits the pool when **Confirm** is tapped.
+//
+// `parsePayloadLines()` is the shared splitter: it normalises CR/LF
+// line endings, trims each row, and discards empties so a forwarded
+// message with blank lines / trailing whitespace still imports
+// cleanly. We do NOT deduplicate against the existing pool here —
+// some products legitimately ship duplicate deliverables (e.g. the
+// same upgrade link N times) and the admin can always tap Clear if
+// they pasted the same block twice by accident.
+function parsePayloadLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+// Hard cap on the staging buffer. Mostly belt-and-braces against an
+// admin pasting an entire 50 MB credentials dump into the chat — at
+// that size we fail fast with a friendly error rather than blowing
+// past Telegram's reply length limit while echoing the count back.
+const ITEMS_STAGING_CAP = 5_000;
+
+// Maximum size of an uploaded `.txt` file we'll accept. A 1 MB file
+// is ~30 k payload lines — well above the staging cap above and
+// also small enough that the Bot API allows direct download via the
+// 20 MB `getFile` limit.
+const ITEMS_DOC_BYTE_CAP = 1_000_000;
+
+/**
+ * Renders the live "Staging" status card the admin sees while the
+ * bulk-add flow is active. Called every time the buffer changes
+ * (text message, .txt upload, Clear tap) so the chat stays clean —
+ * we edit the existing card in-place via `promptChatId` /
+ * `promptMessageId` if known, otherwise drop a fresh one and
+ * remember its message id.
+ */
+async function renderItemsStagingCard(
+  ctx: AppCtx,
+  flow: Extract<NonNullable<typeof ctx.session.adminFlow>, { type: 'edit_product_items' }>,
+  opts: { lastDelta?: number; note?: string } = {},
+): Promise<void> {
+  const { product_id, page } = flow.data;
+  const staged = flow.data.staged ?? [];
+  const product = await getProduct(product_id);
+  const productLine = product ? `*Product:* ${escapeMd(product.name)} (#${product.id})` : '';
+  const lines: string[] = [
+    '📥 *Bulk-add to items pool — staging*',
+    '',
+    productLine,
+    `*Staged:* \`${staged.length}\`${typeof opts.lastDelta === 'number' ? ` (just added \`${opts.lastDelta}\`)` : ''}`,
+    '',
+    '_Send more lines, forward another vendor message, or upload a `.txt`_',
+    '_file — every message appends to the buffer above._',
+    '',
+    'Tap *✅ Confirm & Add* to flush the buffer to the pool, *🧹 Clear*',
+    'to drop the staged lines and start over, or *❌ Cancel* to exit',
+    'without saving anything.',
+  ];
+  if (opts.note) {
+    lines.push('', `_${escapeMd(opts.note)}_`);
+  }
+  const kb = new InlineKeyboard()
+    .text(`✅ Confirm & Add (${staged.length})`, `adm:prod:items:confirm:${product_id}:${page}`)
+    .row()
+    .text('🧹 Clear staged', `adm:prod:items:clear_stage:${product_id}:${page}`)
+    .text('❌ Cancel', `adm:prod:items:cancel:${product_id}:${page}`);
+  const body = lines.filter((l) => l !== null && l !== undefined).join('\n');
+  // Edit the existing card if we know where it lives, otherwise post
+  // a new one and remember its id. Telegram replies to a stale id
+  // with a 400 — fall back to a fresh post in that case.
+  if (flow.data.promptChatId && flow.data.promptMessageId) {
+    try {
+      await ctx.api.editMessageText(
+        flow.data.promptChatId,
+        flow.data.promptMessageId,
+        body,
+        { parse_mode: 'Markdown', reply_markup: kb },
+      );
+      return;
+    } catch (err) {
+      logger.debug({ err }, 'items staging card edit failed; reposting');
+    }
+  }
+  const sent = await ctx.reply(body, { parse_mode: 'Markdown', reply_markup: kb });
+  flow.data.promptChatId = sent.chat.id;
+  flow.data.promptMessageId = sent.message_id;
+}
+
+/**
+ * Downloads a Telegram document via the Bot API file endpoint.
+ * Returns the raw bytes as a UTF-8 string. Used to ingest `.txt`
+ * vendor dumps in the bulk-add flow.
+ */
+async function downloadTelegramDocumentAsText(
+  ctx: AppCtx,
+  file_id: string,
+): Promise<string> {
+  const file = await ctx.api.getFile(file_id);
+  if (!file.file_path) {
+    throw new Error('Telegram returned no file_path for the upload.');
+  }
+  const url = `https://api.telegram.org/file/bot${env.BOT_TOKEN}/${file.file_path}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Telegram file download failed: HTTP ${res.status}`);
+  }
+  return await res.text();
+}
+
 adminBot.callbackQuery(/^adm:prod:items:add:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const product_id = Number(ctx.match[1]);
@@ -950,12 +1065,85 @@ adminBot.callbackQuery(/^adm:prod:items:add:(\d+):(\d+)$/, async (ctx) => {
   ctx.session.adminFlow = {
     type: 'edit_product_items',
     step: 'items',
-    data: { product_id, page },
+    data: { product_id, page, staged: [] },
   };
   await ctx.reply(
-    '📦 Send the deliverables as your next message — *one per line*.\n\nExample:\n```\nemail1@example.com|password123\nemail2@example.com|password456\nhttps://account-link/...\n```',
+    [
+      '📦 *Bulk-add deliverables — paste, forward, or upload.*',
+      '',
+      'Send the deliverables across one or more messages — *one payload per line*.',
+      'You can also forward vendor messages one at a time and the bot will',
+      'keep stacking the lines on top of the buffer.',
+      '',
+      '*Examples:*',
+      '```',
+      'email1@example.com|password123',
+      'email2@example.com|password456',
+      'https://account-link/aaa-bbb-ccc',
+      '1-1-1',
+      '30-20',
+      '```',
+      '',
+      '📎 You can also upload a `.txt` file (one payload per line) and the',
+      'bot will auto-parse it.',
+      '',
+      'Nothing is added to the pool until you tap *✅ Confirm & Add* on the',
+      'staging card the bot will keep updated below.',
+    ].join('\n'),
     { parse_mode: 'Markdown' },
   );
+  // Drop the initial staging card so the admin sees the Confirm /
+  // Clear / Cancel buttons immediately even before sending any
+  // payloads. Subsequent message handlers edit this card in place.
+  await renderItemsStagingCard(ctx, ctx.session.adminFlow);
+});
+
+adminBot.callbackQuery(/^adm:prod:items:confirm:(\d+):(\d+)$/, async (ctx) => {
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const flow = ctx.session.adminFlow;
+  if (!flow || flow.type !== 'edit_product_items' || flow.data.product_id !== product_id) {
+    await ctx.answerCallbackQuery({ text: 'No staging session active.', show_alert: true });
+    return;
+  }
+  const staged = flow.data.staged ?? [];
+  if (staged.length === 0) {
+    await ctx.answerCallbackQuery({ text: 'Nothing staged yet.', show_alert: true });
+    return;
+  }
+  await ctx.answerCallbackQuery({ text: `Adding ${staged.length} item(s)…` });
+  try {
+    await addProductItems(product_id, staged);
+  } catch (err) {
+    logger.error({ err, product_id }, 'bulk addProductItems failed');
+    await ctx.reply('❌ Could not save items — see logs for details.');
+    return;
+  }
+  ctx.session.adminFlow = undefined;
+  await ctx.reply(`✅ Added \`${staged.length}\` item(s) to the pool.`, {
+    parse_mode: 'Markdown',
+  });
+  await showProductEditor(ctx, product_id, page);
+});
+
+adminBot.callbackQuery(/^adm:prod:items:clear_stage:(\d+):(\d+)$/, async (ctx) => {
+  const product_id = Number(ctx.match[1]);
+  const flow = ctx.session.adminFlow;
+  if (!flow || flow.type !== 'edit_product_items' || flow.data.product_id !== product_id) {
+    await ctx.answerCallbackQuery({ text: 'No staging session active.', show_alert: true });
+    return;
+  }
+  flow.data.staged = [];
+  await ctx.answerCallbackQuery({ text: 'Staging buffer cleared.' });
+  await renderItemsStagingCard(ctx, flow, { note: 'Buffer cleared.' });
+});
+
+adminBot.callbackQuery(/^adm:prod:items:cancel:(\d+):(\d+)$/, async (ctx) => {
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  await ctx.answerCallbackQuery({ text: 'Cancelled — nothing was added.' });
+  ctx.session.adminFlow = undefined;
+  await showProductEditor(ctx, product_id, page);
 });
 
 adminBot.callbackQuery(/^adm:prod:items:clr:(\d+):(\d+)$/, async (ctx) => {
@@ -3806,18 +3994,29 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
     if (flow.type === 'edit_product_items') {
-      const payloads = text
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      // Bulk-add staging flow — accumulate payloads across many
+      // messages instead of committing on the first one. The admin
+      // can paste a 100-line block, then forward several vendor
+      // messages, then drop a `.txt` upload (handled in the document
+      // listener below) and the buffer keeps growing. Confirm flushes
+      // it to the pool atomically.
+      const payloads = parsePayloadLines(text);
       if (payloads.length === 0) {
-        await ctx.reply('❌ No payloads found.');
+        await ctx.reply(
+          '❌ No payloads found in that message. Send one payload per line, or tap *Cancel* on the staging card to exit.',
+          { parse_mode: 'Markdown' },
+        );
         return;
       }
-      await addProductItems(flow.data.product_id, payloads);
-      ctx.session.adminFlow = undefined;
-      await ctx.reply(`✅ Added ${payloads.length} items to the pool.`);
-      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      const staged = flow.data.staged ?? [];
+      const room = ITEMS_STAGING_CAP - staged.length;
+      const accepted = payloads.slice(0, Math.max(0, room));
+      flow.data.staged = staged.concat(accepted);
+      const note =
+        accepted.length < payloads.length
+          ? `Capped at ${ITEMS_STAGING_CAP} — ${payloads.length - accepted.length} line(s) were dropped. Tap Confirm to flush, then add more.`
+          : undefined;
+      await renderItemsStagingCard(ctx, flow, { lastDelta: accepted.length, note });
       return;
     }
     if (flow.type === 'edit_product_price') {
@@ -4974,6 +5173,52 @@ adminBot.on('message:document', async (ctx, next) => {
     });
     ctx.session.adminFlow = undefined;
     await ctx.reply('✅ Tutorial document saved.');
+    return;
+  }
+  if (flow.type === 'edit_product_items') {
+    // Bulk-add: admin attached a `.txt` file. Sanity-check size +
+    // mime, download via Bot API, parse one payload per line, and
+    // append to the staging buffer. Errors stay friendly so the
+    // admin can re-upload without losing any text they already
+    // pasted.
+    const isTxt =
+      (doc.mime_type ?? '').toLowerCase().startsWith('text/') ||
+      (doc.file_name ?? '').toLowerCase().endsWith('.txt');
+    if (!isTxt) {
+      await ctx.reply(
+        '❌ Only `.txt` files are supported in this flow. Re-upload as plain text.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+    if ((doc.file_size ?? 0) > ITEMS_DOC_BYTE_CAP) {
+      await ctx.reply(
+        `❌ File is too large (${doc.file_size} bytes). Cap is ${ITEMS_DOC_BYTE_CAP} bytes — split it and try again.`,
+      );
+      return;
+    }
+    let raw: string;
+    try {
+      raw = await downloadTelegramDocumentAsText(ctx, doc.file_id);
+    } catch (err) {
+      logger.error({ err, file_id: doc.file_id }, 'items .txt download failed');
+      await ctx.reply('❌ Could not download that file. Try again in a moment.');
+      return;
+    }
+    const payloads = parsePayloadLines(raw);
+    if (payloads.length === 0) {
+      await ctx.reply('❌ The uploaded file had no non-empty lines.');
+      return;
+    }
+    const staged = flow.data.staged ?? [];
+    const room = ITEMS_STAGING_CAP - staged.length;
+    const accepted = payloads.slice(0, Math.max(0, room));
+    flow.data.staged = staged.concat(accepted);
+    const note =
+      accepted.length < payloads.length
+        ? `File capped at ${ITEMS_STAGING_CAP} — ${payloads.length - accepted.length} line(s) were dropped. Tap Confirm to flush, then re-upload the rest.`
+        : `Imported ${accepted.length} line(s) from "${doc.file_name ?? 'upload.txt'}".`;
+    await renderItemsStagingCard(ctx, flow, { lastDelta: accepted.length, note });
     return;
   }
   if (flow.type === 'edit_bot_tutorial_file') {
