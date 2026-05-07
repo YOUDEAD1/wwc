@@ -1820,12 +1820,24 @@ export async function findUserById(telegram_id: number): Promise<DBUser | null> 
 /** Find a user by case-insensitive @username (without the @). */
 export async function findUserByUsername(username: string): Promise<DBUser | null> {
   const clean = username.replace(/^@/, '').trim();
-  const { data } = await supabase
+  if (clean === '') return null;
+  // Escape SQL LIKE wildcards so a literal `_` (e.g. `lais_one`) is
+  // matched as itself, not as the single-char wildcard. Without this,
+  // an admin lookup for `@lais_one` would match `lais1one`, `laisXone`,
+  // etc. and either return the wrong row or — when several rows
+  // matched — surface as a thrown PostgREST `maybeSingle` error that
+  // the admin saw as the generic "Something went wrong. Cancelled.".
+  const escaped = clean.replace(/\\/g, '\\\\').replace(/[_%]/g, '\\$&');
+  const { data, error } = await supabase
     .from('users')
     .select('*')
-    .ilike('username', clean)
+    .ilike('username', escaped)
     .limit(1)
     .maybeSingle();
+  if (error) {
+    logger.warn({ err: error, username: clean }, 'findUserByUsername failed');
+    return null;
+  }
   return (data as DBUser) ?? null;
 }
 
