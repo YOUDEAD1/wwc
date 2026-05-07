@@ -2158,32 +2158,37 @@ adminBot.callbackQuery('adm:usr:find', async (ctx) => {
 async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
   const isAdminUser = await isAdmin(user.telegram_id);
   const summary = await getUserOrderSummary(user.telegram_id);
-  // Markdown V1 treats `_` and `*` as formatting delimiters — a
-  // username like `lais_one` or a banned-reason that contains either
-  // would unbalance the message and Telegram would reject it with
-  // `can't parse entities`, surfacing as the generic "Something
-  // went wrong". Escape any user-supplied text we splice in here.
-  const safeUsername = user.username ? escapeMd(user.username) : null;
-  const safeFirst = user.first_name ? escapeMd(user.first_name) : '';
-  const safeLast = user.last_name ? escapeMd(user.last_name) : '';
-  const safeReason = user.banned_reason ? escapeMd(user.banned_reason) : null;
+  // We render the whole card in HTML rather than Markdown V1 because
+  // V1 treats `_` as italic delimiter and (per the Telegram Bot API)
+  // does NOT honour `\_` escapes — so a username like `@lais_one` or
+  // a banned-reason containing `_`/`*` would unbalance the message
+  // and Telegram would reject the send with `can't parse entities`.
+  // The outer admin handler caught that as the generic "Something
+  // went wrong. Cancelled." toast and the user-card / custom-prices
+  // screens never opened. HTML has no such gotcha — we just need to
+  // run user-supplied text through `escapeHtml`.
+  const safeUsername = user.username ? escapeHtml(user.username) : null;
+  const safeFirst = user.first_name ? escapeHtml(user.first_name) : '';
+  const safeLast = user.last_name ? escapeHtml(user.last_name) : '';
+  const safeReason = user.banned_reason ? escapeHtml(user.banned_reason) : null;
+  const fullName = `${safeFirst} ${safeLast}`.trim();
   const lines = [
-    `👤 *User Details*`,
+    '👤 <b>User Details</b>',
     '',
-    `ID: \`${user.telegram_id}\``,
-    safeUsername ? `Username: @${safeUsername}` : 'Username: _none_',
-    `Name: ${safeFirst} ${safeLast}`.trim() || 'Name: _none_',
-    `Balance: *$${Number(user.balance).toFixed(2)}*`,
-    `Language: ${user.language}`,
+    `ID: <code>${user.telegram_id}</code>`,
+    safeUsername ? `Username: @${safeUsername}` : 'Username: <i>none</i>',
+    fullName ? `Name: ${fullName}` : 'Name: <i>none</i>',
+    `Balance: <b>$${Number(user.balance).toFixed(2)}</b>`,
+    `Language: ${escapeHtml(user.language)}`,
     `Joined: ${new Date(user.joined_at).toLocaleDateString('en-GB')}`,
-    `Orders: *${summary.orders}* • Total spent: *$${summary.spent.toFixed(2)}*`,
+    `Orders: <b>${summary.orders}</b> • Total spent: <b>$${summary.spent.toFixed(2)}</b>`,
     `Admin: ${isAdminUser ? '✅' : '❌'}`,
     user.is_banned
-      ? `Banned: *YES*${
+      ? `Banned: <b>YES</b>${
           user.banned_at
             ? ` (since ${new Date(user.banned_at).toLocaleDateString('en-GB')})`
             : ''
-        }${safeReason ? `\nReason: _${safeReason}_` : ''}`
+        }${safeReason ? `\nReason: <i>${safeReason}</i>` : ''}`
       : 'Banned: ❌',
   ];
   const kb = new InlineKeyboard()
@@ -2208,9 +2213,9 @@ async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
   kb.text('💎 Custom prices', `adm:price:u:${user.telegram_id}`).row();
   kb.text('⬅️ Back to users', 'adm:usr:0').text('🏠 Main', 'adm:root');
   if (ctx.callbackQuery) {
-    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
   } else {
-    await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
   }
 }
 
@@ -2367,24 +2372,26 @@ async function showCustomPriceUserCard(
   const handle = targetUser?.username
     ? `@${targetUser.username}`
     : (targetUser?.first_name ?? `id ${telegram_id}`);
-  // The whole card uses Markdown V1, which treats `_` as italic
-  // delimiter. Usernames such as `@lais_one` carry a literal
-  // underscore that would unbalance the surrounding `_(…)_` italic
-  // block and surface as the generic "Something went wrong.
-  // Cancelled." toast. `escapeMd` neutralises `_*\`[]` for V1.
+  // Rendered in HTML rather than Markdown V1 — V1 treats `_` as
+  // italic delimiter and does not honour `\_` escapes, so a
+  // username like `@lais_one` would unbalance the surrounding
+  // italic block and Telegram would reject the send. That used to
+  // surface as the generic "Something went wrong. Cancelled."
+  // toast and the Custom Prices screen never opened.
   const lines: string[] = [
-    `💎 *Custom Prices for* \`${telegram_id}\` _(${escapeMd(handle)})_`,
+    `💎 <b>Custom Prices for</b> <code>${telegram_id}</code> ` +
+      `<i>(${escapeHtml(handle)})</i>`,
     '',
   ];
   if (overrides.length === 0) {
-    lines.push('_No overrides yet._ Tap *Add override* to set one.');
+    lines.push('<i>No overrides yet.</i> Tap <b>Add override</b> to set one.');
   } else {
-    lines.push(`Active overrides: *${overrides.length}*`, '');
+    lines.push(`Active overrides: <b>${overrides.length}</b>`, '');
     for (const o of overrides) {
       lines.push(
-        `\`#${o.product_id}\` ${escapeHtml(o.product_name)}: ` +
-          `*$${o.price.toFixed(2)}* ` +
-          `_(default $${o.product_default_price.toFixed(2)})_`,
+        `<code>#${o.product_id}</code> ${escapeHtml(o.product_name)}: ` +
+          `<b>$${o.price.toFixed(2)}</b> ` +
+          `<i>(default $${o.product_default_price.toFixed(2)})</i>`,
       );
     }
   }
@@ -2406,12 +2413,12 @@ async function showCustomPriceUserCard(
   kb.text('⬅️ Back', 'adm:price');
   if (ctx.callbackQuery) {
     await ctx.editMessageText(lines.join('\n'), {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: kb,
     });
   } else {
     await ctx.reply(lines.join('\n'), {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: kb,
     });
   }

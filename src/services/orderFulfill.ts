@@ -21,7 +21,7 @@
  * never out of money — a refund-like behaviour rather than a hard
  * failure.
  */
-import { InputFile, type Api } from 'grammy';
+import type { Api } from 'grammy';
 import { logger } from '../logger.js';
 import { env } from '../env.js';
 import {
@@ -37,7 +37,7 @@ import { publicOrderId } from './orderId.js';
 import { sendInvoiceEmail } from './mailer.js';
 import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
-import { buildOrderDeliveredItemsBlock } from './orderRender.js';
+import { buildOrderDeliveredChunks } from './orderRender.js';
 import { t as translate } from '../i18n/index.js';
 import type { DBDeposit, OrderIntent, PaymentProvider } from '../types.js';
 
@@ -157,20 +157,15 @@ export async function fulfilOrderForDeposit(args: {
     order.id,
   );
   const publicId = publicOrderId(order);
-  // Cap the chat-rendered items block so the Order Delivered card
-  // never blows past Telegram's 4096-char limit on bulk orders. When
-  // the helper truncates, it returns a `.txt` payload we ship as a
-  // separate document right after the card.
-  const deliveredBlock =
-    claimed.length > 0
-      ? buildOrderDeliveredItemsBlock(claimed, {
-          filename: `order-${publicId}-items.txt`,
-        })
-      : {
-          inlineBlock: '> Manual delivery — admin will follow up shortly.',
-          attach: null as { filename: string; contents: string } | null,
-        };
-  const deliveredItemsForChat = deliveredBlock.inlineBlock;
+  // Match the wallet-pay layout: split the items into 7-per-chunk
+  // messages so the Order Delivered card never blows past Telegram's
+  // 4096-char limit on bulk orders. The first chunk goes inside the
+  // header card; subsequent chunks are sent as plain blockquote
+  // messages right below it.
+  const deliveredChunks = buildOrderDeliveredChunks(claimed);
+  const firstChunkBlock =
+    deliveredChunks[0]?.inlineBlock ??
+    '> Manual delivery — admin will follow up shortly.';
   const deliveredItemsForDb =
     claimed.length > 0 ? claimed.join('\n') : 'Manual delivery — admin will follow up shortly.';
   // Always persist `delivered_items` — even the manual-delivery
@@ -193,7 +188,7 @@ export async function fulfilOrderForDeposit(args: {
     ),
   );
 
-  // Step 2: Order Delivered card with the claimed items
+  // Step 2: Order Delivered card with the first chunk of items.
   await safeSendHtml(
     api,
     deposit.user_id,
@@ -203,27 +198,33 @@ export async function fulfilOrderForDeposit(args: {
         name: intent.product_name,
         qty: intent.qty,
         total: intent.total.toFixed(2),
-        items: deliveredItemsForChat,
+        items: firstChunkBlock,
       }),
     ),
   );
 
-  // Step 2b: when the inline preview was truncated, ship the full
-  // items list as a .txt document so the buyer always has every link.
-  if (deliveredBlock.attach) {
+  // Step 2b: send any remaining 7-link chunks as plain blockquote
+  // follow-up messages. We push on through individual failures so a
+  // single bad link doesn't keep the buyer from receiving the rest.
+  for (let i = 1; i < deliveredChunks.length; i++) {
+    const chunk = deliveredChunks[i];
+    if (!chunk) continue;
     try {
-      await api.sendDocument(
+      await api.sendMessage(
         deposit.user_id,
-        new InputFile(
-          Buffer.from(deliveredBlock.attach.contents, 'utf8'),
-          deliveredBlock.attach.filename,
-        ),
-        { caption: `📎 Order #${publicId} — ${claimed.length} items` },
+        renderMdHtml(chunk.inlineBlock),
+        { parse_mode: 'HTML' },
       );
     } catch (err) {
       logger.warn(
-        { err, userId: deposit.user_id, orderId: order.id, items: claimed.length },
-        'direct-pay: delivered-items .txt attachment failed',
+        {
+          err,
+          userId: deposit.user_id,
+          orderId: order.id,
+          chunkIndex: i,
+          chunkSize: deliveredChunks.length,
+        },
+        'direct-pay: chunked items follow-up failed',
       );
     }
   }
