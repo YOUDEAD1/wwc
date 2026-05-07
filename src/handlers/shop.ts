@@ -1,5 +1,5 @@
 import type { Composer } from 'grammy';
-import { InlineKeyboard } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
 import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   createOrder,
@@ -38,6 +38,7 @@ import {
 } from '../services/premium.js';
 import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
+import { buildOrderDeliveredItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
 import { sendInvoiceEmail } from '../services/mailer.js';
@@ -780,6 +781,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // "manual delivery" placeholder; the admin gets pinged via
       // logOrderCreated either way.
       const claimed = await claimProductItems(p.id, qty, order.id);
+      const publicId = publicOrderId(order);
       // Items are rendered as a Telegram blockquote (one `> line` per
       // claimed link / account, blank `>` rows between them) so each
       // entry shows up as a quoted pill — same style as the View Note
@@ -788,22 +790,36 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // run; the empty `>` row inside is what gives us a blank line
       // INSIDE the quote between entries.
       //
+      // For bulk orders (e.g. 37+ links) the full block would blow
+      // past Telegram's 4096-char limit, which used to throw on
+      // `reply` and leave the buyer with a "Failed" toast even though
+      // they were charged and stock decremented. The renderer below
+      // caps the inline preview at a safe budget and surfaces an
+      // optional `.txt` attachment carrying the full list.
+      //
       // The DB-stored copy keeps plain single-line separation so the
       // existing /myorders renderer (and the /admin orders block)
       // doesn't suddenly contain blockquote markers.
-      const deliveredItemsForChat =
+      const deliveredBlock =
         claimed.length > 0
-          ? claimed.map((it) => `> ${it}`).join('\n>\n')
-          : `> ${ctx.t('shop.buy.delivery_pending')}`;
+          ? buildOrderDeliveredItemsBlock(claimed, {
+              filename: `order-${publicId}-items.txt`,
+            })
+          : { inlineBlock: `> ${ctx.t('shop.buy.delivery_pending')}`, attach: null };
+      const deliveredItemsForChat = deliveredBlock.inlineBlock;
       const deliveredItemsForDb =
         claimed.length > 0
           ? claimed.join('\n')
           : ctx.t('shop.buy.delivery_pending');
-      if (claimed.length > 0) {
-        await setOrderDeliveredItems(order.id, deliveredItemsForDb);
-      }
+      // Always persist `delivered_items` — even the manual-delivery
+      // placeholder — so the My Orders detail screen can render the
+      // order without falling back to the legacy `delivery` blob.
+      // Without this, a bulk order whose item pool is empty or whose
+      // chat-render failed would leave `delivered_items` NULL, and
+      // tapping the order in /myorders would render a broken
+      // "Received: Order #N-37" line that confused buyers.
+      await setOrderDeliveredItems(order.id, deliveredItemsForDb);
       await ctx.answerCallbackQuery();
-      const publicId = publicOrderId(order);
       // ---- Step 1: Payment Verified card (auto-deletes after 15s) ----
       // We capture the message_id and schedule a delete via setTimeout
       // so the chat stays clean: by the time the user finishes reading
@@ -846,6 +862,30 @@ export function registerShop(bot: Composer<AppCtx>): void {
         ),
         { parse_mode: 'HTML', reply_markup: deliveredKb },
       );
+      // For bulk orders the inline preview only shows the first few
+      // items + a "📎 see attached file" pill. Ship the full list as
+      // a Telegram document so the buyer always has every link.
+      if (deliveredBlock.attach) {
+        try {
+          await ctx.replyWithDocument(
+            new InputFile(
+              Buffer.from(deliveredBlock.attach.contents, 'utf8'),
+              deliveredBlock.attach.filename,
+            ),
+            {
+              caption: `📎 Order #${publicId} — ${claimed.length} items`,
+            },
+          );
+        } catch (err) {
+          // Document send failures shouldn't break the rest of the
+          // post-purchase flow — the buyer can re-fetch the items via
+          // /myorders. Log so admins can investigate.
+          logger.warn(
+            { err, orderId: order.id, items: claimed.length },
+            'pay:wallet — failed to send delivered-items .txt attachment',
+          );
+        }
+      }
       // ---- Step 3: Email follow-up ----------------------------
       // Two branches per the bot-owner spec:
       //   a) No email → polite prompt with a `Set Email` deep link

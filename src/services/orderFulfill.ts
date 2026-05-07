@@ -21,7 +21,7 @@
  * never out of money — a refund-like behaviour rather than a hard
  * failure.
  */
-import type { Api } from 'grammy';
+import { InputFile, type Api } from 'grammy';
 import { logger } from '../logger.js';
 import { env } from '../env.js';
 import {
@@ -37,6 +37,7 @@ import { publicOrderId } from './orderId.js';
 import { sendInvoiceEmail } from './mailer.js';
 import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
+import { buildOrderDeliveredItemsBlock } from './orderRender.js';
 import { t as translate } from '../i18n/index.js';
 import type { DBDeposit, OrderIntent, PaymentProvider } from '../types.js';
 
@@ -155,17 +156,27 @@ export async function fulfilOrderForDeposit(args: {
     intent.qty,
     order.id,
   );
-  const deliveredItemsForChat =
+  const publicId = publicOrderId(order);
+  // Cap the chat-rendered items block so the Order Delivered card
+  // never blows past Telegram's 4096-char limit on bulk orders. When
+  // the helper truncates, it returns a `.txt` payload we ship as a
+  // separate document right after the card.
+  const deliveredBlock =
     claimed.length > 0
-      ? claimed.map((it) => `> ${it}`).join('\n>\n')
-      : '> Manual delivery — admin will follow up shortly.';
+      ? buildOrderDeliveredItemsBlock(claimed, {
+          filename: `order-${publicId}-items.txt`,
+        })
+      : {
+          inlineBlock: '> Manual delivery — admin will follow up shortly.',
+          attach: null as { filename: string; contents: string } | null,
+        };
+  const deliveredItemsForChat = deliveredBlock.inlineBlock;
   const deliveredItemsForDb =
     claimed.length > 0 ? claimed.join('\n') : 'Manual delivery — admin will follow up shortly.';
-  if (claimed.length > 0) {
-    await setOrderDeliveredItems(order.id, deliveredItemsForDb);
-  }
-
-  const publicId = publicOrderId(order);
+  // Always persist `delivered_items` — even the manual-delivery
+  // placeholder — so the My Orders detail screen can render the
+  // order without falling back to the legacy `delivery` blob.
+  await setOrderDeliveredItems(order.id, deliveredItemsForDb);
   const user = await findUserById(deposit.user_id);
   const lang = user?.language ?? env.DEFAULT_LANG;
   const t = (key: string, vars?: Record<string, string | number>) =>
@@ -196,6 +207,26 @@ export async function fulfilOrderForDeposit(args: {
       }),
     ),
   );
+
+  // Step 2b: when the inline preview was truncated, ship the full
+  // items list as a .txt document so the buyer always has every link.
+  if (deliveredBlock.attach) {
+    try {
+      await api.sendDocument(
+        deposit.user_id,
+        new InputFile(
+          Buffer.from(deliveredBlock.attach.contents, 'utf8'),
+          deliveredBlock.attach.filename,
+        ),
+        { caption: `📎 Order #${publicId} — ${claimed.length} items` },
+      );
+    } catch (err) {
+      logger.warn(
+        { err, userId: deposit.user_id, orderId: order.id, items: claimed.length },
+        'direct-pay: delivered-items .txt attachment failed',
+      );
+    }
+  }
 
   // Step 3: Email follow-up
   if (user?.email) {
