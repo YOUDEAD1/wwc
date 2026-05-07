@@ -620,7 +620,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // existing qty-keypad confirm / stats-back glyphs so the user
   // gets the familiar premium animation.
   pay_confirm: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
-  pay_cancel: { unicode: '◀️', custom_emoji_id: '5811235581717935244' },
+  pay_cancel: { unicode: '◀️', custom_emoji_id: '5440509136259267820' },
 };
 
 /**

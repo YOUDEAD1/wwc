@@ -37,7 +37,7 @@ const LTC_QUOTE_TTL_MIN = 10;
  */
 function topupRootCallback(ctx: AppCtx): string {
   const fromBuy = ctx.session.topupOriginBuyProductId;
-  return fromBuy !== undefined ? `topup:open:from:buy:${fromBuy}` : topupRootCallback(ctx);
+  return fromBuy !== undefined ? `topup:open:from:buy:${fromBuy}` : 'topup:open';
 }
 
 /**
