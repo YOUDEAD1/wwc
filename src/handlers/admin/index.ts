@@ -63,6 +63,7 @@ import {
   listAvailableProductItems,
   clearProductItems,
   deleteProductItem,
+  syncProductStockToPool,
   setDepositNote,
 } from '../../db/queries.js';
 import { verifyAndCreditDeposit } from '../../services/depositVerify.js';
@@ -751,6 +752,23 @@ async function showProductEditor(
   product_id: number,
   page: number,
 ): Promise<void> {
+  // Re-align `products.stock` with the live pool count before reading
+  // the product so the editor card always reflects reality.
+  // `addProductItems()` already calls `syncProductStockToPool` after a
+  // successful insert, but the call is wrapped in a `.catch()` and
+  // swallowed there — if Supabase rejected the update for any reason
+  // (transient network blip, rare RLS hiccup, etc.) the products row
+  // would drift below the real pool size and buyers would hit
+  // "out of stock" even though there are unconsumed items waiting.
+  // Doing the sync here is idempotent and cheap (two indexed queries),
+  // and guarantees the admin-facing card and the buyer-facing stock
+  // gate stay consistent after every bulk-add Confirm.
+  await syncProductStockToPool(product_id).catch((err) => {
+    logger.error(
+      { err, product_id },
+      'showProductEditor: syncProductStockToPool failed',
+    );
+  });
   const p = await getProduct(product_id);
   if (!p) {
     await ctx.editMessageText('⚠️ Product not found.', {
@@ -759,7 +777,11 @@ async function showProductEditor(
     return;
   }
   const itemsCount = await countAvailableProductItems(product_id);
-  const stockCell = p.unlimited_stock ? '∞' : String(p.stock);
+  // Source the visible "Stock" cell from the live pool count when the
+  // product isn't unlimited — the products.stock column is just a
+  // denormalised mirror, the truth is `countAvailableProductItems()`.
+  // This keeps the card honest even if a sync ever misses.
+  const stockCell = p.unlimited_stock ? '∞' : String(itemsCount);
   const lines = [
     `✏️ *Edit Product #${p.id}*`,
     '',
