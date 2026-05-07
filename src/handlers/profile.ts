@@ -45,7 +45,7 @@ import { regionPickerKeyboard } from '../keyboards/region.js';
 import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../keyboards/orders.js';
 import { redeemKeyboard } from '../keyboards/redeem.js';
 import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
-import { formatReceivedItemsBlock } from '../services/orderRender.js';
+import { buildOrderDetailReceivedBlock } from '../services/orderRender.js';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import {
@@ -635,29 +635,78 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     // so each entry renders as its own quoted pill ("> #N\n> Open
     // Link #N"). Falls back to the legacy single-line `delivery`
     // text for orders predating the per-item pool.
-    const itemsBlock = formatReceivedItemsBlock(order.delivered_items);
-    if (itemsBlock) {
-      lines.push('', ctx.t('orders.detail.received', { received: itemsBlock }));
+    //
+    // For bulk orders the renderer truncates the inline preview at a
+    // safe Telegram-message budget and surfaces an `attach` payload
+    // we ship as a `.txt` document right after the edited card, so
+    // tapping a 37-link order in /myorders never fails on the 4096-
+    // char limit.
+    const itemsRender = buildOrderDetailReceivedBlock(order.delivered_items, {
+      filename: `order-${pubId}-items.txt`,
+    });
+    if (itemsRender.inlineBlock) {
+      lines.push(
+        '',
+        ctx.t('orders.detail.received', { received: itemsRender.inlineBlock }),
+      );
     } else if (order.delivery) {
       const urlMatch = order.delivery.match(/https?:\/\/\S+/);
       const deliveryText = urlMatch ? urlMatch[0] : order.delivery;
       lines.push('', ctx.t('orders.detail.received', { received: deliveryText }));
     }
-    const html = renderMdHtml(lines.join('\n'));
+    const html = clampForTelegram(renderMdHtml(lines.join('\n')));
     const openUrl = order.delivery?.match(/https?:\/\/\S+/)?.[0] ?? null;
     const reply_markup = orderDetailKeyboard(ctx.lang, openUrl);
-    if (asReply) {
-      await ctx.reply(html, {
-        parse_mode: 'HTML',
-        reply_markup,
-        link_preview_options: { is_disabled: true },
-      });
-    } else {
-      await ctx.editMessageText(html, {
-        parse_mode: 'HTML',
-        reply_markup,
-        link_preview_options: { is_disabled: true },
-      });
+    try {
+      if (asReply) {
+        await ctx.reply(html, {
+          parse_mode: 'HTML',
+          reply_markup,
+          link_preview_options: { is_disabled: true },
+        });
+      } else {
+        await ctx.editMessageText(html, {
+          parse_mode: 'HTML',
+          reply_markup,
+          link_preview_options: { is_disabled: true },
+        });
+      }
+    } catch (err) {
+      // Belt-and-suspenders: if the rendered HTML still trips
+      // Telegram (malformed entity, message_id stale, etc.), drop
+      // the formatting and re-send so the user always sees their
+      // order instead of a broken edit.
+      logger.warn(
+        { err, orderId, htmlLen: html.length },
+        'profile: order detail render failed — falling back to plain reply',
+      );
+      try {
+        await ctx.reply(htmlToPlain(html), {
+          reply_markup,
+          link_preview_options: { is_disabled: true },
+        });
+      } catch (fallbackErr) {
+        logger.warn(
+          { err: fallbackErr, orderId },
+          'profile: order detail plain-text fallback also failed',
+        );
+      }
+    }
+    if (itemsRender.attach) {
+      try {
+        await ctx.replyWithDocument(
+          new InputFile(
+            Buffer.from(itemsRender.attach.contents, 'utf8'),
+            itemsRender.attach.filename,
+          ),
+          { caption: `📎 Order #${pubId} — full items list` },
+        );
+      } catch (err) {
+        logger.warn(
+          { err, orderId },
+          'profile: order detail .txt attachment failed',
+        );
+      }
     }
   }
 
