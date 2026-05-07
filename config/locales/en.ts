@@ -29,6 +29,10 @@ export const en: Record<string, string> = {
   'btn.qty_keypad_back': '⌫',
   'btn.qty_keypad_clear': '🗑 Clear',
   'btn.qty_keypad_confirm': '✅ Confirm',
+  // "Max" snaps the quantity buffer to the user's purchasable
+  // ceiling (`min(QTY_MAX, available stock)`) in one tap so a buyer
+  // who wants the full lot doesn't have to type each digit.
+  'btn.qty_keypad_max': '🎯 Max',
   // Buy-now payment-method screen.
   'btn.pay_wallet': '👛 Wallet',
   'btn.pay_direct': '💸 Pay Direct',
@@ -128,10 +132,20 @@ export const en: Record<string, string> = {
   // Short usage instruction appended below the product-page body
   // when the keypad is open. {current} is the digits the user has
   // tapped on the keypad so far — `—` until they've started.
+  // The `{current}` token is the digit buffer the user has tapped
+  // so far. Until they start typing it renders as the literal
+  // placeholder text `(Amount)` so the line reads naturally to
+  // newcomers ("Current: (Amount)") instead of the cryptic em-dash
+  // we used before. Once digits land, the buffer replaces it.
   'shop.qty.keypad.instruction':
     '{qty_prompt_keypad} *How to use:* tap the digits below or send a number, ' +
     'then tap ✅ Confirm.\n' +
     'Current: <code>{current}</code>',
+  // Placeholder shown inside `Current: <code>…</code>` while the
+  // digit buffer is empty. Reads as a sentence to first-time users
+  // ("Current: (Amount)") instead of the cryptic em-dash we used
+  // before. Once digits land, the buffer replaces it.
+  'shop.qty.keypad.placeholder': '(Amount)',
   // Premium-emoji error shown when the user enters an out-of-range
   // or non-numeric quantity. Auto-deletes a few seconds later so
   // it doesn't clutter the chat.

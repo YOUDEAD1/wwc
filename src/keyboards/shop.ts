@@ -171,7 +171,7 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
  *   ├─────┼─────┼─────┤
  *   │  ⌫  │  0  │ 🗑  │
  *   ├─────┴─────┴─────┤
- *   │   ✅ Confirm     │
+ *   │ 🎯 Max │ ✅ Confirm│
  *   ├─────────────────┤
  *   │      Back        │
  *   └─────────────────┘
@@ -180,6 +180,7 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
  *   qkp:<id>:d:<digit>   — push the digit onto the buffer
  *   qkp:<id>:back        — pop the last digit
  *   qkp:<id>:clear       — wipe the buffer
+ *   qkp:<id>:max         — fill buffer with min(QTY_MAX, stock)
  *   qkp:<id>:confirm     — validate + apply
  *   prod:<id>            — Back / cancel (no apply)
  */
@@ -203,6 +204,12 @@ export function qtyKeypadKeyboard(
   kb.text('0', `qkp:${id}:d:0`);
   inlineBtn(kb, lang, 'qty_keypad_clear', `qkp:${id}:clear`);
   kb.row();
+  // Max + Confirm share a row so the bulk-buy gesture (Max → Confirm)
+  // is two adjacent taps. The action handler in
+  // `src/handlers/shop.ts` snaps the buffer to
+  // `min(QTY_MAX, stock)` (or `QTY_MAX` for unlimited-stock items)
+  // before re-rendering the card.
+  inlineBtn(kb, lang, 'qty_keypad_max', `qkp:${id}:max`);
   inlineBtn(kb, lang, 'qty_keypad_confirm', `qkp:${id}:confirm`);
   kb.row();
   inlineBtn(kb, lang, 'back', `prod:${id}`);

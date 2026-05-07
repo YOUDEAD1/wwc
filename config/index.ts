@@ -185,6 +185,10 @@ export const BUTTON_KEYS = {
   qty_keypad_back: 'btn.qty_keypad_back',
   qty_keypad_clear: 'btn.qty_keypad_clear',
   qty_keypad_confirm: 'btn.qty_keypad_confirm',
+  // `qty_keypad_max` snaps the buffer to the user's purchasable
+  // ceiling (`min(QTY_MAX, stock)`). Sits next to Confirm so the
+  // bulk-buy gesture is one tap.
+  qty_keypad_max: 'btn.qty_keypad_max',
   // ---- Buy-now payment-method screen ----------------------------
   pay_wallet: 'btn.pay_wallet',
   pay_direct: 'btn.pay_direct',
@@ -336,11 +340,12 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   send_note_txt: 'blue',
 
   // Custom-quantity keypad — digits stay neutral so the action
-  // buttons (Clear, Confirm) read as the dominant choices.
+  // buttons (Clear, Confirm, Max) read as the dominant choices.
   custom_qty: 'blue',
   qty_keypad_back: 'none',
   qty_keypad_clear: 'red',
   qty_keypad_confirm: 'green',
+  qty_keypad_max: 'green',
 
   // Buy-now payment-method screen.
   pay_wallet: 'green',
@@ -642,7 +647,11 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // fall back to 💡). `paymethod_back` re-uses the same animated
   // back-arrow as the Cancel button on the wallet-confirm card so
   // the back action reads identically across the buy / top-up flow.
-  paymethod_others: { unicode: '💡', custom_emoji_id: '5188540541922480562' },
+  // The bot owner refreshed this premium id on 2026-05-07 — the
+  // previous one (`5188540541922480562`) is no longer used. Keep
+  // the unicode fallback as the original 💡 so non-premium clients
+  // see the same glyph.
+  paymethod_others: { unicode: '💡', custom_emoji_id: '5262831879731555779' },
   paymethod_back: { unicode: '◀️', custom_emoji_id: '5440509136259267820' },
 };
 
@@ -743,7 +752,10 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 
   // Custom-quantity keypad — keypad on the open button, ✓ on
   // confirm. Digit buttons are intentionally unset so the plain
-  // unicode digit renders as-is on every platform.
+  // unicode digit renders as-is on every platform. The Max button
+  // is intentionally without a premium icon — the locale label's
+  // 🎯 glyph carries the meaning on every platform with no premium
+  // dependency.
   custom_qty: 'qty_prompt_keypad',
   qty_keypad_confirm: 'orders_received',
 

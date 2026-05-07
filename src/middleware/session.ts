@@ -341,6 +341,13 @@ export type UserFlow =
         method_name: string;
         provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton';
         address: string;
+        /**
+         * Wall-clock instant (ms since epoch) when the user landed
+         * on the address screen. Forwarded to the verifier as
+         * `openedAtMs` to anchor the 30-min freshness window so a
+         * stale vendor TXID can't be replayed.
+         */
+        opened_at_ms: number;
       };
     }
   | {
@@ -363,6 +370,8 @@ export type UserFlow =
         pay_id: string;
         pay_name: string;
         deposit_id: number;
+        /** See `chain_topup.opened_at_ms`. */
+        opened_at_ms: number;
       };
     }
   | {
@@ -393,6 +402,8 @@ export type UserFlow =
         ltc_amount: number;
         ltc_rate: number;
         expires_at_ms: number;
+        /** See `chain_topup.opened_at_ms`. */
+        opened_at_ms: number;
       };
     }
   | {
@@ -408,6 +419,8 @@ export type UserFlow =
         provider: 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton';
         address: string;
         intent: import('../types.js').OrderIntent;
+        /** See `chain_topup.opened_at_ms`. */
+        opened_at_ms: number;
       };
     }
   | {
@@ -429,6 +442,8 @@ export type UserFlow =
         ltc_rate: number;
         expires_at_ms: number;
         intent: import('../types.js').OrderIntent;
+        /** See `chain_topup.opened_at_ms`. */
+        opened_at_ms: number;
       };
     }
   | {
@@ -448,6 +463,8 @@ export type UserFlow =
         pay_name: string;
         deposit_id: number;
         intent: import('../types.js').OrderIntent;
+        /** See `chain_topup.opened_at_ms`. */
+        opened_at_ms: number;
       };
     }
   | {

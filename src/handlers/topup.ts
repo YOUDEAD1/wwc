@@ -127,6 +127,10 @@ export function registerTopup(bot: Composer<AppCtx>): void {
         );
         return;
       }
+      // Lock the flow-open instant the moment the user lands on the
+      // address screen — anchors the 30-min freshness window in
+      // `services/depositVerify.ts` so a stale vendor TXID can't be
+      // replayed by re-opening the screen.
       ctx.session.userFlow = {
         type: 'chain_topup',
         step: 'tx_hash',
@@ -135,6 +139,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           method_name: m.name,
           provider: m.provider,
           address: m.address,
+          opened_at_ms: Date.now(),
         },
       };
       await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m)), {
@@ -183,6 +188,9 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           pay_id: m.address,
           pay_name: m.pay_name,
           deposit_id,
+          // Lock the flow-open instant — anchors the 30-min Binance
+          // Pay freshness window so an old Order ID can't be replayed.
+          opened_at_ms: Date.now(),
         },
       };
       await ctx.editMessageText(renderMdHtml(buildBinancePayTopupScreen(m)), {
@@ -214,6 +222,9 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           address: m.address,
         },
       };
+      // The LTC freshness window's `opened_at_ms` is locked when we
+      // transition to the `tx_hash` step inside `handleLtcUsdAmount`
+      // (see below) — that's when the verifier becomes reachable.
       await ctx.editMessageText(renderMdHtml(buildLtcUsdAmountScreen(m)), {
         parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
@@ -384,6 +395,7 @@ async function handleChainTopupSubmit(
       api: ctx.api,
       deposit: dep,
       submission: { txHash },
+      openedAtMs: flow.data.opened_at_ms,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,
@@ -538,6 +550,13 @@ async function handleLtcUsdAmount(
       ltc_amount: ltcAmount,
       ltc_rate: rate,
       expires_at_ms: expiresAtMs,
+      // Lock the flow-open instant for the freshness window — picked
+      // here (rather than at `usd_amount`) because the verifier only
+      // becomes reachable on the `tx_hash` step. An attacker who
+      // pasted an old TXID would still be rejected: the on-chain
+      // block timestamp would fall outside the [now-5min, now+30min]
+      // window anchored at this instant.
+      opened_at_ms: Date.now(),
     },
   };
 
@@ -616,6 +635,7 @@ async function handleLtcTxHash(
       api: ctx.api,
       deposit: dep,
       submission: { txHash: cleaned },
+      openedAtMs: flow.data.opened_at_ms,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,
@@ -795,6 +815,7 @@ async function handleBinancePayOrderId(
       api: ctx.api,
       deposit: dep,
       submission: { orderId },
+      openedAtMs: flow.data.opened_at_ms,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,
