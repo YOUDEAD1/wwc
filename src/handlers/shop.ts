@@ -1,5 +1,5 @@
 import type { Composer } from 'grammy';
-import { InlineKeyboard, InputFile } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   createOrder,
@@ -38,7 +38,7 @@ import {
 } from '../services/premium.js';
 import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
-import { buildOrderDeliveredItemsBlock } from '../services/orderRender.js';
+import { buildOrderDeliveredChunks } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
 import { sendInvoiceEmail } from '../services/mailer.js';
@@ -782,31 +782,27 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // logOrderCreated either way.
       const claimed = await claimProductItems(p.id, qty, order.id);
       const publicId = publicOrderId(order);
-      // Items are rendered as a Telegram blockquote (one `> line` per
-      // claimed link / account, blank `>` rows between them) so each
-      // entry shows up as a quoted pill — same style as the View Note
-      // "luli" / "Hey" pills the bot owner pointed to. `renderMdHtml`
-      // collapses consecutive `> …` lines into one `<blockquote>` per
-      // run; the empty `>` row inside is what gives us a blank line
-      // INSIDE the quote between entries.
+      // Items are rendered as Telegram blockquote pills (one `> line`
+      // per claimed link / account) — same style as the View Note
+      // "luli" / "Hey" pills the bot owner pointed to.
       //
-      // For bulk orders (e.g. 37+ links) the full block would blow
-      // past Telegram's 4096-char limit, which used to throw on
-      // `reply` and leave the buyer with a "Failed" toast even though
-      // they were charged and stock decremented. The renderer below
-      // caps the inline preview at a safe budget and surfaces an
-      // optional `.txt` attachment carrying the full list.
+      // For bulk orders (10/30/50/100+ links) we split the items
+      // across multiple messages of `ORDER_DELIVERED_CHUNK_SIZE` each
+      // (the bot owner's preferred 7-per-msg layout). The first
+      // chunk goes inside the Order Delivered header card; the
+      // remaining chunks are sent as plain blockquote messages right
+      // below. Only the last chunk's message carries the Using
+      // Method inline keyboard so the buyer scrolls to the bottom
+      // and finds it there. This replaces the previous .txt
+      // attachment workaround.
       //
       // The DB-stored copy keeps plain single-line separation so the
       // existing /myorders renderer (and the /admin orders block)
       // doesn't suddenly contain blockquote markers.
-      const deliveredBlock =
-        claimed.length > 0
-          ? buildOrderDeliveredItemsBlock(claimed, {
-              filename: `order-${publicId}-items.txt`,
-            })
-          : { inlineBlock: `> ${ctx.t('shop.buy.delivery_pending')}`, attach: null };
-      const deliveredItemsForChat = deliveredBlock.inlineBlock;
+      const deliveredChunks = buildOrderDeliveredChunks(claimed);
+      const firstChunkBlock =
+        deliveredChunks[0]?.inlineBlock ??
+        `> ${ctx.t('shop.buy.delivery_pending')}`;
       const deliveredItemsForDb =
         claimed.length > 0
           ? claimed.join('\n')
@@ -847,9 +843,13 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // ---- Step 2: Order Delivered card -----------------------
       // The keyboard carries only the per-product Using Method
       // button — the standalone "View Invoice" button was removed
-      // per the bot owner's follow-up note.
+      // per the bot owner's follow-up note. For bulk orders we send
+      // the keyboard with the LAST items message instead of the
+      // header card, so the buyer scrolls past every link before
+      // tapping Using Method.
       const deliveredKb = new InlineKeyboard();
       inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
+      const headerHasKeyboard = deliveredChunks.length <= 1;
       await ctx.reply(
         renderMdHtml(
           ctx.t('shop.buy.order_delivered', {
@@ -857,32 +857,35 @@ export function registerShop(bot: Composer<AppCtx>): void {
             name: p.name,
             qty,
             total: total.toFixed(2),
-            items: deliveredItemsForChat,
+            items: firstChunkBlock,
           }),
         ),
-        { parse_mode: 'HTML', reply_markup: deliveredKb },
+        headerHasKeyboard
+          ? { parse_mode: 'HTML', reply_markup: deliveredKb }
+          : { parse_mode: 'HTML' },
       );
-      // For bulk orders the inline preview only shows the first few
-      // items + a "📎 see attached file" pill. Ship the full list as
-      // a Telegram document so the buyer always has every link.
-      if (deliveredBlock.attach) {
+      // Send the remaining 7-link chunks as plain blockquote
+      // follow-up messages. Only the very last one gets the inline
+      // keyboard. If a follow-up message fails to render we still
+      // press on so a single bad link doesn't keep the buyer from
+      // seeing the rest. The DB has the full list either way.
+      for (let i = 1; i < deliveredChunks.length; i++) {
+        const chunk = deliveredChunks[i];
+        if (!chunk) continue;
+        const opts = chunk.isLast
+          ? { parse_mode: 'HTML' as const, reply_markup: deliveredKb }
+          : { parse_mode: 'HTML' as const };
         try {
-          await ctx.replyWithDocument(
-            new InputFile(
-              Buffer.from(deliveredBlock.attach.contents, 'utf8'),
-              deliveredBlock.attach.filename,
-            ),
-            {
-              caption: `📎 Order #${publicId} — ${claimed.length} items`,
-            },
-          );
+          await ctx.reply(renderMdHtml(chunk.inlineBlock), opts);
         } catch (err) {
-          // Document send failures shouldn't break the rest of the
-          // post-purchase flow — the buyer can re-fetch the items via
-          // /myorders. Log so admins can investigate.
           logger.warn(
-            { err, orderId: order.id, items: claimed.length },
-            'pay:wallet — failed to send delivered-items .txt attachment',
+            {
+              err,
+              orderId: order.id,
+              chunkIndex: i,
+              chunkSize: deliveredChunks.length,
+            },
+            'pay:wallet — chunked items follow-up failed',
           );
         }
       }

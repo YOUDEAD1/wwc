@@ -146,6 +146,53 @@ export function buildOrderDeliveredItemsBlock(
 }
 
 /**
+ * The bot owner's preferred bulk-delivery layout: instead of one
+ * giant card with a `.txt` attachment, split the claimed items into
+ * messages of `chunkSize` each. The first chunk goes inside the
+ * Order Delivered header card; subsequent chunks are sent as plain
+ * blockquote messages right below it. Only the last chunk's message
+ * gets the inline keyboard, so the buyer scrolls down to the bottom
+ * and finds Using Method there.
+ */
+export const ORDER_DELIVERED_CHUNK_SIZE = 7;
+
+export type DeliveredChunk = {
+  /** Markdown blockquote ready for `renderMdHtml`. */
+  inlineBlock: string;
+  /** True for chunk index 0 — caller wraps this in the header card. */
+  isFirst: boolean;
+  /**
+   * True for the last chunk — caller attaches the inline keyboard
+   * (Using Method, etc.) to this message only.
+   */
+  isLast: boolean;
+};
+
+/**
+ * Split `items` into successive chunks of `chunkSize` and pre-render
+ * each chunk's blockquote pill. Order Delivered cards splice
+ * `chunks[0].inlineBlock` into the `{items}` slot, then send the
+ * remaining chunks as plain follow-up messages.
+ */
+export function buildOrderDeliveredChunks(
+  items: string[],
+  chunkSize: number = ORDER_DELIVERED_CHUNK_SIZE,
+): DeliveredChunk[] {
+  if (items.length === 0) return [];
+  const size = Math.max(1, Math.floor(chunkSize));
+  const chunks: DeliveredChunk[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    const slice = items.slice(i, i + size);
+    chunks.push({
+      inlineBlock: slice.map((it) => `> ${it}`).join('\n>\n'),
+      isFirst: i === 0,
+      isLast: i + size >= items.length,
+    });
+  }
+  return chunks;
+}
+
+/**
  * Build the items block for the My Orders detail screen
  * (`orders.detail.received` template, `{received}` slot).
  *
