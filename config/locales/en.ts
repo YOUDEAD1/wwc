@@ -30,9 +30,14 @@ export const en: Record<string, string> = {
   'btn.qty_keypad_clear': '🗑 Clear',
   'btn.qty_keypad_confirm': '✅ Confirm',
   // Buy-now payment-method screen.
-  'btn.pay_wallet': '👛 Wallet Pay',
-  'btn.pay_direct': '💸 Pay Directly',
-  'btn.pay_topup': '👛 Top-up Wallet',
+  'btn.pay_wallet': '👛 Wallet',
+  'btn.pay_direct': '💸 Pay Direct',
+  'btn.pay_topup': '🪙 Top-up',
+  // Wallet-confirm card (page 2 of the buy flow). The Confirm
+  // button shows a green ✅ + premium tick, the Cancel button is
+  // red with the same back-arrow as the rest of the bot.
+  'btn.confirm_pay': '✅ Confirm',
+  'btn.cancel_pay': '◀️ Cancel',
   'btn.qty.max': '🎯 Max',
   'btn.qty.reset': '🔄 Reset',
   'btn.qty.confirm': '✅ Confirm',
@@ -132,13 +137,28 @@ export const en: Record<string, string> = {
   // string (no active promo) or the localized "Promo:" line WITH
   // its own trailing newline so the layout stays tight.
   'shop.pay.title':
-    '{prod_qty_selected} *Order summary*\n\n' +
-    '*{name}*\n' +
+    '{pay_summary} *Order summary*\n\n' +
+    '{emoji} *{name}*\n' +
     '{prod_qty_selected} Qty: *{qty}*\n' +
     '{promo_line}' +
     '{prod_total_amount} Total: *{total} USDT*\n' +
     '{prod_wallet} Wallet: *{balance} USDT*\n\n' +
-    'Choose a payment method:',
+    'Choose a pay method:',
+  // Wallet-pay confirmation card (page 2). Short labels with
+  // premium emojis on every line. `{discount_line}` is filled in
+  // by the caller (empty string when there is no active discount).
+  'shop.pay.confirm':
+    '{prod_wallet} *Confirm Payment*\n\n' +
+    '{pay_summary} *Order*\n' +
+    '{emoji} *{name}* × *{qty}*\n' +
+    '{discount_line}' +
+    '{prod_total_amount} *Total:* {total} USDT\n' +
+    '{prod_wallet} *Wallet:* {balance} USDT\n\n' +
+    '_Charge *{total} USDT* from your wallet?_',
+  // Optional discount row inside `shop.pay.confirm` — concatenated
+  // by the caller when an active promo applies.
+  'shop.pay.confirm.discount_line':
+    '{prod_promo} *Discount:* −{discount} USDT\n',
   // Inline qty-editor screen body. Renders as a "big counter" with
   // the current selected qty in monospace, the product name, and
   // the running total cost.

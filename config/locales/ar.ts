@@ -25,9 +25,11 @@ export const ar: Record<string, string> = {
   'btn.qty_keypad_back': '⌫',
   'btn.qty_keypad_clear': '🗑 مسح',
   'btn.qty_keypad_confirm': '✅ تأكيد',
-  'btn.pay_wallet': '👛 الدفع من المحفظة',
-  'btn.pay_direct': '💸 ادفع مباشرة',
-  'btn.pay_topup': '👛 شحن المحفظة',
+  'btn.pay_wallet': '👛 المحفظة',
+  'btn.pay_direct': '💸 دفع مباشر',
+  'btn.pay_topup': '🪙 شحن',
+  'btn.confirm_pay': '✅ تأكيد',
+  'btn.cancel_pay': '◀️ إلغاء',
   'btn.qty.max': '🎯 الحد الأقصى',
   'btn.qty.reset': '🔄 إعادة',
   'btn.qty.confirm': '✅ تأكيد',
@@ -80,13 +82,24 @@ export const ar: Record<string, string> = {
     '{qty_invalid} *كمية غير صالحة.*\n\n' +
     'أرسل عدداً صحيحاً بين *1* و *{max}*.',
   'shop.pay.title':
-    '{prod_qty_selected} *ملخص الطلب*\n\n' +
-    '*{name}*\n' +
+    '{pay_summary} *ملخص الطلب*\n\n' +
+    '{emoji} *{name}*\n' +
     '{prod_qty_selected} الكمية: *{qty}*\n' +
     '{promo_line}' +
     '{prod_total_amount} الإجمالي: *{total} USDT*\n' +
     '{prod_wallet} المحفظة: *{balance} USDT*\n\n' +
     'اختر طريقة الدفع:',
+  // بطاقة تأكيد الدفع من المحفظة (الصفحة 2).
+  'shop.pay.confirm':
+    '{prod_wallet} *تأكيد الدفع*\n\n' +
+    '{pay_summary} *الطلب*\n' +
+    '{emoji} *{name}* × *{qty}*\n' +
+    '{discount_line}' +
+    '{prod_total_amount} *الإجمالي:* {total} USDT\n' +
+    '{prod_wallet} *المحفظة:* {balance} USDT\n\n' +
+    '_خصم *{total} USDT* من محفظتك؟_',
+  'shop.pay.confirm.discount_line':
+    '{prod_promo} *خصم:* −{discount} USDT\n',
   'shop.qty.editor.title':
     '🔢 *اختر الكمية*\n\n' +
     '*{name}*\n' +

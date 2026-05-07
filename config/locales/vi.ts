@@ -25,9 +25,11 @@ export const vi: Record<string, string> = {
   'btn.qty_keypad_back': '⌫',
   'btn.qty_keypad_clear': '🗑 Xóa',
   'btn.qty_keypad_confirm': '✅ Xác nhận',
-  'btn.pay_wallet': '👛 Thanh toán Ví',
-  'btn.pay_direct': '💸 Thanh toán trực tiếp',
-  'btn.pay_topup': '👛 Nạp ví',
+  'btn.pay_wallet': '👛 Ví',
+  'btn.pay_direct': '💸 Trực tiếp',
+  'btn.pay_topup': '🪙 Nạp',
+  'btn.confirm_pay': '✅ Xác nhận',
+  'btn.cancel_pay': '◀️ Hủy',
   'btn.qty.max': '🎯 Tối đa',
   'btn.qty.reset': '🔄 Đặt lại',
   'btn.qty.confirm': '✅ Xác nhận',
@@ -80,13 +82,24 @@ export const vi: Record<string, string> = {
     '{qty_invalid} *Số lượng không hợp lệ.*\n\n' +
     'Vui lòng gửi số nguyên từ *1* đến *{max}*.',
   'shop.pay.title':
-    '{prod_qty_selected} *Tóm tắt đơn hàng*\n\n' +
-    '*{name}*\n' +
+    '{pay_summary} *Tóm tắt đơn hàng*\n\n' +
+    '{emoji} *{name}*\n' +
     '{prod_qty_selected} Số lượng: *{qty}*\n' +
     '{promo_line}' +
     '{prod_total_amount} Tổng: *{total} USDT*\n' +
     '{prod_wallet} Ví: *{balance} USDT*\n\n' +
-    'Chọn phương thức thanh toán:',
+    'Chọn cách thanh toán:',
+  // Thẻ xác nhận thanh toán bằng ví (trang 2).
+  'shop.pay.confirm':
+    '{prod_wallet} *Xác nhận Thanh toán*\n\n' +
+    '{pay_summary} *Đơn hàng*\n' +
+    '{emoji} *{name}* × *{qty}*\n' +
+    '{discount_line}' +
+    '{prod_total_amount} *Tổng:* {total} USDT\n' +
+    '{prod_wallet} *Ví:* {balance} USDT\n\n' +
+    '_Trừ *{total} USDT* từ ví của bạn?_',
+  'shop.pay.confirm.discount_line':
+    '{prod_promo} *Giảm giá:* −{discount} USDT\n',
   'shop.qty.editor.title':
     '🔢 *Chọn số lượng*\n\n' +
     '*{name}*\n' +

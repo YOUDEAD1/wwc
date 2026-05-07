@@ -27,7 +27,7 @@ import {
   qtyKeypadKeyboard,
   shopProductsKeyboard,
 } from '../keyboards/shop.js';
-import { btn, inlineBtn } from '../keyboards/helpers.js';
+import { inlineBtn } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import {
   clampForTelegram,
@@ -656,6 +656,10 @@ export function registerShop(bot: Composer<AppCtx>): void {
       qty,
       total: total.toFixed(2),
       balance: ctx.user.balance,
+      // Per-product unicode emoji rendered behind the product name.
+      // The premium auto-scan in `renderMdHtml` upgrades it to the
+      // animated `<tg-emoji>` if a `custom_emoji_id` is configured.
+      emoji: p.emoji ?? '',
       promo_line: renderPromoLine(ctx, promo, discount),
     });
     await ctx.answerCallbackQuery();
@@ -695,24 +699,24 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     await ctx.answerCallbackQuery();
-    const text = [
-      '👛 *Confirm wallet payment*',
-      '',
-      '*Order summary*',
-      `*${p.name}*  ×  *${qty}*`,
-      `*Total:* $${total.toFixed(2)} USDT`,
-      `*Wallet:* $${Number(ctx.user.balance).toFixed(2)} USDT`,
-      discount > 0 ? `*Discount:* -$${discount.toFixed(2)}` : '',
-      '',
-      'Are you sure you want to buy this with your wallet? *${total} USDT* will be deducted from your balance.'
-        .replace('${total}', total.toFixed(2)),
-    ]
-      .filter((s) => s.length > 0)
-      .join('\n');
-    const kb = new InlineKeyboard()
-      .text('✅ Yes, charge my wallet', `pay:wallet:do:${id}`)
-      .row()
-      .text(btn(ctx.lang, 'back'), `buy:${id}`);
+    const discountLine =
+      discount > 0
+        ? ctx.t('shop.pay.confirm.discount_line', { discount: discount.toFixed(2) })
+        : '';
+    const text = ctx.t('shop.pay.confirm', {
+      name: p.name,
+      qty,
+      total: total.toFixed(2),
+      balance: Number(ctx.user.balance).toFixed(2),
+      // Per-product unicode emoji prefix; auto-scan upgrades to
+      // `<tg-emoji>` when `custom_emoji_id` is configured.
+      emoji: p.emoji ?? '',
+      discount_line: discountLine,
+    });
+    const kb = new InlineKeyboard();
+    inlineBtn(kb, ctx.lang, 'confirm_pay', `pay:wallet:do:${id}`);
+    kb.row();
+    inlineBtn(kb, ctx.lang, 'cancel_pay', `buy:${id}`);
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
       reply_markup: kb,

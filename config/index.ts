@@ -189,6 +189,10 @@ export const BUTTON_KEYS = {
   pay_wallet: 'btn.pay_wallet',
   pay_direct: 'btn.pay_direct',
   pay_topup: 'btn.pay_topup',
+  // Wallet-payment confirmation card (page 2 of the buy flow):
+  // green Confirm + red back-arrow Cancel.
+  confirm_pay: 'btn.confirm_pay',
+  cancel_pay: 'btn.cancel_pay',
 
   // ---- Premium-shop overhaul ----------------------------------
   // `using_method` is the post-order tutorial trigger (pic 3).
@@ -335,6 +339,9 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   pay_wallet: 'green',
   pay_direct: 'yellow',
   pay_topup: 'blue',
+  // Wallet-confirm screen.
+  confirm_pay: 'green',
+  cancel_pay: 'red',
 
   // Premium-shop overhaul. `using_method` is the post-order
   // tutorial CTA (blue = primary action). `out_of_stock`'s color
@@ -603,6 +610,17 @@ export const EMOJI: Record<string, EmojiSpec> = {
   direct_pay_title: { unicode: '💸', custom_emoji_id: '5008248651038852115' },
   direct_pay_total: { unicode: '💳', custom_emoji_id: '5463046637842608206' },
   direct_pay_verify: { unicode: '🔎', custom_emoji_id: '5789858554890425372' },
+
+  // ---- Buy-flow Pay screens (page 1 + page 2) -----------------
+  // `pay_summary` is the premium glyph that prefixes the *Order*
+  // header on both screens. Admin can rotate via
+  // `/setemoji pay_summary <unicode> <custom_emoji_id>`.
+  pay_summary: { unicode: '🧾', custom_emoji_id: '5893255507380014983' },
+  // Page-2 Confirm tick + Cancel back-arrow. Same defaults as the
+  // existing qty-keypad confirm / stats-back glyphs so the user
+  // gets the familiar premium animation.
+  pay_confirm: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
+  pay_cancel: { unicode: '◀️', custom_emoji_id: '5811235581717935244' },
 };
 
 /**
@@ -710,6 +728,10 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   pay_wallet: 'prod_wallet',
   pay_direct: 'prod_total_amount',
   pay_topup: 'deposits_wallet',
+  // Wallet-payment confirmation card (page 2): green check icon
+  // on Confirm, back-arrow icon on Cancel (red style).
+  confirm_pay: 'pay_confirm',
+  cancel_pay: 'pay_cancel',
 
   // Premium-shop overhaul. Out-of-stock Buy Now uses the red cross
   // glyph; Using Method uses the new tutorial book icon, etc.
