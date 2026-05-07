@@ -38,6 +38,13 @@ export const en: Record<string, string> = {
   // red with the same back-arrow as the rest of the bot.
   'btn.confirm_pay': '✅ Confirm',
   'btn.cancel_pay': '◀️ Cancel',
+  // Payment-methods keyboard rows. Premium subscribers see the
+  // animated icon defined in EMOJI.paymethod_others / paymethod_back;
+  // everyone else gets the unicode prefix below as the natural
+  // fallback. The leading emoji is stripped from the label at render
+  // time when the icon is applied so the glyph never doubles up.
+  'btn.paymethod_others': '💡 Others',
+  'btn.paymethod_back': '◀️ Back',
   'btn.qty.max': '🎯 Max',
   'btn.qty.reset': '🔄 Reset',
   'btn.qty.confirm': '✅ Confirm',

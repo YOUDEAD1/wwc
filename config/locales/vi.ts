@@ -30,6 +30,12 @@ export const vi: Record<string, string> = {
   'btn.pay_topup': '🪙 Nạp',
   'btn.confirm_pay': '✅ Xác nhận',
   'btn.cancel_pay': '◀️ Hủy',
+  // Hàng "Khác" và "Quay lại" trên bàn phím phương thức thanh toán.
+  // Người dùng Premium thấy biểu tượng động được khai báo ở
+  // EMOJI.paymethod_others / paymethod_back; người khác xem ký tự
+  // unicode bên dưới làm dự phòng.
+  'btn.paymethod_others': '💡 Khác',
+  'btn.paymethod_back': '◀️ Quay lại',
   'btn.qty.max': '🎯 Tối đa',
   'btn.qty.reset': '🔄 Đặt lại',
   'btn.qty.confirm': '✅ Xác nhận',

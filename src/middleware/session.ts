@@ -82,7 +82,32 @@ export type AdminFlow =
   | { type: 'edit_product_tutorial_text'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_file'; step: 'file'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_url'; step: 'url'; data: { product_id: number; page: number } }
-  | { type: 'edit_product_items'; step: 'items'; data: { product_id: number; page: number } }
+  | {
+      // Bulk-add deliverables to the per-product items pool with a
+      // staging buffer. The admin can:
+      //   • paste many lines in one message,
+      //   • forward several vendor messages one-by-one (each adds to
+      //     the buffer),
+      //   • OR upload a `.txt` file (auto-parsed line-by-line).
+      // Nothing is written to the pool until they tap **Confirm**;
+      // **Clear** drops the buffer, **Cancel** ends the flow.
+      type: 'edit_product_items';
+      step: 'items';
+      data: {
+        product_id: number;
+        page: number;
+        // Staged payloads accumulated across messages — flushed to
+        // the pool atomically on Confirm. Stored on the flow itself
+        // so the buffer survives multiple admin messages without a
+        // separate cache.
+        staged?: string[];
+        // Telegram chat + message id of the live "Staging" status
+        // card. We edit it in-place every time the buffer changes
+        // so the chat history stays clean.
+        promptChatId?: number;
+        promptMessageId?: number;
+      };
+    }
   | { type: 'edit_product_price'; step: 'price'; data: { product_id: number; page: number } }
   | { type: 'edit_product_stock'; step: 'stock'; data: { product_id: number; page: number } }
   | { type: 'edit_product_name'; step: 'name'; data: { product_id: number; page: number } }
