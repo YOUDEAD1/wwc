@@ -19,6 +19,7 @@ import type { Api } from 'grammy';
 import { logger } from '../logger.js';
 import {
   findDepositByTxHash,
+  findDepositByReference,
   setDepositStatus,
   setDepositAmount,
   setDepositTxHash,
@@ -37,20 +38,25 @@ import { findPayTransactionByOrderId, isBinancePayEnabled } from './binance.js';
 import { fulfilOrderForDeposit } from './orderFulfill.js';
 
 /**
- * How long after a deposit row is created can a Binance Pay Order ID
- * still be accepted. Matches the in-bot copy: "Only payments started
- * after opening this screen and completed within 30 minutes will be
- * credited."
+ * How long after the user opens a payment screen can their on-chain
+ * tx (or Binance Pay Order ID) still be auto-credited. Matches the
+ * in-bot copy: "Only payments started after opening this screen and
+ * completed within 30 minutes will be credited."
+ *
+ * The window is now anchored on a session-level `opened_at_ms`
+ * captured the moment the user opens the pay screen — *not* on
+ * `deposits.created_at` (which for chain providers is created only
+ * after the user pastes a tx hash and would let an attacker submit
+ * an old vendor TXID and still pass the window check).
  */
-const BINANCE_PAY_WINDOW_MS = 30 * 60 * 1000;
+const PAY_WINDOW_MS = 30 * 60 * 1000;
 
 /**
- * Lenient pre-window slack — the Binance `transactionTime` may land
- * a few seconds before the deposit row's `created_at` because of
- * clock skew between Binance and Supabase, so we accept anything
- * within a 5-minute pre-window.
+ * Lenient pre-window slack — the upstream provider's tx time may
+ * land a few seconds before the user's `opened_at_ms` because of
+ * clock skew, so we accept anything within a 5-minute pre-window.
  */
-const BINANCE_PAY_PRE_WINDOW_SLACK_MS = 5 * 60 * 1000;
+const PAY_PRE_WINDOW_SLACK_MS = 5 * 60 * 1000;
 
 /** Truncate a decimal value to 3 places (matches the Loguetown UX). */
 function truncate3(n: number): number {
@@ -98,6 +104,18 @@ export async function verifyAndCreditDeposit(args: {
   api: Api;
   deposit: DBDeposit;
   submission: { txHash?: string; orderId?: string };
+  /**
+   * Wall-clock instant (ms since epoch) when the user first opened
+   * the payment screen for *this* attempt. Captured on the bot side
+   * the moment the user lands on the address / Pay-ID / quote card
+   * and stashed in the in-flight session. The verifier rejects any
+   * payment whose on-chain time-stamp falls outside
+   * `[openedAtMs - 5min, openedAtMs + 30min]` so a buyer can't
+   * replay an old vendor TXID. Falls back to `deposits.created_at`
+   * for backwards compatibility with legacy flows that didn't lock
+   * a session-level timestamp.
+   */
+  openedAtMs?: number;
   logUser?: {
     telegram_id: number;
     username: string | null;
@@ -118,6 +136,22 @@ export async function verifyAndCreditDeposit(args: {
     return { ok: false, reason: 'manual provider — no auto-verify' };
   }
 
+  // Anchor for the 30-min acceptance window. Prefer the session-
+  // captured `openedAtMs` (locked the moment the user opened the
+  // screen) so an attacker can't widen the window by submitting an
+  // old TXID just before re-opening the flow. Fall back to
+  // `deposits.created_at` for legacy code paths.
+  const depositCreatedAt = new Date(deposit.created_at).getTime();
+  const windowAnchorMs =
+    typeof args.openedAtMs === 'number' && Number.isFinite(args.openedAtMs)
+      ? args.openedAtMs
+      : depositCreatedAt;
+  if (!Number.isFinite(windowAnchorMs)) {
+    return { ok: false, reason: 'deposit created_at unparseable' };
+  }
+  const windowStart = windowAnchorMs - PAY_PRE_WINDOW_SLACK_MS;
+  const windowEnd = windowAnchorMs + PAY_WINDOW_MS;
+
   // ----- Binance Pay (personal-account /sapi/v1/pay/transactions) -----
   if (provider === 'binance_pay') {
     const orderId = submission.orderId?.trim();
@@ -131,15 +165,23 @@ export async function verifyAndCreditDeposit(args: {
         reason: 'binance api credentials not set on this deployment',
       };
     }
-
-    // Pre-window slack absorbs clock skew. The post-window cap is
-    // the user-visible promise ("completed within 30 minutes").
-    const depositCreatedAt = new Date(deposit.created_at).getTime();
-    if (!Number.isFinite(depositCreatedAt)) {
-      return { ok: false, reason: 'deposit created_at unparseable' };
+    // Strict reference-id format gate. Binance Pay Order IDs are
+    // 18-digit numerics on the receipt — accept 17–20 digits as a
+    // small safety margin for legacy receipts without weakening the
+    // gate to "anything 6+". Keeps the verifier from even paging
+    // Binance with a malformed id.
+    if (!/^\d{17,20}$/.test(orderId)) {
+      return {
+        ok: false,
+        reason: 'binance pay order id format invalid (expected 18-digit numeric)',
+      };
     }
-    const startTime = depositCreatedAt - BINANCE_PAY_PRE_WINDOW_SLACK_MS;
-    const endTime = depositCreatedAt + BINANCE_PAY_WINDOW_MS;
+
+    // Acceptance window comes from `windowAnchorMs` above. We
+    // forward the same `[start, end]` to the Binance API call so
+    // the upstream history search is bounded too.
+    const startTime = windowStart;
+    const endTime = windowEnd;
 
     const result = await findPayTransactionByOrderId(orderId, { startTime, endTime });
     if (!result.ok) return { ok: false, reason: result.reason };
@@ -177,13 +219,13 @@ export async function verifyAndCreditDeposit(args: {
     if (!Number.isFinite(txTime)) {
       return { ok: false, reason: 'binance returned non-numeric transactionTime' };
     }
-    if (txTime < depositCreatedAt - BINANCE_PAY_PRE_WINDOW_SLACK_MS) {
+    if (txTime < windowStart) {
       return {
         ok: false,
         reason: 'order was paid before this deposit screen was opened',
       };
     }
-    if (txTime > depositCreatedAt + BINANCE_PAY_WINDOW_MS) {
+    if (txTime > windowEnd) {
       return {
         ok: false,
         reason: 'order was paid more than 30 minutes after this deposit screen was opened',
@@ -239,6 +281,30 @@ export async function verifyAndCreditDeposit(args: {
     if (!txHash) return { ok: false, reason: 'tx hash required' };
     if (!method.address) return { ok: false, reason: 'wallet address not set' };
 
+    // Strict reference-id (TX hash) format gate per provider —
+    // refuse to even hit the upstream RPC if the hash isn't shaped
+    // right. Belt-and-suspenders check after the handler-level
+    // validation in `handlers/directPay.ts` / `handlers/topup.ts`
+    // so a future caller can't bypass.
+    if (provider === 'usdt_trc20') {
+      const stripped = txHash.replace(/^0x/i, '');
+      if (!/^[0-9a-fA-F]{64}$/.test(stripped)) {
+        return { ok: false, reason: 'tx hash format invalid (expected 64 hex chars)' };
+      }
+    } else if (provider === 'usdt_bep20') {
+      if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+        return { ok: false, reason: 'tx hash format invalid (expected 0x + 64 hex chars)' };
+      }
+    } else {
+      // TON accepts hex (64) or base64 (43-44).
+      if (
+        !/^[0-9a-fA-F]{64}$/.test(txHash) &&
+        !/^[A-Za-z0-9+/=_-]{43,44}$/.test(txHash)
+      ) {
+        return { ok: false, reason: 'tx hash format invalid (expected hex or base64)' };
+      }
+    }
+
     const dedupeOk = await checkDedupe(txHash, deposit.id);
     if (!dedupeOk.ok) return dedupeOk;
 
@@ -255,6 +321,33 @@ export async function verifyAndCreditDeposit(args: {
       result = await verifyTonUsdtTx({ txHash, expectedAddress, minAmount: 0 });
     }
     if (!result.ok) return { ok: false, reason: result.reason };
+
+    // Freshness gate. Reject any tx whose on-chain block time is
+    // outside `[windowStart, windowEnd]` so a buyer can't reuse a
+    // vendor TXID from yesterday. `paidAtMs === null` means the
+    // upstream provider didn't surface a timestamp — defer to admin
+    // review rather than approve blindly.
+    if (result.paidAtMs === null) {
+      return {
+        ok: false,
+        reason:
+          'on-chain block timestamp unavailable — admin will verify this transaction manually',
+      };
+    }
+    if (result.paidAtMs < windowStart) {
+      return {
+        ok: false,
+        reason:
+          'this is an old transaction — only payments made within 30 minutes of opening this screen are auto-credited',
+      };
+    }
+    if (result.paidAtMs > windowEnd) {
+      return {
+        ok: false,
+        reason:
+          'transaction was confirmed more than 30 minutes after this screen was opened',
+      };
+    }
 
     // Direct-pay amount guard. Same logic as the binance_pay branch:
     // never fulfil an order if the user paid less than the locked
@@ -289,6 +382,10 @@ export async function verifyAndCreditDeposit(args: {
     const txHash = submission.txHash?.trim();
     if (!txHash) return { ok: false, reason: 'tx hash required' };
     if (!method.address) return { ok: false, reason: 'wallet address not set' };
+    // Strict format gate — Litecoin tx hashes are 64 lowercase hex.
+    if (!/^[0-9a-f]{64}$/i.test(txHash)) {
+      return { ok: false, reason: 'tx hash format invalid (expected 64 hex chars)' };
+    }
 
     if (deposit.expected_amount === null || deposit.expected_amount === undefined) {
       return {
@@ -316,6 +413,30 @@ export async function verifyAndCreditDeposit(args: {
     });
     if (!result.ok) return { ok: false, reason: result.reason };
 
+    // Freshness gate (same shape as the chain branch — see comment
+    // above). Mempool txs return `null` and defer to admin review.
+    if (result.paidAtMs === null) {
+      return {
+        ok: false,
+        reason:
+          'on-chain block timestamp unavailable — admin will verify this transaction manually',
+      };
+    }
+    if (result.paidAtMs < windowStart) {
+      return {
+        ok: false,
+        reason:
+          'this is an old transaction — only payments made within 30 minutes of opening this screen are auto-credited',
+      };
+    }
+    if (result.paidAtMs > windowEnd) {
+      return {
+        ok: false,
+        reason:
+          'transaction was confirmed more than 30 minutes after this screen was opened',
+      };
+    }
+
     // Credit the locked-in USD amount, not the on-chain LTC value.
     const usdToCredit = Number(deposit.amount);
     return finalizeApproval({
@@ -336,9 +457,23 @@ async function checkDedupe(
   txHash: string,
   depositId: number,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const existing = await findDepositByTxHash(txHash);
-  if (existing && existing.id !== depositId) {
-    return { ok: false, reason: `tx already used by deposit #${existing.id}` };
+  // Cross-check the submitted hash against *both* dedupe columns —
+  // some legacy / direct-pay rows store the hash in `reference`
+  // before the verifier persists it to `tx_hash`, so a vendor's
+  // already-credited TXID could otherwise be re-used by submitting
+  // it through a different flow. We treat any prior approved /
+  // pending row owning this hash as a dedupe hit.
+  const [byTxHash, byReference] = await Promise.all([
+    findDepositByTxHash(txHash),
+    findDepositByReference(txHash),
+  ]);
+  for (const existing of [byTxHash, byReference]) {
+    if (existing && existing.id !== depositId) {
+      return {
+        ok: false,
+        reason: `tx already used by deposit #${existing.id}`,
+      };
+    }
   }
   return { ok: true };
 }

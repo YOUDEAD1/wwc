@@ -54,7 +54,26 @@ export function friendlyReason(reason: string): string {
 
   // ----- Dedupe -------------------------------------------------------
   if (r.includes('tx already used by deposit')) {
-    return 'This transaction has already been used to credit a previous deposit. Each transaction can only be used once.';
+    return 'This is an old transaction that has already been verified. Each transaction can only be used once.';
+  }
+
+  // ----- Reference-id format gates -----------------------------------
+  if (r.includes('binance pay order id format invalid')) {
+    return 'That doesn\'t look like a Binance Pay Order ID. Paste the 18-digit numeric ID from your Binance Pay receipt.';
+  }
+  if (r.includes('tx hash format invalid')) {
+    return 'That doesn\'t look like a transaction hash for this network. Paste the full TXID from your wallet.';
+  }
+
+  // ----- Freshness gate (30-min replay protection) -------------------
+  if (r.includes('only payments made within 30 minutes')) {
+    return 'This is an old transaction — only payments made within 30 minutes of opening this screen are auto-credited. Open a fresh deposit screen and pay again, or wait for admin review.';
+  }
+  if (r.includes('confirmed more than 30 minutes after')) {
+    return 'This transaction was confirmed more than 30 minutes after this screen was opened. Open a fresh deposit screen and pay again, or wait for admin review.';
+  }
+  if (r.includes('on-chain block timestamp unavailable')) {
+    return 'We could not confirm when this transaction was mined on-chain — admin will verify it manually.';
   }
 
   // ----- Chain verifiers ---------------------------------------------
@@ -117,6 +136,12 @@ export function classifyReason(reason: string): 'duplicate' | 'reject' | 'defer'
     'tx not confirmed',
     'failed transaction',
     'reverted',
+    // Freshness gate — old vendor TXID replay attempts.
+    'only payments made within 30 minutes',
+    'confirmed more than 30 minutes after',
+    // Strict reference-id format gates.
+    'binance pay order id format invalid',
+    'tx hash format invalid',
   ];
   for (const m of rejectMatchers) {
     if (r.includes(m)) return 'reject';

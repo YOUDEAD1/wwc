@@ -222,6 +222,10 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
         );
         return;
       }
+      // Lock the flow-open instant the moment the user lands on the
+      // address screen. The verifier in `services/depositVerify.ts`
+      // anchors its 30-min freshness window on this value so an
+      // attacker can't replay an old vendor TXID.
       ctx.session.userFlow = {
         type: 'direct_chain',
         step: 'tx_hash',
@@ -231,6 +235,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           provider: m.provider,
           address: m.address,
           intent,
+          opened_at_ms: Date.now(),
         },
       };
       await ctx.editMessageText(
@@ -294,6 +299,10 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           pay_name: m.pay_name,
           deposit_id: depId,
           intent,
+          // Lock the flow-open instant — anchors the 30-min Binance
+          // Pay window in `services/depositVerify.ts` so an old
+          // Order ID can't be replayed.
+          opened_at_ms: Date.now(),
         },
       };
 
@@ -390,6 +399,10 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           ltc_rate: rate,
           expires_at_ms: expiresAtMs,
           intent,
+          // Lock the flow-open instant — anchors the 30-min LTC
+          // freshness window. Separate from `expires_at_ms` (which
+          // governs how long the locked LTC/USD quote is valid).
+          opened_at_ms: Date.now(),
         },
       };
 
@@ -537,6 +550,7 @@ async function handleBinanceDirectSubmit(
       api: ctx.api,
       deposit: dep,
       submission: { orderId },
+      openedAtMs: flow.data.opened_at_ms,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,
@@ -728,6 +742,7 @@ async function handleChainDirectSubmit(
       api: ctx.api,
       deposit: dep,
       submission: { txHash },
+      openedAtMs: flow.data.opened_at_ms,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,
@@ -865,6 +880,7 @@ async function handleLtcDirectSubmit(
       api: ctx.api,
       deposit: dep,
       submission: { txHash: cleaned },
+      openedAtMs: flow.data.opened_at_ms,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,

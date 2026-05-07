@@ -25,6 +25,10 @@ export const vi: Record<string, string> = {
   'btn.qty_keypad_back': '⌫',
   'btn.qty_keypad_clear': '🗑 Xóa',
   'btn.qty_keypad_confirm': '✅ Xác nhận',
+  // Nút "Tối đa" gán số lượng vào mức tối đa có thể mua
+  // (`min(QTY_MAX, tồn kho)`) chỉ với một lần nhấn — tiện cho người mua
+  // sỉ muốn lấy hết lô mà không cần nhập từng chữ số.
+  'btn.qty_keypad_max': '🎯 Tối đa',
   'btn.pay_wallet': '👛 Ví',
   'btn.pay_direct': '💸 Trực tiếp',
   'btn.pay_topup': '🪙 Nạp',
@@ -80,10 +84,18 @@ export const vi: Record<string, string> = {
   'shop.choose_category': '*Sản phẩm có sẵn:*',
   'shop.qty.prompt': '🔢 Nhập số lượng (1–{max}) và gửi.',
   'shop.qty.invalid': '❌ Số không hợp lệ — vui lòng gửi giá trị từ 1 đến {max}.',
+  // Token `{current}` là bộ đệm số người dùng đã nhập đến
+  // giờ. Trước khi nhận phím đầu tiên, nó hiển thị dưới dạng
+  // văn bản hướng dẫn `(Số lượng)` thay cho dấu gạch ngắn
+  // trần trụi «mâu» đã dùng trước đây.
   'shop.qty.keypad.instruction':
     '{qty_prompt_keypad} *Cách dùng:* nhấn các chữ số bên dưới hoặc gửi số, ' +
     'sau đó nhấn ✅ Xác nhận.\n' +
     'Hiện tại: <code>{current}</code>',
+  // Placeholder hiển thị trong `Hiện tại: <code>…</code>` khi bộ
+  // đệm còn rỗng — đọc tự nhiên hơn ("Hiện tại: (Số lượng)") so
+  // với dấu gạch ngắn trần trụi trước đây.
+  'shop.qty.keypad.placeholder': '(Số lượng)',
   'shop.qty.keypad.invalid':
     '{qty_invalid} *Số lượng không hợp lệ.*\n\n' +
     'Vui lòng gửi số nguyên từ *1* đến *{max}*.',

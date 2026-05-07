@@ -51,6 +51,17 @@ export type ChainVerifyResult =
       amount: number;
       sender: string;
       confirmations: number | null;
+      /**
+       * Block timestamp in *milliseconds since epoch* — the moment the
+       * transaction was mined / settled on-chain. Used by
+       * `services/depositVerify.ts` to enforce the 30-minute
+       * acceptance window against the flow-open timestamp so a user
+       * can't replay an old vendor TXID. `null` only when the
+       * upstream provider didn't return a parseable timestamp; the
+       * verifier treats `null` as "fail freshness check" so we never
+       * approve a tx whose age we couldn't prove.
+       */
+      paidAtMs: number | null;
     }
   | { ok: false; reason: string };
 
@@ -148,6 +159,10 @@ export async function verifyTrc20Tx(args: {
       const info = await fetchJson<{
         id?: string;
         blockNumber?: number;
+        // TronGrid surfaces the block time as `blockTimeStamp` in
+        // *milliseconds*. We forward it to the freshness gate so a
+        // stale vendor TXID can't slip past the 30-min window.
+        blockTimeStamp?: number;
         receipt?: { result?: string };
         log?: Array<{
           address?: string;
@@ -193,11 +208,16 @@ export async function verifyTrc20Tx(args: {
       if (amount + 1e-9 < args.minAmount) {
         return { ok: false, reason: `amount ${amount.toFixed(2)} < min ${args.minAmount}` };
       }
+      const paidAtMs =
+        typeof info.blockTimeStamp === 'number' && Number.isFinite(info.blockTimeStamp)
+          ? info.blockTimeStamp
+          : null;
       return {
         ok: true,
         amount: round2(amount),
         sender: match.from,
         confirmations: info.blockNumber ?? null,
+        paidAtMs,
       };
     } catch (err) {
       lastErr = err;
@@ -287,11 +307,34 @@ export async function verifyBep20Tx(args: {
   if (amount + 1e-9 < args.minAmount) {
     return { ok: false, reason: `amount ${amount.toFixed(2)} < min ${args.minAmount}` };
   }
+
+  // Block timestamp lookup. The receipt only carries a block number,
+  // so we follow up with `eth_getBlockByNumber` to read the seconds-
+  // since-epoch `timestamp` field. The freshness gate in
+  // `services/depositVerify.ts` rejects on `null`, so a transient RPC
+  // blip during this lookup will defer the deposit to admin review
+  // rather than silently accepting a stale TXID.
+  let paidAtMs: number | null = null;
+  try {
+    const block = await bscRpc<{ timestamp?: string } | null>(
+      'eth_getBlockByNumber',
+      [receipt.blockNumber, false],
+    );
+    const tsHex = block?.timestamp;
+    if (typeof tsHex === 'string' && tsHex.length > 0) {
+      const tsSec = parseInt(tsHex, 16);
+      if (Number.isFinite(tsSec)) paidAtMs = tsSec * 1000;
+    }
+  } catch (err) {
+    logger.warn({ err, hash }, 'BEP20 verify: block timestamp lookup failed');
+  }
+
   return {
     ok: true,
     amount: round2(amount),
     sender,
     confirmations: parseInt(receipt.blockNumber, 16) || null,
+    paidAtMs,
   };
 }
 
@@ -381,6 +424,10 @@ async function verifyTonViaTonApi(
     };
   };
   type TonApiEventResp = {
+    // `timestamp` is the event time in *seconds* since epoch — we
+    // surface it to the freshness gate so a stale jetton transfer
+    // can't be replayed against the 30-min window.
+    timestamp?: number;
     actions?: JettonAction[];
   };
 
@@ -412,11 +459,16 @@ async function verifyTonViaTonApi(
     if (amount + 1e-9 < args.minAmount) {
       return { ok: false, reason: `amount ${amount.toFixed(2)} < min ${args.minAmount}` };
     }
+    const paidAtMs =
+      typeof eventResp.timestamp === 'number' && Number.isFinite(eventResp.timestamp)
+        ? eventResp.timestamp * 1000
+        : null;
     return {
       ok: true,
       amount: round2(amount),
       sender: jt.sender.address,
       confirmations: null,
+      paidAtMs,
     };
   }
 
@@ -558,11 +610,22 @@ export async function verifyLtcTx(args: {
   const sender =
     tx.inputs?.[0]?.addresses?.[0] ?? 'unknown';
 
+  // BlockCypher returns `confirmed` as an ISO timestamp once the tx
+  // is mined. While the tx is still unconfirmed in the mempool the
+  // field is absent — we surface `null` and let the freshness gate
+  // reject (mempool txs can be replaced and shouldn't auto-credit).
+  let paidAtMs: number | null = null;
+  if (typeof tx.confirmed === 'string' && tx.confirmed.length > 0) {
+    const ms = Date.parse(tx.confirmed);
+    if (Number.isFinite(ms)) paidAtMs = ms;
+  }
+
   return {
     ok: true,
     amount: round8(ltcAmount),
     sender,
     confirmations: tx.confirmations ?? null,
+    paidAtMs,
   };
 }
 

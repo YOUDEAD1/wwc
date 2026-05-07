@@ -25,6 +25,10 @@ export const ar: Record<string, string> = {
   'btn.qty_keypad_back': '⌫',
   'btn.qty_keypad_clear': '🗑 مسح',
   'btn.qty_keypad_confirm': '✅ تأكيد',
+  // «الحد الأقصى» يضبط البافر على الحد المسموح للمستخدم
+  // (`min(QTY_MAX, المخزون)`) بضغطة واحدة، للمشتري
+  // الذي يرغب في شراء الكمية الكاملة دون إدخال الأرقام.
+  'btn.qty_keypad_max': '🎯 الحد الأقصى',
   'btn.pay_wallet': '👛 المحفظة',
   'btn.pay_direct': '💸 دفع مباشر',
   'btn.pay_topup': '🪙 شحن',
@@ -79,10 +83,17 @@ export const ar: Record<string, string> = {
   'shop.choose_category': '*المنتجات المتاحة:*',
   'shop.qty.prompt': '🔢 اكتب الكمية (1–{max}) وأرسل.',
   'shop.qty.invalid': '❌ رقم غير صالح — أرسل قيمة بين 1 و {max}.',
+  // الرمز `{current}` هو بافر الأرقام الذي أدخله المستخدم
+  // حتى الآن. قبل أول لمسة يظهر النص `(الكمية)` كتوجيه
+  // للمستخدم بدلاً من الشرطة الغامضة السابقة («—»).
   'shop.qty.keypad.instruction':
     '{qty_prompt_keypad} *طريقة الاستخدام:* اضغط الأرقام أدناه أو أرسل رقماً ' +
     'ثم اضغط ✅ تأكيد.\n' +
     'الحالي: <code>{current}</code>',
+  // العنصر النائب الذي يظهر داخل `الحالي: <code>…</code>` قبل أن
+  // يبدأ المستخدم بإدخال الأرقام. يقرأ كجملة (الحالي: (الكمية))
+  // بدلاً من الشرطة الغامضة السابقة («—»).
+  'shop.qty.keypad.placeholder': '(الكمية)',
   'shop.qty.keypad.invalid':
     '{qty_invalid} *كمية غير صالحة.*\n\n' +
     'أرسل عدداً صحيحاً بين *1* و *{max}*.',

@@ -252,8 +252,14 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
     promo?.discount ?? 0,
   );
   const body = productPageText(ctx, p, previewQty, promo, teaser);
+  // The placeholder text is rendered when the digit buffer is
+  // empty so the line reads as a sentence to first-time users
+  // ("Current: (Amount)") instead of the cryptic em-dash we used
+  // before. Localised — falls back to "(Amount)" for languages
+  // without a translation.
+  const placeholder = ctx.t('shop.qty.keypad.placeholder');
   const instruction = ctx.t('shop.qty.keypad.instruction', {
-    current: buf.length > 0 ? buf : '—',
+    current: buf.length > 0 ? buf : placeholder,
   });
   await ctx.editMessageText(renderMdHtml(`${body}\n\n${instruction}`), {
     parse_mode: 'HTML',
@@ -352,11 +358,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await showQtyKeypad(ctx, id, '');
   });
 
-  // Numeric-keypad actions: digit / backspace / clear / confirm.
+  // Numeric-keypad actions: digit / backspace / clear / max / confirm.
   // Digits are appended as strings so `1` + `1` becomes `"11"` (not
   // arithmetic 2). `Back` (cancel) is wired straight to `prod:<id>`
   // in the keyboard.
-  bot.callbackQuery(/^qkp:(\d+):(d:[0-9]|back|clear|confirm)$/, async (ctx) => {
+  bot.callbackQuery(/^qkp:(\d+):(d:[0-9]|back|clear|max|confirm)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const action = ctx.match[2]!;
     const raw = await getProduct(id);
@@ -383,6 +389,24 @@ export function registerShop(bot: Composer<AppCtx>): void {
       buf = buf.slice(0, -1);
     } else if (action === 'clear') {
       buf = '';
+    } else if (action === 'max') {
+      // 🎯 Max snaps the buffer to the user's purchasable ceiling
+      // (`min(QTY_MAX, stock)` for finite stock, plain `QTY_MAX`
+      // when the product is `unlimited_stock`). Surfaces a small
+      // toast on out-of-stock so the user understands why the
+      // buffer didn't move. The action only updates the staged
+      // buffer — the user still has to tap ✅ Confirm to apply.
+      const ceiling = p.unlimited_stock
+        ? QTY_MAX
+        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      if (ceiling < QTY_MIN) {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
+          show_alert: true,
+        });
+        return;
+      }
+      buf = String(ceiling);
     } else if (action === 'confirm') {
       const next = validateQty(buf, p.stock);
       if (next === null) {
