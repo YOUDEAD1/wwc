@@ -665,6 +665,15 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
     kb.text(p.active ? `👁 Hide #${p.id}` : `👁 Show #${p.id}`, `adm:prod:tog:${p.id}:${page}`)
       .text(`🗑 #${p.id}`, `adm:prod:del:${p.id}:${page}`)
       .row();
+    // Per-product Add Items / Edit Pool shortcuts. Both reuse the
+    // existing handlers — `📦 Add Items #N` arms the bulk-paste flow
+    // for that product, `🔎 Edit Pool #N` opens the Stock Items
+    // inspector (page 0). Saves the admin a hop through the per-
+    // product editor card when they just want to top up or audit
+    // the items pool for one product among several on a page.
+    kb.text(`📦 Add Items #${p.id}`, `adm:prod:items:add:${p.id}:${page}`)
+      .text(`🔎 Edit Pool #${p.id}`, `adm:prod:items:view:${p.id}:${page}:0`)
+      .row();
   }
   if (page > 0) kb.text('◀️ Prev', `adm:prod:list:${page - 1}`);
   if (page + 1 < totalPages) kb.text('Next ▶️', `adm:prod:list:${page + 1}`);
@@ -2133,17 +2142,33 @@ async function showUserList(ctx: AppCtx, page: number): Promise<void> {
   ctx.session.adminFlow = undefined;
   const { rows, total } = await listRecentUsers(page, PER_PAGE);
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
-  const lines = [`👥 *Users* — page ${page + 1}/${totalPages}  (total ${total})`, ''];
+  // Rendered in HTML rather than Markdown V1 — the row text splices
+  // raw `username` / `first_name` into the body, and V1 treats `_`
+  // and `*` as formatting delimiters with no working backslash
+  // escape. A single user on the page with `_` (e.g. `lais_one`)
+  // would unbalance the whole message; Telegram rejected the send,
+  // `editMessageText` threw, and the 👥 Users button stayed stuck on
+  // the loading spinner. HTML side-steps that — every user-supplied
+  // string just goes through `escapeHtml`.
+  const lines = [
+    `👥 <b>Users</b> — page ${page + 1}/${totalPages}  (total ${total})`,
+    '',
+  ];
   const kb = new InlineKeyboard();
   for (const u of rows) {
     const handle = u.username ? `@${u.username}` : (u.first_name ?? `id ${u.telegram_id}`);
-    lines.push(`\`${u.telegram_id}\` ${handle}  •  $${Number(u.balance).toFixed(2)}`);
+    const safeHandle = escapeHtml(handle);
+    lines.push(
+      `<code>${u.telegram_id}</code> ${safeHandle}  •  $${Number(u.balance).toFixed(2)}`,
+    );
+    // Button labels are not parsed as HTML / Markdown by Telegram
+    // so we keep the raw `handle` here (truncated to 24 chars).
     kb.text(handle.slice(0, 24), `adm:usr:v:${u.telegram_id}`).row();
   }
   if (page > 0) kb.text('◀️ Prev', `adm:usr:${page - 1}`);
   if (page + 1 < totalPages) kb.text('Next ▶️', `adm:usr:${page + 1}`);
   kb.row().text('🔍 Find user', 'adm:usr:find').row().text('⬅️ Back', 'adm:root');
-  await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
+  await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
 }
 
 adminBot.callbackQuery('adm:usr:find', async (ctx) => {
