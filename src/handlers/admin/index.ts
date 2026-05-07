@@ -4820,16 +4820,39 @@ adminBot.on('message:text', async (ctx, next) => {
       );
       return;
     }
-    // Special-case the icon flow: an unexpected exception here used
-    // to fall through to the generic "Something went wrong.
-    // Cancelled." reply *and* discard the flow, forcing the admin
-    // to re-tap 🌟 Icon. Keep the flow armed and surface a
-    // friendlier hint so they can simply re-send the right input.
+    // Special-case the icon flow: distinguish "DB schema not migrated"
+    // from "input wasn't recognised as an emoji" so the admin gets
+    // actionable guidance instead of a generic hint.
     if (flow?.type === 'edit_payment_icon') {
+      // Missing table / column / schema-cache miss → migration 0021
+      // (`payment_methods_chrome.sql`) hasn't been applied (or the
+      // PostgREST schema cache is stale). Tell the admin exactly
+      // what to run instead of pretending the emoji input was wrong.
+      if (e?.code === 'PGRST204' || e?.code === '42703' || e?.code === '42P01') {
+        await ctx.reply(
+          '⚠️ *Payment-methods schema not migrated*\n\n' +
+            'The `payment_methods.emoji_id` / `emoji_unicode` columns are ' +
+            'missing on your Supabase project. Apply ' +
+            '`supabase/migrations/0021_payment_methods_chrome.sql`, then ' +
+            'reload the API schema (Project Settings → API → Restart ' +
+            'server, or run `select pg_notify(\'pgrst\', \'reload schema\');`) ' +
+            'and retry.',
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
+        return;
+      }
+      // Unknown DB error — keep the flow armed so the admin can
+      // simply re-send the right input, but surface the real error
+      // detail so they can self-diagnose (mirrors the promo-flow
+      // handler above).
+      ctx.session.adminFlow = flow;
+      const detail = e?.message ?? String(err);
       await ctx.reply(
-        '⚠️ Couldn\'t set that as the icon. Send a single emoji ' +
-          '(or a *premium* custom emoji message), `clear` to reset, ' +
-          'or `/cancel` to abort.',
+        '⚠️ Couldn\'t set that as the icon.\n\n' +
+          `\`\`\`\n${detail.slice(0, 500)}\n\`\`\`\n` +
+          (e?.hint ? `_Hint: ${escapeHtml(e.hint)}_\n` : '') +
+          '\nSend a single emoji (or a *premium* custom emoji message), ' +
+          '`clear` to reset, or `/cancel` to abort.',
         { parse_mode: 'Markdown' },
       );
       return;

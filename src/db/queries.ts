@@ -1290,7 +1290,12 @@ export async function setPaymentMethodColor(
 /**
  * Update the per-method button icon (premium custom_emoji_id +
  * unicode fallback). Pass null/null to reset to the per-provider
- * default. Same column-fallback handling as `setPaymentMethodColor`.
+ * default.
+ *
+ * Errors propagate so the caller can surface a clear "apply migration
+ * 0021" message to the admin instead of silently no-op'ing on legacy
+ * DBs (which used to leave the admin staring at a generic "Couldn't
+ * set that as the icon" reply with no idea what was wrong).
  */
 export async function setPaymentMethodIcon(
   id: number,
@@ -1301,9 +1306,7 @@ export async function setPaymentMethodIcon(
     .from('payment_methods')
     .update({ emoji_unicode, emoji_id })
     .eq('id', id);
-  if (error && !/column.+(emoji_id|emoji_unicode)/i.test(error.message ?? '')) {
-    throw error;
-  }
+  if (error) throw error;
 }
 
 /** Look up a deposit by its `reference` field. */
