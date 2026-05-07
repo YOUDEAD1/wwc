@@ -472,6 +472,14 @@ export type SessionData = {
    * bot versions that used a bottom keyboard).
    */
   kbCleared?: boolean;
+  /**
+   * Set when the user opened the Top-up screen via the buy-flow
+   * payment-method picker (`pay_topup` button). Holds the source
+   * product id so the topup screen's Back button can navigate back
+   * to that picker (`buy:<id>`) instead of the main menu.
+   * Cleared when the user re-opens topup from anywhere else.
+   */
+  topupOriginBuyProductId?: number;
 };
 
 export type SessionCtx = Context & SessionFlavor<SessionData>;

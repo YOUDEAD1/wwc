@@ -52,11 +52,12 @@ export function manualReviewKeyboard(
   lang: Lang,
   depositId: number,
   txOrOrderId: string,
+  backCallback: string = 'main:open',
 ): InlineKeyboard {
   return new InlineKeyboard()
     .url(ADMIN_HELP_LABEL, buildAdminHelpUrl(depositId, txOrOrderId))
     .row()
-    .text(btn(lang, 'back'), 'main:open');
+    .text(btn(lang, 'back'), backCallback);
 }
 
 export function rejectionKeyboard(
@@ -64,13 +65,17 @@ export function rejectionKeyboard(
   depositId: number,
   txOrOrderId: string,
   reason: string,
+  backCallback: string = 'main:open',
 ): InlineKeyboard {
   return new InlineKeyboard()
     .url(ADMIN_HELP_LABEL, buildAdminHelpUrlForRejection(depositId, txOrOrderId, reason))
     .row()
-    .text(btn(lang, 'back'), 'main:open');
+    .text(btn(lang, 'back'), backCallback);
 }
 
-export function successKeyboard(lang: Lang): InlineKeyboard {
-  return new InlineKeyboard().text(btn(lang, 'back'), 'main:open');
+export function successKeyboard(
+  lang: Lang,
+  backCallback: string = 'main:open',
+): InlineKeyboard {
+  return new InlineKeyboard().text(btn(lang, 'back'), backCallback);
 }

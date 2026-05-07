@@ -227,7 +227,11 @@ export function paymentMethodKeyboard(
   kb.row();
   inlineBtn(kb, lang, 'pay_direct', `pay:direct:${product.id}`);
   kb.row();
-  inlineBtn(kb, lang, 'pay_topup', 'topup:open');
+  // Top-up Wallet from the buy flow carries the originating product
+  // id so the topup screen's Back button returns the user to THIS
+  // payment-method picker (`buy:<productId>`) instead of dropping
+  // them on the main menu.
+  inlineBtn(kb, lang, 'pay_topup', `topup:open:from:buy:${product.id}`);
   kb.row();
   inlineBtn(kb, lang, 'back', `prod:${product.id}`);
   return kb;

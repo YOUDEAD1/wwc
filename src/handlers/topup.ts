@@ -28,10 +28,43 @@ import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
+/**
+ * Resolve the callback that takes the user back to the top-up root
+ * menu. When the session was opened via the buy-flow's payment-method
+ * picker (`pay_topup` button), the suffix is preserved so re-entering
+ * the root keeps the buy-flow context — the root's Back button will
+ * then return the user to `buy:<productId>` instead of the main menu.
+ */
+function topupRootCallback(ctx: AppCtx): string {
+  const fromBuy = ctx.session.topupOriginBuyProductId;
+  return fromBuy !== undefined ? `topup:open:from:buy:${fromBuy}` : topupRootCallback(ctx);
+}
+
+/**
+ * Resolve the callback the top-up root's Back button uses. Returns
+ * `buy:<productId>` when the session originated from the buy-flow's
+ * payment-method picker (so the user lands back on that picker), or
+ * `main:open` otherwise.
+ */
+function topupExitCallback(ctx: AppCtx): string {
+  const fromBuy = ctx.session.topupOriginBuyProductId;
+  return fromBuy !== undefined ? `buy:${fromBuy}` : 'main:open';
+}
+
 export function registerTopup(bot: Composer<AppCtx>): void {
-  bot.callbackQuery('topup:open', async (ctx) => {
+  // The optional `:from:buy:<productId>` suffix is set when the user
+  // entered top-up via the buy-flow payment-method picker — we use
+  // it so the Back button returns them to that picker instead of
+  // the main menu.
+  bot.callbackQuery(/^topup:open(?::from:buy:(\d+))?$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     ctx.session.userFlow = undefined;
+    const fromBuyProductId = ctx.match[1] ? Number(ctx.match[1]) : undefined;
+    if (fromBuyProductId !== undefined) {
+      ctx.session.topupOriginBuyProductId = fromBuyProductId;
+    } else {
+      ctx.session.topupOriginBuyProductId = undefined;
+    }
     await showTopupMenu(ctx, /* asEdit */ true);
   });
 
@@ -46,7 +79,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^pay:others:(topup|direct(?::\d+(?::\d+)?)?)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const origin = ctx.match[1] ?? 'topup';
-    const backCallback = origin === 'topup' ? 'topup:open' : `pdpm:${origin.replace(/^direct:/, '')}`;
+    const backCallback = origin === 'topup' ? topupRootCallback(ctx) : `pdpm:${origin.replace(/^direct:/, '')}`;
     const contactUrl = getAdminContactUrlWithPrefill(
       'Hey Admin i need help about another payment method for bot payment method name is : ',
     );
@@ -89,7 +122,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           ),
           {
             parse_mode: 'HTML',
-            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
           },
         );
         return;
@@ -106,7 +139,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       };
       await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m)), {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
       });
       return;
     }
@@ -119,7 +152,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           ),
           {
             parse_mode: 'HTML',
-            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
           },
         );
         return;
@@ -154,7 +187,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       };
       await ctx.editMessageText(renderMdHtml(buildBinancePayTopupScreen(m)), {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
       });
       return;
     }
@@ -167,7 +200,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           ),
           {
             parse_mode: 'HTML',
-            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
           },
         );
         return;
@@ -183,7 +216,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       };
       await ctx.editMessageText(renderMdHtml(buildLtcUsdAmountScreen(m)), {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
       });
       return;
     }
@@ -198,7 +231,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       reply_markup: new InlineKeyboard()
         .text('💸 ' + m.name, `topup:request:${m.id}`)
         .row()
-        .text(btn(ctx.lang, 'back'), 'topup:open'),
+        .text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
     });
   });
 
@@ -375,7 +408,7 @@ async function handleChainTopupSubmit(
         `Credited: *$${result.amount.toFixed(2)}*`,
         `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(ctx.lang),
+      reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
     });
   } else {
     const klass = classifyReason(result.reason);
@@ -392,7 +425,7 @@ async function handleChainTopupSubmit(
           `Tx: \`${txHash}\``,
           '_This transaction has already been used to credit a previous deposit. Each transaction can only be used once._',
         ].join('\n'),
-        reply_markup: successKeyboard(ctx.lang),
+        reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
       });
     } else if (klass === 'reject') {
       await setDepositStatus(depId, 'rejected').catch(() => undefined);
@@ -405,7 +438,13 @@ async function handleChainTopupSubmit(
           '',
           'This transaction did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
         ].join('\n'),
-        reply_markup: rejectionKeyboard(ctx.lang, depId, txHash, result.reason),
+        reply_markup: rejectionKeyboard(
+          ctx.lang,
+          depId,
+          txHash,
+          result.reason,
+          topupExitCallback(ctx),
+        ),
       });
     } else {
       await verifying.done({
@@ -417,7 +456,7 @@ async function handleChainTopupSubmit(
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
-        reply_markup: manualReviewKeyboard(ctx.lang, depId, txHash),
+        reply_markup: manualReviewKeyboard(ctx.lang, depId, txHash, topupExitCallback(ctx)),
       });
       void adminLog.logTopupSubmitted(ctx.api, {
         user: {
@@ -522,7 +561,7 @@ async function handleLtcUsdAmount(
     ),
     {
       parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'topup:open'),
+      reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
     },
   );
 }
@@ -601,7 +640,7 @@ async function handleLtcTxHash(
         `Credited: *$${result.amount.toFixed(2)}*`,
         `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(ctx.lang),
+      reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
     });
   } else {
     const klass = classifyReason(result.reason);
@@ -618,7 +657,7 @@ async function handleLtcTxHash(
           `Tx: \`${cleaned}\``,
           '_This transaction has already been used to credit a previous deposit. Each transaction can only be used once._',
         ].join('\n'),
-        reply_markup: successKeyboard(ctx.lang),
+        reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
       });
     } else if (klass === 'reject') {
       await setDepositStatus(depId, 'rejected').catch(() => undefined);
@@ -631,7 +670,13 @@ async function handleLtcTxHash(
           '',
           'This transaction did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
         ].join('\n'),
-        reply_markup: rejectionKeyboard(ctx.lang, depId, cleaned, result.reason),
+        reply_markup: rejectionKeyboard(
+          ctx.lang,
+          depId,
+          cleaned,
+          result.reason,
+          topupExitCallback(ctx),
+        ),
       });
     } else {
       await verifying.done({
@@ -643,7 +688,7 @@ async function handleLtcTxHash(
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
-        reply_markup: manualReviewKeyboard(ctx.lang, depId, cleaned),
+        reply_markup: manualReviewKeyboard(ctx.lang, depId, cleaned, topupExitCallback(ctx)),
       });
       void adminLog.logTopupSubmitted(ctx.api, {
         user: {
@@ -774,7 +819,7 @@ async function handleBinancePayOrderId(
         `Credited: *$${result.amount.toFixed(3)}*`,
         `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(ctx.lang),
+      reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
     });
   } else {
     const klass = classifyReason(result.reason);
@@ -791,7 +836,7 @@ async function handleBinancePayOrderId(
           `Order ID: \`${orderId}\``,
           '_This Binance Pay order has already been used to credit a previous deposit. Each order can only be used once._',
         ].join('\n'),
-        reply_markup: successKeyboard(ctx.lang),
+        reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
       });
     } else if (klass === 'reject') {
       await setDepositStatus(depId, 'rejected').catch(() => undefined);
@@ -804,7 +849,13 @@ async function handleBinancePayOrderId(
           '',
           'This order did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
         ].join('\n'),
-        reply_markup: rejectionKeyboard(ctx.lang, depId, orderId, result.reason),
+        reply_markup: rejectionKeyboard(
+          ctx.lang,
+          depId,
+          orderId,
+          result.reason,
+          topupExitCallback(ctx),
+        ),
       });
     } else {
       await verifying.done({
@@ -816,7 +867,7 @@ async function handleBinancePayOrderId(
           '',
           'Admin will check your payment manually and credit your wallet shortly.',
         ].join('\n'),
-        reply_markup: manualReviewKeyboard(ctx.lang, depId, orderId),
+        reply_markup: manualReviewKeyboard(ctx.lang, depId, orderId, topupExitCallback(ctx)),
       });
       void adminLog.logTopupSubmitted(ctx.api, {
         user: {
@@ -890,7 +941,10 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     methods,
     (id) => `topup:method:${id}`,
     'pay:others:topup',
-    'main:open',
+    // When the user opened top-up via the buy-flow's payment-method
+    // picker, navigate Back to that picker (`buy:<productId>`) so
+    // they don't lose the in-flight purchase context.
+    topupExitCallback(ctx),
   );
   // `topup.choose_method` is now the user-facing heading
   // ("👛 Top Up Wallet") — no need to prepend the legacy title key
