@@ -5,13 +5,13 @@
  * mock-up:
  *
  *   ┌─────────────────────────┐
- *   │ 🟡 Binance Pay          │  full row
+ *   │ Binance Pay             │  full row
  *   ├─────────────────────────┤
- *   │ 🟢 USDT (BEP-20)        │  full row
+ *   │ USDT (BEP-20)           │  full row
  *   ├─────────────┬───────────┤
- *   │ 🔵 TON      │ 🔴 Tron   │  paired row
+ *   │ TON         │ Tron      │  paired row
  *   ├─────────────┴───────────┤
- *   │ 💡 Others (primary blue)│  full row
+ *   │ Others (primary blue)   │  full row
  *   ├─────────────────────────┤
  *   │ Back                    │  full row
  *   └─────────────────────────┘
@@ -23,9 +23,11 @@
  * Each button picks up:
  *   - per-method `color_mode` → Bot API 9.4 button style (admin-edit
  *     via `setPaymentMethodColor`).
- *   - per-method `emoji_id` → Bot API 9.4 `icon_custom_emoji_id`,
- *     falling back to `emoji_unicode` then to a per-provider default
- *     glyph (admin-edit via `setPaymentMethodIcon`).
+ *   - per-method `emoji_id` → Bot API 9.4 `icon_custom_emoji_id`
+ *     (admin-edit via `setPaymentMethodIcon`). The bot owner asked
+ *     us to render *only* premium icons here — there is no unicode
+ *     fallback prefix on the label, so when an admin hasn't set a
+ *     premium icon the button shows just the method name.
  *
  * The keyboard always ends with an "Others" button (callback specified
  * by the caller) and a Back button (callback specified by the caller).
@@ -37,21 +39,23 @@ import { inlineBtn } from './helpers.js';
 import { colorModeToStyle, type ColorMode } from '../../config/index.js';
 import type { DBPaymentMethod, PaymentProvider } from '../types.js';
 
-/** Default unicode glyph per provider when no per-row icon is set. */
-const PROVIDER_GLYPHS: Record<PaymentProvider, string> = {
-  manual: '💳',
-  binance_pay: '🟡',
-  usdt_trc20: '🔴',
-  usdt_bep20: '🟢',
-  usdt_ton: '🔵',
-  ltc: '⚪',
-};
-
+/**
+ * Build the visible button label for a payment method. The bot owner
+ * explicitly asked for *no* default unicode emoji prefixes on this
+ * keyboard ("delete these default free emojies and just premium") —
+ * any visual glyph should come from the admin-set premium icon
+ * (`emoji_id`), applied via `kb.icon()` in `applyChrome()` below.
+ *
+ * We therefore drop both the per-provider hard-coded glyph
+ * (`PROVIDER_GLYPHS`) and the per-row unicode fallback
+ * (`m.emoji_unicode`) from the label. When the admin has set a
+ * premium icon, premium clients render the animated glyph and
+ * non-premium clients render the unicode representation Telegram
+ * derives from the `custom_emoji_id`. When no premium icon is set,
+ * the button simply shows the bare method name.
+ */
 function labelFor(m: DBPaymentMethod): string {
-  const glyph = m.emoji_unicode && m.emoji_unicode.length > 0
-    ? m.emoji_unicode
-    : PROVIDER_GLYPHS[m.provider];
-  return `${glyph} ${m.name}`;
+  return m.name;
 }
 
 function applyChrome(kb: InlineKeyboard, m: DBPaymentMethod): void {
