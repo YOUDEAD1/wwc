@@ -21,10 +21,14 @@ import {
   findUserById,
   findUserByUsername,
   getDeposit,
+  getOrder,
   getProductSales,
   getStats,
   getUserOrderSummary,
   isAdmin,
+  listAllOrders,
+  listOrdersForProduct,
+  listOrdersPaginated,
   listAllCategories,
   listAllProducts,
   listAllPendingDeposits,
@@ -115,7 +119,7 @@ import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../con
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
 import { env } from '../../env.js';
-import type { DBUser, DBPromo } from '../../types.js';
+import type { DBOrder, DBUser, DBPromo } from '../../types.js';
 
 export const adminBot = new Composer<AppCtx>();
 
@@ -165,10 +169,11 @@ function rootMenu(): InlineKeyboard {
     .text('🤖 AI Setup', 'adm:ai')
     .text('📊 Stats', 'adm:stats')
     .row()
+    .text('🧾 Orders', 'adm:ord:0')
+    .text('💸 Promos', 'adm:promo')
+    .row()
     .text('🎁 Gift Codes', 'adm:gift')
     .text('💎 Custom Prices', 'adm:price')
-    .row()
-    .text('💸 Promos', 'adm:promo')
     .row()
     .text('🏠 Main Menu', 'adm:close');
 }
@@ -518,6 +523,219 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
   });
 });
 
+// ---------- Orders ----------
+//
+// Three views, all rendered in HTML so user-supplied strings
+// (`product_name`, `username`, `delivered_items`) splice in safely
+// after `escapeHtml`:
+//
+//   1. Global feed             — `adm:ord:<page>`
+//      Newest paid orders across the whole shop. Each row exposes a
+//      "View" button that opens the per-order detail screen.
+//   2. Per-user orders         — `adm:ord:u:<telegram_id>:<page>`
+//      Reached from the user card "🧾 View Orders" button. Same row
+//      layout as the global feed, scoped to one buyer.
+//   3. Per-product orders      — `adm:ord:p:<product_id>:<page>`
+//      Reached from the product editor "🧾 View Buyers" button. Same
+//      row layout, scoped to one product.
+//
+//   4. Per-order detail        — `adm:ord:v:<id>`
+//      Full order card: product, qty, totals, discount/promo, status,
+//      buyer (clickable through to the user card), and the actual
+//      delivered codes/links (preformatted block) so the admin can
+//      see exactly what was shipped.
+
+const ORDERS_PER_PAGE = 8;
+
+/** Render a one-line buyer handle from a user row (or fallback to id). */
+function buyerHandle(u: DBUser | null, fallback_id: number): string {
+  if (!u) return `id ${fallback_id}`;
+  if (u.username) return `@${u.username}`;
+  if (u.first_name) return u.first_name;
+  return `id ${u.telegram_id}`;
+}
+
+/**
+ * Render a paginated orders list. `scope` controls the header label
+ * and the callback-data prefix used by the pagination + row buttons
+ * so the same renderer can power the global feed, the per-user list
+ * and the per-product list without duplicating code.
+ */
+async function showOrdersList(
+  ctx: AppCtx,
+  scope:
+    | { kind: 'all'; page: number }
+    | { kind: 'user'; telegram_id: number; page: number }
+    | { kind: 'product'; product_id: number; page: number },
+): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const perPage = ORDERS_PER_PAGE;
+  let rows: DBOrder[] = [];
+  let total = 0;
+  let header = '';
+  let pagePrefix = '';
+  let backCb = 'adm:root';
+  if (scope.kind === 'all') {
+    const r = await listAllOrders(scope.page, perPage);
+    rows = r.rows;
+    total = r.total;
+    header = '🧾 <b>All Orders</b>';
+    pagePrefix = 'adm:ord';
+  } else if (scope.kind === 'user') {
+    const r = await listOrdersPaginated(scope.telegram_id, scope.page, perPage);
+    rows = r.rows;
+    total = r.total;
+    header = `🧾 <b>Orders for</b> <code>${scope.telegram_id}</code>`;
+    pagePrefix = `adm:ord:u:${scope.telegram_id}`;
+    backCb = `adm:usr:v:${scope.telegram_id}`;
+  } else {
+    const r = await listOrdersForProduct(scope.product_id, scope.page, perPage);
+    rows = r.rows;
+    total = r.total;
+    header = `🧾 <b>Buyers of product #${scope.product_id}</b>`;
+    pagePrefix = `adm:ord:p:${scope.product_id}`;
+  }
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const page = scope.kind === 'all' ? scope.page : scope.page;
+  if (rows.length === 0) {
+    const kb = new InlineKeyboard().text('⬅️ Back', backCb);
+    await ctx.editMessageText(`${header}\n\n<i>No orders yet.</i>`, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+    return;
+  }
+  // Resolve buyer handles in one round-trip per page so the list can
+  // show "@username" instead of just the numeric telegram_id. We
+  // tolerate missing rows (deleted users) and fall back to "id N".
+  const buyerIds = Array.from(new Set(rows.map((o) => o.user_id)));
+  const buyers = new Map<number, DBUser>();
+  await Promise.all(
+    buyerIds.map(async (id) => {
+      const u = await findUserById(id);
+      if (u) buyers.set(id, u);
+    }),
+  );
+  const lines = [`${header} — page ${page + 1}/${totalPages}  (total ${total})`, ''];
+  const kb = new InlineKeyboard();
+  for (const o of rows) {
+    const buyer = buyers.get(o.user_id) ?? null;
+    const handle = buyerHandle(buyer, o.user_id);
+    const safeName = escapeHtml(o.product_name);
+    const safeHandle = escapeHtml(handle);
+    const date = o.created_at.slice(0, 10);
+    const statusEmoji =
+      o.status === 'paid' ? '✅' : o.status === 'refunded' ? '↩️' : '✖️';
+    lines.push(
+      `${statusEmoji} <code>#${o.id}</code> ${safeName} × ${o.qty} — ` +
+        `<b>$${Number(o.total).toFixed(2)}</b> · ${safeHandle} · ${date}`,
+    );
+    // Compact one-tap row: jump straight into the order detail.
+    kb.text(
+      `🔎 #${o.id} ${o.product_name} × ${o.qty}`.slice(0, 60),
+      `adm:ord:v:${o.id}`,
+    ).row();
+  }
+  if (page > 0) kb.text('◀️ Prev', `${pagePrefix}:${page - 1}`);
+  if (page + 1 < totalPages) kb.text('Next ▶️', `${pagePrefix}:${page + 1}`);
+  kb.row().text('⬅️ Back', backCb);
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery(/^adm:ord:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showOrdersList(ctx, { kind: 'all', page: Number(ctx.match[1]) });
+});
+
+adminBot.callbackQuery(/^adm:ord:u:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showOrdersList(ctx, {
+    kind: 'user',
+    telegram_id: Number(ctx.match[1]),
+    page: Number(ctx.match[2]),
+  });
+});
+
+adminBot.callbackQuery(/^adm:ord:p:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showOrdersList(ctx, {
+    kind: 'product',
+    product_id: Number(ctx.match[1]),
+    page: Number(ctx.match[2]),
+  });
+});
+
+/**
+ * Per-order detail card. Shows everything an admin needs to answer
+ * "what did this user buy and what did we ship?" in one screen.
+ */
+adminBot.callbackQuery(/^adm:ord:v:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  const order = await getOrder(id);
+  if (!order) {
+    await ctx.editMessageText('⚠️ Order not found.', {
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+    return;
+  }
+  const buyer = await findUserById(order.user_id);
+  const handle = buyerHandle(buyer, order.user_id);
+  const safeName = escapeHtml(order.product_name);
+  const safeHandle = escapeHtml(handle);
+  const created = new Date(order.created_at);
+  const statusLabel =
+    order.status === 'paid'
+      ? '✅ Paid'
+      : order.status === 'refunded'
+      ? '↩️ Refunded'
+      : '✖️ Cancelled';
+  const lines = [
+    `🧾 <b>Order #${order.id}</b>`,
+    '',
+    `<b>Product:</b> ${safeName}` +
+      (order.product_id !== null ? ` <code>(#${order.product_id})</code>` : ''),
+    `<b>Quantity:</b> ${order.qty}`,
+    `<b>Unit Price:</b> $${Number(order.unit_price).toFixed(2)}`,
+    Number(order.discount) > 0
+      ? `<b>Discount:</b> −$${Number(order.discount).toFixed(2)}` +
+        (order.promo_id !== null ? ` (promo #${order.promo_id})` : '')
+      : null,
+    `<b>Total:</b> $${Number(order.total).toFixed(2)}`,
+    `<b>Status:</b> ${statusLabel}`,
+    '',
+    `<b>Buyer:</b> ${safeHandle}  <code>${order.user_id}</code>`,
+    `<b>When:</b> ${created.toISOString().replace('T', ' ').slice(0, 19)} UTC`,
+  ].filter((x): x is string => x !== null);
+  // The actual codes / links delivered to the buyer. Preserved verbatim
+  // inside <pre> so newlines + special chars survive.
+  const delivered = order.delivered_items ?? order.delivery ?? null;
+  if (delivered && delivered.trim().length > 0) {
+    lines.push('');
+    lines.push('<b>Delivered Items:</b>');
+    // Cap at ~3000 chars so we stay safely under Telegram's 4096
+    // message-text limit even with the rest of the card included.
+    let body = delivered;
+    if (body.length > 3000) body = body.slice(0, 2950) + '\n…(truncated)';
+    lines.push(`<pre>${escapeHtml(body)}</pre>`);
+  }
+  const kb = new InlineKeyboard();
+  if (buyer) {
+    kb.text('👤 Open Buyer', `adm:usr:v:${order.user_id}`).row();
+  }
+  if (order.product_id !== null) {
+    kb.text('🧾 More buyers of this product', `adm:ord:p:${order.product_id}:0`).row();
+  }
+  kb.text('⬅️ Back to orders', 'adm:ord:0').text('🏠 Main', 'adm:root');
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
 // ---------- Reload / Clear cache ----------
 adminBot.callbackQuery('adm:reload', async (ctx) => {
   await refreshSettings();
@@ -840,6 +1058,7 @@ async function showProductEditor(
   kb.text('🆔 Edit ID', `adm:prod:id:set:${p.id}:${page}`)
     .text('🔗 Share Link', `adm:prod:share:${p.id}:${page}`)
     .row();
+  kb.text('🧾 View Buyers', `adm:ord:p:${p.id}:0`).row();
   kb.text('⬅️ Back to list', `adm:prod:list:${page}`);
   await ctx.editMessageText(lines.join('\n'), {
     parse_mode: 'Markdown',
@@ -3108,6 +3327,7 @@ async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
     }
     kb.row();
   }
+  kb.text('🧾 View Orders', `adm:ord:u:${user.telegram_id}:0`).row();
   kb.text('💎 Custom prices', `adm:price:u:${user.telegram_id}`).row();
   kb.text('⬅️ Back to users', 'adm:usr:0').text('🏠 Main', 'adm:root');
   if (ctx.callbackQuery) {

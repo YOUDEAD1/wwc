@@ -1253,6 +1253,46 @@ export async function getOrder(id: number): Promise<DBOrder | null> {
   return (data ?? null) as DBOrder | null;
 }
 
+/**
+ * Paginated global orders feed for the admin Orders panel. Returns
+ * the slice plus the total count so the UI can render `Page X/Y`
+ * without a second round-trip. Newest orders come first.
+ */
+export async function listAllOrders(
+  page: number,
+  perPage: number,
+): Promise<{ rows: DBOrder[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count } = await supabase
+    .from('orders')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  return { rows: (data ?? []) as DBOrder[], total: count ?? 0 };
+}
+
+/**
+ * Paginated orders list scoped to a single product — used by the
+ * admin "View Buyers" panel on the product editor so the bot owner
+ * can see exactly who bought a given SKU. Newest orders come first.
+ */
+export async function listOrdersForProduct(
+  product_id: number,
+  page: number,
+  perPage: number,
+): Promise<{ rows: DBOrder[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count } = await supabase
+    .from('orders')
+    .select('*', { count: 'exact' })
+    .eq('product_id', product_id)
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  return { rows: (data ?? []) as DBOrder[], total: count ?? 0 };
+}
+
 // ---------- Deposits ----------
 
 export async function listPaymentMethods(): Promise<DBPaymentMethod[]> {
