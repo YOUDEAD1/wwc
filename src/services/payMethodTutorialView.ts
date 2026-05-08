@@ -1,13 +1,19 @@
 /**
  * User-facing renderer for the per-payment-method tutorial card.
  *
+ * Bot-owner spec (2026-05-08): the tutorial replaces the existing
+ * instructions message *in-place* via `editMessageText` — no new
+ * message bubble below the address / Pay ID screen. The admin-
+ * uploaded photo / video / document (if any) is still sent as a
+ * follow-up message because Telegram doesn't allow turning a text
+ * bubble into a media bubble. If the in-place edit fails (rare —
+ * usually the message is too old to edit), we fall back to
+ * `ctx.reply` so the buyer always gets something.
+ *
  * Mirrors the bot-tutorial render in `profile.ts` and the product
- * "Using Method" render in `shop.ts`: ack the callback first, send a
- * brand-new HTML message (not an edit) with an optional URL button,
- * then optionally re-send the admin-uploaded photo / video / document
- * as a follow-up message. Errors never throw — every failure falls
- * back to a polite "couldn't load this tutorial" stub so the buyer
- * isn't left staring at a perpetual spinner.
+ * "Using Method" render in `shop.ts`. Errors never throw — every
+ * failure falls back to a polite "couldn't load this tutorial" stub
+ * so the buyer isn't left staring at a perpetual spinner.
  *
  * The card is admin-editable from /admin → Payment Methods → "📘 #N
  * Tutorial" and stored in the `settings` table under
@@ -78,23 +84,60 @@ export async function renderPaymentMethodTutorial(
       },
       'paytut: — rendering payment method tutorial',
     );
-    stage = 'send_html';
+    // Bot-owner spec: convert the existing instructions card into the
+    // tutorial card on the SAME message bubble — no new message below
+    // the address / Pay ID screen. Cascading fallbacks:
+    //   1) HTML edit-in-place
+    //   2) plain-text edit-in-place (in case admin-authored body
+    //      contains HTML that grammy rejects after our clamp)
+    //   3) HTML reply (last-ditch — message too old to edit, etc.)
+    stage = 'edit_html';
+    let edited = false;
     try {
-      await ctx.reply(safeHtml, {
+      await ctx.editMessageText(safeHtml, {
         parse_mode: 'HTML',
         reply_markup: kb,
         link_preview_options: { is_disabled: true },
       });
+      edited = true;
     } catch (htmlErr) {
       logger.warn(
         { err: htmlErr, methodId },
-        'paytut: HTML send failed, retrying as plain text',
+        'paytut: HTML edit failed, retrying as plain-text edit',
       );
-      stage = 'send_plain';
-      await ctx.reply(htmlToPlain(safeHtml), {
-        reply_markup: kb,
-        link_preview_options: { is_disabled: true },
-      });
+      try {
+        stage = 'edit_plain';
+        await ctx.editMessageText(htmlToPlain(safeHtml), {
+          reply_markup: kb,
+          link_preview_options: { is_disabled: true },
+        });
+        edited = true;
+      } catch (plainErr) {
+        logger.warn(
+          { err: plainErr, methodId },
+          'paytut: plain-text edit failed, falling back to fresh reply',
+        );
+      }
+    }
+    if (!edited) {
+      stage = 'reply_html';
+      try {
+        await ctx.reply(safeHtml, {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+          link_preview_options: { is_disabled: true },
+        });
+      } catch (replyErr) {
+        logger.warn(
+          { err: replyErr, methodId },
+          'paytut: HTML reply failed, retrying as plain-text reply',
+        );
+        stage = 'reply_plain';
+        await ctx.reply(htmlToPlain(safeHtml), {
+          reply_markup: kb,
+          link_preview_options: { is_disabled: true },
+        });
+      }
     }
     if (tut.file_id && tut.file_type) {
       try {

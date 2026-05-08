@@ -368,13 +368,12 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   pay_topup: 'blue',
   // Payment-methods keyboard chrome — Others sits below the per-
   // method buttons as the catch-all entry, Back returns to the
-  // previous screen. Others stays primary-blue. The Back row is
-  // intentionally neutral (no `red` rail) so it reads as a
-  // navigation control; the *destructive* exit on the per-method
-  // instructions screen lives on the dedicated `cancel_pay`
-  // button below — that's the only red rail in the pay flow.
+  // previous screen. Others stays primary-blue; Back goes red per
+  // bot-owner spec on the picker (a separate, dedicated `cancel_pay`
+  // button on the per-method instructions screen is also red — both
+  // are exit-style controls so they share the colour).
   paymethod_others: 'blue',
-  paymethod_back: 'none',
+  paymethod_back: 'red',
   // Wallet-confirm screen.
   confirm_pay: 'green',
   cancel_pay: 'red',

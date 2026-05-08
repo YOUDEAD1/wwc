@@ -97,31 +97,56 @@ export function paymentMethodsKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
-  // Greedy paired-row layout: when two consecutive methods are both
-  // *short-name auto-verify chain* providers (i.e. on-chain wallet
-  // payments — TRC-20 / BEP-20 / TON / LTC, but NOT `binance_pay`
-  // which gets a long "Binance Pay" label and never pairs nicely),
-  // put them on the same keyboard row to mirror the bot-owner spec
-  // (TON | Tron sitting side-by-side under the wider USDT / Binance
-  // rows).
+  // Bot-owner spec layout (pic 2):
   //
-  // We additionally guard on the rendered label length so an admin
-  // who renamed a chain method to something verbose ("USDT on the
-  // TRON Network", etc.) doesn't suddenly get two squeezed buttons
-  // that wrap to two lines.
-  const PAIR_PROVIDERS = new Set<PaymentProvider>([
-    'usdt_trc20',
-    'usdt_ton',
-    'usdt_bep20',
-    'ltc',
-  ]);
+  //   [ Binance Pay              ]   ← full row
+  //   [ USDT BEP-20              ]   ← full row
+  //   [ USDT TON   ][ USDT TRC-20 ]  ← paired row (small)
+  //   [ Others                    ]
+  //   [ Back (red)                ]
+  //
+  // To make this happen *regardless* of admin sort_order (which the
+  // bot-owner doesn't want to micro-manage), we apply a stable
+  // provider-priority sort first. Within the same provider, ties
+  // are broken by the admin-controlled `sort_order` then by id —
+  // so two TRC-20 methods (e.g. main + backup wallet) keep the
+  // admin's relative ordering. The original `methods` array is not
+  // mutated.
+  const PROVIDER_PRIORITY: Record<PaymentProvider, number> = {
+    binance_pay: 0,
+    usdt_bep20: 1,
+    usdt_ton: 2,
+    usdt_trc20: 3,
+    ltc: 4,
+    manual: 5,
+  };
+  const sorted = methods.slice().sort((a, b) => {
+    const pa = PROVIDER_PRIORITY[a.provider] ?? 99;
+    const pb = PROVIDER_PRIORITY[b.provider] ?? 99;
+    if (pa !== pb) return pa - pb;
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    return a.id - b.id;
+  });
+
+  // Pair *only* TON and TRC-20, and only when they sit next to each
+  // other in the sorted list (which they always do given the
+  // priority above when both are configured). BEP-20 stays
+  // full-width — the bot-owner's sketch shows it on its own row
+  // because the "USDT BEP-20" label is wide enough to dominate the
+  // row, and pairing it with TON would leave both buttons feeling
+  // squeezed.
+  const PAIR_PROVIDERS = new Set<PaymentProvider>(['usdt_trc20', 'usdt_ton']);
+  // Hard guard: if an admin renames a chain method to something
+  // verbose ("USDT on the TRON Network", etc.) the pair would wrap
+  // to two lines and look broken. Fall back to one-per-row when
+  // either label is too long.
   const SHORT_LABEL_LIMIT = 12;
   const isPairable = (m: DBPaymentMethod) =>
     PAIR_PROVIDERS.has(m.provider) && labelFor(m).length <= SHORT_LABEL_LIMIT;
   let i = 0;
-  while (i < methods.length) {
-    const m = methods[i]!;
-    const next = methods[i + 1];
+  while (i < sorted.length) {
+    const m = sorted[i]!;
+    const next = sorted[i + 1];
     if (next && isPairable(m) && isPairable(next)) {
       pushMethod(kb, m, methodCallback(m.id));
       pushMethod(kb, next, methodCallback(next.id));
