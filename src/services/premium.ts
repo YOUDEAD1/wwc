@@ -293,11 +293,98 @@ export function renderPremiumHtml(
  * The auto-scan runs BEFORE token replacement so that the unicode
  * glyphs inserted by token replacement (already wrapped in their own
  * `<tg-emoji>` tags) aren't re-scanned and re-wrapped.
+ *
+ * Admin-authored bodies (announcements, product / bot / payment
+ * tutorials) can also embed *arbitrary* premium custom emojis via
+ * the `{{ce:<id>|<unicode>}}` marker syntax. The markers are written
+ * by `injectCustomEmojiMarkers` at capture time and expanded here
+ * into `<tg-emoji>` tags AFTER markdown / auto-scan / token passes,
+ * so the embedded unicode can never be double-wrapped or mangled.
  */
 export function renderMdHtml(template: string, map: Record<string, string> = {}): string {
-  const html = mdToHtml(template);
+  // Pull custom-emoji markers out of the template before any other
+  // pass touches the body. We use private-use-area sentinels so the
+  // markdown regexes / HTML escape / autoScan emoji regex / token
+  // regex all leave them untouched.
+  const placeholders: Array<{ id: string; glyph: string }> = [];
+  const stripped = template.replace(
+    CE_MARKER_RX,
+    (_m: string, id: string, glyph: string) => {
+      const idx = placeholders.length;
+      placeholders.push({ id, glyph });
+      return `\u{E000}TGCE${idx}\u{E001}`;
+    },
+  );
+  const html = mdToHtml(stripped);
   const scanned = autoScanPremiumEmojis(html);
-  return replaceTokensHtml(scanned, map);
+  let out = replaceTokensHtml(scanned, map);
+  for (let i = 0; i < placeholders.length; i++) {
+    const p = placeholders[i]!;
+    out = out.replace(
+      `\u{E000}TGCE${i}\u{E001}`,
+      `<tg-emoji emoji-id="${escapeHtml(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
+    );
+  }
+  return out;
+}
+
+// `{{ce:<custom_emoji_id>|<unicode glyph>}}` — embedded by
+// `injectCustomEmojiMarkers` at admin capture time. The unicode glyph
+// part allows ASCII brackets / colons but is bounded by `}` and `|`
+// so the regex stays anchored.
+const CE_MARKER_RX = /\{\{ce:([^|}\n]+)\|([^}\n]+)\}\}/g;
+
+/**
+ * Convert admin-authored text + Telegram MessageEntity[] into a
+ * marker-enriched body that survives DB storage and the existing
+ * `renderMdHtml` pipeline. Each `custom_emoji` entity in `entities`
+ * is rewritten in-place as a `{{ce:<id>|<unicode>}}` marker; the
+ * surrounding text is left untouched (so admin's existing markdown
+ * shortcuts — `*bold*`, `` `code` ``, etc. — still render).
+ *
+ * Telegram MessageEntity offsets are UTF-16 code units, which match
+ * JavaScript string indexing — `text.slice(e.offset, e.offset + e.length)`
+ * captures the original glyph for both single-codepoint emojis and
+ * multi-codepoint sequences (regional-indicator flags, ZWJ joins).
+ *
+ * Non-`custom_emoji` entities (bold / italic / links / spoilers /
+ * etc.) are intentionally ignored — admins are expected to use the
+ * existing single-asterisk Markdown shortcuts for formatting, and
+ * mixing native Telegram entities with markdown rendering would
+ * produce a tangled HTML output.
+ */
+export function injectCustomEmojiMarkers(
+  text: string,
+  entities: ReadonlyArray<MessageEntity> | undefined | null,
+): string {
+  if (!entities || entities.length === 0) return text;
+  // Filter and sort back-to-front so the index math stays valid as we
+  // splice markers in.
+  type CE = MessageEntity & { type: 'custom_emoji'; custom_emoji_id: string };
+  const ce = entities
+    .filter(
+      (e): e is CE =>
+        e.type === 'custom_emoji' &&
+        typeof (e as { custom_emoji_id?: unknown }).custom_emoji_id === 'string',
+    )
+    .slice()
+    .sort((a, b) => b.offset - a.offset);
+  if (ce.length === 0) return text;
+  let out = text;
+  for (const e of ce) {
+    const glyph = out.slice(e.offset, e.offset + e.length);
+    // Strip any chars that would break the marker delimiters. In
+    // practice unicode emojis never contain `}` or `|`, but this is
+    // a cheap defence against malformed input.
+    const safeGlyph = glyph.replace(/[|}\n]/g, '');
+    const safeId = e.custom_emoji_id.replace(/[|}\n]/g, '');
+    if (!safeGlyph || !safeId) continue;
+    out =
+      out.slice(0, e.offset) +
+      `{{ce:${safeId}|${safeGlyph}}}` +
+      out.slice(e.offset + e.length);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------
