@@ -16,7 +16,7 @@
  */
 import { InlineKeyboard } from 'grammy';
 import type { AppCtx } from '../middleware/user.js';
-import { btn, inlineUrl } from '../keyboards/helpers.js';
+import { inlineBtn, inlineUrl } from '../keyboards/helpers.js';
 import {
   clampForTelegram,
   escapeAttr,
@@ -62,7 +62,7 @@ export async function renderPaymentMethodTutorial(
       inlineUrl(kb, ctx.lang, 'tutorial_open_link', safeUrl);
       kb.row();
     }
-    kb.text(btn(ctx.lang, 'back'), backCallback);
+    inlineBtn(kb, ctx.lang, 'back', backCallback);
     stage = 'render_html';
     const html = renderMdHtml(body);
     const safeHtml = clampForTelegram(html);

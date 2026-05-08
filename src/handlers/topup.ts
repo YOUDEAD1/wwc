@@ -79,7 +79,7 @@ function topupInstructionKeyboard(
   const kb = new InlineKeyboard();
   inlineBtn(kb, ctx.lang, tutButtonKeyFor(m.provider), `paytut:${m.id}`);
   kb.row();
-  kb.text(btn(ctx.lang, 'back'), topupRootCallback(ctx));
+  inlineBtn(kb, ctx.lang, 'back', topupRootCallback(ctx));
   return kb;
 }
 
@@ -125,7 +125,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     kb.row();
     inlineBtn(kb, ctx.lang, 'support_live', 'support:live:start');
     kb.row();
-    kb.text(btn(ctx.lang, 'back'), backCallback);
+    inlineBtn(kb, ctx.lang, 'back', backCallback);
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
       reply_markup: kb,
