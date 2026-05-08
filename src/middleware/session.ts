@@ -115,6 +115,26 @@ export type AdminFlow =
   | { type: 'edit_bot_tutorial_text'; step: 'text'; data: Record<string, never> }
   | { type: 'edit_bot_tutorial_file'; step: 'file'; data: Record<string, never> }
   | { type: 'edit_bot_tutorial_url'; step: 'url'; data: Record<string, never> }
+  // -------- Per-payment-method tutorial editor (Payment Methods → Tutorial → Edit) --------
+  // Mirrors the bot-tutorial editor but scoped to a specific
+  // payment method id. The next admin message of the appropriate
+  // kind (text / file / url) is captured into
+  // `pay_tutorial.<method_id>.*` settings.
+  | {
+      type: 'edit_payment_tutorial_text';
+      step: 'text';
+      data: { method_id: number };
+    }
+  | {
+      type: 'edit_payment_tutorial_file';
+      step: 'file';
+      data: { method_id: number };
+    }
+  | {
+      type: 'edit_payment_tutorial_url';
+      step: 'url';
+      data: { method_id: number };
+    }
   | { type: 'add_payment'; step: 'name'; data: Record<string, never> }
   | { type: 'add_payment'; step: 'instructions'; data: { name: string } }
   | { type: 'set_text'; step: 'key'; data: Record<string, never> }

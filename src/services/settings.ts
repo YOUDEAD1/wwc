@@ -309,6 +309,63 @@ export async function setBotTutorialField(
   cache.set(key, value);
 }
 
+// ---------------------------------------------------------------------------
+//  Per-payment-method tutorial (admin-editable "Where TXID? / Where Order ID?"
+//  card surfaced under every chain/Binance/LTC instruction screen). Stored
+//  under the `pay_tutorial.<method_id>.*` namespace so each row in
+//  payment_methods carries its own tutorial. Same shape as `BotTutorial`
+//  so the rendering helpers can be reused.
+// ---------------------------------------------------------------------------
+
+export type PaymentMethodTutorial = BotTutorial;
+
+function methodTutorialKey(methodId: number, field: keyof BotTutorial): string {
+  return `pay_tutorial.${methodId}.${field}`;
+}
+
+export function getPaymentMethodTutorial(methodId: number): PaymentMethodTutorial {
+  const fileType = readString(methodTutorialKey(methodId, 'file_type'));
+  const file_type =
+    fileType === 'photo' || fileType === 'video' || fileType === 'document'
+      ? fileType
+      : null;
+  return {
+    text: readString(methodTutorialKey(methodId, 'text')),
+    file_id: readString(methodTutorialKey(methodId, 'file_id')),
+    file_type,
+    url: readString(methodTutorialKey(methodId, 'url')),
+  };
+}
+
+export async function setPaymentMethodTutorialField(
+  methodId: number,
+  field: keyof BotTutorial,
+  value: string | null,
+  updated_by?: number,
+): Promise<void> {
+  const key = methodTutorialKey(methodId, field);
+  if (value === null || value === '') {
+    await deleteSetting(key);
+    cache.delete(key);
+    return;
+  }
+  await setSetting(key, value, updated_by);
+  cache.set(key, value);
+}
+
+/**
+ * Drop ALL `pay_tutorial.<methodId>.*` keys when a payment method is
+ * deleted by the admin. Keeps the settings table clean.
+ */
+export async function clearPaymentMethodTutorial(methodId: number): Promise<void> {
+  const fields: (keyof BotTutorial)[] = ['text', 'file_id', 'file_type', 'url'];
+  for (const f of fields) {
+    const key = methodTutorialKey(methodId, f);
+    await deleteSetting(key);
+    cache.delete(key);
+  }
+}
+
 export function getPriceListPromoFooter(): string | null {
   return readString('profile.pricelist.promo_footer_override');
 }

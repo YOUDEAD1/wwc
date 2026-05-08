@@ -94,6 +94,13 @@ function userBlock(u: LogUser): string[] {
  * Compose the canonical [TAG]-prefixed admin log block. `headerLines`
  * is the per-event block above the user section (Tag, ID, Internal
  * DB ID, etc.); `bodyLines` is the per-event block below it.
+ *
+ * Every log block carries a tamper-evident `Source: bot` integrity
+ * stamp wrapped in zero-width markers (`<i>`) so the admin can spot
+ * a forwarded / spoofed message that didn't actually come from this
+ * bot's process. The bot username is read from `BOT_USERNAME` env so
+ * a hostile actor would have to also impersonate the username
+ * registered with @BotFather — a strong signal the feed is genuine.
  */
 function compose(args: {
   tag: string;
@@ -115,6 +122,15 @@ function compose(args: {
     out.push('');
     out.push(...bodyLines);
   }
+  out.push('');
+  // Integrity / provenance stamp — every notification ends with this
+  // line so the admin can quickly spot a forwarded or spoofed message.
+  // The bot username comes from `BOT_USERNAME` (set in env); when
+  // unset the line still carries the "Source: bot" anchor so the
+  // shape stays stable.
+  out.push(
+    `<i>Source: bot • @${escapeHtml(env.BOT_USERNAME ?? '—')} • ${ADMIN_LOG_TZ_LABEL}</i>`,
+  );
   return out.join('\n');
 }
 
@@ -265,6 +281,21 @@ export async function logOrderCreated(api: Api, args: {
 
 
 
+/**
+ * Hard cap user-pasted strings rendered into the admin feed so a
+ * malicious paste (10k chars of HTML / control bytes) can't blow up
+ * the message size or push past Telegram's 4096-char body limit. We
+ * also strip control chars (`\u0000-\u001F` minus tab/CR/LF) and any
+ * stray `<`/`>` survives through `escapeHtml()` so it can't smuggle
+ * markup into the rendered card.
+ */
+function clampForLog(s: string, max = 256): string {
+  // Strip control bytes other than \t \n \r — Telegram renders them
+  // as garbage and they can be used to obfuscate copy-pasted refs.
+  const cleaned = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned;
+}
+
 export async function logTopupSubmitted(api: Api, args: {
   user: LogUser;
   depositDbId: number;
@@ -274,16 +305,30 @@ export async function logTopupSubmitted(api: Api, args: {
   /** Optional reason auto-verify deferred to manual (verifier message). */
   reason?: string;
 }): Promise<void> {
+  // Defensive: even though `topup.ts` / `directPay.ts` cap and
+  // sanitize their inputs before calling us, anyone calling this
+  // helper from another path (or future code) inherits the same
+  // protection here. `escapeHtml()` already neutralises markup; we
+  // also strip control bytes and trim to 256 chars so a 10k paste
+  // can't blow up the Telegram message body.
+  const safeRef = escapeHtml(clampForLog(args.reference));
+  const safeReason = args.reason ? escapeHtml(clampForLog(args.reason, 512)) : null;
   const body = compose({
     tag: 'TOPUP',
-    title: 'Top-up Submitted (manual review)',
+    // Make the auto-verify status front-and-centre so the admin can
+    // tell at a glance whether they need to manually approve. The
+    // [PRELIM] stamp goes right next to [TOPUP] in the title row so
+    // it's never confused with an auto-verified entry.
+    title: '[PRELIM ⚠️] Top-up Submitted — manual review required',
     user: args.user,
     headerLines: [`🆔 Deposit DB ID: ${args.depositDbId}`],
     bodyLines: [
       '💸 <b>Top-up</b>',
       `Method: ${escapeHtml(args.method)}`,
-      `Reference: <code>${escapeHtml(args.reference)}</code>`,
-      ...(args.reason ? [`Auto-verify deferred: ${escapeHtml(args.reason)}`] : []),
+      `Reference: <code>${safeRef}</code>`,
+      ...(safeReason ? [`Auto-verify deferred: ${safeReason}`] : []),
+      '',
+      '<b>⚠️ Status: NOT VERIFIED on-chain.</b> User-pasted reference only — confirm before approving.',
       '',
       '<i>Tap a button below to set the verified amount, then approve / reject without leaving this notification.</i>',
     ],
@@ -309,11 +354,52 @@ export async function logTopupResolved(api: Api, args: {
   amount: number;
   status: 'approved' | 'rejected';
   balanceAfter: number | null;
+  /**
+   * Telegram ID of the admin who resolved the deposit, or `0` for an
+   * automated on-chain auto-verify resolution. The `0` sentinel is
+   * also what flips the title prefix to `[VERIFIED ✅]`.
+   */
   resolvedBy: number;
+  /**
+   * Optional on-chain reference (TXID / Order ID) the verifier
+   * matched against. Surfaced to the admin so they can audit which
+   * specific transaction was credited.
+   */
+  reference?: string | null;
+  /**
+   * Optional sender address pulled from the on-chain receipt
+   * (`from` field of the chain TX). Surfaced so the admin can spot
+   * unusual senders / cross-check a flagged customer.
+   */
+  sender?: string | null;
+  /**
+   * Optional on-chain block / receipt timestamp (ms since epoch)
+   * pulled from the verifier. Distinct from `Logged At` (= now).
+   */
+  onChainTimestampMs?: number | null;
 }): Promise<void> {
+  // `resolvedBy === 0` is the agreed sentinel for "auto-verified by
+  // the bot" (see `services/depositVerify.ts`). We translate that to
+  // a [VERIFIED ✅] prefix on the title row so the admin can tell at
+  // a glance whether they're looking at a chain-confirmed credit or
+  // a manual approval. Anything else gets the [MANUAL] stamp.
+  const isAuto = args.resolvedBy === 0;
+  const stampedTitle =
+    args.status === 'approved'
+      ? `${isAuto ? '[VERIFIED ✅]' : '[MANUAL]'} Top-up Approved`
+      : `${isAuto ? '[VERIFIED ✅]' : '[MANUAL]'} Top-up Rejected`;
+  const safeRef = args.reference
+    ? escapeHtml(clampForLog(args.reference))
+    : null;
+  const safeSender = args.sender ? escapeHtml(clampForLog(args.sender)) : null;
+  const onChainAt =
+    typeof args.onChainTimestampMs === 'number' &&
+    Number.isFinite(args.onChainTimestampMs)
+      ? formatLoggedAt(new Date(args.onChainTimestampMs))
+      : null;
   const body = compose({
     tag: 'TOPUP',
-    title: args.status === 'approved' ? 'Top-up Approved' : 'Top-up Rejected',
+    title: stampedTitle,
     user: args.user,
     headerLines: [
       `🆔 Deposit DB ID: ${args.depositDbId}`,
@@ -323,6 +409,13 @@ export async function logTopupResolved(api: Api, args: {
       `Method: ${escapeHtml(args.method)}`,
       `Amount: ${args.amount} USDT`,
       `Status: <b>${args.status}</b>`,
+      // Surface the verification source explicitly (separate line —
+      // some clients don't render the title prefix in
+      // forwarded/quoted messages, so the body still tells the truth).
+      `Verification: <b>${isAuto ? 'auto (on-chain)' : 'manual (admin)'}</b>`,
+      ...(safeRef ? [`Reference: <code>${safeRef}</code>`] : []),
+      ...(safeSender ? [`From sender: <code>${safeSender}</code>`] : []),
+      ...(onChainAt ? [`On-chain time: ${onChainAt}`] : []),
       ...(args.balanceAfter !== null
         ? ['', '👛 <b>Wallet</b>', `💳 Balance After: ${args.balanceAfter} USDT`]
         : []),

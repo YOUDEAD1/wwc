@@ -23,8 +23,9 @@ import {
 import { consume, formatRetryAfter } from '../services/rateLimit.js';
 import { logger } from '../logger.js';
 import * as adminLog from '../services/adminLog.js';
-import type { DBPaymentMethod } from '../types.js';
+import type { DBPaymentMethod, PaymentProvider } from '../types.js';
 import { getAdminContactUrlWithPrefill } from '../services/settings.js';
+import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -49,6 +50,37 @@ function topupRootCallback(ctx: AppCtx): string {
 function topupExitCallback(ctx: AppCtx): string {
   const fromBuy = ctx.session.topupOriginBuyProductId;
   return fromBuy !== undefined ? `buy:${fromBuy}` : 'main:open';
+}
+
+/**
+ * Pick the user-facing tutorial button label for a payment method.
+ * Binance Pay collects an Order ID (not an on-chain hash), so it gets
+ * the "Where Order ID?" CTA; everything else (USDT chains + LTC) gets
+ * "Where TXID?". Used by both top-up and direct-pay instruction
+ * screens to surface the per-method tutorial card consistently.
+ */
+function tutButtonKeyFor(
+  provider: PaymentProvider,
+): 'where_txid' | 'where_order_id' {
+  return provider === 'binance_pay' ? 'where_order_id' : 'where_txid';
+}
+
+/**
+ * Build the inline keyboard rendered under each chain / Binance / LTC
+ * top-up instruction screen. Adds the per-method tutorial button
+ * (`📘 Where TXID? / Where Order ID?`) above the standard Back row.
+ * The tutorial callback (`paytut:<methodId>`) opens the admin-editable
+ * how-to card sourced from `pay_tutorial.<id>.*`.
+ */
+function topupInstructionKeyboard(
+  ctx: AppCtx,
+  m: DBPaymentMethod,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, ctx.lang, tutButtonKeyFor(m.provider), `paytut:${m.id}`);
+  kb.row();
+  kb.text(btn(ctx.lang, 'back'), topupRootCallback(ctx));
+  return kb;
 }
 
 export function registerTopup(bot: Composer<AppCtx>): void {
@@ -144,7 +176,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       };
       await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m)), {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
+        reply_markup: topupInstructionKeyboard(ctx, m),
       });
       return;
     }
@@ -195,7 +227,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       };
       await ctx.editMessageText(renderMdHtml(buildBinancePayTopupScreen(m)), {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
+        reply_markup: topupInstructionKeyboard(ctx, m),
       });
       return;
     }
@@ -227,7 +259,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       // (see below) — that's when the verifier becomes reachable.
       await ctx.editMessageText(renderMdHtml(buildLtcUsdAmountScreen(m)), {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
+        reply_markup: topupInstructionKeyboard(ctx, m),
       });
       return;
     }
@@ -244,6 +276,26 @@ export function registerTopup(bot: Composer<AppCtx>): void {
         .row()
         .text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
     });
+  });
+
+  // ---- Per-payment-method tutorial card ("Where TXID? / Where Order
+  // ID?"). Surfaced under each chain / Binance / LTC instruction
+  // screen and rendered as a brand-new HTML message (not an edit) so
+  // the buyer's instruction screen — with the address / Pay ID /
+  // locked LTC quote — stays visible above the tutorial. The Back
+  // row navigates to `topup:open` (no side effects, no extra deposit
+  // rows). Body text + optional photo / video / document + optional
+  // URL button are admin-editable from
+  // /admin → Payment Methods → "📘 #N Tutorial".
+  bot.callbackQuery(/^paytut:(\d+)$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const methods = await listPaymentMethods();
+    const m = methods.find((x) => x.id === id);
+    if (!m) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    await renderPaymentMethodTutorial(ctx, m.id, m.name, topupRootCallback(ctx));
   });
 
   bot.callbackQuery(/^topup:request:(\d+)$/, async (ctx) => {
@@ -967,6 +1019,13 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     // they don't lose the in-flight purchase context.
     topupExitCallback(ctx),
   );
+  // Splice the bot-wide "📘 Bot Tutorial" button on top of the Back
+  // row — same callback as /profile → Bot Tutorial. Surfaces the
+  // admin-editable bot guide right where first-time users land when
+  // they tap "Top Up Wallet", so they always have a one-tap exit to
+  // the how-to-use card if the payment instructions confuse them.
+  kb.row();
+  inlineBtn(kb, ctx.lang, 'bot_tutorial', 'profile:tutorial');
   // `topup.choose_method` is now the user-facing heading
   // ("👛 Top Up Wallet") — no need to prepend the legacy title key
   // since the locale already includes the wallet emoji.
