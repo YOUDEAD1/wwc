@@ -251,7 +251,12 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   support: 'blue',
   ai_support: 'blue',
   main_menu: 'none',
-  back: 'none',
+  // Bot-owner spec: every plain `back` button now reads as a
+  // dangerous-style red rail so the navigation glyph + colour pair
+  // is consistent across the bot. Per-screen overrides can still be
+  // applied via /setcolor back <mode> on a single button key, but
+  // the default is now red instead of neutral.
+  back: 'red',
   next: 'none',
   prev: 'none',
   refresh: 'none',
@@ -678,12 +683,22 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // fall back to 💡). `paymethod_back` re-uses the same animated
   // back-arrow as the Cancel button on the wallet-confirm card so
   // the back action reads identically across the buy / top-up flow.
-  // The bot owner refreshed this premium id on 2026-05-07 — the
-  // previous one (`5188540541922480562`) is no longer used. Keep
-  // the unicode fallback as the original 💡 so non-premium clients
-  // see the same glyph.
-  paymethod_others: { unicode: '💡', custom_emoji_id: '5271619747891388291' },
+  // 2026-05-08 swap: the bot owner asked us to move the previous
+  // Support-button glyph (Santa+bottle, id `6247041691652461368`)
+  // onto the Top-Up "Others" row, freeing the new help glyph
+  // (`5271619747891388291`) to live exclusively on the main-menu
+  // Support button + Admin Help URL button. Earlier rotations:
+  //   • `5188540541922480562` (legacy)
+  //   • `5271619747891388291` (briefly applied here, now Support-only)
+  // Unicode fallback stays as 💡 so non-premium clients see the
+  // same glyph the screen used to render with before the icon.
+  paymethod_others: { unicode: '💡', custom_emoji_id: '6247041691652461368' },
   paymethod_back: { unicode: '◀️', custom_emoji_id: '5440509136259267820' },
+  // Premium 🎯-style glyph for the Custom-Quantity Max button.
+  // Reuses the qty-numbers id (`prod_qty_selected`) so the keypad's
+  // Max + the product page's Selected Qty header read consistently.
+  // Bot owner can swap via `/setemoji qty_keypad_max <unicode> <id>`.
+  qty_keypad_max: { unicode: '🔢', custom_emoji_id: '5363964615657017717' },
 };
 
 /**
@@ -787,13 +802,15 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   share_product: 'profile_link', // 🔗
 
   // Custom-quantity keypad — keypad on the open button, ✓ on
-  // confirm. Digit buttons are intentionally unset so the plain
-  // unicode digit renders as-is on every platform. The Max button
-  // is intentionally without a premium icon — the locale label's
-  // 🎯 glyph carries the meaning on every platform with no premium
-  // dependency.
+  // confirm, premium qty-numbers glyph on Max. Digit buttons are
+  // intentionally unset so the plain unicode digit renders as-is
+  // on every platform.
   custom_qty: 'qty_prompt_keypad',
   qty_keypad_confirm: 'orders_received',
+  // 2026-05-08: bot-owner asked for a premium glyph on Max (the
+  // bulk-buy short-cut). Re-uses the existing `qty_keypad_max`
+  // EMOJI entry so admins can swap via `/setemoji`.
+  qty_keypad_max: 'qty_keypad_max',
 
   // Buy-now payment-method screen — wallet on Pay, topup on Top Up.
   pay_wallet: 'prod_wallet',
@@ -832,6 +849,14 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // entry points across the bot read the same.
   where_txid: 'tutorial',
   where_order_id: 'tutorial',
+
+  // 2026-05-08: every plain `Back` button now picks up the same
+  // premium back-arrow glyph as the payment-methods Back row so
+  // the navigation control reads identically wherever it appears.
+  // Pairs with the `back: 'red'` colour above for the dangerous
+  // rail. Per-screen overrides can still be applied via
+  // `/setbtnicon back <unicode> <custom_emoji_id>`.
+  back: 'paymethod_back',
 };
 
 /**

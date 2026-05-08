@@ -61,7 +61,6 @@ import type {
   PaymentProvider,
 } from '../types.js';
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
-import { sendProductPage } from './shop.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -137,7 +136,7 @@ function directPayInstructionKeyboard(
     `paytut:dp:${productId}:${m.id}`,
   );
   kb.row();
-  kb.text(btn(ctx.lang, 'back'), `pay:direct:${productId}`);
+  inlineBtn(kb, ctx.lang, 'back', `pay:direct:${productId}`);
   return kb;
 }
 
@@ -659,6 +658,12 @@ async function handleBinanceDirectSubmit(
   }
 
   if (result.ok) {
+    // Bot-owner spec: after Order Delivered the buyer should land
+    // back on the product detail / qty page when they tap Back on
+    // the verified card — instead of going to the main menu — so
+    // they can keep shopping without hunting through the menu.
+    // We do NOT send a fresh product page below; the in-place
+    // Back navigation re-renders the qty screen on demand.
     await verifying.done({
       text: [
         `✅ *Direct-pay verified (deposit #${depId}).*`,
@@ -666,15 +671,11 @@ async function handleBinanceDirectSubmit(
         `Order ID: \`${orderId}\``,
         `Charged: *$${Number(result.amount).toFixed(3)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(ctx.lang),
+      reply_markup: successKeyboard(
+        ctx.lang,
+        `prod:${flow.data.intent.product_id}`,
+      ),
     });
-    // Bot-owner spec: after Order Delivered the buyer should land
-    // back on the product detail / qty page so they can keep
-    // shopping without hunting through the menu. The Payment
-    // Verified + Order Delivered cards are sent by
-    // `fulfilOrderForDeposit` inside the verifier above; we just
-    // re-render the qty screen as a fresh message right after.
-    await sendProductPage(ctx, flow.data.intent.product_id);
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -853,6 +854,8 @@ async function handleChainDirectSubmit(
   }
 
   if (result.ok) {
+    // Bot-owner spec: post-delivery Back lands on the qty page
+    // in-place. See matching comment in `handleBinanceDirectSubmit`.
     await verifying.done({
       text: [
         `✅ *Direct-pay verified (deposit #${depId}).*`,
@@ -860,11 +863,8 @@ async function handleChainDirectSubmit(
         `Tx: \`${txHash}\``,
         `Charged: *$${result.amount.toFixed(2)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(ctx.lang),
+      reply_markup: successKeyboard(ctx.lang, `prod:${intent.product_id}`),
     });
-    // Drop the buyer back on the qty / Buy Now screen post-delivery.
-    // See the matching comment in `handleBinanceDirectSubmit`.
-    await sendProductPage(ctx, intent.product_id);
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -992,6 +992,8 @@ async function handleLtcDirectSubmit(
   }
 
   if (result.ok) {
+    // Bot-owner spec: post-delivery Back lands on the qty page
+    // in-place. See matching comment in `handleBinanceDirectSubmit`.
     await verifying.done({
       text: [
         `✅ *Direct-pay verified (deposit #${depId}).*`,
@@ -999,11 +1001,11 @@ async function handleLtcDirectSubmit(
         `Tx: \`${cleaned}\``,
         `Charged: *$${result.amount.toFixed(2)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(ctx.lang),
+      reply_markup: successKeyboard(
+        ctx.lang,
+        `prod:${flow.data.intent.product_id}`,
+      ),
     });
-    // Drop the buyer back on the qty / Buy Now screen post-delivery.
-    // See the matching comment in `handleBinanceDirectSubmit`.
-    await sendProductPage(ctx, flow.data.intent.product_id);
   } else {
     const klass = classifyReason(result.reason);
     try {

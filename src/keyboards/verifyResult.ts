@@ -11,7 +11,7 @@
 
 import { InlineKeyboard } from 'grammy';
 import type { Lang } from '../../config/index.js';
-import { btn } from './helpers.js';
+import { inlineBtn } from './helpers.js';
 import { getAdminContactUrlWithPrefill, getEmoji } from '../services/settings.js';
 
 /**
@@ -87,7 +87,7 @@ export function manualReviewKeyboard(
   const kb = new InlineKeyboard();
   pushAdminHelpButton(kb, buildAdminHelpUrl(depositId, txOrOrderId));
   kb.row();
-  kb.text(btn(lang, 'back'), backCallback);
+  inlineBtn(kb, lang, 'back', backCallback);
   return kb;
 }
 
@@ -104,7 +104,7 @@ export function rejectionKeyboard(
     buildAdminHelpUrlForRejection(depositId, txOrOrderId, reason),
   );
   kb.row();
-  kb.text(btn(lang, 'back'), backCallback);
+  inlineBtn(kb, lang, 'back', backCallback);
   return kb;
 }
 
@@ -112,5 +112,7 @@ export function successKeyboard(
   lang: Lang,
   backCallback: string = 'main:open',
 ): InlineKeyboard {
-  return new InlineKeyboard().text(btn(lang, 'back'), backCallback);
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, lang, 'back', backCallback);
+  return kb;
 }
