@@ -2565,10 +2565,6 @@ type AnnounceBuy = {
   icon_custom_emoji_id?: string;
 };
 
-function announceBuyDeepLink(product_id: number): string {
-  return `https://t.me/${env.BOT_USERNAME}?start=prod_${product_id}`;
-}
-
 /**
  * Build the inline keyboard attached to a broadcast announcement.
  * Returns `undefined` when no Buy button is configured so the
@@ -2577,7 +2573,7 @@ function announceBuyDeepLink(product_id: number): string {
 function announceBroadcastKeyboard(buy?: AnnounceBuy): InlineKeyboard | undefined {
   if (!buy) return undefined;
   const kb = new InlineKeyboard();
-  kb.url(buy.label, announceBuyDeepLink(buy.product_id));
+  kb.text(buy.label, `prod:${buy.product_id}`);
   if (buy.icon_custom_emoji_id) kb.icon(buy.icon_custom_emoji_id);
   const style = colorModeToStyle(buy.color);
   if (style !== undefined) kb.style(style);
@@ -2681,7 +2677,7 @@ async function showAnnounceBuyEdit(ctx: AppCtx): Promise<void> {
     return;
   }
   const previewKb = new InlineKeyboard();
-  previewKb.url(buy.label, announceBuyDeepLink(buy.product_id));
+  previewKb.text(buy.label, `prod:${buy.product_id}`);
   if (buy.icon_custom_emoji_id) previewKb.icon(buy.icon_custom_emoji_id);
   const style = colorModeToStyle(buy.color);
   if (style !== undefined) previewKb.style(style);
@@ -2758,13 +2754,18 @@ adminBot.callbackQuery(/^adm:ann:buy:set:(\d+)$/, async (ctx) => {
   // icon) when the admin swaps to a different product. Defaults are
   // only applied on the very first product pick (no prior `buy`).
   const prior = (flow.data as { buy?: AnnounceBuy }).buy;
+  const defaultIcon = EMOJI.orders_received;
+  const defaultIconId = typeof defaultIcon === 'object' ? defaultIcon.custom_emoji_id : undefined;
+  const defaultIconUnicode = typeof defaultIcon === 'object' ? defaultIcon.unicode : undefined;
   const buy: AnnounceBuy = prior
     ? { ...prior, product_id: product.id, product_name: product.name }
     : {
         product_id: product.id,
         product_name: product.name,
-        label: `🛒 Buy ${product.name}`,
+        label: '[Buy Now]',
         color: 'green',
+        icon_custom_emoji_id: defaultIconId,
+        icon_unicode: defaultIconUnicode,
       };
   ctx.session.adminFlow = {
     type: 'announce',
@@ -5947,6 +5948,40 @@ adminBot.on('message:document', async (ctx, next) => {
     });
     ctx.session.adminFlow = undefined;
     await ctx.reply('✅ Tutorial document saved.');
+    return;
+  }
+  if (flow.type === 'add_product' && flow.step === 'items') {
+    // .txt upload during the add-product wizard's items step.
+    const isTxt =
+      (doc.mime_type ?? '').toLowerCase().startsWith('text/') ||
+      (doc.file_name ?? '').toLowerCase().endsWith('.txt');
+    if (!isTxt) {
+      await ctx.reply(
+        '❌ Only `.txt` files are supported in this step. Re-upload as plain text.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+    if ((doc.file_size ?? 0) > ITEMS_DOC_BYTE_CAP) {
+      await ctx.reply(
+        `❌ File is too large (${doc.file_size} bytes). Cap is ${ITEMS_DOC_BYTE_CAP} bytes — split it and try again.`,
+      );
+      return;
+    }
+    let raw: string;
+    try {
+      raw = await downloadTelegramDocumentAsText(ctx, doc.file_id);
+    } catch (err) {
+      logger.error({ err, file_id: doc.file_id }, 'add_product .txt download failed');
+      await ctx.reply('❌ Could not download that file. Try again in a moment.');
+      return;
+    }
+    const payloads = parsePayloadLines(raw);
+    if (payloads.length === 0) {
+      await ctx.reply('❌ The uploaded file had no non-empty lines.');
+      return;
+    }
+    await finalizeProduct(ctx, flow.data, payloads);
     return;
   }
   if (flow.type === 'edit_product_items') {

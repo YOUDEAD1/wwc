@@ -186,6 +186,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           provider: m.provider,
           address: m.address,
           opened_at_ms: Date.now(),
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
       await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m)), {
@@ -237,6 +238,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           // Lock the flow-open instant — anchors the 30-min Binance
           // Pay freshness window so an old Order ID can't be replayed.
           opened_at_ms: Date.now(),
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
       await ctx.editMessageText(renderMdHtml(buildBinancePayTopupScreen(m)), {
@@ -266,6 +268,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           method_id: m.id,
           method_name: m.name,
           address: m.address,
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
       // The LTC freshness window's `opened_at_ms` is locked when we
@@ -543,6 +546,9 @@ async function handleChainTopupSubmit(
       ].join('\n'),
       reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
     });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -681,7 +687,7 @@ async function handleLtcUsdAmount(
     },
   };
 
-  await ctx.reply(
+  const quoteMsg = await ctx.reply(
     renderMdHtml(
       [
         '🟢 *Litecoin Top-Up Quote*',
@@ -704,6 +710,11 @@ async function handleLtcUsdAmount(
       reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
     },
   );
+  // Track the quote message so it can be auto-deleted on success.
+  const uf = ctx.session.userFlow;
+  if (uf && uf.type === 'ltc_topup' && uf.step === 'tx_hash') {
+    uf.data.instruction_message_id = quoteMsg.message_id;
+  }
 }
 
 async function handleLtcTxHash(
@@ -783,6 +794,9 @@ async function handleLtcTxHash(
       ].join('\n'),
       reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
     });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -966,6 +980,9 @@ async function handleBinancePayOrderId(
       ].join('\n'),
       reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
     });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
   } else {
     const klass = classifyReason(result.reason);
     try {
