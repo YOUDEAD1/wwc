@@ -1019,13 +1019,6 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     // they don't lose the in-flight purchase context.
     topupExitCallback(ctx),
   );
-  // Splice the bot-wide "📘 Bot Tutorial" button on top of the Back
-  // row — same callback as /profile → Bot Tutorial. Surfaces the
-  // admin-editable bot guide right where first-time users land when
-  // they tap "Top Up Wallet", so they always have a one-tap exit to
-  // the how-to-use card if the payment instructions confuse them.
-  kb.row();
-  inlineBtn(kb, ctx.lang, 'bot_tutorial', 'profile:tutorial');
   // `topup.choose_method` is now the user-facing heading
   // ("👛 Top Up Wallet") — no need to prepend the legacy title key
   // since the locale already includes the wallet emoji.

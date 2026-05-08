@@ -31,11 +31,6 @@ const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   stats_refresh: 'profile:stats:refresh',
   set_region: 'profile:region',
   set_email: 'profile:email:set',
-  // The bot-wide "How to use this bot" tutorial — historically only
-  // surfaced from /profile (callback `profile:tutorial`). Adding the
-  // same callback here lets the button live anywhere in the layout
-  // (top-row, top-up picker, etc.) without forking a new handler.
-  bot_tutorial: 'profile:tutorial',
 };
 
 /** Inline keyboard rendered under the welcome message. */
