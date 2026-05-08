@@ -456,19 +456,19 @@ function escapeMd(s: string): string {
 }
 
 /**
- * Pre-launch baseline added to the displayed top-line counters so
- * the stats dashboard never reads "0 sales / $0 revenue" when the
- * bot owner is sharing screenshots. Bot-owner spec at launch:
- * "remove Orders and Revenue data — just save 72 Sales + $72
- * revenue". The underlying `orders` / `deposits` rows are NOT
- * touched — this is purely a display offset on top of the live
- * count, so once real orders flow in the dashboard reads
- * `72 + N` / `$72 + $X`. The Top Sellers / per-product / daily-
- * revenue blocks below stay strictly factual since they only
- * make sense per real order.
+ * Fixed launch-baseline values shown for the three top-line counters
+ * on the admin Stats dashboard, regardless of what's in the database.
+ * Bot-owner spec (post-launch follow-up): "minus total orders and do
+ * 72 and minus revenue and do total 72$ and minus pending deposits
+ * and do total 0". These are pure display overrides; the underlying
+ * `orders` / `deposits` rows are NOT touched. The Top Sellers /
+ * per-product / daily-revenue blocks below intentionally still
+ * reflect real DB rows so the bot owner retains an accurate operational
+ * view of which products actually sold.
  */
-const STATS_BASELINE_SALES = 72;
-const STATS_BASELINE_REVENUE = 72;
+const STATS_DISPLAY_TOTAL_ORDERS = 72;
+const STATS_DISPLAY_TOTAL_REVENUE = 72;
+const STATS_DISPLAY_PENDING_DEPOSITS = 0;
 
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
@@ -483,11 +483,9 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
   lines.push(`👥 Users: *${s.users}*`);
   lines.push(`📦 Active products: *${s.active_products}*`);
   lines.push(`🗂 Active categories: *${s.active_categories}*`);
-  const displayedOrders = s.orders + STATS_BASELINE_SALES;
-  const displayedRevenue = s.revenue + STATS_BASELINE_REVENUE;
-  lines.push(`🧾 Total orders: *${displayedOrders}*`);
-  lines.push(`💰 Total revenue: *$${displayedRevenue.toFixed(2)}*`);
-  lines.push(`💳 Pending deposits: *${s.pending_deposits}*`);
+  lines.push(`🧾 Total orders: *${STATS_DISPLAY_TOTAL_ORDERS}*`);
+  lines.push(`💰 Total revenue: *$${STATS_DISPLAY_TOTAL_REVENUE.toFixed(2)}*`);
+  lines.push(`💳 Pending deposits: *${STATS_DISPLAY_PENDING_DEPOSITS}*`);
 
   if (productSales.length > 0) {
     lines.push('');
