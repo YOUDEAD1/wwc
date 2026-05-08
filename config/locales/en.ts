@@ -78,6 +78,12 @@ export const en: Record<string, string> = {
   'btn.using_method': '📘 Using Method',
   'btn.tutorial_open_link': '🔗 Open Link',
   'btn.bot_tutorial': '📘 Bot Tutorial',
+  // Per-method tutorial CTAs surfaced under every chain / Binance /
+  // LTC instruction screen. Shape mirrors the existing
+  // `btn.using_method` (book + concise label) so the entry-point
+  // pattern reads the same across the bot.
+  'btn.where_txid': '📘 Where to find TXID?',
+  'btn.where_order_id': '📘 Where to find Order ID?',
   'btn.send_price_list': '📊 Send Price List',
   'btn.send_price_list.mail': '📤 Send on Mail',
   'btn.send_price_list.chat': '📬 Send in Chat',
@@ -411,6 +417,16 @@ export const en: Record<string, string> = {
   'profile.bot_tutorial.empty':
     '_The admin hasn\u2019t added a bot tutorial yet. Please check back later._',
   'profile.bot_tutorial.body': '{body}',
+
+  // ---------- Per-payment-method tutorial card ----------
+  // Admin-editable instructions surfaced from every chain / Binance /
+  // LTC payment screen. `pay.tutorial.title` carries the tutorial
+  // book glyph + the method's display name; the body is reused
+  // verbatim from the `pay_tutorial.<method_id>.text` setting.
+  'pay.tutorial.title': '{tutorial} *Where to find your reference — {method}*',
+  'pay.tutorial.empty':
+    '_The admin hasn\u2019t added a tutorial for this payment method yet. Please check back later._',
+  'pay.tutorial.body': '{body}',
 
   // ---------- Send Price List (Settings) ----------
   // Two-button picker. After picking a destination the user gets a

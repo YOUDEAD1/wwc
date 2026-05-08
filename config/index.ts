@@ -227,6 +227,15 @@ export const BUTTON_KEYS = {
   // Order detail screen on the same chat.
   set_email_now: 'btn.set_email_now',
   view_invoice: 'btn.view_invoice',
+
+  // ---- Per-payment-method tutorial ("Where TXID? / Where Order ID?") ----
+  // Surfaced under every chain/Binance/LTC instruction screen as
+  // an admin-editable how-to card. `where_txid` is for chain &
+  // LTC providers (TRC-20 / BEP-20 / TON / LTC); `where_order_id`
+  // for the Binance Pay flow (which collects the 18-digit Order ID
+  // instead of an on-chain hash).
+  where_txid: 'btn.where_txid',
+  where_order_id: 'btn.where_order_id',
 } as const;
 
 /**
@@ -376,6 +385,13 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   notify_email_off: 'none',
   set_email_now: 'blue',
   view_invoice: 'blue',
+
+  // Per-method tutorial CTAs ("Where TXID? / Where Order ID?")
+  // sit right above the back button on the chain/Binance/LTC
+  // instruction screens. Blue matches the rest of the help-style
+  // buttons in the app.
+  where_txid: 'blue',
+  where_order_id: 'blue',
 };
 
 /**
@@ -790,6 +806,12 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // /setcolor without touching the keyboard code.
   paymethod_others: 'paymethod_others',
   paymethod_back: 'paymethod_back',
+
+  // Per-method tutorial CTAs reuse the same tutorial book glyph
+  // as the per-product Using Method button so all "tap-to-learn"
+  // entry points across the bot read the same.
+  where_txid: 'tutorial',
+  where_order_id: 'tutorial',
 };
 
 /**
@@ -815,6 +837,10 @@ export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_K
   ['topup', 'profile'],
   ['support', 'ai_support'],
   ['refer', 'channel'],
+  // Surface the bot-wide tutorial (admin-editable from /admin → Bot
+  // Tutorial) on the main menu in addition to /profile, so first-time
+  // users can find it without drilling into Settings.
+  ['bot_tutorial'],
 ];
 
 /** Shop pagination size — products per page */

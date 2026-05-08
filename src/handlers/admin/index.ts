@@ -91,6 +91,9 @@ import {
   setBotTutorialField,
   getBotTutorial,
   type BotTutorial,
+  getPaymentMethodTutorial,
+  setPaymentMethodTutorialField,
+  clearPaymentMethodTutorial,
   getColorPrefix,
   setColorPrefix,
   clearColorPrefix,
@@ -1525,6 +1528,12 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
       `🌟 #${m.id} ${iconTag}`,
       `adm:pay:icon:${m.id}`,
     ).row();
+    // "Where TXID? / Where Order ID?" tutorial editor — same shape
+    // as the global Bot Tutorial editor but scoped to this method.
+    // Marked `set` if any of text / file / url is configured.
+    const tut = getPaymentMethodTutorial(m.id);
+    const tutTag = tut.text || tut.file_id || tut.url ? 'set' : 'unset';
+    kb.text(`📘 #${m.id} Tutorial: ${tutTag}`, `adm:pay:tut:${m.id}`).row();
     kb.text(`🗑 #${m.id} ${m.name}`.slice(0, 60), `adm:pay:del:${m.id}`).row();
   }
   backRow(kb);
@@ -1534,8 +1543,127 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
 adminBot.callbackQuery(/^adm:pay:del:(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   await deletePaymentMethod(id);
+  // Also drop the per-method tutorial settings so a future method
+  // reusing the same id doesn't inherit stale tutorial content.
+  await clearPaymentMethodTutorial(id);
   await ctx.answerCallbackQuery({ text: `Deleted #${id}` });
   await showPaymentList(ctx);
+});
+
+// ---------- Per-payment-method tutorial editor ----------
+// Mirrors `showBotTutorialEditor` but scoped to a payment method id.
+// Shown when the admin taps the `📘 #N Tutorial` row on the payment
+// methods screen. The text/file/url buttons each arm a `adminFlow`
+// of the matching kind so the next admin message captures into the
+// `pay_tutorial.<method_id>.*` settings.
+async function showPaymentTutorialEditor(
+  ctx: AppCtx,
+  methodId: number,
+): Promise<void> {
+  const methods = await listPaymentMethods();
+  const m = methods.find((x) => x.id === methodId);
+  if (!m) {
+    await ctx.editMessageText('Method not found.', {
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+    return;
+  }
+  const t = getPaymentMethodTutorial(methodId);
+  const lines = [
+    `📘 *Tutorial — ${escapeMd(m.name)} (#${m.id})*`,
+    '',
+    `*Text:* ${t.text ? '`set`' : '_unset_'}`,
+    `*File:* ${t.file_id ? '`' + (t.file_type ?? 'file') + '`' : '_unset_'}`,
+    `*URL:* ${t.url ? '`' + t.url + '`' : '_unset_'}`,
+    '',
+    '_Tap a button to edit. The bot will capture your next message of the appropriate kind._',
+  ];
+  const kb = new InlineKeyboard()
+    .text('📝 Set Text', `adm:pay:tut:settxt:${methodId}`)
+    .text('🧹 Clear Text', `adm:pay:tut:clrtxt:${methodId}`)
+    .row()
+    .text('🎞 Set File', `adm:pay:tut:setfile:${methodId}`)
+    .text('🧹 Clear File', `adm:pay:tut:clrfile:${methodId}`)
+    .row()
+    .text('🔗 Set URL', `adm:pay:tut:seturl:${methodId}`)
+    .text('🧹 Clear URL', `adm:pay:tut:clrurl:${methodId}`)
+    .row()
+    .text('⬅️ Back to Methods', 'adm:pay');
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery(/^adm:pay:tut:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showPaymentTutorialEditor(ctx, id);
+});
+
+adminBot.callbackQuery(/^adm:pay:tut:settxt:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'edit_payment_tutorial_text',
+    step: 'text',
+    data: { method_id: id },
+  };
+  await ctx.reply(
+    `📝 Send the *Tutorial* text for method #${id} now.`,
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:pay:tut:setfile:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'edit_payment_tutorial_file',
+    step: 'file',
+    data: { method_id: id },
+  };
+  await ctx.reply(
+    `🎞 Send a photo, video, or document for method #${id}.`,
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:pay:tut:seturl:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'edit_payment_tutorial_url',
+    step: 'url',
+    data: { method_id: id },
+  };
+  await ctx.reply(
+    `🔗 Send the tutorial *URL* (\`http://\` or \`https://\`) for method #${id}.`,
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:pay:tut:clrtxt:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await setPaymentMethodTutorialField(id, 'text', null, ctx.from!.id);
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showPaymentTutorialEditor(ctx, id);
+});
+
+adminBot.callbackQuery(/^adm:pay:tut:clrfile:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await setPaymentMethodTutorialField(id, 'file_id', null, ctx.from!.id);
+  await setPaymentMethodTutorialField(id, 'file_type', null, ctx.from!.id);
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showPaymentTutorialEditor(ctx, id);
+});
+
+adminBot.callbackQuery(/^adm:pay:tut:clrurl:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await setPaymentMethodTutorialField(id, 'url', null, ctx.from!.id);
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showPaymentTutorialEditor(ctx, id);
 });
 
 // Cycle the per-method color through the supported modes. Matches
@@ -4088,6 +4216,36 @@ adminBot.on('message:text', async (ctx, next) => {
       await ctx.reply('✅ Bot Tutorial URL saved.');
       return;
     }
+    if (flow.type === 'edit_payment_tutorial_text') {
+      await setPaymentMethodTutorialField(
+        flow.data.method_id,
+        'text',
+        text,
+        ctx.from!.id,
+      );
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Tutorial text for method #${flow.data.method_id} saved.`,
+      );
+      return;
+    }
+    if (flow.type === 'edit_payment_tutorial_url') {
+      if (!/^https?:\/\//.test(text)) {
+        await ctx.reply('❌ URL must start with `http://` or `https://`.');
+        return;
+      }
+      await setPaymentMethodTutorialField(
+        flow.data.method_id,
+        'url',
+        text,
+        ctx.from!.id,
+      );
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Tutorial URL for method #${flow.data.method_id} saved.`,
+      );
+      return;
+    }
 
     if (flow.type === 'add_payment') {
       if (flow.step === 'name') {
@@ -5250,6 +5408,25 @@ adminBot.on('message:document', async (ctx, next) => {
     await ctx.reply('✅ Bot Tutorial document saved.');
     return;
   }
+  if (flow.type === 'edit_payment_tutorial_file') {
+    await setPaymentMethodTutorialField(
+      flow.data.method_id,
+      'file_id',
+      doc.file_id,
+      ctx.from.id,
+    );
+    await setPaymentMethodTutorialField(
+      flow.data.method_id,
+      'file_type',
+      'document',
+      ctx.from.id,
+    );
+    ctx.session.adminFlow = undefined;
+    await ctx.reply(
+      `✅ Tutorial document for method #${flow.data.method_id} saved.`,
+    );
+    return;
+  }
   if (flow.type === 'edit_payment_icon') {
     await ctx.reply(
       '⚠️ That\'s a document, not an emoji.\n\n' +
@@ -5286,6 +5463,25 @@ adminBot.on('message:photo', async (ctx, next) => {
     await setBotTutorialField('file_type', 'photo', ctx.from.id);
     ctx.session.adminFlow = undefined;
     await ctx.reply('✅ Bot Tutorial photo saved.');
+    return;
+  }
+  if (flow.type === 'edit_payment_tutorial_file') {
+    await setPaymentMethodTutorialField(
+      flow.data.method_id,
+      'file_id',
+      fileId,
+      ctx.from.id,
+    );
+    await setPaymentMethodTutorialField(
+      flow.data.method_id,
+      'file_type',
+      'photo',
+      ctx.from.id,
+    );
+    ctx.session.adminFlow = undefined;
+    await ctx.reply(
+      `✅ Tutorial photo for method #${flow.data.method_id} saved.`,
+    );
     return;
   }
   if (flow.type === 'edit_payment_icon') {
@@ -5357,6 +5553,25 @@ adminBot.on('message:video', async (ctx, next) => {
     await setBotTutorialField('file_type', 'video', ctx.from.id);
     ctx.session.adminFlow = undefined;
     await ctx.reply('✅ Bot Tutorial video saved.');
+    return;
+  }
+  if (flow.type === 'edit_payment_tutorial_file') {
+    await setPaymentMethodTutorialField(
+      flow.data.method_id,
+      'file_id',
+      fileId,
+      ctx.from.id,
+    );
+    await setPaymentMethodTutorialField(
+      flow.data.method_id,
+      'file_type',
+      'video',
+      ctx.from.id,
+    );
+    ctx.session.adminFlow = undefined;
+    await ctx.reply(
+      `✅ Tutorial video for method #${flow.data.method_id} saved.`,
+    );
     return;
   }
   if (flow.type === 'edit_payment_icon') {

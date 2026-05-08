@@ -267,6 +267,11 @@ export async function verifyAndCreditDeposit(args: {
       amount,
       txHash: txId,
       sender: tx.payerInfo?.name ?? null,
+      // `tx.transactionTime` is already in ms-since-epoch from
+      // Binance's API and was just validated above to fall inside
+      // the acceptance window — surface it to the admin log so the
+      // VERIFIED stamp carries the on-chain (Binance ledger) time.
+      onChainTimestampMs: txTime,
       logUser: args.logUser,
     });
   }
@@ -373,6 +378,10 @@ export async function verifyAndCreditDeposit(args: {
       amount: result.amount,
       txHash,
       sender: result.sender,
+      // `result.paidAtMs` is the on-chain block timestamp we just
+      // validated against the freshness window — surface it so the
+      // admin's [VERIFIED ✅] log carries the real on-chain time.
+      onChainTimestampMs: result.paidAtMs,
       logUser: args.logUser,
     });
   }
@@ -485,6 +494,14 @@ async function finalizeApproval(args: {
   amount: number;
   txHash: string;
   sender: string | null;
+  /**
+   * On-chain ledger / block timestamp (ms since epoch) for the
+   * verified transaction. Threaded through to the admin notification
+   * so the [VERIFIED ✅] stamp on the approval log carries the real
+   * payment time, not just the bot's wall clock. Optional because
+   * legacy callers may not surface it.
+   */
+  onChainTimestampMs?: number | null;
   logUser?: {
     telegram_id: number;
     username: string | null;
@@ -549,6 +566,12 @@ async function finalizeApproval(args: {
         status: 'approved',
         balanceAfter: null,
         resolvedBy: 0,
+        // Carry the verifier's evidence into the [VERIFIED ✅] log so
+        // the admin can audit the on-chain proof for this credit
+        // without having to cross-reference the deposit row by hand.
+        reference: args.txHash,
+        sender: args.sender,
+        onChainTimestampMs: args.onChainTimestampMs ?? null,
       })
       .catch((err) => logger.warn({ err }, 'auto-verify: adminLog failed'));
 
@@ -606,6 +629,12 @@ async function finalizeApproval(args: {
       status: 'approved',
       balanceAfter: Number(newBalance.toFixed(3)),
       resolvedBy: 0,
+      // Carry the verifier's evidence into the [VERIFIED ✅] log so
+      // the admin can audit the on-chain proof for this credit
+      // without having to cross-reference the deposit row by hand.
+      reference: args.txHash,
+      sender: args.sender,
+      onChainTimestampMs: args.onChainTimestampMs ?? null,
     })
     .catch((err) => logger.warn({ err }, 'auto-verify: adminLog failed'));
 

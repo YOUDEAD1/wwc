@@ -78,6 +78,14 @@ export const ar: Record<string, string> = {
   'btn.stats': '📊 إحصائيات',
   'btn.stats_refresh': '🔄 تحديث',
   'btn.stats_back': '◀️ رجوع',
+  // أزرار شرح طريقة الدفع المعروضة أسفل كل شاشة عنوان شبكة /
+  // Binance / LTC. ينقل المسؤول هذه الشاشات من واجهة الإدارة.
+  'btn.where_txid': '📘 أين أجد TXID؟',
+  'btn.where_order_id': '📘 أين أجد رقم الطلب؟',
+  // Bot tutorial + Using Method (نسخة الإعدادات).
+  'btn.using_method': '📘 طريقة الاستخدام',
+  'btn.tutorial_open_link': '🔗 فتح الرابط',
+  'btn.bot_tutorial': '📘 شرح البوت',
 
   'shop.home.header': '*المنتجات المتاحة:*',
   'shop.choose_category': '*المنتجات المتاحة:*',
@@ -253,6 +261,15 @@ export const ar: Record<string, string> = {
   'profile.stats.rel.minutes': 'منذ {n} د',
   'profile.stats.rel.hours': 'منذ {n} س',
   'profile.stats.rel.days': 'منذ {n} ي',
+
+  // شرح طريقة الدفع لكل طريقة — قابل للتعديل من واجهة الإدارة
+  // ويُعرض من شاشات USDT / Binance / LTC. يحمل عنوان البطاقة
+  // اسم الطريقة، والمحتوى يأتي حرفيًا من الإعداد
+  // `pay_tutorial.<method_id>.text`.
+  'pay.tutorial.title': '{tutorial} *أين تجد المرجع — {method}*',
+  'pay.tutorial.empty':
+    '_لم يضف المسؤول شرحًا لهذه الطريقة بعد. تحقق لاحقًا._',
+  'pay.tutorial.body': '{body}',
 
   'topup.title': '👛 *شحن المحفظة*',
   'topup.choose_method': '👛 *شحن المحفظة*',

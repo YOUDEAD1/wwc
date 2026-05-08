@@ -79,6 +79,14 @@ export const vi: Record<string, string> = {
   'btn.stats': '📊 Thống kê',
   'btn.stats_refresh': '🔄 Làm mới',
   'btn.stats_back': '◀️ Quay lại',
+  // Hướng dẫn theo từng phương thức — hiển thị dưới mỗi màn hình
+  // chuỗi / Binance / LTC. Quản trị viên chỉnh nội dung từ trang /admin.
+  'btn.where_txid': '📘 Tìm TXID ở đâu?',
+  'btn.where_order_id': '📘 Tìm Mã đơn ở đâu?',
+  // Hướng dẫn bot + cách dùng (trang Cài đặt).
+  'btn.using_method': '📘 Cách dùng',
+  'btn.tutorial_open_link': '🔗 Mở liên kết',
+  'btn.bot_tutorial': '📘 Hướng dẫn Bot',
 
   'shop.home.header': '*Sản phẩm có sẵn:*',
   'shop.choose_category': '*Sản phẩm có sẵn:*',
@@ -256,6 +264,15 @@ export const vi: Record<string, string> = {
   'profile.stats.rel.minutes': '{n} phút trước',
   'profile.stats.rel.hours': '{n} giờ trước',
   'profile.stats.rel.days': '{n} ngày trước',
+
+  // Hướng dẫn theo phương thức — quản trị chỉnh từ /admin và xuất
+  // hiện dưới các màn hình USDT / Binance / LTC. Tiêu đề mang biểu
+  // tượng sách + tên phương thức, nội dung lấy từ
+  // `pay_tutorial.<method_id>.text`.
+  'pay.tutorial.title': '{tutorial} *Tìm tham chiếu ở đâu — {method}*',
+  'pay.tutorial.empty':
+    '_Quản trị viên chưa thêm hướng dẫn cho phương thức này. Vui lòng quay lại sau._',
+  'pay.tutorial.body': '{body}',
 
   'topup.title': '👛 *Nạp ví*',
   'topup.choose_method': '👛 *Nạp ví*',

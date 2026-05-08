@@ -33,7 +33,7 @@ import {
   setDepositNote,
   setDepositStatus,
 } from '../db/queries.js';
-import { btn } from '../keyboards/helpers.js';
+import { btn, inlineBtn } from '../keyboards/helpers.js';
 import { paymentMethodsKeyboard } from '../keyboards/payMethods.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
@@ -58,7 +58,9 @@ import type {
   DBPaymentMethod,
   DBProduct,
   OrderIntent,
+  PaymentProvider,
 } from '../types.js';
+import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -68,6 +70,45 @@ const LTC_QUOTE_TTL_MIN = 10;
  * total locked into the deposit matches what the user saw on the
  * product page.
  */
+/**
+ * Pick the user-facing tutorial button label for a payment method —
+ * Binance Pay collects an Order ID (not an on-chain hash), so it
+ * gets the "Where Order ID?" CTA; everything else (USDT chains + LTC)
+ * gets "Where TXID?". Mirrors the helper of the same name in
+ * `topup.ts` so both flows surface the tutorial card consistently.
+ */
+function tutButtonKeyFor(
+  provider: PaymentProvider,
+): 'where_txid' | 'where_order_id' {
+  return provider === 'binance_pay' ? 'where_order_id' : 'where_txid';
+}
+
+/**
+ * Build the inline keyboard rendered under each direct-pay
+ * instruction screen. Adds the per-method tutorial button
+ * (`📘 Where TXID? / Where Order ID?`) above the standard Back row.
+ * The tutorial callback (`paytut:dp:<productId>:<methodId>`) opens
+ * the admin-editable how-to card sourced from
+ * `pay_tutorial.<id>.*` and routes its Back button back to the
+ * direct-pay network picker for this product.
+ */
+function directPayInstructionKeyboard(
+  ctx: AppCtx,
+  m: DBPaymentMethod,
+  productId: number,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  inlineBtn(
+    kb,
+    ctx.lang,
+    tutButtonKeyFor(m.provider),
+    `paytut:dp:${productId}:${m.id}`,
+  );
+  kb.row();
+  kb.text(btn(ctx.lang, 'back'), `pay:direct:${productId}`);
+  return kb;
+}
+
 async function buildIntent(
   ctx: AppCtx,
   raw: DBProduct,
@@ -242,10 +283,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
         renderMdHtml(buildChainDirectScreen(m, intent)),
         {
           parse_mode: 'HTML',
-          reply_markup: new InlineKeyboard().text(
-            btn(ctx.lang, 'back'),
-            `pay:direct:${productId}`,
-          ),
+          reply_markup: directPayInstructionKeyboard(ctx, m, productId),
         },
       );
       return;
@@ -310,10 +348,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
         renderMdHtml(buildBinanceDirectScreen(m, intent)),
         {
           parse_mode: 'HTML',
-          reply_markup: new InlineKeyboard().text(
-            btn(ctx.lang, 'back'),
-            `pay:direct:${productId}`,
-          ),
+          reply_markup: directPayInstructionKeyboard(ctx, m, productId),
         },
       );
       return;
@@ -428,10 +463,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
         ),
         {
           parse_mode: 'HTML',
-          reply_markup: new InlineKeyboard().text(
-            btn(ctx.lang, 'back'),
-            `pay:direct:${productId}`,
-          ),
+          reply_markup: directPayInstructionKeyboard(ctx, m, productId),
         },
       );
       return;
@@ -451,6 +483,34 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           `pay:direct:${productId}`,
         ),
       },
+    );
+  });
+
+  // ---- Per-payment-method tutorial card ("Where TXID? / Where Order
+  // ID?") for the direct-pay flow. Surfaced under each chain /
+  // Binance / LTC instruction screen and rendered as a brand-new
+  // HTML message (not an edit) so the buyer's instruction screen —
+  // with the Pay ID / address / locked LTC quote — stays visible
+  // above the tutorial. The Back row navigates back to
+  // `pay:direct:<productId>` (same target as the screen's own Back
+  // button) so the buyer returns to the network picker for the same
+  // product without losing the OrderIntent. Body text + optional
+  // photo / video / document + optional URL button are
+  // admin-editable from /admin → Payment Methods → "📘 #N Tutorial".
+  bot.callbackQuery(/^paytut:dp:(\d+):(\d+)$/, async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    const id = Number(ctx.match[2]);
+    const methods = await listPaymentMethods();
+    const m = methods.find((x) => x.id === id);
+    if (!m) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    await renderPaymentMethodTutorial(
+      ctx,
+      m.id,
+      m.name,
+      `pay:direct:${productId}`,
     );
   });
 
