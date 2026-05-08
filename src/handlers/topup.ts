@@ -27,6 +27,7 @@ import * as adminLog from '../services/adminLog.js';
 import type { DBPaymentMethod, PaymentProvider } from '../types.js';
 import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
+import { PE } from './paymentInstructionEmojis.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -850,12 +851,15 @@ async function handleLtcTxHash(
 
 function buildBinancePayTopupScreen(m: DBPaymentMethod): string {
   return [
-    '🟡 *Binance Pay — Deposit*',
+    `${PE.binance_title} *Binance Pay Deposit*`,
     '',
     `*Pay ID:* \`${m.address ?? '(not set)'}\``,
-    `*Binance Pay Name:* \`${m.pay_name ?? '(not set)'}\``,
+    `*Binance Name:* \`${m.pay_name ?? '(not set)'}\``,
     '',
-    'Send any USDT amount to the Pay ID above, then paste your *Order ID* below.',
+    `${PE.bullet_send} Send any USDT amount to the Pay ID above`,
+    `${PE.bullet_paste} Paste your *Order ID* below`,
+    '',
+    `${PE.note} _Only up to 3 decimal places will be credited to your wallet._`,
     '',
     '⏰ _Only payments started after opening this screen and completed within 30 minutes will be credited._',
     '',
@@ -1027,31 +1031,47 @@ async function handleBinancePayOrderId(
 }
 
 function buildChainTopupScreen(m: DBPaymentMethod): string {
+  const headingGlyph =
+    m.provider === 'usdt_ton' ? PE.ton_title : PE.usdt_title;
   const heading =
     m.provider === 'usdt_bep20'
-      ? '🟡 *USDT (BEP-20) Top-Up*'
+      ? `${headingGlyph} *USDT (BEP-20) Deposit*`
       : m.provider === 'usdt_trc20'
-        ? '🟢 *USDT (TRC-20) Top-Up*'
-        : '🔵 *USDT (TON) Top-Up*';
+        ? `${headingGlyph} *USDT (TRC-20) Deposit*`
+        : `${headingGlyph} *TON Network Deposit*`;
+  // Per-provider "what to send" wording — TON / TRC accept both their
+  // native coin (auto-converted to USDT) and the matching jetton, while
+  // BEP-20 only auto-verifies USDT itself.
+  const sendLine =
+    m.provider === 'usdt_bep20'
+      ? `${PE.bullet_send} Send any USDT amount to the address above`
+      : m.provider === 'usdt_ton'
+        ? `${PE.bullet_send} Send Native TON Coin or USDT (TON) to the address above`
+        : `${PE.bullet_send} Send Native TRX or USDT (TRC-20) to the address above`;
   const lines: string[] = [
     heading,
     '',
     `\`${m.address ?? '(address not set)'}\``,
     '',
-    '1️⃣ Send any USDT amount to the address above',
-    '2️⃣ Paste your *Transaction Hash (TXID)* below',
+    sendLine,
+    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
     '',
   ];
   if (m.provider === 'usdt_bep20') {
     lines.push(
-      '⚠️ _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._',
+      `${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`,
     );
-  }
-  if (m.provider === 'usdt_ton') {
+    lines.push(`${PE.note} _Up to 3 decimal places only._`);
+  } else if (m.provider === 'usdt_ton') {
     lines.push(
-      '⚠️ _Make sure you send USDT (TON Jetton), not native TON. Paste the tx hash from Tonviewer / Tonscan._',
+      `${PE.convert} _TON coins are automatically converted to USDT at live market rates._`,
+    );
+  } else {
+    lines.push(
+      `${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`,
     );
   }
+  lines.push('');
   lines.push('*Please send your TX hash below:*');
   return lines.join('\n');
 }

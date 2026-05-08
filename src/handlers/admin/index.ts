@@ -455,6 +455,21 @@ function escapeMd(s: string): string {
   return s.replace(/([_*`[\]])/g, '\\$1');
 }
 
+/**
+ * Pre-launch baseline added to the displayed top-line counters so
+ * the stats dashboard never reads "0 sales / $0 revenue" when the
+ * bot owner is sharing screenshots. Bot-owner spec at launch:
+ * "remove Orders and Revenue data — just save 72 Sales + $72
+ * revenue". The underlying `orders` / `deposits` rows are NOT
+ * touched — this is purely a display offset on top of the live
+ * count, so once real orders flow in the dashboard reads
+ * `72 + N` / `$72 + $X`. The Top Sellers / per-product / daily-
+ * revenue blocks below stay strictly factual since they only
+ * make sense per real order.
+ */
+const STATS_BASELINE_SALES = 72;
+const STATS_BASELINE_REVENUE = 72;
+
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
   const [s, productSales, daily] = await Promise.all([
@@ -468,8 +483,10 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
   lines.push(`👥 Users: *${s.users}*`);
   lines.push(`📦 Active products: *${s.active_products}*`);
   lines.push(`🗂 Active categories: *${s.active_categories}*`);
-  lines.push(`🧾 Total orders: *${s.orders}*`);
-  lines.push(`💰 Total revenue: *$${s.revenue.toFixed(2)}*`);
+  const displayedOrders = s.orders + STATS_BASELINE_SALES;
+  const displayedRevenue = s.revenue + STATS_BASELINE_REVENUE;
+  lines.push(`🧾 Total orders: *${displayedOrders}*`);
+  lines.push(`💰 Total revenue: *$${displayedRevenue.toFixed(2)}*`);
   lines.push(`💳 Pending deposits: *${s.pending_deposits}*`);
 
   if (productSales.length > 0) {
