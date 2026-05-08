@@ -812,6 +812,7 @@ async function showProductEditor(
     `*Price:* ${Number(p.price).toFixed(2)} USDT`,
     `*Stock:* ${stockCell}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
+    `*Description:* ${p.description ? '`set`' : '_unset_'}`,
     `*Note Text:* ${p.note ? '`set`' : '_unset_'}`,
     `*Tutorial Text:* ${p.tutorial_text ? '`set`' : '_unset_'}`,
     `*Tutorial File:* ${p.tutorial_file_id ? '`' + p.tutorial_file_type + '`' : '_unset_'}`,
@@ -826,6 +827,9 @@ async function showProductEditor(
     .row();
   kb.text('📝 Set Note Text', `adm:prod:note:settxt:${p.id}:${page}`)
     .text('🧹 Clear Note', `adm:prod:note:clr:${p.id}:${page}`)
+    .row();
+  kb.text('📄 Edit Description', `adm:prod:desc:set:${p.id}:${page}`)
+    .text('🧹 Clear Desc', `adm:prod:desc:clr:${p.id}:${page}`)
     .row();
   kb.text('📘 Tutorial Text', `adm:prod:tut:settxt:${p.id}:${page}`)
     .text('🎞 Tutorial File', `adm:prod:tut:setfile:${p.id}:${page}`)
@@ -912,6 +916,29 @@ adminBot.callbackQuery(/^adm:prod:note:settxt:(\d+):(\d+)$/, async (ctx) => {
 adminBot.callbackQuery(/^adm:prod:note:clr:(\d+):(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   await updateProduct(id, { note: null });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Description ---
+adminBot.callbackQuery(/^adm:prod:desc:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_description',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '📄 Send the new *description* text now. Send `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:desc:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, { description: null });
   await ctx.answerCallbackQuery({ text: 'Cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
@@ -2681,16 +2708,19 @@ async function showAnnounceBuyEdit(ctx: AppCtx): Promise<void> {
   if (buy.icon_custom_emoji_id) previewKb.icon(buy.icon_custom_emoji_id);
   const style = colorModeToStyle(buy.color);
   if (style !== undefined) previewKb.style(style);
-  await ctx.editMessageText(
+  const previewText =
     `🛒 *Buy Button — preview*\n\n` +
-      `• Product: \`${buy.product_name}\` (id=${buy.product_id})\n` +
-      `• Label: \`${buy.label}\`\n` +
-      `• Color: \`${buy.color}\`\n` +
-      `• Icon: ${
-        buy.icon_unicode ? `${buy.icon_unicode} (premium id \`${buy.icon_custom_emoji_id}\`)` : '_(none)_'
-      }`,
-    { parse_mode: 'Markdown', reply_markup: previewKb },
-  );
+    `• Product: \`${buy.product_name}\` (id=${buy.product_id})\n` +
+    `• Label: \`${buy.label}\`\n` +
+    `• Color: \`${buy.color}\`\n` +
+    `• Icon: ${
+      buy.icon_unicode ? `${buy.icon_unicode} (premium id \`${buy.icon_custom_emoji_id}\`)` : '_(none)_'
+    }`;
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(previewText, { parse_mode: 'Markdown', reply_markup: previewKb });
+  } else {
+    await ctx.reply(previewText, { parse_mode: 'Markdown', reply_markup: previewKb });
+  }
   await ctx.reply('Configure the Buy button:', {
     reply_markup: announceBuyEditKeyboard(buy),
   });
@@ -2754,15 +2784,14 @@ adminBot.callbackQuery(/^adm:ann:buy:set:(\d+)$/, async (ctx) => {
   // icon) when the admin swaps to a different product. Defaults are
   // only applied on the very first product pick (no prior `buy`).
   const prior = (flow.data as { buy?: AnnounceBuy }).buy;
-  const defaultIcon = EMOJI.orders_received;
-  const defaultIconId = typeof defaultIcon === 'object' ? defaultIcon.custom_emoji_id : undefined;
-  const defaultIconUnicode = typeof defaultIcon === 'object' ? defaultIcon.unicode : undefined;
+  const defaultIconId = '5440841102871517055';
+  const defaultIconUnicode = undefined;
   const buy: AnnounceBuy = prior
     ? { ...prior, product_id: product.id, product_name: product.name }
     : {
         product_id: product.id,
         product_name: product.name,
-        label: '[Buy Now]',
+        label: 'Buy Now',
         color: 'green',
         icon_custom_emoji_id: defaultIconId,
         icon_unicode: defaultIconUnicode,
@@ -2782,6 +2811,7 @@ adminBot.callbackQuery('adm:ann:buy:edit', async (ctx) => {
     return;
   }
   await ctx.answerCallbackQuery();
+  flow.step = 'confirm';
   await showAnnounceBuyEdit(ctx);
 });
 
@@ -4635,6 +4665,13 @@ adminBot.on('message:text', async (ctx, next) => {
       await updateProduct(flow.data.product_id, { note: text });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Note text saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_description') {
+      await updateProduct(flow.data.product_id, { description: text });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Description saved.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
