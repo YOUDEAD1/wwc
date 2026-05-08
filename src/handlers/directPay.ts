@@ -36,6 +36,7 @@ import {
 } from '../db/queries.js';
 import { btn, inlineBtn } from '../keyboards/helpers.js';
 import { paymentMethodsKeyboard } from '../keyboards/payMethods.js';
+import { PE } from './paymentInstructionEmojis.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
@@ -211,11 +212,16 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       return;
     }
 
+    // Bot-owner spec: Direct-Pay's network picker drops the
+    // "Others / Payment Support" row entirely. Buyers who need help
+    // with an unsupported method use the main Support menu — keeping
+    // that entry point on the buy-flow added an extra click between
+    // tapping Pay Directly and seeing the actual address.
     const kb = paymentMethodsKeyboard(
       ctx.lang,
       methods,
       (mid) => `pdpm:${id}:${mid}`,
-      `pay:others:direct:${id}`,
+      null,
       `buy:${p.id}`,
     );
 
@@ -1141,17 +1147,20 @@ function buildBinanceDirectScreen(
   m: DBPaymentMethod,
   intent: OrderIntent,
 ): string {
+  const totalStr = intent.total.toFixed(2);
   return [
-    '🟡 *Binance Pay — Direct Pay*',
+    `${PE.binance_title} *Binance Pay — Direct Pay*`,
     '',
     `*${intent.product_name}*  ×  *${intent.qty}*`,
-    `Total to pay: *$${intent.total.toFixed(2)}*`,
+    `*Send EXACTLY:*  \`${totalStr} USDT\``,
     '',
     `*Pay ID:* \`${m.address ?? '(not set)'}\``,
-    `*Binance Pay Name:* \`${m.pay_name ?? '(not set)'}\``,
+    `*Binance Name:* \`${m.pay_name ?? '(not set)'}\``,
     '',
-    `1️⃣ Send *exactly $${intent.total.toFixed(2)}* in USDT to the Pay ID above`,
-    '2️⃣ Paste your *Order ID* below',
+    `${PE.bullet_send} Send *exactly ${totalStr} USDT* to the Pay ID above`,
+    `${PE.bullet_paste} Paste your *Order ID* below`,
+    '',
+    `${PE.note} _Only up to 3 decimal places will be credited._`,
     '',
     '⏰ _Only payments completed within 30 minutes of opening this screen are auto-verified. Earlier or later payments still go to manual admin review._',
     '',
@@ -1163,35 +1172,50 @@ function buildChainDirectScreen(
   m: DBPaymentMethod,
   intent: OrderIntent,
 ): string {
+  const headingGlyph =
+    m.provider === 'usdt_ton' ? PE.ton_title : PE.usdt_title;
   const heading =
     m.provider === 'usdt_bep20'
-      ? '🟡 *USDT (BEP-20) — Direct Pay*'
+      ? `${headingGlyph} *USDT (BEP-20) — Direct Pay*`
       : m.provider === 'usdt_trc20'
-        ? '🟢 *USDT (TRC-20) — Direct Pay*'
-        : '🔵 *USDT (TON) — Direct Pay*';
+        ? `${headingGlyph} *USDT (TRC-20) — Direct Pay*`
+        : `${headingGlyph} *TON Network — Direct Pay*`;
   const totalStr = intent.total.toFixed(2);
+  // Per-provider "send" line — same per-coin wording as the top-up
+  // screens, but pinned to the exact amount due for this order.
+  const sendLine =
+    m.provider === 'usdt_bep20'
+      ? `${PE.bullet_send} Send *exactly ${totalStr} USDT* to the address above`
+      : m.provider === 'usdt_ton'
+        ? `${PE.bullet_send} Send *exactly ${totalStr} USDT* (TON Jetton) — or the live-rate equivalent in Native TON Coin — to the address above`
+        : `${PE.bullet_send} Send *exactly ${totalStr} USDT* (TRC-20) — or the live-rate equivalent in Native TRX — to the address above`;
   const lines: string[] = [
     heading,
     '',
     `*${intent.product_name}*  ×  *${intent.qty}*`,
+    `*Send EXACTLY:*  \`${totalStr} USDT\``,
     '',
-    `💵 *Send EXACTLY:*  \`${totalStr} USDT\``,
-    '',
-    `*To this address:*`,
     `\`${m.address ?? '(address not set)'}\``,
     '',
-    `1️⃣ Send *exactly ${totalStr} USDT* (≈ $${totalStr}) to the address above`,
-    '2️⃣ Paste your *Transaction Hash (TXID)* below',
+    sendLine,
+    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
     '',
   ];
   if (m.provider === 'usdt_bep20') {
     lines.push(
-      '⚠️ _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._',
+      `${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`,
     );
-  }
-  if (m.provider === 'usdt_ton') {
+    lines.push(`${PE.note} _Up to 3 decimal places only._`);
+  } else if (m.provider === 'usdt_ton') {
     lines.push(
-      `⚠️ _Send the *USDT (TON Jetton)* — exactly *${totalStr} USDT* — NOT native TON coin. Paste the tx hash from Tonviewer / Tonscan below._`,
+      `${PE.convert} _TON coins are automatically converted to USDT at live market rates._`,
+    );
+    lines.push(
+      `${PE.note} _Send the *TON Jetton* — paste the tx hash from Tonviewer / Tonscan._`,
+    );
+  } else {
+    lines.push(
+      `${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`,
     );
   }
   lines.push('');

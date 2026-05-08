@@ -85,14 +85,18 @@ function pushMethod(
  *   - `methods` — payment methods to render.
  *   - `methodCallback` — given a method id, returns the callback data
  *      to attach to its button (e.g. `(id) => `topup:method:${id}`).
- *   - `othersCallback` — callback for the "Others" button.
+ *   - `othersCallback` — callback for the "Others" button. Pass `null`
+ *      to omit the Others row entirely (used by Direct-Pay where the
+ *      bot-owner explicitly asked us to drop the Others / payment-
+ *      support entry point — buyers can still reach support via the
+ *      main Support menu).
  *   - `backCallback` — callback for the trailing "Back" button.
  */
 export function paymentMethodsKeyboard(
   lang: Lang,
   methods: DBPaymentMethod[],
   methodCallback: (id: number) => string,
-  othersCallback: string,
+  othersCallback: string | null,
   backCallback: string,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
@@ -164,9 +168,14 @@ export function paymentMethodsKeyboard(
   // compile-time default mapping to `EMOJI.paymethod_others`) is
   // applied via Bot API 9.4 `icon_custom_emoji_id`. Premium
   // subscribers see the animated glyph; non-premium users see the
-  // unicode fallback baked into the locale label.
-  inlineBtn(kb, lang, 'paymethod_others', othersCallback);
-  kb.row();
+  // unicode fallback baked into the locale label. Caller passes
+  // `null` to suppress the row — Direct-Pay does that since the
+  // bot-owner asked us to drop the Others / payment-support entry
+  // point from the buy-flow picker.
+  if (othersCallback !== null) {
+    inlineBtn(kb, lang, 'paymethod_others', othersCallback);
+    kb.row();
+  }
   // Back — same `inlineBtn` treatment so the row gets the configured
   // colour (red by default — matches the Cancel-pay arrow on the
   // wallet-confirm card) plus the premium back-arrow icon.
