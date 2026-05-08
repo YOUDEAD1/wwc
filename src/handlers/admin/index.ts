@@ -65,6 +65,7 @@ import {
   deleteProductItem,
   syncProductStockToPool,
   setDepositNote,
+  changeProductId,
 } from '../../db/queries.js';
 import { verifyAndCreditDeposit } from '../../services/depositVerify.js';
 import {
@@ -455,30 +456,6 @@ function escapeMd(s: string): string {
   return s.replace(/([_*`[\]])/g, '\\$1');
 }
 
-/**
- * Fixed launch-baseline values shown for the three top-line counters
- * on the admin Stats dashboard, regardless of what's in the database.
- * Bot-owner spec at launch: "minus total orders and do 72 and minus
- * revenue and do total 72$ and minus pending deposits and do total 0".
- * These are pure display overrides; the underlying `orders` /
- * `deposits` rows are NOT touched.
- */
-const STATS_DISPLAY_TOTAL_ORDERS = 72;
-const STATS_DISPLAY_TOTAL_REVENUE = 72;
-const STATS_DISPLAY_PENDING_DEPOSITS = 0;
-
-/**
- * Product-name allow-list for the per-product breakdown blocks
- * (Top Sellers + All Products — Sales Breakdown). Bot-owner spec
- * at launch: "remove every data about youtube etc just gemini data
- * and sellings units remain". Anything whose `product_name` doesn't
- * match this filter is hidden from the dashboard. The 7-day daily-
- * revenue trend is dropped entirely since revenue is hardcoded to
- * $72.00 and the trend would just show stale test rows that don't
- * reconcile with the top line.
- */
-const STATS_PRODUCT_NAME_ALLOW = /gemini/i;
-
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
   const [s, productSales] = await Promise.all([
@@ -491,13 +468,11 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
   lines.push(`👥 Users: *${s.users}*`);
   lines.push(`📦 Active products: *${s.active_products}*`);
   lines.push(`🗂 Active categories: *${s.active_categories}*`);
-  lines.push(`🧾 Total orders: *${STATS_DISPLAY_TOTAL_ORDERS}*`);
-  lines.push(`💰 Total revenue: *$${STATS_DISPLAY_TOTAL_REVENUE.toFixed(2)}*`);
-  lines.push(`💳 Pending deposits: *${STATS_DISPLAY_PENDING_DEPOSITS}*`);
+  lines.push(`🧾 Total orders: *${s.orders}*`);
+  lines.push(`💰 Total revenue: *$${s.revenue.toFixed(2)}*`);
+  lines.push(`💳 Pending deposits: *${s.pending_deposits}*`);
 
-  const visibleProductSales = productSales.filter((r) =>
-    STATS_PRODUCT_NAME_ALLOW.test(r.product_name),
-  );
+  const visibleProductSales = productSales;
 
   if (visibleProductSales.length > 0) {
     lines.push('');
@@ -861,6 +836,9 @@ async function showProductEditor(
   kb.text('💰 Edit Price', `adm:prod:price:set:${p.id}:${page}`)
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
+    .row();
+  kb.text('🆔 Edit ID', `adm:prod:id:set:${p.id}:${page}`)
+    .text('🔗 Share Link', `adm:prod:share:${p.id}:${page}`)
     .row();
   kb.text('⬅️ Back to list', `adm:prod:list:${page}`);
   await ctx.editMessageText(lines.join('\n'), {
@@ -1231,7 +1209,7 @@ adminBot.callbackQuery(/^adm:prod:items:clr:(\d+):(\d+)$/, async (ctx) => {
 // long account/credential strings stay visually separated; payloads
 // are escaped with backticks so a stray `*` / `_` / `[` in a
 // password doesn't break parsing.
-const STOCK_PAGE_SIZE = 20;
+const STOCK_PAGE_SIZE = 10;
 async function showStockInspectionPage(
   ctx: AppCtx,
   product_id: number,
@@ -1271,8 +1249,8 @@ async function showStockInspectionPage(
     // the admin's screen never explodes; the full payload remains in
     // the DB and is delivered to buyers as-is.
     const trimmed =
-      row.payload.length > 220
-        ? `${row.payload.slice(0, 220)}…`
+      row.payload.length > 100
+        ? `${row.payload.slice(0, 100)}…`
         : row.payload;
     // Backtick-escape any backticks inside the payload so it stays
     // inside a Markdown inline-code span.
@@ -1408,6 +1386,38 @@ adminBot.callbackQuery(/^adm:prod:name:set:(\d+):(\d+)$/, async (ctx) => {
     data: { product_id, page },
   };
   await ctx.reply('🅰️ Send the new product *name*.', { parse_mode: 'Markdown' });
+});
+
+adminBot.callbackQuery(/^adm:prod:id:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_id',
+    step: 'id',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    `🆔 Current ID: \`${product_id}\`\nSend the new *product ID* (integer). ⚠️ Make sure the new ID doesn't already exist.`,
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:share:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const p = await getProduct(product_id);
+  if (!p) {
+    await ctx.reply('⚠️ Product not found.');
+    return;
+  }
+  const shareUrl = `https://t.me/${env.BOT_USERNAME}?start=prod_${product_id}`;
+  await ctx.reply(
+    `🔗 *Share link for ${escapeMd(p.name)}*\n\n` +
+      `\`${shareUrl}\`\n\n` +
+      '_Copy this link and share it in any group or channel. When someone taps it they\'ll land on the product page inside the bot._',
+    { parse_mode: 'Markdown' },
+  );
 });
 
 // ---------- Payment methods ----------
@@ -4748,6 +4758,23 @@ adminBot.on('message:text', async (ctx, next) => {
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Name updated.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_id') {
+      const newId = Number(text);
+      if (!Number.isInteger(newId) || newId <= 0) {
+        await ctx.reply('❌ Bad ID. Send a positive integer.');
+        return;
+      }
+      const existing = await getProduct(newId);
+      if (existing) {
+        await ctx.reply(`❌ Product with ID ${newId} already exists (*${escapeMd(existing.name)}*). Choose a different ID.`, { parse_mode: 'Markdown' });
+        return;
+      }
+      await changeProductId(flow.data.product_id, newId);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Product ID changed: ${flow.data.product_id} → ${newId}`);
+      await showProductEditor(ctx, newId, flow.data.page);
       return;
     }
     if (flow.type === 'edit_bot_tutorial_text') {

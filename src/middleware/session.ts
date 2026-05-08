@@ -112,6 +112,7 @@ export type AdminFlow =
   | { type: 'edit_product_price'; step: 'price'; data: { product_id: number; page: number } }
   | { type: 'edit_product_stock'; step: 'stock'; data: { product_id: number; page: number } }
   | { type: 'edit_product_name'; step: 'name'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_id'; step: 'id'; data: { product_id: number; page: number } }
   // -------- Bot Tutorial editor (Settings → Bot Tutorial → Edit) --------
   | { type: 'edit_bot_tutorial_text'; step: 'text'; data: Record<string, never> }
   | { type: 'edit_bot_tutorial_file'; step: 'file'; data: Record<string, never> }

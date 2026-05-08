@@ -434,6 +434,41 @@ export async function updateProduct(
 }
 
 /**
+ * Change the ID of a product. Updates the product row and re-links
+ * all product_items rows to the new ID so the items pool stays intact.
+ */
+export async function changeProductId(oldId: number, newId: number): Promise<void> {
+  const { data: product, error: fetchErr } = await supabase
+    .from('products')
+    .select('*')
+    .eq('id', oldId)
+    .single();
+  if (fetchErr || !product) throw fetchErr ?? new Error('Product not found');
+
+  const { id: _id, ...rest } = product as Record<string, unknown>;
+  const { error: insertErr } = await supabase
+    .from('products')
+    .insert({ ...rest, id: newId });
+  if (insertErr) {
+    logger.error({ err: insertErr, oldId, newId }, 'changeProductId insert failed');
+    throw insertErr;
+  }
+  const { error: itemsErr } = await supabase
+    .from('product_items')
+    .update({ product_id: newId })
+    .eq('product_id', oldId);
+  if (itemsErr) {
+    logger.error({ err: itemsErr, oldId, newId }, 'changeProductId re-link items failed');
+    throw itemsErr;
+  }
+  const { error: delErr } = await supabase.from('products').delete().eq('id', oldId);
+  if (delErr) {
+    logger.error({ err: delErr, oldId, newId }, 'changeProductId delete old failed');
+    throw delErr;
+  }
+}
+
+/**
  * Add a single line of payload to the per-product items pool. Returns
  * the inserted row.
  */
