@@ -20,7 +20,6 @@ import {
   findAdjacentProduct,
   findUserById,
   findUserByUsername,
-  getDailyRevenue,
   getDeposit,
   getProductSales,
   getStats,
@@ -28,6 +27,7 @@ import {
   isAdmin,
   listAllCategories,
   listAllProducts,
+  listAllPendingDeposits,
   listPaymentMethods,
   listPendingDeposits,
   listRecentUsers,
@@ -458,24 +458,32 @@ function escapeMd(s: string): string {
 /**
  * Fixed launch-baseline values shown for the three top-line counters
  * on the admin Stats dashboard, regardless of what's in the database.
- * Bot-owner spec (post-launch follow-up): "minus total orders and do
- * 72 and minus revenue and do total 72$ and minus pending deposits
- * and do total 0". These are pure display overrides; the underlying
- * `orders` / `deposits` rows are NOT touched. The Top Sellers /
- * per-product / daily-revenue blocks below intentionally still
- * reflect real DB rows so the bot owner retains an accurate operational
- * view of which products actually sold.
+ * Bot-owner spec at launch: "minus total orders and do 72 and minus
+ * revenue and do total 72$ and minus pending deposits and do total 0".
+ * These are pure display overrides; the underlying `orders` /
+ * `deposits` rows are NOT touched.
  */
 const STATS_DISPLAY_TOTAL_ORDERS = 72;
 const STATS_DISPLAY_TOTAL_REVENUE = 72;
 const STATS_DISPLAY_PENDING_DEPOSITS = 0;
 
+/**
+ * Product-name allow-list for the per-product breakdown blocks
+ * (Top Sellers + All Products — Sales Breakdown). Bot-owner spec
+ * at launch: "remove every data about youtube etc just gemini data
+ * and sellings units remain". Anything whose `product_name` doesn't
+ * match this filter is hidden from the dashboard. The 7-day daily-
+ * revenue trend is dropped entirely since revenue is hardcoded to
+ * $72.00 and the trend would just show stale test rows that don't
+ * reconcile with the top line.
+ */
+const STATS_PRODUCT_NAME_ALLOW = /gemini/i;
+
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
-  const [s, productSales, daily] = await Promise.all([
+  const [s, productSales] = await Promise.all([
     getStats(),
     getProductSales(50),
-    getDailyRevenue(7),
   ]);
   const lines: string[] = [];
   lines.push('📊 *Stats*');
@@ -487,10 +495,14 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
   lines.push(`💰 Total revenue: *$${STATS_DISPLAY_TOTAL_REVENUE.toFixed(2)}*`);
   lines.push(`💳 Pending deposits: *${STATS_DISPLAY_PENDING_DEPOSITS}*`);
 
-  if (productSales.length > 0) {
+  const visibleProductSales = productSales.filter((r) =>
+    STATS_PRODUCT_NAME_ALLOW.test(r.product_name),
+  );
+
+  if (visibleProductSales.length > 0) {
     lines.push('');
     lines.push('🏆 *Top Sellers (by revenue)*');
-    productSales.slice(0, 5).forEach((r, i) => {
+    visibleProductSales.slice(0, 5).forEach((r, i) => {
       const medal = ['🥇', '🥈', '🥉', '4.', '5.'][i] ?? `${i + 1}.`;
       lines.push(
         `${medal} ${escapeMd(r.product_name)} — *${r.units_sold}* units · *$${r.revenue.toFixed(
@@ -500,11 +512,11 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
     });
   }
 
-  if (productSales.length > 0) {
+  if (visibleProductSales.length > 0) {
     lines.push('');
     lines.push('📈 *All Products — Sales Breakdown*');
     const cap = 30;
-    productSales.slice(0, cap).forEach((r) => {
+    visibleProductSales.slice(0, cap).forEach((r) => {
       const stockStr =
         r.stock_left !== null ? `stock *${r.stock_left}*` : '_deleted_';
       const lastStr = r.last_sold_at
@@ -516,22 +528,12 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
         )}* · ${stockStr}${lastStr}`,
       );
     });
-    if (productSales.length > cap) {
-      lines.push(`_…and ${productSales.length - cap} more (download PDF for full list)_`);
+    if (visibleProductSales.length > cap) {
+      lines.push(
+        `_…and ${visibleProductSales.length - cap} more (download PDF for full list)_`,
+      );
     }
   }
-
-  lines.push('');
-  lines.push('📅 *Last 7 Days*');
-  for (const d of daily) {
-    lines.push(`\`${d.date}\` — *$${d.revenue.toFixed(2)}* (${d.orders} orders)`);
-  }
-  // Weekly summary at the foot of the trend section.
-  const weekRev = daily.reduce((acc, d) => acc + d.revenue, 0);
-  const weekOrders = daily.reduce((acc, d) => acc + d.orders, 0);
-  lines.push(
-    `_7-day total:_ *$${weekRev.toFixed(2)}* across *${weekOrders}* orders`,
-  );
 
   let text = lines.join('\n');
   if (text.length > 3950) text = text.slice(0, 3900) + '\n\n_…(truncated)_';
@@ -1771,9 +1773,99 @@ async function showDepositList(ctx: AppCtx): Promise<void> {
       kb.text(`🔁 Re-verify #${d.id}`, `adm:dep:rv:${d.id}`).row();
     }
   }
+  // Bulk-reject control: clears the entire pending queue in one tap.
+  // Goes through a confirmation step (`adm:dep:nuke:confirm`) so a
+  // mis-tap doesn't wipe legitimate pending deposits. Spans the full
+  // queue, NOT just the 20-row dashboard window — uses
+  // listAllPendingDeposits() under the hood.
+  kb.text('🧹 Reject ALL Pending', 'adm:dep:nuke:confirm').row();
   backRow(kb);
   await ctx.editMessageText(lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kb });
 }
+
+adminBot.callbackQuery('adm:dep:nuke:confirm', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const deps = await listAllPendingDeposits();
+  if (deps.length === 0) {
+    await ctx.editMessageText('No pending deposits to reject.', {
+      reply_markup: backRow(new InlineKeyboard()),
+    });
+    return;
+  }
+  const kb = new InlineKeyboard()
+    .text(`🧨 Yes — reject all ${deps.length}`, 'adm:dep:nuke:do')
+    .row()
+    .text('⬅️ Cancel', 'adm:dep');
+  await ctx.editMessageText(
+    [
+      '⚠️ *Reject ALL pending deposits?*',
+      '',
+      `This will mark every one of the *${deps.length}* pending deposit row(s) as *rejected* and DM each user.`,
+      '',
+      'This is a one-tap launch-cleanup tool — there is no per-row undo. Approved / already-rejected rows are left alone.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    },
+  );
+});
+
+adminBot.callbackQuery('adm:dep:nuke:do', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Rejecting…' });
+  const deps = await listAllPendingDeposits();
+  let rejected = 0;
+  let errors = 0;
+  for (const d of deps) {
+    try {
+      await setDepositStatus(d.id, 'rejected');
+      rejected += 1;
+    } catch (err) {
+      errors += 1;
+      logger.error({ err, depId: d.id }, 'bulk-reject: setDepositStatus failed');
+      continue;
+    }
+    try {
+      await ctx.api.sendMessage(
+        d.user_id,
+        `❌ Your deposit *#${d.id}*${
+          Number(d.amount) > 0.01 ? ` of *$${d.amount}*` : ''
+        } was rejected. Please contact support if this was a mistake.`,
+        { parse_mode: 'Markdown' },
+      );
+    } catch (err) {
+      logger.warn({ err, depId: d.id }, 'bulk-reject: DM to depositor failed');
+    }
+    void adminLog.logTopupResolved(ctx.api, {
+      user: {
+        telegram_id: d.user_id,
+        username: null,
+        first_name: null,
+        email: null,
+      },
+      depositDbId: d.id,
+      method: d.method,
+      amount: Number(d.amount),
+      status: 'rejected',
+      balanceAfter: null,
+      resolvedBy: ctx.from!.id,
+    });
+  }
+  const summary = [
+    '🧹 *Bulk reject complete*',
+    '',
+    `• Rejected: *${rejected}*`,
+    errors > 0 ? `• Errors: *${errors}* (see server logs)` : '',
+    '',
+    'Pending queue cleared.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  await ctx.editMessageText(summary, {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
+});
 
 adminBot.callbackQuery(/^adm:dep:amt:(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
