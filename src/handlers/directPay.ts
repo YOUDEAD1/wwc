@@ -136,7 +136,13 @@ function directPayInstructionKeyboard(
     `paytut:dp:${productId}:${m.id}`,
   );
   kb.row();
-  inlineBtn(kb, ctx.lang, 'back', `pay:direct:${productId}`);
+  // Bot-owner spec: every payment-instructions screen now exits via
+  // a *red* `Cancel` button (not a neutral Back). `cancel_pay` is
+  // already wired with the red `pay_cancel` premium icon and the
+  // `red` colour mode, so this just swaps the label/key — same
+  // callback target so the user still lands back on the network
+  // picker for the product.
+  inlineBtn(kb, ctx.lang, 'cancel_pay', `pay:direct:${productId}`);
   return kb;
 }
 

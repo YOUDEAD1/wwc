@@ -97,20 +97,32 @@ export function paymentMethodsKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
-  // Greedy paired-row layout: when two consecutive methods are
-  // 'usdt_trc20' / 'usdt_ton' (or vice-versa), put them on the same
-  // keyboard row to mirror the photo's TON | Tron split. Everything
-  // else goes one-per-row.
-  const PAIR_PROVIDERS = new Set<PaymentProvider>(['usdt_trc20', 'usdt_ton']);
+  // Greedy paired-row layout: when two consecutive methods are both
+  // *short-name auto-verify chain* providers (i.e. on-chain wallet
+  // payments — TRC-20 / BEP-20 / TON / LTC, but NOT `binance_pay`
+  // which gets a long "Binance Pay" label and never pairs nicely),
+  // put them on the same keyboard row to mirror the bot-owner spec
+  // (TON | Tron sitting side-by-side under the wider USDT / Binance
+  // rows).
+  //
+  // We additionally guard on the rendered label length so an admin
+  // who renamed a chain method to something verbose ("USDT on the
+  // TRON Network", etc.) doesn't suddenly get two squeezed buttons
+  // that wrap to two lines.
+  const PAIR_PROVIDERS = new Set<PaymentProvider>([
+    'usdt_trc20',
+    'usdt_ton',
+    'usdt_bep20',
+    'ltc',
+  ]);
+  const SHORT_LABEL_LIMIT = 12;
+  const isPairable = (m: DBPaymentMethod) =>
+    PAIR_PROVIDERS.has(m.provider) && labelFor(m).length <= SHORT_LABEL_LIMIT;
   let i = 0;
   while (i < methods.length) {
     const m = methods[i]!;
     const next = methods[i + 1];
-    if (
-      next &&
-      PAIR_PROVIDERS.has(m.provider) &&
-      PAIR_PROVIDERS.has(next.provider)
-    ) {
+    if (next && isPairable(m) && isPairable(next)) {
       pushMethod(kb, m, methodCallback(m.id));
       pushMethod(kb, next, methodCallback(next.id));
       kb.row();

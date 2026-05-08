@@ -102,7 +102,10 @@ import {
   getCategoryDefaultColor,
   setCategoryDefaultColor,
 } from '../../services/settings.js';
-import { renderMdHtml } from '../../services/premium.js';
+import {
+  injectCustomEmojiMarkers,
+  renderMdHtml,
+} from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
@@ -3944,7 +3947,25 @@ adminBot.on('message:text', async (ctx, next) => {
     return next();
   }
 
-  const text = ctx.message.text.trim();
+  // Bot-owner spec: admins can drop *arbitrary* premium custom emojis
+  // into any admin-authored body (announcements, product / bot /
+  // payment-method tutorial text, view-note text, support replies,
+  // etc.) and have them survive both DB storage and the user-facing
+  // render pipeline. We do that by rewriting each `custom_emoji`
+  // entity in the original message into a `{{ce:<id>|<unicode>}}`
+  // marker on the text we hand off to flow handlers — `renderMdHtml`
+  // expands those markers into `<tg-emoji>` tags at render time.
+  //
+  // Markers are inserted using offsets relative to the *untrimmed*
+  // text so the indices stay valid; we trim AFTER injection.
+  //
+  // Numeric / URL / address flows are unaffected because real
+  // numeric / URL inputs from the admin keyboard never carry
+  // `custom_emoji` entities, so the helper is a no-op for them.
+  const text = injectCustomEmojiMarkers(
+    ctx.message.text,
+    ctx.message.entities,
+  ).trim();
 
   if (text === '/cancel') {
     ctx.session.adminFlow = undefined;

@@ -79,7 +79,10 @@ function topupInstructionKeyboard(
   const kb = new InlineKeyboard();
   inlineBtn(kb, ctx.lang, tutButtonKeyFor(m.provider), `paytut:${m.id}`);
   kb.row();
-  inlineBtn(kb, ctx.lang, 'back', topupRootCallback(ctx));
+  // Bot-owner spec: every payment-instructions screen now exits via
+  // a *red* `Cancel` button (not a neutral Back). Callback target is
+  // unchanged so the user still lands on the network picker.
+  inlineBtn(kb, ctx.lang, 'cancel_pay', topupRootCallback(ctx));
   return kb;
 }
 

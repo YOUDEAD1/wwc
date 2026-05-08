@@ -251,12 +251,13 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   support: 'blue',
   ai_support: 'blue',
   main_menu: 'none',
-  // Bot-owner spec: every plain `back` button now reads as a
-  // dangerous-style red rail so the navigation glyph + colour pair
-  // is consistent across the bot. Per-screen overrides can still be
-  // applied via /setcolor back <mode> on a single button key, but
-  // the default is now red instead of neutral.
-  back: 'red',
+  // 2026-05-08: rolled back to neutral. The previous bot-owner
+  // tweak made every plain `Back` look like a destructive button,
+  // but the new spec is the *opposite* — only the dedicated
+  // `Cancel` (red) on payment-instructions screens should read as
+  // dangerous; bare `Back` (qty page, picker, settings, etc.) goes
+  // back to the neutral default-style rail.
+  back: 'none',
   next: 'none',
   prev: 'none',
   refresh: 'none',
@@ -367,10 +368,13 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   pay_topup: 'blue',
   // Payment-methods keyboard chrome — Others sits below the per-
   // method buttons as the catch-all entry, Back returns to the
-  // previous screen. Blue + red read consistently with the rest of
-  // the bot (primary action / destructive-style back).
+  // previous screen. Others stays primary-blue. The Back row is
+  // intentionally neutral (no `red` rail) so it reads as a
+  // navigation control; the *destructive* exit on the per-method
+  // instructions screen lives on the dedicated `cancel_pay`
+  // button below — that's the only red rail in the pay flow.
   paymethod_others: 'blue',
-  paymethod_back: 'red',
+  paymethod_back: 'none',
   // Wallet-confirm screen.
   confirm_pay: 'green',
   cancel_pay: 'red',
