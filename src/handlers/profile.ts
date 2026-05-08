@@ -1016,14 +1016,24 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         },
         'profile:tutorial — rendering Bot Tutorial',
       );
-      // Always send a NEW message (`reply`) instead of editing the
-      // Settings page. Editing was hitting silent failures on some
-      // clients; sending a fresh message is bulletproof — every
-      // tap shows a brand-new tutorial card below Settings, and the
-      // Back button returns the user to the same Settings page.
-      stage = 'send_html';
+      // Bot-owner spec: the tutorial should NOT arrive as a fresh
+      // message below Settings — it should *replace* the Settings
+      // page in-place, so tapping Bot Tutorial converts the open
+      // Settings card into the tutorial card without cluttering
+      // the chat. The Back button on the tutorial keyboard already
+      // routes back to `profile:open`, which itself uses
+      // `editMessageText`, so the round-trip stays on a single
+      // message bubble.
+      //
+      // Telegram doesn't let us turn a text-only message into a
+      // media one, so when the admin has uploaded a tutorial
+      // photo / video / document we still send the *file* as a
+      // follow-up — but the actual instruction card is edited in
+      // place, removing the duplicate text page the bot owner
+      // flagged.
+      stage = 'edit_html';
       try {
-        await ctx.reply(safeHtml, {
+        await ctx.editMessageText(safeHtml, {
           parse_mode: 'HTML',
           reply_markup: kb,
           link_preview_options: { is_disabled: true },
@@ -1031,13 +1041,32 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       } catch (htmlErr) {
         logger.warn(
           { err: htmlErr },
-          'profile:tutorial: HTML send failed, retrying as plain text',
+          'profile:tutorial: HTML edit failed, retrying as plain text edit',
         );
-        stage = 'send_plain';
-        await ctx.reply(htmlToPlain(safeHtml), {
-          reply_markup: kb,
-          link_preview_options: { is_disabled: true },
-        });
+        stage = 'edit_plain';
+        try {
+          await ctx.editMessageText(htmlToPlain(safeHtml), {
+            reply_markup: kb,
+            link_preview_options: { is_disabled: true },
+          });
+        } catch (plainErr) {
+          // Edit can hard-fail on some clients (e.g. message too
+          // old, or the previous Settings render was actually a
+          // media message that can't accept `editMessageText`).
+          // Fall back to sending a fresh card so the user still
+          // gets the tutorial — a one-off duplicate is always
+          // better than a broken button.
+          logger.warn(
+            { err: plainErr },
+            'profile:tutorial: edit failed entirely, falling back to reply',
+          );
+          stage = 'send_html_fallback';
+          await ctx.reply(safeHtml, {
+            parse_mode: 'HTML',
+            reply_markup: kb,
+            link_preview_options: { is_disabled: true },
+          });
+        }
       }
       if (tut.file_id && tut.file_type) {
         try {
