@@ -289,7 +289,7 @@ export const ar: Record<string, string> = {
   'support.live.user_active':
     '{support_live_active} الدعم المباشر\n\n' +
     'جلسة الدعم فعّالة.\n\n' +
-    'الرجاء إرسال رسالتك عبر لوحة الدعم المباشر أعلاه في هذه المحادثة.',
+    'اكتب رسالتك هنا مباشرةً — كل رسالة تُرسل فورًا إلى المسؤول. اضغط *إلغاء الدعم* في أي وقت لإنهاء الجلسة.',
   'support.live.session_created': '🟢 *تم إنشاء جلسة دعم مباشر*',
   'support.live.admin_started':
     '🟢 *بدأ الدعم المباشر*\n\n' +

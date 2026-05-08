@@ -145,7 +145,63 @@ export type AdminFlow =
   | { type: 'set_color'; step: 'value'; data: { key: string } }
   | { type: 'set_color_glyph'; step: 'value'; data: { mode: string } }
   | { type: 'announce'; step: 'text'; data: Record<string, never> }
-  | { type: 'announce'; step: 'confirm'; data: { text: string } }
+  | {
+      // Confirm step + every callback-driven sub-step of the
+      // announce-Buy-button editor (product picker, color picker,
+      // icon picker) — they all share the same `data` shape, with
+      // the optional `buy` field carrying the button definition as
+      // the admin builds it up. The actual text-input sub-step is
+      // `buy_label` below.
+      type: 'announce';
+      step: 'confirm';
+      data: {
+        text: string;
+        buy?: {
+          product_id: number;
+          product_name: string;
+          label: string;
+          color: import('../../config/index.js').ColorMode;
+          icon_unicode?: string;
+          icon_custom_emoji_id?: string;
+        };
+      };
+    }
+  | {
+      // Waiting for the admin to send the new button label as a text
+      // message. Carries the same `data` so we can resume the confirm
+      // screen with the updated label.
+      type: 'announce';
+      step: 'buy_label';
+      data: {
+        text: string;
+        buy: {
+          product_id: number;
+          product_name: string;
+          label: string;
+          color: import('../../config/index.js').ColorMode;
+          icon_unicode?: string;
+          icon_custom_emoji_id?: string;
+        };
+      };
+    }
+  | {
+      // Waiting for the admin to send a premium-emoji message that
+      // we'll capture into `icon_custom_emoji_id` for the Buy button.
+      // Same data shape as `buy_label`.
+      type: 'announce';
+      step: 'buy_icon';
+      data: {
+        text: string;
+        buy: {
+          product_id: number;
+          product_name: string;
+          label: string;
+          color: import('../../config/index.js').ColorMode;
+          icon_unicode?: string;
+          icon_custom_emoji_id?: string;
+        };
+      };
+    }
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
