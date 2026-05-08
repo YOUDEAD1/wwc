@@ -214,6 +214,37 @@ async function showProduct(ctx: AppCtx, productId: number) {
 }
 
 /**
+ * Send the product detail page as a brand-new chat message (i.e.
+ * `ctx.reply` instead of `ctx.editMessageText`). Used by the
+ * direct-pay flow after Order Delivered to drop the buyer back on
+ * the qty / Buy Now page so they can buy more without re-navigating.
+ */
+export async function sendProductPage(
+  ctx: AppCtx,
+  productId: number,
+): Promise<void> {
+  const raw = await getProduct(productId);
+  if (!raw) return;
+  const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+  const qty = ctx.session.qty[productId] ?? QTY_MIN;
+  const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
+  const teaser = await nextPromoTeaser(
+    ctx.user.telegram_id,
+    p.id,
+    qty,
+    promo?.discount ?? 0,
+  );
+  const shareUrl = buildProductShareUrl(p.id);
+  await ctx.reply(
+    renderMdHtml(productPageText(ctx, p, qty, promo, teaser)),
+    {
+      parse_mode: 'HTML',
+      reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
+    },
+  );
+}
+
+/**
  * Render the *Custom Quantity* keypad screen. Edits the current
  * product page in place so the user stays in one message; the
  * accumulating digit buffer (the "Current:" line) lives in

@@ -12,14 +12,44 @@
 import { InlineKeyboard } from 'grammy';
 import type { Lang } from '../../config/index.js';
 import { btn } from './helpers.js';
-import { getAdminContactUrlWithPrefill } from '../services/settings.js';
+import { getAdminContactUrlWithPrefill, getEmoji } from '../services/settings.js';
 
 /**
- * Default Admin Help label rendered next to a 🆘 fallback. The
- * actual button uses a premium custom_emoji_id when one has been
- * configured under `btnicon.admin_help` (see `helpers.ts → applyIcon`).
+ * Plain-text Admin Help label. The leading 🆘 unicode is omitted so
+ * the Bot API 9.4 `icon_custom_emoji_id` we attach below renders as
+ * the only glyph on the button (otherwise premium clients would
+ * see "<premium icon> 🆘 Admin Help" with two emojis side-by-side).
  */
-const ADMIN_HELP_LABEL = '🆘 Admin Help';
+const ADMIN_HELP_LABEL = 'Admin Help';
+
+/**
+ * Resolve the premium `custom_emoji_id` rendered next to the Admin
+ * Help URL button on the verification-result keyboards. Bot owner
+ * picks the underlying id via `/setemoji admin_help` (or the
+ * compile-time default in `EMOJI.admin_help` — same id as the
+ * Support body header so the help-escalation entry points share a
+ * glyph). Returns `undefined` when neither has a custom_emoji_id
+ * (e.g. an admin set a plain unicode override) so the button
+ * renders without an icon rather than crashing.
+ */
+function adminHelpIconId(): string | undefined {
+  const spec = getEmoji('admin_help');
+  return typeof spec === 'object' ? spec.custom_emoji_id : undefined;
+}
+
+/**
+ * Add the Admin Help URL button + premium icon to the keyboard. The
+ * button always carries the configured custom_emoji_id when one is
+ * available so the button reads as "[premium support glyph] Admin
+ * Help" — matching the main-menu Support button so the buyer
+ * recognises both as escalation entry points.
+ */
+function pushAdminHelpButton(kb: InlineKeyboard, url: string): InlineKeyboard {
+  kb.url(ADMIN_HELP_LABEL, url);
+  const iconId = adminHelpIconId();
+  if (iconId) kb.icon(iconId);
+  return kb;
+}
 
 /** Build the Admin Help URL for a deposit awaiting manual review. */
 export function buildAdminHelpUrl(depositId: number, txOrOrderId: string): string {
@@ -54,10 +84,11 @@ export function manualReviewKeyboard(
   txOrOrderId: string,
   backCallback: string = 'main:open',
 ): InlineKeyboard {
-  return new InlineKeyboard()
-    .url(ADMIN_HELP_LABEL, buildAdminHelpUrl(depositId, txOrOrderId))
-    .row()
-    .text(btn(lang, 'back'), backCallback);
+  const kb = new InlineKeyboard();
+  pushAdminHelpButton(kb, buildAdminHelpUrl(depositId, txOrOrderId));
+  kb.row();
+  kb.text(btn(lang, 'back'), backCallback);
+  return kb;
 }
 
 export function rejectionKeyboard(
@@ -67,10 +98,14 @@ export function rejectionKeyboard(
   reason: string,
   backCallback: string = 'main:open',
 ): InlineKeyboard {
-  return new InlineKeyboard()
-    .url(ADMIN_HELP_LABEL, buildAdminHelpUrlForRejection(depositId, txOrOrderId, reason))
-    .row()
-    .text(btn(lang, 'back'), backCallback);
+  const kb = new InlineKeyboard();
+  pushAdminHelpButton(
+    kb,
+    buildAdminHelpUrlForRejection(depositId, txOrOrderId, reason),
+  );
+  kb.row();
+  kb.text(btn(lang, 'back'), backCallback);
+  return kb;
 }
 
 export function successKeyboard(

@@ -61,8 +61,40 @@ import type {
   PaymentProvider,
 } from '../types.js';
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
+import { sendProductPage } from './shop.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
+
+/**
+ * Render the short, dangerous-looking "Transaction Cancelled" card
+ * shown when a buyer pastes an unrecognised TX hash / Order ID into
+ * the direct-pay flow. The bot owner asked us to skip the previous
+ * long "that doesn't look like…" explainer in favour of an instant
+ * cancel + Back button so first-time mistypers don't get stuck on a
+ * wall of text.
+ *
+ * Render path:
+ *   - `{tx_cancelled}` token resolves to the premium red ❌ glyph
+ *     declared in `EMOJI.tx_cancelled` (see config/index.ts).
+ *   - The body is a single bold line — short enough to fit on one
+ *     line on every Telegram client.
+ *   - The keyboard is a single red `◀️ Back` row that takes the
+ *     buyer back to the product detail page so they can re-open
+ *     the direct-pay screen for a fresh attempt.
+ */
+async function sendTxCancelled(
+  ctx: AppCtx,
+  productId: number,
+): Promise<void> {
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, ctx.lang, 'cancel_pay', `prod:${productId}`);
+  await ctx.reply(
+    renderMdHtml('{tx_cancelled} *Transaction Cancelled.*', {
+      tx_cancelled: 'tx_cancelled',
+    }),
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+}
 
 /**
  * Build the OrderIntent for a given product/user/qty pair. Resolves
@@ -553,12 +585,12 @@ async function handleBinanceDirectSubmit(
 ): Promise<void> {
   const cleaned = text.replace(/\s+/g, '');
   if (!/^\d{6,}$/.test(cleaned)) {
-    await ctx.reply(
-      renderMdHtml(
-        "❌ That doesn't look like a Binance Pay Order ID. It should be the 18-digit numeric ID shown on the Binance Pay receipt (e.g. `430098765432109876`).",
-      ),
-      { parse_mode: 'HTML' },
-    );
+    // Bot-owner spec: unrecognised Order ID = instant cancel. We
+    // tear down the in-flight flow and surface the short red
+    // "Transaction Cancelled." card so the buyer doesn't get
+    // stuck on a wall-of-text validator hint.
+    ctx.session.userFlow = undefined;
+    await sendTxCancelled(ctx, flow.data.intent.product_id);
     return;
   }
   const orderId = cleaned;
@@ -636,6 +668,13 @@ async function handleBinanceDirectSubmit(
       ].join('\n'),
       reply_markup: successKeyboard(ctx.lang),
     });
+    // Bot-owner spec: after Order Delivered the buyer should land
+    // back on the product detail / qty page so they can keep
+    // shopping without hunting through the menu. The Payment
+    // Verified + Order Delivered cards are sent by
+    // `fulfilOrderForDeposit` inside the verifier above; we just
+    // re-render the qty screen as a fresh message right after.
+    await sendProductPage(ctx, flow.data.intent.product_id);
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -711,27 +750,26 @@ async function handleChainDirectSubmit(
   const provider = flow.data.provider;
   let txHash: string;
 
+  // Bot-owner spec: any unrecognised tx hash = instant cancel. We
+  // collapse the previous per-chain validator hints into a single
+  // short red "Transaction Cancelled." card so a mistype doesn't
+  // leave the buyer stuck reading a long format explainer. Each
+  // branch only stays here long enough to normalise the hash for
+  // downstream `verifyAndCreditDeposit` (lower-case TRON / BSC,
+  // pass-through TON).
   if (provider === 'usdt_trc20') {
     const stripped = cleaned.replace(/^0x/i, '');
     if (!/^[0-9a-fA-F]{64}$/.test(stripped)) {
-      await ctx.reply(
-        renderMdHtml(
-          "❌ That doesn't look like a TRON tx hash. Paste the 64-character hex transaction id from your wallet.",
-        ),
-        { parse_mode: 'HTML' },
-      );
+      ctx.session.userFlow = undefined;
+      await sendTxCancelled(ctx, flow.data.intent.product_id);
       return;
     }
     txHash = stripped.toLowerCase();
   } else if (provider === 'usdt_bep20') {
     const stripped = cleaned.replace(/^0x/i, '');
     if (!/^[0-9a-fA-F]{64}$/.test(stripped)) {
-      await ctx.reply(
-        renderMdHtml(
-          "❌ That doesn't look like a BSC tx hash. Paste the `0x…` 66-character transaction id from your wallet.",
-        ),
-        { parse_mode: 'HTML' },
-      );
+      ctx.session.userFlow = undefined;
+      await sendTxCancelled(ctx, flow.data.intent.product_id);
       return;
     }
     txHash = '0x' + stripped.toLowerCase();
@@ -740,12 +778,8 @@ async function handleChainDirectSubmit(
       !/^[0-9a-fA-F]{64}$/.test(cleaned) &&
       !/^[A-Za-z0-9+/=_-]{43,44}$/.test(cleaned)
     ) {
-      await ctx.reply(
-        renderMdHtml(
-          "❌ That doesn't look like a TON tx hash. Paste the 64-character hex hash from Tonviewer / Tonscan, or the base64 hash from your wallet.",
-        ),
-        { parse_mode: 'HTML' },
-      );
+      ctx.session.userFlow = undefined;
+      await sendTxCancelled(ctx, flow.data.intent.product_id);
       return;
     }
     txHash = cleaned;
@@ -828,6 +862,9 @@ async function handleChainDirectSubmit(
       ].join('\n'),
       reply_markup: successKeyboard(ctx.lang),
     });
+    // Drop the buyer back on the qty / Buy Now screen post-delivery.
+    // See the matching comment in `handleBinanceDirectSubmit`.
+    await sendProductPage(ctx, intent.product_id);
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -898,12 +935,10 @@ async function handleLtcDirectSubmit(
 ): Promise<void> {
   const cleaned = text.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(cleaned)) {
-    await ctx.reply(
-      renderMdHtml(
-        "❌ That doesn't look like a Litecoin tx hash. Paste the 64-character hex transaction id from your wallet.",
-      ),
-      { parse_mode: 'HTML' },
-    );
+    // Bot-owner spec: instant cancel on unrecognised tx hash.
+    // Single short red card replaces the previous validator hint.
+    ctx.session.userFlow = undefined;
+    await sendTxCancelled(ctx, flow.data.intent.product_id);
     return;
   }
   if (Date.now() > flow.data.expires_at_ms) {
@@ -966,6 +1001,9 @@ async function handleLtcDirectSubmit(
       ].join('\n'),
       reply_markup: successKeyboard(ctx.lang),
     });
+    // Drop the buyer back on the qty / Buy Now screen post-delivery.
+    // See the matching comment in `handleBinanceDirectSubmit`.
+    await sendProductPage(ctx, flow.data.intent.product_id);
   } else {
     const klass = classifyReason(result.reason);
     try {

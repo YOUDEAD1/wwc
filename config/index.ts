@@ -512,7 +512,22 @@ export const EMOJI: Record<string, EmojiSpec> = {
   pdf_sent_r: { unicode: '📬', custom_emoji_id: '6179461085624536942' },
 
   // ---- Support screen header -----------------------------------
-  support_title: { unicode: '📞', custom_emoji_id: '6247041691652461368' },
+  // Bot owner refreshed this premium id on 2026-05-08 — the previous
+  // one (`6247041691652461368`) is no longer used. The new id is
+  // applied to the main-menu Support button, the Top-Up Others row,
+  // and the rejection / manual-review Admin Help URL button so all
+  // "reach support" entry points share the same animated glyph.
+  support_title: { unicode: '📞', custom_emoji_id: '5271619747891388291' },
+  // Alias rendered next to the Admin Help URL button on the
+  // verification-result keyboards. Same id as `support_title` so
+  // the URL button picks up the support glyph; admins can rotate
+  // it independently via `/setemoji admin_help`.
+  admin_help: { unicode: '🆘', custom_emoji_id: '5271619747891388291' },
+  // Premium-styled red "transaction cancelled" warning shown when
+  // a buyer pastes an invalid TX / Order ID into the direct-pay
+  // flow. Reuses the existing pure-red cross from the Gift-Codes
+  // screen so the cancelled state reads as visibly destructive.
+  tx_cancelled: { unicode: '❌', custom_emoji_id: '5095957930537124723' },
 
   // ---- Live Support panel + closure messages -------------------
   // Premium glyphs requested by the bot owner; non-premium users
@@ -667,7 +682,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   // previous one (`5188540541922480562`) is no longer used. Keep
   // the unicode fallback as the original 💡 so non-premium clients
   // see the same glyph.
-  paymethod_others: { unicode: '💡', custom_emoji_id: '5262831879731555779' },
+  paymethod_others: { unicode: '💡', custom_emoji_id: '5271619747891388291' },
   paymethod_back: { unicode: '◀️', custom_emoji_id: '5440509136259267820' },
 };
 
@@ -746,6 +761,11 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // back a premium icon.
 
   // Support section
+  // Main menu Support row picks up the same premium glyph as the
+  // Support body header so the entry point and the destination
+  // share an icon. Bot owner refreshed the underlying id on
+  // 2026-05-08 — see the `support_title` comment in the EMOJI map.
+  support: 'support_title',
   support_contact: 'support_title',
   support_live: 'support_live_active',
   support_cancel: 'support_live_closed',
@@ -831,16 +851,18 @@ export const LOCALES = { en, ar, vi } as const satisfies Record<Lang, Record<str
  *   Row 1: Shop
  *   Row 2: Topup | My Profile
  *   Row 3: Support | AI Support
+ *   Row 4: Refer & Earn | Channel
+ *
+ * The legacy `bot_tutorial` row is intentionally absent here — the
+ * bot-wide tutorial is still reachable from /profile → Bot Tutorial,
+ * but the bot owner asked us to drop the standalone main-menu entry
+ * to keep the welcome screen tight.
  */
 export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_KEYS>> = [
   ['shop'],
   ['topup', 'profile'],
   ['support', 'ai_support'],
   ['refer', 'channel'],
-  // Surface the bot-wide tutorial (admin-editable from /admin → Bot
-  // Tutorial) on the main menu in addition to /profile, so first-time
-  // users can find it without drilling into Settings.
-  ['bot_tutorial'],
 ];
 
 /** Shop pagination size — products per page */
