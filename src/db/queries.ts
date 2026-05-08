@@ -1769,6 +1769,23 @@ export async function listPendingDeposits(): Promise<DBDeposit[]> {
   return (data ?? []) as DBDeposit[];
 }
 
+/**
+ * Same as `listPendingDeposits` but without the 20-row cap, used by
+ * the admin "🧹 Reject ALL Pending" bulk action so a queue with more
+ * pending deposits than the dashboard window can be cleared in one
+ * tap. Sorted ascending by id so older / older-test rows are
+ * processed first; the bulk handler still iterates row-by-row to
+ * DM each user and write per-row admin-log entries.
+ */
+export async function listAllPendingDeposits(): Promise<DBDeposit[]> {
+  const { data } = await supabase
+    .from('deposits')
+    .select('*')
+    .eq('status', 'pending')
+    .order('id', { ascending: true });
+  return (data ?? []) as DBDeposit[];
+}
+
 export async function getDeposit(id: number): Promise<DBDeposit | null> {
   const { data } = await supabase.from('deposits').select('*').eq('id', id).maybeSingle();
   return (data as DBDeposit) ?? null;

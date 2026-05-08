@@ -170,6 +170,21 @@ function readCachedTranscript(userId: number): CachedTranscript | null {
 const LIVE_SUPPORT_KEY = 'live_support.session';
 
 /**
+ * Maximum age of a Live Support session before it is treated as
+ * abandoned and auto-cleared. Real Live Support chats almost never
+ * run longer than ~30 minutes, so anything older than this is almost
+ * certainly an orphaned slot left behind by a deploy crash, an
+ * admin-side close that didn't propagate, or a user who closed the
+ * Telegram chat without tapping Cancel.
+ *
+ * Auto-clearing is what fixes the "⏳ The admin is currently helping
+ * another user. Please try again in a moment." popup that nobody
+ * could escape — without a TTL the persisted slot lived forever and
+ * every new user got bounced.
+ */
+const LIVE_SUPPORT_MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
+
+/**
  * Persist the current `liveUser` slot to the `settings` table so the
  * next bot lifecycle can pick the session back up. Best-effort — a
  * failed write only affects relay survival across the next restart,
@@ -188,6 +203,11 @@ async function persistLiveUser(): Promise<void> {
       user_topic_id: liveUser.userTopicId ?? null,
       admin_topic_id: liveUser.adminTopicId ?? null,
       panel_message_id: liveUser.panelMessageId ?? null,
+      // ISO-8601 string for staleness TTL on the next bot lifecycle
+      // and the busy-check fast-path. `null` when somehow we persist
+      // before `sessionStartedAt` is set; restore treats null as
+      // expired so the slot is dropped on next boot.
+      started_at: sessionStartedAt?.toISOString() ?? null,
     });
   } catch (err) {
     logger.warn({ err }, 'live-support: failed to persist session');
@@ -199,6 +219,11 @@ async function persistLiveUser(): Promise<void> {
  * bot startup from `bot.ts`. Without this, every Render redeploy
  * would silently break any in-progress session because the relay
  * handlers would see `liveUser === null`.
+ *
+ * Drops the persisted row entirely when the session is older than
+ * `LIVE_SUPPORT_MAX_AGE_MS` (or has no `started_at` stamp because it
+ * was persisted by an old build). This is the self-heal path that
+ * fixes orphaned-slot bugs across deploys without admin intervention.
  */
 export async function restoreLiveSupportSession(): Promise<void> {
   try {
@@ -207,6 +232,26 @@ export async function restoreLiveSupportSession(): Promise<void> {
     const obj = raw as Record<string, unknown>;
     const telegramId = Number(obj.telegram_id);
     if (!Number.isFinite(telegramId) || telegramId <= 0) return;
+    const startedAtRaw = obj.started_at;
+    const startedAtMs =
+      typeof startedAtRaw === 'string'
+        ? new Date(startedAtRaw).getTime()
+        : NaN;
+    const ageMs = Number.isFinite(startedAtMs)
+      ? Date.now() - startedAtMs
+      : Number.POSITIVE_INFINITY;
+    if (ageMs > LIVE_SUPPORT_MAX_AGE_MS) {
+      logger.warn(
+        {
+          telegramId,
+          startedAt: typeof startedAtRaw === 'string' ? startedAtRaw : null,
+          ageMs,
+        },
+        'live-support: dropping stale persisted session on boot (TTL expired)',
+      );
+      await deleteSetting(LIVE_SUPPORT_KEY);
+      return;
+    }
     liveUser = {
       telegram_id: telegramId,
       first_name: typeof obj.first_name === 'string' ? obj.first_name : '—',
@@ -218,17 +263,44 @@ export async function restoreLiveSupportSession(): Promise<void> {
       panelMessageId:
         obj.panel_message_id != null ? Number(obj.panel_message_id) : undefined,
     };
+    sessionStartedAt = Number.isFinite(startedAtMs)
+      ? new Date(startedAtMs)
+      : new Date();
     logger.info(
       {
         telegramId,
         userTopicId: liveUser.userTopicId,
         adminTopicId: liveUser.adminTopicId,
+        startedAt: sessionStartedAt.toISOString(),
       },
       'live-support: restored persisted session from DB',
     );
   } catch (err) {
     logger.warn({ err }, 'live-support: failed to restore persisted session');
   }
+}
+
+/**
+ * Force-clear the Live Support slot — used by the admin `/clearsupport`
+ * command and as the auto-takeover path inside the busy popup check.
+ * Best-effort tears down the user-facing topic / pinned panel, then
+ * wipes the in-memory slot + transcript + persisted row. Returns the
+ * id of the user whose slot was cleared so the caller can build a
+ * useful confirmation, or `null` when there was nothing to clear.
+ */
+export async function forceClearLiveSupport(
+  ctx: AppCtx,
+): Promise<{ cleared: boolean; userId: number | null }> {
+  const target = liveUser;
+  liveUser = null;
+  sessionStartedAt = null;
+  transcript = [];
+  await persistLiveUser();
+  if (!target) return { cleared: false, userId: null };
+  await tryDeleteTopic(ctx, target.telegram_id, target.userTopicId);
+  await tryDeleteTopic(ctx, env.ADMIN_USER_ID, target.adminTopicId);
+  await teardownPanel(ctx, target.telegram_id, target.panelMessageId);
+  return { cleared: true, userId: target.telegram_id };
 }
 
 const TOPIC_NAME_USER = 'Live Support';
@@ -558,11 +630,41 @@ export function registerSupport(bot: Composer<AppCtx>): void {
   // ------------------------------ Live Support ----------------------
   bot.callbackQuery('support:live:start', async (ctx) => {
     if (liveUser !== null && liveUser.telegram_id !== ctx.user.telegram_id) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('support.live.busy_popup'),
-        show_alert: true,
-      });
-      return;
+      // Auto-takeover when the existing slot has been sitting around
+      // for longer than the TTL — any session this old is almost
+      // certainly orphaned (admin-side close that never propagated,
+      // user closing the chat without tapping Cancel, deploy crash).
+      // Letting it block every other user forever was the root cause
+      // of the "⏳ The admin is currently helping another user" popup
+      // nobody could escape from.
+      const ageMs = sessionStartedAt
+        ? Date.now() - sessionStartedAt.getTime()
+        : Number.POSITIVE_INFINITY;
+      if (ageMs > LIVE_SUPPORT_MAX_AGE_MS) {
+        logger.warn(
+          {
+            stuckUserId: liveUser.telegram_id,
+            ageMs,
+            requesterTelegramId: ctx.user.telegram_id,
+          },
+          'live-support: auto-clearing stale slot for new requester (TTL exceeded)',
+        );
+        const stale = liveUser;
+        liveUser = null;
+        sessionStartedAt = null;
+        transcript = [];
+        await persistLiveUser();
+        await tryDeleteTopic(ctx, stale.telegram_id, stale.userTopicId);
+        await tryDeleteTopic(ctx, env.ADMIN_USER_ID, stale.adminTopicId);
+        await teardownPanel(ctx, stale.telegram_id, stale.panelMessageId);
+        // fall through to start a fresh session for the new user
+      } else {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('support.live.busy_popup'),
+          show_alert: true,
+        });
+        return;
+      }
     }
     // Same user re-clicking Live Support while their own session is
     // still active: don't tear down + recreate (which would orphan
@@ -844,6 +946,25 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     if (ctx.from?.id !== env.ADMIN_USER_ID) return next();
     if (liveUser === null) return next();
     await endSession(ctx, 'admin');
+  });
+
+  // /clearsupport — admin panic-button to force-wipe a stuck Live
+  // Support slot. Use when a stale persisted session is bouncing
+  // every other user with the "⏳ admin is currently helping another
+  // user" popup and you can't reach the End Session control (e.g.
+  // the admin-side topic was deleted from Telegram). Best-effort
+  // tears down the user's pinned panel + forum topic on both sides.
+  bot.command('clearsupport', async (ctx, next) => {
+    if (ctx.from?.id !== env.ADMIN_USER_ID) return next();
+    const result = await forceClearLiveSupport(ctx);
+    const body = result.cleared
+      ? `🧹 Live Support slot force-cleared (was held by user \`${result.userId}\`).`
+      : '🧹 No active Live Support slot to clear.';
+    try {
+      await ctx.reply(body, { parse_mode: 'Markdown' });
+    } catch (err) {
+      logger.warn({ err }, 'live-support: /clearsupport reply failed');
+    }
   });
 
   // ------------------------------ Relay handlers --------------------
