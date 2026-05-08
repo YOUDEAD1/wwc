@@ -333,6 +333,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           address: m.address,
           intent,
           opened_at_ms: Date.now(),
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
       await ctx.editMessageText(
@@ -397,6 +398,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           // Pay window in `services/depositVerify.ts` so an old
           // Order ID can't be replayed.
           opened_at_ms: Date.now(),
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
 
@@ -494,6 +496,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           // freshness window. Separate from `expires_at_ms` (which
           // governs how long the locked LTC/USD quote is valid).
           opened_at_ms: Date.now(),
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
 
@@ -701,6 +704,9 @@ async function handleBinanceDirectSubmit(
         `prod:${flow.data.intent.product_id}`,
       ),
     });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -942,6 +948,9 @@ async function handleChainDirectSubmit(
       ].join('\n'),
       reply_markup: successKeyboard(ctx.lang, `prod:${intent.product_id}`),
     });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
   } else {
     const klass = classifyReason(result.reason);
     try {
@@ -1083,6 +1092,9 @@ async function handleLtcDirectSubmit(
         `prod:${flow.data.intent.product_id}`,
       ),
     });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
   } else {
     const klass = classifyReason(result.reason);
     try {

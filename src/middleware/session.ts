@@ -424,6 +424,8 @@ export type UserFlow =
          * stale vendor TXID can't be replayed.
          */
         opened_at_ms: number;
+        /** Message id of the instruction screen — deleted on success. */
+        instruction_message_id?: number;
       };
     }
   | {
@@ -448,6 +450,8 @@ export type UserFlow =
         deposit_id: number;
         /** See `chain_topup.opened_at_ms`. */
         opened_at_ms: number;
+        /** Message id of the instruction screen — deleted on success. */
+        instruction_message_id?: number;
       };
     }
   | {
@@ -464,6 +468,8 @@ export type UserFlow =
         method_id: number;
         method_name: string;
         address: string;
+        /** Message id of the instruction screen — deleted on success. */
+        instruction_message_id?: number;
       };
     }
   | {
@@ -480,6 +486,8 @@ export type UserFlow =
         expires_at_ms: number;
         /** See `chain_topup.opened_at_ms`. */
         opened_at_ms: number;
+        /** Message id of the instruction screen — deleted on success. */
+        instruction_message_id?: number;
       };
     }
   | {
@@ -497,6 +505,8 @@ export type UserFlow =
         intent: import('../types.js').OrderIntent;
         /** See `chain_topup.opened_at_ms`. */
         opened_at_ms: number;
+        /** Message id of the instruction screen — deleted on success. */
+        instruction_message_id?: number;
       };
     }
   | {
@@ -520,6 +530,8 @@ export type UserFlow =
         intent: import('../types.js').OrderIntent;
         /** See `chain_topup.opened_at_ms`. */
         opened_at_ms: number;
+        /** Message id of the instruction screen — deleted on success. */
+        instruction_message_id?: number;
       };
     }
   | {
@@ -541,6 +553,8 @@ export type UserFlow =
         intent: import('../types.js').OrderIntent;
         /** See `chain_topup.opened_at_ms`. */
         opened_at_ms: number;
+        /** Message id of the instruction screen — deleted on success. */
+        instruction_message_id?: number;
       };
     }
   | {
