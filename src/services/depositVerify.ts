@@ -58,6 +58,18 @@ const PAY_WINDOW_MS = 30 * 60 * 1000;
  */
 const PAY_PRE_WINDOW_SLACK_MS = 5 * 60 * 1000;
 
+/**
+ * Extra backward slack used *only* on a "re-verify" attempt — i.e.
+ * the user pasted the same TX hash again within `REVERIFY_WINDOW_MS`
+ * because the first verifier attempt deferred to admin / hit a
+ * transient API hiccup. The original submission has already passed
+ * the strict 30-min freshness gate, so we widen the window backward
+ * by an extra 30 minutes to keep that previously-accepted on-chain
+ * timestamp inside the bounds for the retry. Forward bound is
+ * unchanged.
+ */
+const REVERIFY_BACKWARD_SLACK_MS = 30 * 60 * 1000;
+
 /** Truncate a decimal value to 3 places (matches the Loguetown UX). */
 function truncate3(n: number): number {
   return Math.floor(n * 1000) / 1000;
@@ -116,6 +128,16 @@ export async function verifyAndCreditDeposit(args: {
    * a session-level timestamp.
    */
   openedAtMs?: number;
+  /**
+   * Set when the user is re-pasting the *same* TX hash for an
+   * existing pending deposit (within the application-level
+   * 15-minute re-verify window). Widens the backward freshness
+   * gate by 30 extra minutes so a payment that was already inside
+   * the original 30-min window doesn't fall outside the bounds on
+   * the retry. The forward bound and all other security checks
+   * (recipient, amount, jetton master, dedupe) stay strict.
+   */
+  isReverify?: boolean;
   logUser?: {
     telegram_id: number;
     username: string | null;
@@ -149,7 +171,10 @@ export async function verifyAndCreditDeposit(args: {
   if (!Number.isFinite(windowAnchorMs)) {
     return { ok: false, reason: 'deposit created_at unparseable' };
   }
-  const windowStart = windowAnchorMs - PAY_PRE_WINDOW_SLACK_MS;
+  const backwardSlack =
+    PAY_PRE_WINDOW_SLACK_MS +
+    (args.isReverify ? REVERIFY_BACKWARD_SLACK_MS : 0);
+  const windowStart = windowAnchorMs - backwardSlack;
   const windowEnd = windowAnchorMs + PAY_WINDOW_MS;
 
   // ----- Binance Pay (personal-account /sapi/v1/pay/transactions) -----

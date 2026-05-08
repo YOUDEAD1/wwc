@@ -2,6 +2,7 @@ import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import {
   createDeposit,
+  findDepositByTxHash,
   getDeposit,
   listPaymentMethods,
   setDepositNote,
@@ -28,6 +29,15 @@ import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
+
+/**
+ * If the same user re-pastes the same TX hash for an *already-pending*
+ * deposit within this window, we reuse the existing deposit row and
+ * re-run the verifier instead of rejecting them as "already used". An
+ * approved deposit (or an older pending one) still falls through to the
+ * "Already used" reject so the dedupe / replay protection stays intact.
+ */
+const REVERIFY_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * Resolve the callback that takes the user back to the top-up root
@@ -359,6 +369,22 @@ async function handleChainTopupSubmit(
   flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'chain_topup' }>,
   text: string,
 ): Promise<void> {
+  // Rate-limit on-chain TX hash submissions per user to prevent
+  // brute-force probing against the upstream verifier (TonAPI /
+  // TronGrid / BscScan). 10 attempts / 60s leaves plenty of headroom
+  // for the legitimate "paste, indexer-lag retry" flow while making
+  // scripted hash-mining useless.
+  const rl = consume(`chain_tx:${ctx.user.telegram_id}`, 10, 60_000);
+  if (!rl.ok) {
+    await ctx.reply(
+      renderMdHtml(
+        `⏱ Too many TX hash attempts. Please try again in ${formatRetryAfter(rl.retryAfterMs)}.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
   const cleaned = text.replace(/\s+/g, '');
   const provider = flow.data.provider;
   let txHash: string;
@@ -402,19 +428,33 @@ async function handleChainTopupSubmit(
   }
 
   let depId: number;
-  try {
-    const dep = await createDeposit({
-      user_id: ctx.user.telegram_id,
-      method: flow.data.method_name,
-      amount: 0.01,
-      reference: txHash,
-      note: 'On-chain tx submitted via auto-verify',
-      tx_hash: txHash,
-    });
-    depId = dep.id;
-  } catch (err) {
-    const msg = (err as { message?: string })?.message ?? '';
-    if (/23505|duplicate/i.test(msg)) {
+  let isReverify = false;
+
+  // 15-minute re-verify window: if the same user is re-pasting the
+  // *same* hash for a still-pending deposit, reuse the existing row
+  // instead of either rejecting them as "already used" or creating a
+  // duplicate that violates the partial-unique tx_hash index. Any
+  // already-approved row, or a stale pending row from a different
+  // user / older than 15 minutes, still falls through to the
+  // "Already used" path so dedupe / replay protection stays intact.
+  const existingByHash = await findDepositByTxHash(txHash).catch(() => null);
+  if (existingByHash) {
+    const ageMs = Date.now() - new Date(existingByHash.created_at).getTime();
+    const sameUser = existingByHash.user_id === ctx.user.telegram_id;
+    const reverifyOk =
+      sameUser &&
+      existingByHash.status === 'pending' &&
+      Number.isFinite(ageMs) &&
+      ageMs >= 0 &&
+      ageMs < REVERIFY_WINDOW_MS;
+    if (reverifyOk) {
+      depId = existingByHash.id;
+      isReverify = true;
+      logger.info(
+        { depId, ageMs, txHash },
+        'topup: reusing pending deposit for re-verification',
+      );
+    } else {
       await ctx.reply(
         renderMdHtml(
           '❌ *Already-used transaction.*\n\nThis transaction hash has already been used to credit a previous deposit. Each transaction can only be used once.',
@@ -424,12 +464,36 @@ async function handleChainTopupSubmit(
       ctx.session.userFlow = undefined;
       return;
     }
-    logger.error({ err }, 'Chain top-up deposit insert failed');
-    await ctx.reply(
-      '⚠️ Could not record your submission. Please try again or contact support.',
-    );
-    ctx.session.userFlow = undefined;
-    return;
+  } else {
+    try {
+      const dep = await createDeposit({
+        user_id: ctx.user.telegram_id,
+        method: flow.data.method_name,
+        amount: 0.01,
+        reference: txHash,
+        note: 'On-chain tx submitted via auto-verify',
+        tx_hash: txHash,
+      });
+      depId = dep.id;
+    } catch (err) {
+      const msg = (err as { message?: string })?.message ?? '';
+      if (/23505|duplicate/i.test(msg)) {
+        await ctx.reply(
+          renderMdHtml(
+            '❌ *Already-used transaction.*\n\nThis transaction hash has already been used to credit a previous deposit. Each transaction can only be used once.',
+          ),
+          { parse_mode: 'HTML' },
+        );
+        ctx.session.userFlow = undefined;
+        return;
+      }
+      logger.error({ err }, 'Chain top-up deposit insert failed');
+      await ctx.reply(
+        '⚠️ Could not record your submission. Please try again or contact support.',
+      );
+      ctx.session.userFlow = undefined;
+      return;
+    }
   }
   ctx.session.userFlow = undefined;
 
@@ -451,6 +515,7 @@ async function handleChainTopupSubmit(
       deposit: dep,
       submission: { txHash },
       openedAtMs: flow.data.opened_at_ms,
+      isReverify,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,

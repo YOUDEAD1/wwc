@@ -27,6 +27,7 @@ import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import {
   createDeposit,
+  findDepositByTxHash,
   getDeposit,
   getProduct,
   listPaymentMethods,
@@ -63,6 +64,18 @@ import type {
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
+
+/**
+ * If the same user re-pastes the same TX hash for an *already-pending*
+ * direct-pay deposit within this window, we reuse the existing row
+ * and re-run the verifier instead of rejecting them as "already used".
+ * Mirrors the top-up re-verify window so a buyer whose first attempt
+ * was deferred to admin can simply paste the hash again to retry
+ * without losing their order. An approved row, or a stale pending row
+ * older than 15 minutes / belonging to another user, still falls
+ * through to the strict "Already used" reject.
+ */
+const REVERIFY_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * Render the short, dangerous-looking "Transaction Cancelled" card
@@ -753,6 +766,21 @@ async function handleChainDirectSubmit(
   >,
   text: string,
 ): Promise<void> {
+  // Rate-limit on-chain TX hash submissions per user to prevent
+  // brute-force probing — same envelope as `handleChainTopupSubmit`
+  // (10 attempts / 60s) and shares the bucket with top-up so a buyer
+  // bouncing between the two flows can't double their throughput.
+  const rl = consume(`chain_tx:${ctx.user.telegram_id}`, 10, 60_000);
+  if (!rl.ok) {
+    await ctx.reply(
+      renderMdHtml(
+        `⏱ Too many TX hash attempts. Please try again in ${formatRetryAfter(rl.retryAfterMs)}.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
   const cleaned = text.replace(/\s+/g, '');
   const provider = flow.data.provider;
   let txHash: string;
@@ -794,20 +822,31 @@ async function handleChainDirectSubmit(
 
   const intent = flow.data.intent;
   let depId: number;
-  try {
-    const dep = await createDeposit({
-      user_id: ctx.user.telegram_id,
-      method: flow.data.method_name,
-      amount: intent.total,
-      reference: txHash,
-      note: 'Direct-pay on-chain tx submitted via auto-verify',
-      tx_hash: txHash,
-      order_intent: intent,
-    });
-    depId = dep.id;
-  } catch (err) {
-    const msg = (err as { message?: string })?.message ?? '';
-    if (/23505|duplicate/i.test(msg)) {
+  let isReverify = false;
+
+  // 15-minute re-verify window — see matching block in
+  // `handleChainTopupSubmit`. Lets a buyer whose first attempt was
+  // deferred to admin (transient API hiccup, indexer lag, etc.)
+  // re-paste the same hash and have the verifier run again on the
+  // existing pending row instead of dead-ending on "Already used".
+  const existingByHash = await findDepositByTxHash(txHash).catch(() => null);
+  if (existingByHash) {
+    const ageMs = Date.now() - new Date(existingByHash.created_at).getTime();
+    const sameUser = existingByHash.user_id === ctx.user.telegram_id;
+    const reverifyOk =
+      sameUser &&
+      existingByHash.status === 'pending' &&
+      Number.isFinite(ageMs) &&
+      ageMs >= 0 &&
+      ageMs < REVERIFY_WINDOW_MS;
+    if (reverifyOk) {
+      depId = existingByHash.id;
+      isReverify = true;
+      logger.info(
+        { depId, ageMs, txHash },
+        'directPay: reusing pending deposit for re-verification',
+      );
+    } else {
       await ctx.reply(
         renderMdHtml(
           '❌ *Already-used transaction.*\n\nThis transaction hash has already been used to credit a previous deposit. Each transaction can only be used once.',
@@ -817,12 +856,37 @@ async function handleChainDirectSubmit(
       ctx.session.userFlow = undefined;
       return;
     }
-    logger.error({ err }, 'Direct-pay chain deposit insert failed');
-    await ctx.reply(
-      '⚠️ Could not record your payment. Please try again or contact support.',
-    );
-    ctx.session.userFlow = undefined;
-    return;
+  } else {
+    try {
+      const dep = await createDeposit({
+        user_id: ctx.user.telegram_id,
+        method: flow.data.method_name,
+        amount: intent.total,
+        reference: txHash,
+        note: 'Direct-pay on-chain tx submitted via auto-verify',
+        tx_hash: txHash,
+        order_intent: intent,
+      });
+      depId = dep.id;
+    } catch (err) {
+      const msg = (err as { message?: string })?.message ?? '';
+      if (/23505|duplicate/i.test(msg)) {
+        await ctx.reply(
+          renderMdHtml(
+            '❌ *Already-used transaction.*\n\nThis transaction hash has already been used to credit a previous deposit. Each transaction can only be used once.',
+          ),
+          { parse_mode: 'HTML' },
+        );
+        ctx.session.userFlow = undefined;
+        return;
+      }
+      logger.error({ err }, 'Direct-pay chain deposit insert failed');
+      await ctx.reply(
+        '⚠️ Could not record your payment. Please try again or contact support.',
+      );
+      ctx.session.userFlow = undefined;
+      return;
+    }
   }
   ctx.session.userFlow = undefined;
 
@@ -844,6 +908,7 @@ async function handleChainDirectSubmit(
       deposit: dep,
       submission: { txHash },
       openedAtMs: flow.data.opened_at_ms,
+      isReverify,
       logUser: {
         telegram_id: ctx.user.telegram_id,
         username: ctx.user.username ?? null,
@@ -1104,15 +1169,18 @@ function buildChainDirectScreen(
       : m.provider === 'usdt_trc20'
         ? '🟢 *USDT (TRC-20) — Direct Pay*'
         : '🔵 *USDT (TON) — Direct Pay*';
+  const totalStr = intent.total.toFixed(2);
   const lines: string[] = [
     heading,
     '',
     `*${intent.product_name}*  ×  *${intent.qty}*`,
-    `Total to pay: *$${intent.total.toFixed(2)}*`,
     '',
+    `💵 *Send EXACTLY:*  \`${totalStr} USDT\``,
+    '',
+    `*To this address:*`,
     `\`${m.address ?? '(address not set)'}\``,
     '',
-    `1️⃣ Send *exactly $${intent.total.toFixed(2)}* in USDT to the address above`,
+    `1️⃣ Send *exactly ${totalStr} USDT* (≈ $${totalStr}) to the address above`,
     '2️⃣ Paste your *Transaction Hash (TXID)* below',
     '',
   ];
@@ -1123,7 +1191,7 @@ function buildChainDirectScreen(
   }
   if (m.provider === 'usdt_ton') {
     lines.push(
-      '⚠️ _Make sure you send USDT (TON Jetton), not native TON. Paste the tx hash from Tonviewer / Tonscan._',
+      `⚠️ _Send the *USDT (TON Jetton)* — exactly *${totalStr} USDT* — NOT native TON coin. Paste the tx hash from Tonviewer / Tonscan below._`,
     );
   }
   lines.push('');
