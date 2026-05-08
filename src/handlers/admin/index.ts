@@ -2539,14 +2539,389 @@ adminBot.callbackQuery('adm:noop', async (ctx) => {
 });
 
 // ---------- Announce ----------
+//
+// Flow:
+//   1. `adm:ann`               → reset to step:'text', prompt for body.
+//   2. Admin sends text        → step:'confirm' + render preview + the
+//                                attach-Buy-button picker.
+//   3. (optional) Buy button   → product picker → label / color / icon
+//                                editor → returns to confirm.
+//   4. `adm:ann:send`          → broadcast. If a Buy button is set, the
+//                                broadcast attaches a single-button
+//                                inline keyboard with a t.me deep-link
+//                                of the form `?start=prod_<id>` so the
+//                                tap lands on the product's quantity
+//                                page directly (handled by
+//                                `handleProductDeepLink` in start.ts).
+
+const ANN_BUY_PER_PAGE = 8;
+
+type AnnounceBuy = {
+  product_id: number;
+  product_name: string;
+  label: string;
+  color: ColorMode;
+  icon_unicode?: string;
+  icon_custom_emoji_id?: string;
+};
+
+function announceBuyDeepLink(product_id: number): string {
+  return `https://t.me/${env.BOT_USERNAME}?start=prod_${product_id}`;
+}
+
+/**
+ * Build the inline keyboard attached to a broadcast announcement.
+ * Returns `undefined` when no Buy button is configured so the
+ * announcement is sent as a plain message.
+ */
+function announceBroadcastKeyboard(buy?: AnnounceBuy): InlineKeyboard | undefined {
+  if (!buy) return undefined;
+  const kb = new InlineKeyboard();
+  kb.url(buy.label, announceBuyDeepLink(buy.product_id));
+  if (buy.icon_custom_emoji_id) kb.icon(buy.icon_custom_emoji_id);
+  const style = colorModeToStyle(buy.color);
+  if (style !== undefined) kb.style(style);
+  return kb;
+}
+
+function announceConfirmKeyboard(recipients: number, buy?: AnnounceBuy): InlineKeyboard {
+  const kb = new InlineKeyboard()
+    .text(`📣 Send to ${recipients}`, 'adm:ann:send')
+    .row();
+  if (buy) {
+    kb.text('🛒 Edit Buy Button', 'adm:ann:buy:edit')
+      .text('🗑 Remove Button', 'adm:ann:buy:remove')
+      .row();
+  } else {
+    kb.text('🛒 Add Buy Button', 'adm:ann:buy:add').row();
+  }
+  kb.text('❌ Cancel', 'adm:root');
+  return kb;
+}
+
+async function showAnnounceConfirm(ctx: AppCtx): Promise<void> {
+  const flow = ctx.session.adminFlow;
+  if (
+    flow?.type !== 'announce' ||
+    !(flow.step === 'confirm' || flow.step === 'buy_label' || flow.step === 'buy_icon')
+  ) {
+    return;
+  }
+  // Always normalize to step:'confirm' on entry — callers may have
+  // landed here from any of the buy_* sub-steps.
+  const buy = (flow.data as { buy?: AnnounceBuy }).buy;
+  ctx.session.adminFlow = { type: 'announce', step: 'confirm', data: { text: flow.data.text, buy } };
+  const recipients = await listUsersForAnnouncement();
+  const previewHtml = renderMdHtml(flow.data.text);
+  const buyLine = buy
+    ? `\n\n🛒 <b>Buy button:</b> <code>${escapeHtml(buy.label)}</code>` +
+      `\n   • Product: <code>${escapeHtml(buy.product_name)}</code> (id=${buy.product_id})` +
+      `\n   • Color: <code>${buy.color}</code>` +
+      `\n   • Icon: ${buy.icon_unicode ? `${buy.icon_unicode} (premium)` : '<i>none</i>'}`
+    : '\n\n<i>No Buy button attached. Tap “Add Buy Button” to deep-link an announcement to a specific product.</i>';
+  await ctx.reply(previewHtml, {
+    parse_mode: 'HTML',
+    reply_markup: announceBroadcastKeyboard(buy),
+  });
+  await ctx.reply(`📣 <b>Confirm broadcast</b>${buyLine}`, {
+    parse_mode: 'HTML',
+    reply_markup: announceConfirmKeyboard(recipients.length, buy),
+  });
+}
+
+async function showAnnounceBuyProductPicker(ctx: AppCtx, page: number): Promise<void> {
+  const { rows, total } = await listAllProducts(page, ANN_BUY_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(total / ANN_BUY_PER_PAGE));
+  const kb = new InlineKeyboard();
+  for (const p of rows) {
+    const tag = p.active ? '' : ' (inactive)';
+    kb.text(`${p.name}${tag}`.slice(0, 60), `adm:ann:buy:set:${p.id}`).row();
+  }
+  if (totalPages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:ann:buy:prod:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, 'adm:noop');
+    if (page + 1 < totalPages) kb.text('Next ▶️', `adm:ann:buy:prod:${page + 1}`);
+    kb.row();
+  }
+  kb.text('⬅️ Back', 'adm:ann:buy:cancel');
+  await ctx.editMessageText(
+    '🛒 *Pick the product the Buy button should open*\n\n' +
+      'The button will deep-link straight to the product\'s quantity ' +
+      'page in the bot — exactly what the user sees after tapping a ' +
+      'product in the Shop.',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+}
+
+function announceBuyEditKeyboard(buy: AnnounceBuy): InlineKeyboard {
+  const kb = new InlineKeyboard()
+    .text('📝 Edit Label', 'adm:ann:buy:label')
+    .row()
+    .text(`🎨 Color: ${COLOR_PREFIX[buy.color] || '∅'} ${buy.color}`, 'adm:ann:buy:color')
+    .row()
+    .text(
+      buy.icon_custom_emoji_id ? `✨ Icon: ${buy.icon_unicode ?? ''} (set)` : '✨ Icon: (none)',
+      'adm:ann:buy:icon',
+    )
+    .row()
+    .text('🔄 Change Product', 'adm:ann:buy:add')
+    .row()
+    .text('🗑 Remove Buy Button', 'adm:ann:buy:remove')
+    .row()
+    .text('✅ Done', 'adm:ann:buy:done');
+  return kb;
+}
+
+async function showAnnounceBuyEdit(ctx: AppCtx): Promise<void> {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') return;
+  const buy = (flow.data as { buy?: AnnounceBuy }).buy;
+  if (!buy) {
+    await showAnnounceBuyProductPicker(ctx, 0);
+    return;
+  }
+  const previewKb = new InlineKeyboard();
+  previewKb.url(buy.label, announceBuyDeepLink(buy.product_id));
+  if (buy.icon_custom_emoji_id) previewKb.icon(buy.icon_custom_emoji_id);
+  const style = colorModeToStyle(buy.color);
+  if (style !== undefined) previewKb.style(style);
+  await ctx.editMessageText(
+    `🛒 *Buy Button — preview*\n\n` +
+      `• Product: \`${buy.product_name}\` (id=${buy.product_id})\n` +
+      `• Label: \`${buy.label}\`\n` +
+      `• Color: \`${buy.color}\`\n` +
+      `• Icon: ${
+        buy.icon_unicode ? `${buy.icon_unicode} (premium id \`${buy.icon_custom_emoji_id}\`)` : '_(none)_'
+      }`,
+    { parse_mode: 'Markdown', reply_markup: previewKb },
+  );
+  await ctx.reply('Configure the Buy button:', {
+    reply_markup: announceBuyEditKeyboard(buy),
+  });
+}
+
+function announceColorPickerKeyboard(): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const c of Object.keys(COLOR_PREFIX)) {
+    kb.text(`${COLOR_PREFIX[c as ColorMode] || '∅'} ${c}`, `adm:ann:buy:color:${c}`);
+  }
+  kb.row().text('⬅️ Back', 'adm:ann:buy:edit');
+  return kb;
+}
+
 adminBot.callbackQuery('adm:ann', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = { type: 'announce', step: 'text', data: {} };
   await ctx.editMessageText(
     '📣 *Announce*\n\nSend the announcement text.\n\n' +
       'Tip: use `{tiger}` `{fire}` `{rocket}` etc. to insert mapped emojis (premium-aware).' +
+      '\n\nAfter the text you can attach an optional *Buy Button* that deep-links to a product\'s quantity page.' +
       '\n\nOr `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery('adm:ann:buy:add', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  await showAnnounceBuyProductPicker(ctx, 0);
+});
+
+adminBot.callbackQuery(/^adm:ann:buy:prod:(\d+)$/, async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  await showAnnounceBuyProductPicker(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:ann:buy:set:(\d+)$/, async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  const productId = Number(ctx.match[1]);
+  const product = await getProduct(productId);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'Product not found.', show_alert: true });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  // Preserve any previously-configured chrome (label override, color,
+  // icon) when the admin swaps to a different product. Defaults are
+  // only applied on the very first product pick (no prior `buy`).
+  const prior = (flow.data as { buy?: AnnounceBuy }).buy;
+  const buy: AnnounceBuy = prior
+    ? { ...prior, product_id: product.id, product_name: product.name }
+    : {
+        product_id: product.id,
+        product_name: product.name,
+        label: `🛒 Buy ${product.name}`,
+        color: 'green',
+      };
+  ctx.session.adminFlow = {
+    type: 'announce',
+    step: 'confirm',
+    data: { text: flow.data.text, buy },
+  };
+  await showAnnounceBuyEdit(ctx);
+});
+
+adminBot.callbackQuery('adm:ann:buy:edit', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  await showAnnounceBuyEdit(ctx);
+});
+
+adminBot.callbackQuery('adm:ann:buy:cancel', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  await showAnnounceConfirm(ctx);
+});
+
+adminBot.callbackQuery('adm:ann:buy:done', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  await showAnnounceConfirm(ctx);
+});
+
+adminBot.callbackQuery('adm:ann:buy:remove', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery({ text: 'Buy button removed.' });
+  ctx.session.adminFlow = {
+    type: 'announce',
+    step: 'confirm',
+    data: { text: flow.data.text },
+  };
+  await showAnnounceConfirm(ctx);
+});
+
+adminBot.callbackQuery('adm:ann:buy:label', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  const buy = (flow.data as { buy?: AnnounceBuy }).buy;
+  if (!buy) {
+    await ctx.answerCallbackQuery({ text: 'Pick a product first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'announce',
+    step: 'buy_label',
+    data: { text: flow.data.text, buy },
+  };
+  await ctx.editMessageText(
+    `📝 *Edit Buy button label*\n\nCurrent: \`${buy.label}\`\n\n` +
+      'Send the new label as a text message (max 64 chars). ' +
+      'Premium custom emojis are supported — they\'ll render inline ' +
+      'on premium clients and as their unicode fallback elsewhere.\n\n' +
+      'Type `/cancel` to keep the current label.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:ann:buy:edit'),
+    },
+  );
+});
+
+adminBot.callbackQuery('adm:ann:buy:color', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  const buy = (flow.data as { buy?: AnnounceBuy }).buy;
+  if (!buy) {
+    await ctx.answerCallbackQuery({ text: 'Pick a product first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(
+    `🎨 *Pick a button color* (Bot API 9.4 styles)\n\n` +
+      `Current: ${COLOR_PREFIX[buy.color] || '∅'} \`${buy.color}\``,
+    { parse_mode: 'Markdown', reply_markup: announceColorPickerKeyboard() },
+  );
+});
+
+adminBot.callbackQuery(/^adm:ann:buy:color:(.+)$/, async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  const buy = (flow.data as { buy?: AnnounceBuy }).buy;
+  if (!buy) {
+    await ctx.answerCallbackQuery({ text: 'Pick a product first.' });
+    return;
+  }
+  const color = ctx.match[1] as ColorMode;
+  if (!(color in COLOR_PREFIX)) {
+    await ctx.answerCallbackQuery({ text: 'Unknown color.' });
+    return;
+  }
+  await ctx.answerCallbackQuery({ text: `Color → ${color}` });
+  ctx.session.adminFlow = {
+    type: 'announce',
+    step: 'confirm',
+    data: { text: flow.data.text, buy: { ...buy, color } },
+  };
+  await showAnnounceBuyEdit(ctx);
+});
+
+adminBot.callbackQuery('adm:ann:buy:icon', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'announce') {
+    await ctx.answerCallbackQuery({ text: 'Open Broadcast first.' });
+    return;
+  }
+  const buy = (flow.data as { buy?: AnnounceBuy }).buy;
+  if (!buy) {
+    await ctx.answerCallbackQuery({ text: 'Pick a product first.' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'announce',
+    step: 'buy_icon',
+    data: { text: flow.data.text, buy },
+  };
+  await ctx.editMessageText(
+    '✨ *Set Buy button icon*\n\n' +
+      'Send a *premium* emoji message — the bot will read its ' +
+      '`custom_emoji_id` automatically. Bot API 9.4 only renders ' +
+      'icons for premium-emoji ids; plain unicode emojis aren\'t ' +
+      'supported in the icon slot (use the label for those).\n\n' +
+      'Type `clear` to remove the icon, or `/cancel` to keep the ' +
+      'current one.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:ann:buy:edit'),
+    },
   );
 });
 
@@ -2556,7 +2931,9 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
     await ctx.answerCallbackQuery({ text: 'Nothing to send.' });
     return;
   }
+  await ctx.answerCallbackQuery();
   const body = flow.data.text;
+  const buy = flow.data.buy;
   const recipients = await listUsersForAnnouncement();
   await ctx.editMessageText(`📣 Broadcasting to ${recipients.length} user(s)…`);
   // Render once: HTML output expands `{tokens}` AND auto-wraps any
@@ -2566,7 +2943,14 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
   let fail = 0;
   for (const r of recipients) {
     try {
-      await ctx.api.sendMessage(r.telegram_id, html, { parse_mode: 'HTML' });
+      // Build a fresh keyboard per recipient — the underlying
+      // grammyjs InlineKeyboard is mutable, and reusing the same
+      // instance across `sendMessage` calls is unsafe.
+      const reply_markup = announceBroadcastKeyboard(buy);
+      await ctx.api.sendMessage(r.telegram_id, html, {
+        parse_mode: 'HTML',
+        ...(reply_markup ? { reply_markup } : {}),
+      });
       ok++;
     } catch (err) {
       fail++;
@@ -4898,15 +5282,97 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'announce') {
       if (flow.step === 'text') {
-        ctx.session.adminFlow = { type: 'announce', step: 'confirm', data: { text } };
-        const recipients = await listUsersForAnnouncement();
-        const kb = new InlineKeyboard()
-          .text(`📣 Send to ${recipients.length}`, 'adm:ann:send')
-          .text('❌ Cancel', 'adm:root');
-        // Preview exactly what users will see: HTML output with
-        // expanded tokens AND auto-wrapped unicode emojis.
-        await ctx.reply(renderMdHtml(text), { parse_mode: 'HTML' });
-        await ctx.reply('Confirm sending:', { reply_markup: kb });
+        ctx.session.adminFlow = {
+          type: 'announce',
+          step: 'confirm',
+          data: { text },
+        };
+        await showAnnounceConfirm(ctx);
+        return;
+      }
+      if (flow.step === 'buy_label') {
+        // Cap to 64 chars so the inline button never gets truncated
+        // mid-emoji on Android. Keep premium-emoji markers intact —
+        // `injectCustomEmojiMarkers` ran above already, but the URL
+        // button label is RAW string (no HTML render), so we want
+        // the unicode-only label here. Strip {{ce:..|x}} markers
+        // back to the unicode fallback.
+        const trimmed = text
+          .replace(/\{\{ce:[^|}]+\|([^}]*)\}\}/g, '$1')
+          .trim()
+          .slice(0, 64);
+        if (!trimmed) {
+          await ctx.reply('❌ Empty label. Send the new button label or `/cancel`.');
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'announce',
+          step: 'confirm',
+          data: { text: flow.data.text, buy: { ...flow.data.buy, label: trimmed } },
+        };
+        await ctx.reply(`✅ Label updated → \`${trimmed}\``, { parse_mode: 'Markdown' });
+        await showAnnounceBuyEdit(ctx);
+        return;
+      }
+      if (flow.step === 'buy_icon') {
+        // `clear` keyword drops the icon; otherwise we expect a
+        // premium emoji message and pull `custom_emoji_id` off the
+        // first matching entity. Plain unicode is rejected because
+        // Bot API 9.4 only renders icons for premium-emoji ids.
+        if (text.trim().toLowerCase() === 'clear') {
+          ctx.session.adminFlow = {
+            type: 'announce',
+            step: 'confirm',
+            data: {
+              text: flow.data.text,
+              buy: {
+                ...flow.data.buy,
+                icon_unicode: undefined,
+                icon_custom_emoji_id: undefined,
+              },
+            },
+          };
+          await ctx.reply('🗑 Icon cleared.');
+          await showAnnounceBuyEdit(ctx);
+          return;
+        }
+        const ce = (ctx.message.entities ?? []).find(
+          (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
+        ) as { offset: number; length: number; custom_emoji_id: string } | undefined;
+        if (!ce) {
+          await ctx.reply(
+            '❌ Send a *premium* emoji message (the bot will read its `custom_emoji_id`), or type `clear` / `/cancel`.',
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+        const raw = ctx.message.text;
+        const unicode = raw.slice(ce.offset, ce.offset + ce.length);
+        const customId = ce.custom_emoji_id;
+        if (!unicode || !customId || !/^\d{8,}$/.test(customId)) {
+          await ctx.reply(
+            '❌ That emoji has no valid premium id. Send a real premium emoji, or type `clear`.',
+          );
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'announce',
+          step: 'confirm',
+          data: {
+            text: flow.data.text,
+            buy: {
+              ...flow.data.buy,
+              icon_unicode: unicode,
+              icon_custom_emoji_id: customId,
+            },
+          },
+        };
+        await ctx.reply(
+          `✅ Icon set → ${unicode} (premium id \`${customId}\`).`,
+          { parse_mode: 'Markdown' },
+        );
+        await showAnnounceBuyEdit(ctx);
+        return;
       }
       return;
     }

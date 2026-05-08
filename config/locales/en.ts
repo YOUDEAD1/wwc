@@ -665,7 +665,7 @@ export const en: Record<string, string> = {
   'support.live.user_active':
     '{support_live_active} Live Support\n\n' +
     'Support session active.\n\n' +
-    'Please message us via the Live Support tab created above in this chat.',
+    'Just type your message right here in this chat — every message is delivered straight to the admin. Tap *Cancel Support* anytime to end the session.',
   // Small status line edited into the original Support screen so chat
   // history shows when each session was opened.
   'support.live.session_created': '🟢 *Live Support session created*',

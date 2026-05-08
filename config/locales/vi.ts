@@ -294,7 +294,7 @@ export const vi: Record<string, string> = {
   'support.live.user_active':
     '{support_live_active} Hỗ trợ trực tiếp\n\n' +
     'Phiên hỗ trợ đang hoạt động.\n\n' +
-    'Vui lòng nhắn tin cho chúng tôi qua thẻ Hỗ trợ trực tiếp được tạo phía trên trong cuộc trò chuyện này.',
+    'Hãy nhắn tin trực tiếp tại đây — mọi tin nhắn sẽ được chuyển ngay đến quản trị viên. Bấm *Hủy hỗ trợ* bất cứ lúc nào để kết thúc phiên.',
   'support.live.session_created': '🟢 *Đã tạo phiên Hỗ trợ trực tiếp*',
   'support.live.admin_started':
     '🟢 *Bắt đầu Hỗ trợ trực tiếp*\n\n' +
