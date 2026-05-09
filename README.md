@@ -190,7 +190,7 @@ npm run lint
    supabase link --project-ref <your-ref>
    supabase db push
    ```
-4. The migration seeds the admin row for user ID `7913962419`
+4. The migration seeds the admin row for user ID `8004955979`
    (`@safwantiger`). To add more admins later:
 
    ```sql
@@ -221,7 +221,7 @@ npm run lint
    | ------------------------------ | ---------------------------------------------- |
    | `BOT_TOKEN`                    | from BotFather                                 |
    | `BOT_USERNAME`                 | `safwantigershopbot`                           |
-   | `ADMIN_USER_ID`                | `7913962419`                                   |
+   | `ADMIN_USER_ID`                | `8004955979`                                   |
    | `SUPABASE_URL`                 | `https://xxx.supabase.co`                      |
    | `SUPABASE_SERVICE_ROLE_KEY`    | the **service_role** JWT                       |
    | `BOT_MODE`                     | `polling` (recommended)                        |

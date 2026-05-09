@@ -186,7 +186,7 @@ alter table public.referrals       enable row level security;
 -- Seed: primary admin (replace with the real ID from your .env)
 -- =====================================================================
 insert into public.admins (telegram_id, username)
-values (7913962419, 'safwantiger')
+values (8004955979, 'safwantiger')
 on conflict (telegram_id) do nothing;
 
 -- Default settings seeds
