@@ -393,7 +393,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
   // Digits are appended as strings so `1` + `1` becomes `"11"` (not
   // arithmetic 2). `Back` (cancel) is wired straight to `prod:<id>`
   // in the keyboard.
-  bot.callbackQuery(/^qkp:(\d+):(d:[0-9]|back|clear|max|confirm)$/, async (ctx) => {
+  bot.callbackQuery(/^qkp:(\d+):(d:[0-9]|p:\d{1,4}|back|clear|max|confirm)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const action = ctx.match[2]!;
     const raw = await getProduct(id);
@@ -405,7 +405,26 @@ export function registerShop(bot: Composer<AppCtx>): void {
     if (!ctx.session.qtyInput) ctx.session.qtyInput = {};
     const prev = ctx.session.qtyInput[id] ?? '';
     let buf = prev;
-    if (action.startsWith('d:')) {
+    if (action.startsWith('p:')) {
+      // Quick-pick preset (25 / 50 / 100). Snap the buffer to the
+      // chosen preset, clamped down to the user's purchasable
+      // ceiling so a 30-stock product taps to 30 (not the silently-
+      // unattainable 100). Out-of-stock products short-circuit the
+      // same way as `max` so the user sees an explanation instead
+      // of a no-op tap.
+      const preset = Number(action.slice(2));
+      const ceiling = p.unlimited_stock
+        ? QTY_MAX
+        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      if (ceiling < QTY_MIN) {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
+          show_alert: true,
+        });
+        return;
+      }
+      buf = String(Math.min(preset, ceiling));
+    } else if (action.startsWith('d:')) {
       const digit = action.slice(2);
       // Cap at 4 digits and at `min(QTY_MAX, stock)` so the buffer
       // never represents a qty the user couldn't actually buy.
