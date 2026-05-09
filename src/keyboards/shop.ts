@@ -170,6 +170,8 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
  *   │  7  │  8  │  9  │
  *   ├─────┼─────┼─────┤
  *   │  ⌫  │  0  │ 🗑  │
+ *   ├─────┼─────┼─────┤
+ *   │ 25  │ 50  │ 100 │
  *   ├─────┴─────┴─────┤
  *   │ 🎯 Max │ ✅ Confirm│
  *   ├─────────────────┤
@@ -180,10 +182,22 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
  *   qkp:<id>:d:<digit>   — push the digit onto the buffer
  *   qkp:<id>:back        — pop the last digit
  *   qkp:<id>:clear       — wipe the buffer
+ *   qkp:<id>:p:<value>   — snap buffer to a preset (25 / 50 / 100),
+ *                          clamped down to min(QTY_MAX, stock)
  *   qkp:<id>:max         — fill buffer with min(QTY_MAX, stock)
  *   qkp:<id>:confirm     — validate + apply
  *   prod:<id>            — Back / cancel (no apply)
  */
+
+/**
+ * Quick-pick quantity presets shown above the Max / Confirm row on
+ * the custom-quantity keypad. Each tap snaps the digit buffer to the
+ * preset value (clamped down to `min(QTY_MAX, stock)` so a small-
+ * stock product never silently exceeds availability). Order them
+ * smallest-to-largest left-to-right so the row reads naturally.
+ */
+export const QTY_KEYPAD_PRESETS = [25, 50, 100] as const;
+
 export function qtyKeypadKeyboard(
   lang: Lang,
   product: DBProduct,
@@ -203,6 +217,14 @@ export function qtyKeypadKeyboard(
   inlineBtn(kb, lang, 'qty_keypad_back', `qkp:${id}:back`);
   kb.text('0', `qkp:${id}:d:0`);
   inlineBtn(kb, lang, 'qty_keypad_clear', `qkp:${id}:clear`);
+  kb.row();
+  // Quick-pick preset row — saves the bulk-buy user from tapping
+  // each digit individually. Snapping happens in the keypad action
+  // handler in `src/handlers/shop.ts` (clamps down to the user's
+  // purchasable ceiling).
+  for (const preset of QTY_KEYPAD_PRESETS) {
+    kb.text(String(preset), `qkp:${id}:p:${preset}`);
+  }
   kb.row();
   // Max + Confirm share a row so the bulk-buy gesture (Max → Confirm)
   // is two adjacent taps. The action handler in
