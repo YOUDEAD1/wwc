@@ -295,6 +295,10 @@ export type AdminFlow =
   | { type: 'promo_edit_qty'; step: 'value'; data: { promo_id: number } }
   | { type: 'promo_edit_discount'; step: 'value'; data: { promo_id: number } }
   | { type: 'promo_edit_name'; step: 'value'; data: { promo_id: number } }
+  // Exclude-a-user prompt opened from the promo card. Accepts a
+  // numeric Telegram id or @username (same resolution as the
+  // `pick_user` step in the new-promo wizard).
+  | { type: 'promo_exclude_add'; step: 'pick_user'; data: { promo_id: number } }
   // -------- Per-payment-method chrome editor --------
   // Admin entered the chrome editor for a specific row in the
   // Payment Methods list. `step:'icon'` waits for ONE message (any

@@ -61,6 +61,8 @@ import {
   getPromoImpact,
   updatePromo,
   deletePromo,
+  addPromoExclusion,
+  removePromoExclusion,
   updateProduct,
   addProductItems,
   countAvailableProductItems,
@@ -4146,6 +4148,24 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
     );
   }
 
+  // Excluded users — opt-out list, applied on top of the scope
+  // filter. We surface the count + first few IDs inline so the
+  // admin doesn't have to drill in to know if anyone is excluded.
+  const excluded = Array.isArray(p.excluded_telegram_ids)
+    ? p.excluded_telegram_ids.map(Number)
+    : [];
+  if (excluded.length > 0) {
+    const preview = excluded.slice(0, 5).map((id) => `\`${id}\``).join(', ');
+    const more = excluded.length > 5 ? `, +${excluded.length - 5} more` : '';
+    lines.push(
+      '',
+      `🚫 *Excluded users (${excluded.length})*`,
+      `   ${preview}${more}`,
+    );
+  } else {
+    lines.push('', `🚫 *Excluded users:* _none_`);
+  }
+
   // Impact stats — only meaningful once at least one order has used
   // this promo, but we always render the section so the admin sees
   // "0 orders so far" for new rules.
@@ -4179,6 +4199,12 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
     .text('💵 Discount', `adm:promo:editd:${p.id}`)
     .row()
     .text('🏷 Name', `adm:promo:editn:${p.id}`)
+    .text(
+      excluded.length > 0
+        ? `🚫 Excluded (${excluded.length})`
+        : '🚫 Exclude users',
+      `adm:promo:ex:${p.id}`,
+    )
     .row()
     .text('🗑 Delete', `adm:promo:del:${p.id}`)
     .row()
@@ -4220,6 +4246,123 @@ adminBot.callbackQuery(/^adm:promo:delok:(\d+)$/, async (ctx) => {
   await deletePromo(id);
   await ctx.answerCallbackQuery({ text: 'Deleted' });
   await showPromoList(ctx, 0);
+});
+
+// -------- Per-promo user exclusion list ---------------------------
+//
+// Lets the admin opt specific users OUT of a promo that would
+// otherwise apply (default / per-product). Filtering happens in
+// `findApplicablePromos` and `findScopedActivePromos` — this is
+// purely the CRUD UI.
+//
+// Routes:
+//   adm:promo:ex:<id>             → list excluded users for promo
+//   adm:promo:exadd:<id>          → start "exclude user" prompt
+//   adm:promo:exdel:<id>:<tg>     → un-exclude a user
+
+async function showPromoExclusions(ctx: AppCtx, promo_id: number): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const p = await getPromo(promo_id);
+  if (!p) {
+    await sendOrEdit(
+      ctx,
+      '❓ Promo not found.',
+      new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+    );
+    return;
+  }
+  const excluded = Array.isArray(p.excluded_telegram_ids)
+    ? p.excluded_telegram_ids.map(Number)
+    : [];
+  // Hydrate handles for the listed users — same pattern as the
+  // promo card's target-user lookup. Misses (user hasn't /start-ed
+  // the bot) render as just the numeric id.
+  const handles = await Promise.all(
+    excluded.map(async (id) => {
+      const u = await findUserById(id);
+      const label = u?.username
+        ? `@${u.username}`
+        : (u?.first_name ?? '_no name_');
+      return { id, label };
+    }),
+  );
+
+  const lines: string[] = [
+    `🚫 *Promo #${p.id} — Excluded users*`,
+    '',
+    `Promo: qty ≥ *${p.min_qty}* → −*$${Number(p.discount_amount).toFixed(2)}* ` +
+      `(${p.active ? '🟢 Active' : '⏸ Paused'})`,
+    `Scope: ${promoScopeLabel(p)}`,
+    '',
+  ];
+  if (handles.length === 0) {
+    lines.push(
+      '_Nobody is excluded._',
+      '',
+      'Tap *➕ Exclude a user* to opt someone out of this promo.',
+      'They will keep seeing other promos that apply to them — only',
+      'this specific rule will be skipped at checkout.',
+    );
+  } else {
+    lines.push(`*${handles.length}* user${handles.length === 1 ? '' : 's'} opted out:`);
+    for (const h of handles) {
+      lines.push(`   • \`${h.id}\` — ${escapeHtml(h.label)}`);
+    }
+  }
+
+  const kb = new InlineKeyboard()
+    .text('➕ Exclude a user', `adm:promo:exadd:${p.id}`)
+    .row();
+  for (const h of handles) {
+    kb.text(`🗑 Remove ${h.id}`, `adm:promo:exdel:${p.id}:${h.id}`).row();
+  }
+  kb.text('⬅️ Back to promo', `adm:promo:v:${p.id}`);
+  await sendOrEdit(ctx, lines.join('\n'), kb);
+}
+
+adminBot.callbackQuery(/^adm:promo:ex:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showPromoExclusions(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:promo:exadd:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  ctx.session.adminFlow = {
+    type: 'promo_exclude_add',
+    step: 'pick_user',
+    data: { promo_id: id },
+  };
+  await ctx.editMessageText(
+    [
+      `🚫 *Promo #${id} — Exclude a user*`,
+      '',
+      'Send the *numeric Telegram ID* (e.g. `123456789`) or `@username`',
+      'of the user to opt out of this promo. They will still be able',
+      'to buy the product — only this promo will be skipped for them.',
+      '',
+      '`/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Cancel', `adm:promo:ex:${id}`),
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:promo:exdel:(\d+):(\d+)$/, async (ctx) => {
+  const promo_id = Number(ctx.match[1]);
+  const telegram_id = Number(ctx.match[2]);
+  try {
+    await removePromoExclusion(promo_id, telegram_id);
+    await ctx.answerCallbackQuery({ text: 'Un-excluded.' });
+  } catch {
+    await ctx.answerCallbackQuery({
+      text: 'Could not un-exclude — try again.',
+      show_alert: true,
+    });
+  }
+  await showPromoExclusions(ctx, promo_id);
 });
 
 // -------- Full overview (paginated, grouped by scope tier) -------
@@ -6088,6 +6231,39 @@ adminBot.on('message:text', async (ctx, next) => {
       ctx.session.adminFlow = undefined;
       await ctx.reply(name ? `✅ Name updated.` : `✅ Name cleared.`);
       await showPromoCard(ctx, flow.data.promo_id);
+      return;
+    }
+
+    if (flow.type === 'promo_exclude_add') {
+      // Resolve to a numeric telegram_id — same logic as the new-
+      // promo `pick_user` step. @usernames only resolve once the
+      // user has /start-ed the bot, but a raw numeric id always
+      // works so the admin can opt out users they only know by ID.
+      const query = text.replace(/^@/, '');
+      const numeric = /^\d+$/.test(query);
+      let telegram_id: number | null = null;
+      if (numeric) {
+        telegram_id = Number(query);
+      } else {
+        const u = await findUserByUsername(query);
+        if (u) telegram_id = u.telegram_id;
+      }
+      if (telegram_id === null || !Number.isFinite(telegram_id) || telegram_id <= 0) {
+        await ctx.reply(
+          'Could not resolve that user. Send a numeric Telegram ID ' +
+            '(e.g. `123456789`) or `@username` of a user who has ' +
+            'previously started the bot. Or `/cancel`.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      const promo_id = flow.data.promo_id;
+      await addPromoExclusion(promo_id, telegram_id);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`🚫 \`${telegram_id}\` is now excluded from promo #${promo_id}.`, {
+        parse_mode: 'Markdown',
+      });
+      await showPromoExclusions(ctx, promo_id);
       return;
     }
   } catch (err) {
