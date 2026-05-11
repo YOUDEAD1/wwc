@@ -136,6 +136,14 @@ export type DBPromo = {
   created_at: string;
   updated_at: string;
   created_by: number | null;
+  /**
+   * Telegram ids that are explicitly opted out of this promo even
+   * if they otherwise match the scope. Empty array by default —
+   * resolve-time filtering happens in `findApplicablePromos` /
+   * `findScopedActivePromos` so the rest of the pricing stack
+   * doesn't have to know about the exclusion list.
+   */
+  excluded_telegram_ids: number[];
 };
 
 export type DBDeposit = {

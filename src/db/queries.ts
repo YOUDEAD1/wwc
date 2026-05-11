@@ -904,7 +904,20 @@ export async function findApplicablePromos(
     logger.error({ err: error, telegram_id, product_id, qty }, 'findApplicablePromos failed');
     return [];
   }
-  return (data ?? []) as DBPromo[];
+  return filterExcluded((data ?? []) as DBPromo[], telegram_id);
+}
+
+/**
+ * Drop any promo whose `excluded_telegram_ids` contains the given
+ * user. Centralised so both the resolve path and the teaser path
+ * apply the same opt-out rule.
+ */
+function filterExcluded(rows: DBPromo[], telegram_id: number): DBPromo[] {
+  return rows.filter(
+    (p) =>
+      !Array.isArray(p.excluded_telegram_ids) ||
+      !p.excluded_telegram_ids.map(Number).includes(telegram_id),
+  );
 }
 
 /**
@@ -926,7 +939,75 @@ export async function findScopedActivePromos(
     logger.error({ err: error, telegram_id, product_id }, 'findScopedActivePromos failed');
     return [];
   }
-  return (data ?? []) as DBPromo[];
+  return filterExcluded((data ?? []) as DBPromo[], telegram_id);
+}
+
+/**
+ * Add a telegram_id to a promo's exclusion list. Idempotent — re-
+ * adding an already-excluded user is a no-op (Postgres `array_append`
+ * would create duplicates, so we use `array(select distinct ...)`
+ * via a small JS read-modify-write instead).
+ *
+ * Returns the resulting exclusion list so the admin UI can show
+ * the updated count without an extra fetch.
+ */
+export async function addPromoExclusion(
+  promo_id: number,
+  telegram_id: number,
+): Promise<number[]> {
+  const { data: current, error: readErr } = await supabase
+    .from('promos')
+    .select('excluded_telegram_ids')
+    .eq('id', promo_id)
+    .maybeSingle();
+  if (readErr) {
+    logger.error({ err: readErr, promo_id, telegram_id }, 'addPromoExclusion read failed');
+    throw readErr;
+  }
+  const existing = (current?.excluded_telegram_ids ?? []).map(Number);
+  if (existing.includes(telegram_id)) return existing;
+  const next = [...existing, telegram_id];
+  const { error } = await supabase
+    .from('promos')
+    .update({ excluded_telegram_ids: next, updated_at: new Date().toISOString() })
+    .eq('id', promo_id);
+  if (error) {
+    logger.error({ err: error, promo_id, telegram_id }, 'addPromoExclusion write failed');
+    throw error;
+  }
+  return next;
+}
+
+/**
+ * Remove a telegram_id from a promo's exclusion list. Idempotent —
+ * removing a user who isn't on the list is a no-op. Returns the
+ * resulting exclusion list.
+ */
+export async function removePromoExclusion(
+  promo_id: number,
+  telegram_id: number,
+): Promise<number[]> {
+  const { data: current, error: readErr } = await supabase
+    .from('promos')
+    .select('excluded_telegram_ids')
+    .eq('id', promo_id)
+    .maybeSingle();
+  if (readErr) {
+    logger.error({ err: readErr, promo_id, telegram_id }, 'removePromoExclusion read failed');
+    throw readErr;
+  }
+  const existing = (current?.excluded_telegram_ids ?? []).map(Number);
+  if (!existing.includes(telegram_id)) return existing;
+  const next = existing.filter((id: number) => id !== telegram_id);
+  const { error } = await supabase
+    .from('promos')
+    .update({ excluded_telegram_ids: next, updated_at: new Date().toISOString() })
+    .eq('id', promo_id);
+  if (error) {
+    logger.error({ err: error, promo_id, telegram_id }, 'removePromoExclusion write failed');
+    throw error;
+  }
+  return next;
 }
 
 /** Fetch a single promo by id, for the admin edit/delete screens. */
