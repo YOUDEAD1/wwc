@@ -875,6 +875,37 @@ export async function clearAllUserPriceOverrides(
   return count ?? 0;
 }
 
+/**
+ * Count active overrides on a single product. Used by the product
+ * editor to render the "Clear all custom prices" button label and
+ * to short-circuit the clear flow when there's nothing to wipe.
+ */
+export async function countProductPriceOverrides(
+  product_id: number,
+): Promise<number> {
+  const { count } = await supabase
+    .from('user_price_overrides')
+    .select('product_id', { count: 'exact', head: true })
+    .eq('product_id', product_id);
+  return count ?? 0;
+}
+
+/**
+ * Wipe every user's price override for a single product so they all
+ * fall back to the product's default price. Returns the row count
+ * deleted so the admin toast can confirm how many users were
+ * affected.
+ */
+export async function clearAllProductPriceOverrides(
+  product_id: number,
+): Promise<number> {
+  const { count } = await supabase
+    .from('user_price_overrides')
+    .delete({ count: 'exact' })
+    .eq('product_id', product_id);
+  return count ?? 0;
+}
+
 // ---------- Promos ----------
 
 /**
