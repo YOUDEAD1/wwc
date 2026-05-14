@@ -44,6 +44,8 @@ import {
   setUserProductPrice,
   clearUserProductPrice,
   clearAllUserPriceOverrides,
+  countProductPriceOverrides,
+  clearAllProductPriceOverrides,
   getProduct,
   setDepositAmount,
   setDepositStatus,
@@ -1000,6 +1002,11 @@ async function showProductEditor(
   // denormalised mirror, the truth is `countAvailableProductItems()`.
   // This keeps the card honest even if a sync ever misses.
   const stockCell = p.unlimited_stock ? '∞' : String(itemsCount);
+  // Per-product custom-price override count — surfaced inline + drives
+  // the "Clear all custom prices" button label. Cheap (one head-count
+  // query) and lets the admin see at a glance whether any user has a
+  // non-default price on this product.
+  const overrideCount = await countProductPriceOverrides(product_id);
   const lines = [
     `✏️ *Edit Product #${p.id}*`,
     '',
@@ -1013,6 +1020,7 @@ async function showProductEditor(
     `*Tutorial File:* ${p.tutorial_file_id ? '`' + p.tutorial_file_type + '`' : '_unset_'}`,
     `*Tutorial URL:* ${p.tutorial_url ? '`' + p.tutorial_url + '`' : '_unset_'}`,
     `*Items pool:* ${itemsCount} unconsumed`,
+    `*Custom prices:* ${overrideCount} user override${overrideCount === 1 ? '' : 's'}`,
     '',
     '_Tap a button to edit. For "Set Premium Emoji" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
   ];
@@ -1057,6 +1065,16 @@ async function showProductEditor(
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
     .row();
+  // One-click wipe of every user's custom-price override for this
+  // product so they all fall back to the default Price above. Hidden
+  // when nobody has an override on this product — the disabled-style
+  // button would just be visual noise.
+  if (overrideCount > 0) {
+    kb.text(
+      `🧹 Clear all custom prices (${overrideCount})`,
+      `adm:prod:cpclr:${p.id}:${page}`,
+    ).row();
+  }
   kb.text('🆔 Edit ID', `adm:prod:id:set:${p.id}:${page}`)
     .text('🔗 Share Link', `adm:prod:share:${p.id}:${page}`)
     .row();
@@ -1422,6 +1440,58 @@ adminBot.callbackQuery(/^adm:prod:items:clr:(\d+):(\d+)$/, async (ctx) => {
   await clearProductItems(id);
   await ctx.answerCallbackQuery({ text: 'Pool cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Clear all per-user custom prices for this product ---
+// Two-step flow so a stray tap doesn't silently wipe pricing
+// agreements across the whole user base:
+//   adm:prod:cpclr:<pid>:<page>     → show confirm dialog
+//   adm:prod:cpclr:ok:<pid>:<page>  → run the delete
+adminBot.callbackQuery(/^adm:prod:cpclr:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const [p, overrideCount] = await Promise.all([
+    getProduct(id),
+    countProductPriceOverrides(id),
+  ]);
+  if (!p) {
+    await ctx.editMessageText('⚠️ Product not found.', {
+      reply_markup: new InlineKeyboard().text('⬅️ Back', `adm:prod:list:${page}`),
+    });
+    return;
+  }
+  if (overrideCount === 0) {
+    // Edge case — the count changed to 0 between the editor render
+    // and the tap. Bounce back to the editor with a toast instead of
+    // showing a confirm dialog for a no-op.
+    await showProductEditor(ctx, id, page);
+    return;
+  }
+  const kb = new InlineKeyboard()
+    .text('🧹 Yes, clear all', `adm:prod:cpclr:ok:${id}:${page}`)
+    .text('❌ Cancel', `adm:prod:edit:${id}:${page}`);
+  await ctx.editMessageText(
+    [
+      `🧹 *Clear all custom prices for #${p.id} ${escapeHtml(p.name)}?*`,
+      '',
+      `This will remove *${overrideCount}* user override${overrideCount === 1 ? '' : 's'}.`,
+      `Affected users will fall back to the default price of *$${Number(p.price).toFixed(2)}*.`,
+      '',
+      'This cannot be undone — re-enter each user override manually if you change your mind.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:cpclr:ok:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const n = await clearAllProductPriceOverrides(id);
+  await ctx.answerCallbackQuery({
+    text: n === 0 ? 'No overrides to clear.' : `🧹 Cleared ${n} override${n === 1 ? '' : 's'}.`,
+  });
+  await showProductEditor(ctx, id, page);
 });
 
 // --- Stock Inspection screen ---
