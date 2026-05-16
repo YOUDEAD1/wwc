@@ -305,6 +305,12 @@ export const vi: Record<string, string> = {
     '{support_live_closed} Đã đóng Hỗ trợ trực tiếp.\n\n' +
     'Mở lại Hỗ trợ từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
   'support.live.admin_ended': '🔴 *Phiên Hỗ trợ trực tiếp đã đóng.*',
+  'support.live.unavailable_popup':
+    '⚠️ Hỗ trợ trực tiếp tạm thời không khả dụng — không thể liên lạc với quản trị viên ngay bây giờ. Vui lòng dùng Liên hệ Admin hoặc thử lại sau.',
+  'support.live.unavailable_message':
+    '⚠️ *Hỗ trợ trực tiếp không khả dụng*\n\n' +
+    'Hiện không thể liên lạc với quản trị viên. Thường là do quản trị viên chưa từng mở bot này và bấm *Start* — Telegram chỉ cho phép bot nhắn cho người đã chủ động bắt đầu trò chuyện.\n\n' +
+    'Vui lòng dùng *Liên hệ Admin* trong menu Hỗ trợ.',
   'support.btn.email_transcript': '📧 Gửi PDF chat tới email',
   'support.transcript.sent_message':
     '{pdf_sent_l} *PDF đã được gửi tới email* {pdf_sent_r}',

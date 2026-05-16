@@ -680,6 +680,18 @@ export const en: Record<string, string> = {
     '{support_live_closed} Live Support closed.\n\n' +
     'Open Support again from the menu whenever you need help.',
   'support.live.admin_ended': '🔴 *Live Support session closed.*',
+  // Surfaced to the user when the bot can't deliver the session-start
+  // message to the admin chat (most common cause: the new admin
+  // account has never tapped Start on this bot, so Telegram refuses
+  // every bot-initiated message until they do). Replaces the old
+  // silent-fail behaviour where the user saw a working Live Support
+  // panel but the admin received nothing.
+  'support.live.unavailable_popup':
+    '⚠️ Live Support is temporarily unavailable — the admin chat is unreachable right now. Please use Contact Admin from the Support menu, or try Live Support again in a moment.',
+  'support.live.unavailable_message':
+    '⚠️ *Live Support unavailable*\n\n' +
+    "Couldn't reach the admin right now. This usually means the admin needs to open this bot and tap *Start* once so Telegram lets the bot DM them.\n\n" +
+    'Please use *Contact Admin* from the Support menu for now.',
   // "Send chat PDF to email" follow-up under the closure message.
   'support.btn.email_transcript': '📧 Send chat PDF to email',
   // Reuses pdf_sent_l / pdf_sent_r so the success copy renders the

@@ -60,6 +60,26 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
     } catch (err) {
       logger.debug({ err }, 'No admin-scoped commands to delete');
     }
+
+    // Live Support reachability probe: Telegram won't let the bot
+    // initiate a DM to an account that has never tapped Start on it.
+    // We test this with a `sendChatAction(typing)` — lightweight, no
+    // visible artifact when it succeeds — so the operator can spot
+    // the misconfiguration in Railway logs (`live-support: ADMIN
+    // CHAT NOT REACHABLE …`) the moment the bot boots, instead of
+    // waiting for a user to open Live Support and get a silent fail.
+    try {
+      await bot.api.sendChatAction(env.ADMIN_USER_ID, 'typing');
+      logger.info(
+        { adminUserId: env.ADMIN_USER_ID },
+        'live-support: admin chat reachable',
+      );
+    } catch (err) {
+      logger.error(
+        { err, adminUserId: env.ADMIN_USER_ID },
+        'live-support: ADMIN CHAT NOT REACHABLE — Live Support relay will fail until the admin account opens this bot and taps Start. Check that ADMIN_USER_ID is set correctly and that the admin has started the bot at least once.',
+      );
+    }
   }
 
   return bot;

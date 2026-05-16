@@ -784,6 +784,16 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     // Notify the admin and seed their topic. When `adminTopicId` is
     // undefined (forum topics not available on the admin's side) the
     // message lands in the admin's main chat as before.
+    //
+    // If this `sendMessage` fails the most common cause is that the
+    // admin account has never tapped Start on the bot, so Telegram
+    // refuses bot-initiated DMs ("Forbidden: bot can't initiate
+    // conversation with a user"). Used to be silently caught — the
+    // user saw a working Live Support panel but the admin received
+    // nothing. Now we abort: tear down the topics we just created,
+    // wipe the slot, surface the failure to the user with actionable
+    // copy, and bail out before the panel goes up.
+    let adminReachable = true;
     try {
       const adminMsg = ctx.t('support.live.admin_started', {
         name: liveUser.first_name,
@@ -796,7 +806,53 @@ export function registerSupport(bot: Composer<AppCtx>): void {
         reply_markup: liveKeyboardForAdmin(ctx.lang),
       });
     } catch (err) {
-      logger.error({ err }, 'live-support: failed to notify admin on session start');
+      adminReachable = false;
+      logger.error(
+        { err, adminUserId: env.ADMIN_USER_ID },
+        'live-support: failed to notify admin on session start — aborting session',
+      );
+    }
+    if (!adminReachable) {
+      // Roll back: tear down the user-side panel + topics we
+      // optimistically created above, wipe the slot, and tell the
+      // user what to do next. `panelMessageId` is only set on the
+      // slot in the General-fallback case (topic-pinned panels are
+      // deleted automatically when the topic is deleted).
+      const aborted = liveUser;
+      liveUser = null;
+      sessionStartedAt = null;
+      transcript = [];
+      await persistLiveUser();
+      if (aborted) {
+        await tryDeleteTopic(ctx, aborted.telegram_id, aborted.userTopicId);
+        await tryDeleteTopic(ctx, env.ADMIN_USER_ID, aborted.adminTopicId);
+        if (aborted.userTopicId === undefined && panelMessageId !== undefined) {
+          await teardownPanel(ctx, aborted.telegram_id, panelMessageId);
+        }
+      }
+      // The "support:live:start" callback already answered above
+      // without an alert, so re-emit one with show_alert so the user
+      // actually sees something. Best-effort — Telegram only accepts
+      // one answer per callback, but the second call still produces
+      // the alert in most clients.
+      try {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('support.live.unavailable_popup'),
+          show_alert: true,
+        });
+      } catch {
+        /* already answered — alert may not render, fall through */
+      }
+      try {
+        await ctx.api.sendMessage(
+          ctx.user.telegram_id,
+          renderMdHtml(ctx.t('support.live.unavailable_message')),
+          { parse_mode: 'HTML' },
+        );
+      } catch (sendErr) {
+        logger.warn({ err: sendErr }, 'live-support: failed to send unavailable_message to user');
+      }
+      return;
     }
 
     // Track the panel + topic ids on the user's session so cancel +
