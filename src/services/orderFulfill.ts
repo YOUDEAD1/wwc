@@ -38,6 +38,7 @@ import { sendInvoiceEmail } from './mailer.js';
 import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
 import { buildOrderDeliveredChunks } from './orderRender.js';
+import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { t as translate } from '../i18n/index.js';
 import type { DBDeposit, OrderIntent, PaymentProvider } from '../types.js';
 
@@ -227,6 +228,28 @@ export async function fulfilOrderForDeposit(args: {
         'direct-pay: chunked items follow-up failed',
       );
     }
+  }
+
+  // Step 2c: Post-purchase delivery form — opens the per-product
+  // "send your details" wizard when `delivery_form_enabled` is
+  // turned on for this product. No-op for ordinary products.
+  // Direct-pay has no live ctx so we drive the bot via raw Api;
+  // see `maybeStartDeliveryFormFromApi` for the session-recovery
+  // discussion.
+  try {
+    await maybeStartDeliveryFormFromApi({
+      api,
+      product,
+      orderId: order.id,
+      orderPublicId: publicId,
+      buyerTelegramId: deposit.user_id,
+      buyerLang: lang,
+    });
+  } catch (err) {
+    logger.warn(
+      { err, orderId: order.id, productId: product.id },
+      'direct-pay: delivery form start failed',
+    );
   }
 
   // Step 3: Email follow-up

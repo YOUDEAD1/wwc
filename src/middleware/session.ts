@@ -113,6 +113,35 @@ export type AdminFlow =
   | { type: 'edit_product_stock'; step: 'stock'; data: { product_id: number; page: number } }
   | { type: 'edit_product_name'; step: 'name'; data: { product_id: number; page: number } }
   | { type: 'edit_product_id'; step: 'id'; data: { product_id: number; page: number } }
+  // -------- Per-product post-purchase delivery form editor --------
+  // Each step waits for ONE message of the appropriate kind. The
+  // message handler in `handlers/admin/index.ts` applies the patch,
+  // clears `adminFlow`, and re-renders the product editor.
+  | {
+      type: 'edit_product_delivery_instruction';
+      step: 'text';
+      data: { product_id: number; page: number };
+    }
+  | {
+      type: 'edit_product_delivery_success';
+      step: 'text';
+      data: { product_id: number; page: number };
+    }
+  | {
+      type: 'edit_product_delivery_fields';
+      step: 'spec';
+      data: { product_id: number; page: number };
+    }
+  | {
+      type: 'edit_product_delivery_vendor';
+      step: 'chat_id';
+      data: { product_id: number; page: number };
+    }
+  | {
+      type: 'edit_product_delivery_vendor_label';
+      step: 'text';
+      data: { product_id: number; page: number };
+    }
   // -------- Bot Tutorial editor (Settings → Bot Tutorial → Edit) --------
   | { type: 'edit_bot_tutorial_text'; step: 'text'; data: Record<string, never> }
   | { type: 'edit_bot_tutorial_file'; step: 'file'; data: Record<string, never> }
@@ -587,6 +616,34 @@ export type UserFlow =
         panelMessageId?: number;
         userTopicId?: number;
         adminTopicId?: number;
+      };
+    }
+  | {
+      /**
+       * Post-purchase delivery form for products with
+       * `delivery_form_enabled = true`. After Order Delivered, the
+       * bot walks the buyer through `fields` one at a time — each
+       * message they send fills `fields[cursor]`, and the next
+       * prompt is rendered in-place by editing `prompt_message_id`.
+       *
+       * `edit_mode` is true when the user tapped "Edit Details" on
+       * an already-submitted form. On final submit we bump the
+       * stored revision and ping the vendor with a "resubmitted as
+       * corrected" header.
+       */
+      type: 'delivery_form';
+      step: 'fields';
+      data: {
+        order_id: number;
+        order_public_id: string;
+        product_id: number;
+        product_name: string;
+        fields: import('../types.js').DeliveryFieldSpec[];
+        collected: Record<string, string>;
+        cursor: number;
+        edit_mode: boolean;
+        prompt_chat_id: number;
+        prompt_message_id?: number;
       };
     };
 

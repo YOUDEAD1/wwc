@@ -42,6 +42,11 @@ import { buildOrderDeliveredChunks } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
 import { sendInvoiceEmail } from '../services/mailer.js';
+import {
+  handleDeliveryFormMessage,
+  maybeStartDeliveryFormForCtx,
+  startEditDelivery,
+} from '../services/postPurchaseDelivery.js';
 
 /**
  * Top-level Shop home — paginated all-products list. The categories
@@ -558,6 +563,50 @@ export function registerShop(bot: Composer<AppCtx>): void {
     );
   });
 
+  // ---- Post-purchase delivery form: per-field text capture ----
+  // While the buyer is mid-flow on a product that asks for extra
+  // details after delivery (e.g. account email + password), every
+  // plain-text reply feeds into `handleDeliveryFormMessage` which
+  // advances the in-place prompt card field-by-field and finalises
+  // with a vendor DM + success card. Returns `false` when the user
+  // is NOT in a delivery form so all other text handlers (Live
+  // Support echo, qty keypad above, etc.) still get a turn.
+  bot.on('message:text', async (ctx, next) => {
+    const flow = ctx.session.userFlow;
+    if (!flow || flow.type !== 'delivery_form') return next();
+    const text = ctx.message.text.trim();
+    if (text.startsWith('/')) {
+      // Bail-out commands always win — clear the flow and let the
+      // command run normally (e.g. /cancel, /myorders, /start).
+      ctx.session.userFlow = undefined;
+      return next();
+    }
+    const consumed = await handleDeliveryFormMessage(ctx);
+    if (!consumed) return next();
+  });
+
+  // ---- Edit Details (re-open the form with the last submission) ----
+  // Callback fires from the success card after the buyer's first
+  // submission. `startEditDelivery` looks up the existing
+  // submission, re-opens the prompt card pre-filled with every
+  // previously-typed answer, and flips the flow into edit mode so
+  // the next submission gets posted to the vendor as a CORRECTION
+  // (revision N+1) instead of a duplicate first-time order.
+  bot.callbackQuery(/^delivery:edit:(\d+)$/, async (ctx) => {
+    const orderId = Number(ctx.match[1]);
+    await ctx.answerCallbackQuery();
+    const ok = await startEditDelivery({ ctx, orderId });
+    if (!ok) {
+      // The submission is gone, the product was deleted, or the
+      // delivery form was turned off mid-flight. Tell the buyer
+      // gently so they can DM the admin manually.
+      await ctx.reply(
+        renderMdHtml(ctx.t('shop.delivery.edit_unavailable')),
+        { parse_mode: 'HTML' },
+      );
+    }
+  });
+
   // ---- View Note ----
   // Premium full-screen note view. The body is a single header
   // (`{prod_view_note} View Note`) plus the product description and
@@ -966,6 +1015,29 @@ export function registerShop(bot: Composer<AppCtx>): void {
             'pay:wallet — chunked items follow-up failed',
           );
         }
+      }
+      // ---- Step 2b: Post-purchase delivery form ---------------
+      // Some products require the buyer to send extra details
+      // (account email + password, recovery key, voucher code, …)
+      // BEFORE the seller can finish provisioning. When the product
+      // has `delivery_form_enabled` we drop an instruction message
+      // + a single in-place prompt card right under the items so
+      // the buyer can submit their details directly. Vendor DM +
+      // success / edit / admin-help buttons all live in the
+      // `postPurchaseDelivery` service.
+      try {
+        await maybeStartDeliveryFormForCtx({
+          ctx,
+          product: p,
+          orderId: order.id,
+          orderPublicId: publicId,
+          qty,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, orderId: order.id, productId: p.id },
+          'pay:wallet — delivery form start failed',
+        );
       }
       // ---- Step 3: Email follow-up ----------------------------
       // Two branches per the bot-owner spec:

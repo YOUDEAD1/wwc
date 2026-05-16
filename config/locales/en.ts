@@ -320,6 +320,90 @@ export const en: Record<string, string> = {
   'shop.buy.email_required':
     'Setup email system first — we need your email to send the receipt.',
 
+  // ---------- Post-purchase delivery form ----------
+  // Shown after Order Delivered for products where the admin enabled
+  // a per-product detail-submission form (e.g. account email +
+  // password, gift-card code, recovery key, …). The buyer first sees
+  // the admin's free-form `delivery_instruction` text, then a single
+  // "submission box" message that walks them through `delivery_fields`
+  // one prompt at a time.
+  'shop.delivery.instruction.default': [
+    '{delivery_box} *Action Required — Please Submit Your Details*',
+    '',
+    '_The seller needs a few details from you to deliver this order. Fill in each field below — your answers go straight to our vendor desk and your account is set up within minutes._',
+  ].join('\n'),
+  'shop.delivery.box.header': [
+    '{delivery_box} *Submit Your Details — {product_name}*',
+    '',
+    '_Step {current}/{total}_',
+  ].join('\n'),
+  'shop.delivery.box.prompt': '{delivery_field} Send your *{label}* below {email_arrow}',
+  'shop.delivery.box.prompt_optional':
+    '{delivery_field} Send your *{label}* below {email_arrow}\n_(optional — type `skip` to leave blank)_',
+  'shop.delivery.box.summary_header': '{delivery_box} *Your Details — {product_name}*',
+  'shop.delivery.box.summary_row': '• *{label}:* `{value}`',
+  'shop.delivery.box.invalid':
+    '{qty_invalid} _That doesn\'t look right. Please send your *{label}* again._',
+  'shop.delivery.success.default': [
+    '{delivery_check} *Your Details Has been Submitted Successfully* {email_saved_check}',
+    '',
+    '_Thank you — our team is reviewing your submission and will approve it shortly. If you don\'t hear back soon, tap *Admin Help* below._',
+  ].join('\n'),
+  'shop.delivery.success.resubmitted': [
+    '{delivery_resubmit} *Your Details Has been Re submitted as Corrected* {email_saved_check}',
+    '',
+    '_Thank you — your corrected info has been forwarded to our vendor. They will use this NEW submission instead of the previous one._',
+  ].join('\n'),
+  // Auto-text pre-filled into the admin DM when the buyer taps the
+  // Admin Help button on the success card. Telegram URL-encodes this
+  // when we append it to `?text=…` so newlines + emoji are safe.
+  'shop.delivery.admin_help.first': [
+    'Hey admin i need help about {product_name} —',
+    'I have sent {field_summary} but still did not approved, please help me.',
+    'Order: {order_tag}',
+  ].join('\n'),
+  'shop.delivery.admin_help.resubmit': [
+    'Hey admin my {field_summary} About {product_name} has been resubmitted,',
+    'please don\'t use the old details — this is the correct one. Help me.',
+    'Order: {order_tag}',
+  ].join('\n'),
+  // Buttons that appear under the success card.
+  'btn.delivery.edit': '{delivery_field} Edit Details',
+  'btn.delivery.admin_help': '{delivery_help} Admin Help',
+  // Shown when the Edit Details button is tapped but the bot can't
+  // recover the original submission (deleted, product gone, …).
+  'shop.delivery.edit_unavailable':
+    '⚠️ _We couldn\'t reopen your previous submission. Please tap *Admin Help* on your order so we can fix this manually._',
+  // Vendor DM body — sent to `delivery_vendor_chat_id` whenever the
+  // buyer submits OR resubmits the form. `{header}` switches between
+  // the new-order and corrected-order banners.
+  'shop.delivery.vendor.new': [
+    '{delivery_vendor} *Hey my dear vendor — here is a new order to fulfil.*',
+    '',
+    '*Order Tag:* {order_tag}',
+    '*Product:* {product_name}',
+    '*Quantity:* {qty}',
+    '*Buyer:* {buyer}',
+    '',
+    '*Submitted Details:*',
+    '{details}',
+    '',
+    '_Please add this buyer to the workspace as fast as possible. (This message is automated — please process this order quickly.)_',
+  ].join('\n'),
+  'shop.delivery.vendor.resubmit': [
+    '{delivery_resubmit} *Heads up vendor — corrected details for an existing order.*',
+    '',
+    '*Order Tag:* {order_tag}',
+    '*Product:* {product_name}',
+    '*Quantity:* {qty}',
+    '*Buyer:* {buyer}',
+    '',
+    '*Corrected Details (revision {revision}):*',
+    '{details}',
+    '',
+    '_Use these NEW details — discard the previous submission. (This message is automated — please process the correction quickly.)_',
+  ].join('\n'),
+
   // ---------- Using Method tutorial ----------
   // Per-product tutorial body shown when the buyer taps `📘 Using
   // Method` under an Order Delivered card.

@@ -68,9 +68,60 @@ export type DBProduct = {
   tutorial_url: string | null;
   /** When true, the catalog row renders "(Stock: ∞)". */
   unlimited_stock: boolean;
+  /**
+   * Per-product post-purchase detail-submission form. When true, a
+   * customizable instruction message + input box is shown to the
+   * buyer right after Order Delivered, asking them to submit fields
+   * declared in `delivery_fields`. See `services/postPurchaseDelivery.ts`.
+   */
+  delivery_form_enabled: boolean;
+  /** Admin-set instruction text shown above the submission box. */
+  delivery_instruction: string | null;
+  /** Ordered list of input fields the buyer must submit. */
+  delivery_fields: DeliveryFieldSpec[];
+  /** Admin-set success message shown after the buyer submits the form. */
+  delivery_success_message: string | null;
+  /**
+   * Telegram chat id (user / group) of the vendor for THIS product.
+   * Submissions are auto-DM'd to this id with an order tag + the
+   * submitted details. Null disables the vendor forward.
+   */
+  delivery_vendor_chat_id: number | null;
+  /** Optional display name for the vendor used in the auto-message. */
+  delivery_vendor_label: string | null;
   active: boolean;
   sort_order: number;
   created_at: string;
+};
+
+/**
+ * One input field on a per-product post-purchase delivery form.
+ *
+ * `key` is the stable identifier persisted on the submission row;
+ * `label` is what the buyer sees ("Email", "Password", "Recovery
+ * Code", …). `required` defaults to true.
+ */
+export type DeliveryFieldSpec = {
+  key: string;
+  label: string;
+  required?: boolean;
+};
+
+/**
+ * One per-order post-purchase detail submission. Stored 1:1 with
+ * `orders`. On edit/resubmit we update the row in place and bump
+ * `revision` so the vendor DM can flag it as corrected.
+ */
+export type DBOrderDeliverySubmission = {
+  id: number;
+  order_id: number;
+  user_id: number;
+  product_id: number;
+  /** `{ <field.key>: <user value> }`. */
+  payload: Record<string, string>;
+  revision: number;
+  submitted_at: string;
+  updated_at: string;
 };
 
 /** A single item in the per-product delivery pool. */
