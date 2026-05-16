@@ -74,17 +74,23 @@ export function shopProductsKeyboard(
     kb.row();
   });
 
-  // Footer: Prev | Refresh | Next | (page indicator)
+  // Footer layout (bot-owner spec): page indicator on the left, Back
+  // in the middle, page-nav arrow on the right; Refresh promoted to
+  // its own full-width row below where the old standalone `Back`
+  // button used to live. Keeps the high-frequency Refresh tap the
+  // largest target on the screen.
+  //
+  // Row 1: [page indicator] [Back] [Prev or Next]
+  kb.text(`${page + 1}/${totalPages}`, 'noop:page');
+  inlineBtn(kb, lang, 'back', 'main:open');
   if (page > 0) {
     inlineBtn(kb, lang, 'prev', `shop:p:${page - 1}`);
-  }
-  inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
-  if (page + 1 < totalPages) {
+  } else if (page + 1 < totalPages) {
     inlineBtn(kb, lang, 'next', `shop:p:${page + 1}`);
   }
-  kb.text(`${page + 1}/${totalPages}`, 'noop:page');
   kb.row();
-  inlineBtn(kb, lang, 'back', 'main:open');
+  // Row 2: [Refresh] — sits alone so it spans the keyboard width.
+  inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
   return kb;
 }
 

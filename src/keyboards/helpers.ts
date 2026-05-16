@@ -39,33 +39,34 @@ export function colored(
 }
 
 /**
- * Resolve the button label, optionally stripping the leading unicode
- * emoji + space when an icon is going to be set on the button object
- * itself (avoids "[premium icon] 🛍 Shop" — i.e. two emojis side by
- * side).
+ * Resolve the button label, optionally stripping both the leading
+ * AND trailing unicode emoji + space when an icon is going to be
+ * set on the button object itself (avoids "[premium icon] 🛍 Shop"
+ * and "Next ▶️" + animated-play-emoji-icon i.e. duplicate glyphs).
  *
- * Two leading shapes are matched:
+ * Two emoji shapes are matched:
  *   1. A pair of regional-indicator codepoints (country flag like
  *      🇬🇧 / 🇸🇦 / 🇻🇳) — these are NOT in `\p{Extended_Pictographic}`
  *      per Unicode, so they need their own branch.
  *   2. Any single emoji-like grapheme, optionally a ZWJ-sequence,
  *      with an optional VS-16.
- * Optional trailing space is stripped too.
+ * Optional adjacent space is stripped too.
  */
 const LEADING_EMOJI = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*\uFE0F?)\s?/u;
+const TRAILING_EMOJI = /\s?(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*\uFE0F?)$/u;
 
-function stripLeadingEmoji(label: string): string {
-  return label.replace(LEADING_EMOJI, '');
+function stripDecorativeEmoji(label: string): string {
+  return label.replace(LEADING_EMOJI, '').replace(TRAILING_EMOJI, '');
 }
 
 export function btn(lang: Lang, key: keyof typeof BUTTON_KEYS, override?: ColorMode): string {
-  // Strip the label's leading unicode emoji BEFORE applying the
-  // color-prefix glyph. Otherwise the colour prefix becomes the new
-  // leading emoji and the original unicode (e.g. 🛍 / 🪙 / ⚙️ on Shop /
-  // Topup / Settings) survives in the label, leaving the button
-  // showing premium-icon + unicode-emoji + label.
+  // Strip the label's leading + trailing unicode emoji BEFORE applying
+  // the color-prefix glyph. Otherwise the icon slot renders one glyph
+  // and the unicode in the label renders a duplicate alongside it —
+  // e.g. `[premium-play-icon] Next ▶️` or `🛍 Shop` with a premium
+  // shop icon to its left.
   const raw = t(lang, BUTTON_KEYS[key]);
-  const baseLabel = resolveIconId(key) !== undefined ? stripLeadingEmoji(raw) : raw;
+  const baseLabel = resolveIconId(key) !== undefined ? stripDecorativeEmoji(raw) : raw;
   return colored(baseLabel, key, override);
 }
 

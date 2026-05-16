@@ -860,6 +860,14 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // rail. Per-screen overrides can still be applied via
   // `/setbtnicon back <unicode> <custom_emoji_id>`.
   back: 'paymethod_back',
+
+  // 2026-05-09: bot-owner asked for the Shop pagination Prev button
+  // to render a premium back-arrow (id 5440509136259267820) — same
+  // glyph as `stats_back`. The label's leading ◀️ unicode is
+  // stripped automatically by `btn()` once an icon resolves so the
+  // button shows just `[premium-back-arrow] Prev`. Per-screen
+  // override via `/setbtnicon prev <unicode> <custom_emoji_id>`.
+  prev: 'stats_back',
 };
 
 /**
