@@ -91,6 +91,21 @@ export type DBProduct = {
   delivery_vendor_label: string | null;
   active: boolean;
   sort_order: number;
+  /**
+   * When true, the product is exempt from automatic sort-order moves
+   * (most importantly the out-of-stock-to-end shuffle). It stays
+   * exactly where the admin manually placed it via the ↑ / ↓ /
+   * ⏫ Top / ⏬ Bottom buttons.
+   */
+  is_pinned: boolean;
+  /**
+   * When a product transitions to out-of-stock and is NOT pinned,
+   * the original `sort_order` is stashed here and `sort_order` is
+   * set to a large sentinel so the catalog lists it at the very end.
+   * On restock the stashed value is restored and this column is
+   * cleared. Null means "not currently auto-moved".
+   */
+  stashed_sort_order: number | null;
   created_at: string;
 };
 
