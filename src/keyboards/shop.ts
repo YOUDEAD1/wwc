@@ -74,23 +74,51 @@ export function shopProductsKeyboard(
     kb.row();
   });
 
-  // Footer layout (bot-owner spec): page indicator on the left, Back
-  // in the middle, page-nav arrow on the right; Refresh promoted to
-  // its own full-width row below where the old standalone `Back`
-  // button used to live. Keeps the high-frequency Refresh tap the
-  // largest target on the screen.
+  // Footer layout (bot-owner spec v2): the page indicator always
+  // lives in the middle, the page-nav arrow takes its natural side
+  // (Prev on the left, Next on the right), and Refresh fills the
+  // opposite end of the nav row. Back is back to its classic full-
+  // width row at the very bottom — the biggest, easiest tap target.
   //
-  // Row 1: [page indicator] [Back] [Prev or Next]
-  kb.text(`${page + 1}/${totalPages}`, 'noop:page');
-  inlineBtn(kb, lang, 'back', 'main:open');
-  if (page > 0) {
+  //  • First page  →  [Refresh]    [1/N]   [Next]
+  //  • Last  page  →  [Prev]       [N/N]   [Refresh]
+  //  • Middle page →  [Prev]       [k/N]   [Next]   (nav row)
+  //                   [Refresh]                     (dedicated row)
+  //  • Single page →  [Refresh]    [1/1]
+  //
+  //  Bottom row, every case: [Back] (full width).
+  const hasPrev = page > 0;
+  const hasNext = page + 1 < totalPages;
+  const indicator = `${page + 1}/${totalPages}`;
+  if (hasPrev && hasNext) {
+    // Middle page: keep the nav row symmetric, push Refresh down so
+    // both arrows stay flush against their natural edge.
     inlineBtn(kb, lang, 'prev', `shop:p:${page - 1}`);
-  } else if (page + 1 < totalPages) {
+    kb.text(indicator, 'noop:page');
     inlineBtn(kb, lang, 'next', `shop:p:${page + 1}`);
+    kb.row();
+    inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
+    kb.row();
+  } else if (hasNext) {
+    // First page of a multi-page list.
+    inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
+    kb.text(indicator, 'noop:page');
+    inlineBtn(kb, lang, 'next', `shop:p:${page + 1}`);
+    kb.row();
+  } else if (hasPrev) {
+    // Last page of a multi-page list.
+    inlineBtn(kb, lang, 'prev', `shop:p:${page - 1}`);
+    kb.text(indicator, 'noop:page');
+    inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
+    kb.row();
+  } else {
+    // Single-page list — no nav arrows to render.
+    inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
+    kb.text(indicator, 'noop:page');
+    kb.row();
   }
-  kb.row();
-  // Row 2: [Refresh] — sits alone so it spans the keyboard width.
-  inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
+  // Bottom row: full-width Back, like the old layout used to be.
+  inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
 }
 
