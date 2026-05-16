@@ -433,13 +433,246 @@ export async function updateProduct(
     delivery_success_message: string | null;
     delivery_vendor_chat_id: number | null;
     delivery_vendor_label: string | null;
+    // Pinning + OOS auto-reorder (migration 0025).
+    is_pinned: boolean;
+    stashed_sort_order: number | null;
   }>,
 ): Promise<void> {
+  // When the caller is editing `stock` we capture the pre-write
+  // value so a transition across zero (in <-> out of stock) can
+  // trigger the auto-reorder side-effect after the write lands.
+  let beforeStock: number | null = null;
+  if (patch.stock !== undefined) {
+    const { data: snap } = await supabase
+      .from('products')
+      .select('stock')
+      .eq('id', id)
+      .maybeSingle();
+    beforeStock = Number((snap as { stock?: number } | null)?.stock ?? 0);
+  }
   const { error } = await supabase.from('products').update(patch).eq('id', id);
   if (error) {
     logger.error({ err: error, id, patch }, 'updateProduct failed');
     throw error;
   }
+  if (beforeStock !== null && patch.stock !== undefined) {
+    const afterStock = Number(patch.stock);
+    await applyStockTransition(id, beforeStock, afterStock).catch((err) => {
+      logger.warn(
+        { err, id },
+        'applyStockTransition after updateProduct(stock) failed',
+      );
+    });
+  }
+}
+
+// =====================================================================
+// Pinning + out-of-stock auto-reorder (migration 0025)
+// =====================================================================
+
+/**
+ * Sentinel `sort_order` value used to slam unpinned products to the
+ * very end of the catalog when they run out of stock. The catalog
+ * read query orders by `(sort_order ASC, id ASC)` so any row with
+ * this value naturally falls behind every normally-ordered row.
+ *
+ * Picked well below int4's `2_147_483_647` ceiling but high enough
+ * that no realistic manual ordering could ever collide.
+ */
+export const OUT_OF_STOCK_SORT_ORDER = 1_000_000_000;
+
+/**
+ * Detect and apply an out-of-stock / restock transition for a
+ * product. Callers pass the stock value *before* their write and
+ * *after* their write — the helper only fires when those cross
+ * zero in either direction. This keeps the side-effect bound to
+ * real state transitions and prevents a re-fire when the admin
+ * manually repositioned an out-of-stock row (no stock change → no
+ * transition → no auto-move-to-end).
+ *
+ * No-op when the product is pinned (`is_pinned = true`) or marked
+ * `unlimited_stock` (catalog renders ∞, never goes OOS).
+ */
+export async function applyStockTransition(
+  product_id: number,
+  beforeStock: number,
+  afterStock: number,
+): Promise<void> {
+  const wasInStock = beforeStock > 0;
+  const isInStock = afterStock > 0;
+  if (wasInStock === isInStock) return;
+  const { data } = await supabase
+    .from('products')
+    .select('sort_order, stashed_sort_order, is_pinned, unlimited_stock')
+    .eq('id', product_id)
+    .maybeSingle();
+  if (!data) return;
+  const p = data as {
+    sort_order: number;
+    stashed_sort_order: number | null;
+    is_pinned: boolean | null;
+    unlimited_stock: boolean | null;
+  };
+  if (p.is_pinned === true) return;
+  if (p.unlimited_stock === true) return;
+  // OOS transition: stash the current admin-placed sort_order and
+  // sink the row to the bottom of the catalog. The `stashed_sort_order
+  // is null` guard makes the operation idempotent — re-runs on an
+  // already-stashed row are no-ops.
+  if (!isInStock && p.stashed_sort_order === null) {
+    const { error } = await supabase
+      .from('products')
+      .update({
+        stashed_sort_order: p.sort_order,
+        sort_order: OUT_OF_STOCK_SORT_ORDER,
+      })
+      .eq('id', product_id);
+    if (error) {
+      logger.warn(
+        { err: error, product_id },
+        'applyStockTransition: OOS stash failed',
+      );
+    }
+    return;
+  }
+  // Restock transition: pop the row back to its old slot.
+  if (isInStock && p.stashed_sort_order !== null) {
+    const { error } = await supabase
+      .from('products')
+      .update({
+        sort_order: p.stashed_sort_order,
+        stashed_sort_order: null,
+      })
+      .eq('id', product_id);
+    if (error) {
+      logger.warn(
+        { err: error, product_id },
+        'applyStockTransition: restock restore failed',
+      );
+    }
+  }
+}
+
+/**
+ * Toggle the per-product "pin position" flag. Pinning while the
+ * product is currently auto-OOS-stashed *restores* the original
+ * sort_order so the pinned position is the admin-set one rather
+ * than the synthetic bottom-of-the-list sentinel. Unpinning kicks
+ * off a stock-state reconciliation so a previously-pinned OOS row
+ * slides to the bottom immediately rather than waiting for the
+ * next stock change.
+ */
+export async function setProductPinned(
+  id: number,
+  pinned: boolean,
+): Promise<void> {
+  const { data } = await supabase
+    .from('products')
+    .select('stashed_sort_order, stock, unlimited_stock')
+    .eq('id', id)
+    .maybeSingle();
+  const row = data as
+    | {
+        stashed_sort_order: number | null;
+        stock: number | null;
+        unlimited_stock: boolean | null;
+      }
+    | null;
+  if (pinned) {
+    if (row && row.stashed_sort_order !== null) {
+      await supabase
+        .from('products')
+        .update({
+          is_pinned: true,
+          sort_order: row.stashed_sort_order,
+          stashed_sort_order: null,
+        })
+        .eq('id', id);
+      return;
+    }
+    await supabase.from('products').update({ is_pinned: true }).eq('id', id);
+    return;
+  }
+  await supabase.from('products').update({ is_pinned: false }).eq('id', id);
+  // After unpinning, force a state reconciliation so a currently-
+  // OOS row slides to the catalog bottom right away. We fake a
+  // "in-stock -> OOS" transition via applyStockTransition so the
+  // existing stash + slam path handles the move.
+  if (!row || row.unlimited_stock === true) return;
+  const stock = Number(row.stock ?? 0);
+  if (stock <= 0 && row.stashed_sort_order === null) {
+    await applyStockTransition(id, 1, 0).catch((err) => {
+      logger.warn({ err, id }, 'setProductPinned: post-unpin reconcile failed');
+    });
+  }
+}
+
+/**
+ * Move a product to the very top of the catalog. Bumps its
+ * `sort_order` to one less than the current minimum, ignoring rows
+ * currently auto-OOS-stashed at `OUT_OF_STOCK_SORT_ORDER` so the new
+ * top isn't out-paced by an OOS row's sentinel value. Clears the
+ * stash for the moved row — the admin took an explicit position
+ * decision; we don't want a later restock to overwrite that.
+ */
+export async function moveProductToTop(id: number): Promise<void> {
+  const { data } = await supabase
+    .from('products')
+    .select('sort_order')
+    .lt('sort_order', OUT_OF_STOCK_SORT_ORDER)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const min = data ? Number((data as { sort_order: number }).sort_order) : 0;
+  await supabase
+    .from('products')
+    .update({ sort_order: min - 1, stashed_sort_order: null })
+    .eq('id', id);
+}
+
+/**
+ * Move a product to the end of the *in-stock* portion of the
+ * catalog (i.e. after every non-OOS-stashed row but ahead of any
+ * rows sitting at the OOS sentinel). Clears the stash for the same
+ * reason as `moveProductToTop` — the admin's manual placement wins.
+ */
+export async function moveProductToBottom(id: number): Promise<void> {
+  const { data } = await supabase
+    .from('products')
+    .select('sort_order')
+    .lt('sort_order', OUT_OF_STOCK_SORT_ORDER)
+    .order('sort_order', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const max = data ? Number((data as { sort_order: number }).sort_order) : 0;
+  await supabase
+    .from('products')
+    .update({ sort_order: max + 1, stashed_sort_order: null })
+    .eq('id', id);
+}
+
+/**
+ * Restore a previously auto-OOS-stashed row's `sort_order` so the
+ * admin's manual ↑ / ↓ swap operates on a real catalog position
+ * rather than the OOS sentinel. No-op when there's no stash. Used
+ * by the admin reorder callback to make ↑ / ↓ behave intuitively
+ * for OOS rows without requiring a pin or a Top/Bottom detour.
+ */
+export async function unstashSortOrder(id: number): Promise<void> {
+  const { data } = await supabase
+    .from('products')
+    .select('stashed_sort_order')
+    .eq('id', id)
+    .maybeSingle();
+  const stashed = (data as { stashed_sort_order: number | null } | null)
+    ?.stashed_sort_order;
+  if (stashed === null || stashed === undefined) return;
+  await supabase
+    .from('products')
+    .update({ sort_order: stashed, stashed_sort_order: null })
+    .eq('id', id);
 }
 
 // ---------- Post-purchase delivery submissions ----------
@@ -707,16 +940,24 @@ export async function deleteProductItem(item_id: number): Promise<number | null>
 export async function syncProductStockToPool(product_id: number): Promise<void> {
   const remaining = await countAvailableProductItems(product_id);
   let unlimited = false;
+  let beforeStock = 0;
   const { data: full, error: fullErr } = await supabase
     .from('products')
-    .select('unlimited_stock')
+    .select('stock, unlimited_stock')
     .eq('id', product_id)
     .maybeSingle();
   if (!fullErr && full) {
     unlimited = Boolean((full as { unlimited_stock?: boolean }).unlimited_stock);
+    beforeStock = Number((full as { stock?: number }).stock ?? 0);
   }
   if (unlimited) return;
   await supabase.from('products').update({ stock: remaining }).eq('id', product_id);
+  await applyStockTransition(product_id, beforeStock, remaining).catch((err) => {
+    logger.warn(
+      { err, product_id },
+      'applyStockTransition after syncProductStockToPool failed',
+    );
+  });
 }
 
 /**
@@ -779,7 +1020,14 @@ export async function decrementProductStock(id: number, qty: number): Promise<vo
     cur = Number((full as { stock?: number } | null)?.stock ?? 0);
   }
   if (unlimited) return;
-  await supabase.from('products').update({ stock: Math.max(0, cur - qty) }).eq('id', id);
+  const newStock = Math.max(0, cur - qty);
+  await supabase.from('products').update({ stock: newStock }).eq('id', id);
+  await applyStockTransition(id, cur, newStock).catch((err) => {
+    logger.warn(
+      { err, id },
+      'applyStockTransition after decrementProductStock failed',
+    );
+  });
 }
 
 // ---------- Per-user price overrides ----------

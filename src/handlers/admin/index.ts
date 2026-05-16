@@ -51,6 +51,10 @@ import {
   setDepositStatus,
   setProductActive,
   swapProductOrder,
+  setProductPinned,
+  moveProductToTop,
+  moveProductToBottom,
+  unstashSortOrder,
   createGiftCode,
   deleteGiftCode,
   listGiftCodes,
@@ -873,16 +877,33 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
   const lines = [
     `📦 *Products* — page ${page + 1}/${totalPages}`,
     '',
-    '_Tap ↑ / ↓ to reorder. Reordering works across page boundaries._',
+    '_Tap ↑ / ↓ to nudge one slot, ⏫ / ⏬ to jump straight to the top / bottom._',
+    '_📌 = pinned (stays put even when out of stock). 💤 = auto-moved here because it ran out of stock; will pop back to its old spot on restock._',
     '',
   ];
   const kb = new InlineKeyboard();
   for (const p of rows) {
     const flag = p.active ? '🟢' : '⚪️';
-    lines.push(`${flag} #${p.id}  ${p.name} — $${p.price}  (stock ${p.stock})`);
+    const pinTag = p.is_pinned ? ' 📌' : '';
+    const oosTag = p.stashed_sort_order !== null ? ' 💤' : '';
+    lines.push(
+      `${flag} #${p.id}${pinTag}${oosTag}  ${p.name} — $${p.price}  (stock ${p.stock})`,
+    );
     kb.text(`↑ #${p.id}`, `adm:prod:up:${p.id}:${page}`)
       .text(`↓ #${p.id}`, `adm:prod:dn:${p.id}:${page}`)
       .text(`✏️ Edit #${p.id}`, `adm:prod:edit:${p.id}:${page}`)
+      .row();
+    // One-tap jump-to-end buttons — the bot-owner asked for an
+    // easier reorder UX than "tap ↑ thirty times" so each row gets
+    // ⏫ Top / ⏬ Bottom alongside the nudge buttons. The pin toggle
+    // sits next to them since pin status is the other thing that
+    // affects ordering at a glance.
+    kb.text(`⏫ Top #${p.id}`, `adm:prod:top:${p.id}:${page}`)
+      .text(`⏬ Bottom #${p.id}`, `adm:prod:bot:${p.id}:${page}`)
+      .text(
+        p.is_pinned ? `📌 Pinned #${p.id}` : `📌 Pin #${p.id}`,
+        `adm:prod:pin:${p.id}:${page}`,
+      )
       .row();
     kb.text(p.active ? `👁 Hide #${p.id}` : `👁 Show #${p.id}`, `adm:prod:tog:${p.id}:${page}`)
       .text(`🗑 #${p.id}`, `adm:prod:del:${p.id}:${page}`)
@@ -930,6 +951,15 @@ adminBot.callbackQuery(/^adm:prod:(up|dn):(\d+):(\d+)$/, async (ctx) => {
   const direction: 'up' | 'down' = ctx.match[1] === 'up' ? 'up' : 'down';
   const id = Number(ctx.match[2]);
   const page = Number(ctx.match[3]);
+  // If the row is currently auto-OOS-stashed (sort_order slammed to
+  // the sentinel value), restore its admin-placed sort_order first
+  // so the swap operates on a real catalog position rather than the
+  // OOS bottom-of-the-list value. Otherwise an ↑ nudge would swap
+  // sort_orders with the row immediately above and corrupt THAT
+  // row's position to the OOS sentinel.
+  await unstashSortOrder(id).catch((err) => {
+    logger.warn({ err, id }, 'unstashSortOrder before reorder swap failed');
+  });
   const cur = await listAllProducts(0, 1000).then(({ rows }) =>
     rows.find((r) => r.id === id),
   );
@@ -953,6 +983,76 @@ adminBot.callbackQuery(/^adm:prod:(up|dn):(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({
     text: direction === 'up' ? '↑ Moved up' : '↓ Moved down',
   });
+  await showProductList(ctx, page);
+});
+
+// One-tap jump-to-the-top / jump-to-the-bottom for the bot-owner's
+// "make reorder easier" request. Both clear `stashed_sort_order` —
+// the admin is taking an explicit position decision; we don't want
+// a later restock to overwrite their choice with the old slot.
+adminBot.callbackQuery(/^adm:prod:top:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  try {
+    await moveProductToTop(id);
+    cache.del('cats');
+    await ctx.answerCallbackQuery({ text: '⏫ Moved to top' });
+  } catch (err) {
+    logger.error({ err, id }, 'moveProductToTop failed');
+    await ctx.answerCallbackQuery({
+      text: 'Move-to-top failed. See server logs.',
+      show_alert: true,
+    });
+  }
+  await showProductList(ctx, page);
+});
+
+adminBot.callbackQuery(/^adm:prod:bot:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  try {
+    await moveProductToBottom(id);
+    cache.del('cats');
+    await ctx.answerCallbackQuery({ text: '⏬ Moved to bottom' });
+  } catch (err) {
+    logger.error({ err, id }, 'moveProductToBottom failed');
+    await ctx.answerCallbackQuery({
+      text: 'Move-to-bottom failed. See server logs.',
+      show_alert: true,
+    });
+  }
+  await showProductList(ctx, page);
+});
+
+// Pinning a product makes it exempt from the auto-OOS-to-end move
+// so it stays exactly where the admin placed it even when stock
+// drops to 0. Tapping a pinned product unpins it (and if it's
+// currently out of stock, immediately slides it to the catalog
+// bottom so the list looks consistent with the new state).
+adminBot.callbackQuery(/^adm:prod:pin:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  try {
+    const cur = await getProduct(id);
+    if (!cur) {
+      await ctx.answerCallbackQuery({ text: 'Product not found' });
+      await showProductList(ctx, page);
+      return;
+    }
+    const nowPinned = !cur.is_pinned;
+    await setProductPinned(id, nowPinned);
+    cache.del('cats');
+    await ctx.answerCallbackQuery({
+      text: nowPinned ? '📌 Pinned in place' : '🔓 Unpinned',
+    });
+  } catch (err) {
+    logger.error({ err, id }, 'setProductPinned failed');
+    await ctx.answerCallbackQuery({
+      text:
+        'Pin toggle failed. If the error mentions a missing column, apply Supabase migration 0025.',
+      show_alert: true,
+    });
+  }
   await showProductList(ctx, page);
 });
 
@@ -1076,7 +1176,12 @@ async function showProductEditor(
   kb.text(
     p.unlimited_stock ? '♾ Unlimited: ON' : '♾ Unlimited: OFF',
     `adm:prod:unl:tog:${p.id}:${page}`,
-  ).row();
+  )
+    .text(
+      p.is_pinned ? '📌 Pinned: ON' : '📌 Pinned: OFF',
+      `adm:prod:pin:${p.id}:${page}`,
+    )
+    .row();
   kb.text('💰 Edit Price', `adm:prod:price:set:${p.id}:${page}`)
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
@@ -1275,18 +1380,45 @@ adminBot.callbackQuery(/^adm:prod:tut:clrfile:(\d+):(\d+)$/, async (ctx) => {
 // delivery config in one tap.
 
 adminBot.callbackQuery(/^adm:prod:del:tog:(\d+):(\d+)$/, async (ctx) => {
+  // Ack the callback FIRST so the Telegram client clears the
+  // forever-spinner immediately. If `getProduct` / `updateProduct` /
+  // `showProductEditor` blow up below (most commonly: migration
+  // 0024 hasn't been applied yet so the `delivery_form_enabled`
+  // column doesn't exist) the admin still gets a normal-looking
+  // button + a follow-up error message instead of a button that
+  // appears to hang.
+  await ctx.answerCallbackQuery();
   const id = Number(ctx.match[1]);
   const page = Number(ctx.match[2]);
-  const p = await getProduct(id);
-  if (!p) {
-    await ctx.answerCallbackQuery({ text: 'Product not found', show_alert: true });
-    return;
+  try {
+    const p = await getProduct(id);
+    if (!p) {
+      await ctx.reply('⚠️ Product not found.');
+      return;
+    }
+    await updateProduct(id, { delivery_form_enabled: !p.delivery_form_enabled });
+    await showProductEditor(ctx, id, page);
+  } catch (err) {
+    logger.error({ err, id }, 'adm:prod:del:tog failed');
+    const msg = (err as Error)?.message ?? 'unknown error';
+    const looksLikeMissingColumn = /column .* does not exist|delivery_form_enabled|delivery_fields|delivery_instruction/i.test(
+      msg,
+    );
+    await ctx.reply(
+      [
+        '⚠️ Failed to toggle the Delivery Form.',
+        '',
+        `Error: \`${msg}\``,
+        ...(looksLikeMissingColumn
+          ? [
+              '',
+              'This usually means Supabase migration `0024_product_delivery_form.sql` has not been applied yet. Run that migration on your database and try again.',
+            ]
+          : []),
+      ].join('\n'),
+      { parse_mode: 'Markdown' },
+    );
   }
-  await updateProduct(id, { delivery_form_enabled: !p.delivery_form_enabled });
-  await ctx.answerCallbackQuery({
-    text: p.delivery_form_enabled ? 'Delivery form OFF' : 'Delivery form ON',
-  });
-  await showProductEditor(ctx, id, page);
 });
 
 adminBot.callbackQuery(/^adm:prod:del:instr:(\d+):(\d+)$/, async (ctx) => {
@@ -1402,18 +1534,27 @@ adminBot.callbackQuery(/^adm:prod:del:vlabel:(\d+):(\d+)$/, async (ctx) => {
 });
 
 adminBot.callbackQuery(/^adm:prod:del:clr:(\d+):(\d+)$/, async (ctx) => {
+  // Ack first — same reasoning as `adm:prod:del:tog` above.
+  await ctx.answerCallbackQuery({ text: 'Delivery config cleared' });
   const id = Number(ctx.match[1]);
   const page = Number(ctx.match[2]);
-  await updateProduct(id, {
-    delivery_form_enabled: false,
-    delivery_instruction: null,
-    delivery_fields: [],
-    delivery_success_message: null,
-    delivery_vendor_chat_id: null,
-    delivery_vendor_label: null,
-  });
-  await ctx.answerCallbackQuery({ text: 'Delivery config cleared' });
-  await showProductEditor(ctx, id, page);
+  try {
+    await updateProduct(id, {
+      delivery_form_enabled: false,
+      delivery_instruction: null,
+      delivery_fields: [],
+      delivery_success_message: null,
+      delivery_vendor_chat_id: null,
+      delivery_vendor_label: null,
+    });
+    await showProductEditor(ctx, id, page);
+  } catch (err) {
+    logger.error({ err, id }, 'adm:prod:del:clr failed');
+    await ctx.reply(
+      `⚠️ Failed to clear delivery config: \`${(err as Error)?.message ?? 'unknown error'}\``,
+      { parse_mode: 'Markdown' },
+    );
+  }
 });
 
 // --- Items pool (bulk-add staging flow) ---
