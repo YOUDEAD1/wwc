@@ -236,6 +236,17 @@ export const BUTTON_KEYS = {
   // instead of an on-chain hash).
   where_txid: 'btn.where_txid',
   where_order_id: 'btn.where_order_id',
+
+  // ---- Post-purchase delivery form ----------------------------
+  // Two buttons under the success card sent after a buyer submits
+  // their per-product details:
+  //   • `delivery_edit` reopens the form pre-filled so the buyer
+  //     can correct a typo and resubmit.
+  //   • `delivery_admin_help` is a URL button that opens the admin
+  //     DM with the auto-message already pre-filled (see
+  //     `getAdminContactUrlWithPrefill`).
+  delivery_edit: 'btn.delivery.edit',
+  delivery_admin_help: 'btn.delivery.admin_help',
 } as const;
 
 /**
@@ -400,6 +411,10 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   // buttons in the app.
   where_txid: 'blue',
   where_order_id: 'blue',
+
+  // Post-purchase delivery form action buttons.
+  delivery_edit: 'blue',
+  delivery_admin_help: 'red',
 };
 
 /**
@@ -648,6 +663,17 @@ export const EMOJI: Record<string, EmojiSpec> = {
   price_list: { unicode: '📊', custom_emoji_id: '4958506272551863292' },
   // Out-of-stock cross used on the red Buy Now button.
   oos_cross: { unicode: '❌', custom_emoji_id: '5095957930537124723' },
+  // ---- Post-purchase delivery form (per-product detail submission) ----
+  // Used by the instruction → form → success → vendor-forward flow
+  // for products where the admin enables `delivery_form_enabled`.
+  // All four slots fall back to plain unicode until the bot owner
+  // sets a `custom_emoji_id` via `/setemoji <key> <unicode> <id>`.
+  delivery_box: '📥',
+  delivery_field: '✏️',
+  delivery_check: '✅',
+  delivery_help: '🆘',
+  delivery_resubmit: '🔁',
+  delivery_vendor: '🤝',
   // Wallet credit / debit notifications shown to a user when an admin
   // adjusts their balance via /credit. Three slots so the admin can
   // swap each independently via `/setemoji credit_emoji / balance_emoji /
@@ -868,6 +894,12 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // button shows just `[premium-back-arrow] Prev`. Per-screen
   // override via `/setbtnicon prev <unicode> <custom_emoji_id>`.
   prev: 'stats_back',
+
+  // Post-purchase delivery form CTAs reuse the dedicated delivery
+  // emoji slots — admin can swap each via `/setemoji
+  // delivery_field / delivery_help <unicode> <custom_emoji_id>`.
+  delivery_edit: 'delivery_field',
+  delivery_admin_help: 'delivery_help',
 };
 
 /**

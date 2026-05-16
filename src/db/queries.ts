@@ -15,6 +15,8 @@ import type {
   DBGiftCodeRedemption,
   DBUserPriceOverride,
   DBPromo,
+  DBOrderDeliverySubmission,
+  DeliveryFieldSpec,
   PaymentProvider,
   OrderIntent,
 } from '../types.js';
@@ -424,6 +426,13 @@ export async function updateProduct(
     tutorial_file_type: 'photo' | 'video' | 'document' | null;
     tutorial_url: string | null;
     unlimited_stock: boolean;
+    // Per-product post-purchase delivery form.
+    delivery_form_enabled: boolean;
+    delivery_instruction: string | null;
+    delivery_fields: DeliveryFieldSpec[];
+    delivery_success_message: string | null;
+    delivery_vendor_chat_id: number | null;
+    delivery_vendor_label: string | null;
   }>,
 ): Promise<void> {
   const { error } = await supabase.from('products').update(patch).eq('id', id);
@@ -431,6 +440,110 @@ export async function updateProduct(
     logger.error({ err: error, id, patch }, 'updateProduct failed');
     throw error;
   }
+}
+
+// ---------- Post-purchase delivery submissions ----------
+
+/**
+ * Fetch the existing delivery submission for an order, if any.
+ * Used by:
+ *   - "Edit Details" to pre-fill the form with the previous answers
+ *     so the buyer can correct individual fields without re-typing
+ *     the whole thing.
+ *   - The admin-help URL builder to embed the buyer's submitted
+ *     payload in the deep-link auto-text.
+ */
+export async function getDeliverySubmission(
+  order_id: number,
+): Promise<DBOrderDeliverySubmission | null> {
+  const { data, error } = await supabase
+    .from('order_delivery_submissions')
+    .select('*')
+    .eq('order_id', order_id)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, order_id }, 'getDeliverySubmission failed');
+    return null;
+  }
+  if (!data) return null;
+  return {
+    id: Number((data as { id: number | string }).id),
+    order_id: Number((data as { order_id: number | string }).order_id),
+    user_id: Number((data as { user_id: number | string }).user_id),
+    product_id: Number((data as { product_id: number | string }).product_id),
+    payload: (data as { payload: Record<string, string> }).payload ?? {},
+    revision: Number((data as { revision: number | string }).revision),
+    submitted_at: String((data as { submitted_at: string }).submitted_at),
+    updated_at: String((data as { updated_at: string }).updated_at),
+  };
+}
+
+/**
+ * Upsert a delivery submission. On first submit we insert with
+ * `revision = 1`. On resubmit (edit-and-resend) we update in place
+ * and bump `revision` so the vendor DM can label it as corrected.
+ *
+ * Returns the resulting row (including the assigned `revision`).
+ */
+export async function upsertDeliverySubmission(args: {
+  order_id: number;
+  user_id: number;
+  product_id: number;
+  payload: Record<string, string>;
+}): Promise<DBOrderDeliverySubmission> {
+  const existing = await getDeliverySubmission(args.order_id);
+  if (!existing) {
+    const { data, error } = await supabase
+      .from('order_delivery_submissions')
+      .insert({
+        order_id: args.order_id,
+        user_id: args.user_id,
+        product_id: args.product_id,
+        payload: args.payload,
+        revision: 1,
+      })
+      .select('*')
+      .single();
+    if (error || !data) {
+      logger.error({ err: error, args }, 'upsertDeliverySubmission insert failed');
+      throw error ?? new Error('upsertDeliverySubmission insert failed');
+    }
+    return {
+      id: Number((data as { id: number | string }).id),
+      order_id: Number((data as { order_id: number | string }).order_id),
+      user_id: Number((data as { user_id: number | string }).user_id),
+      product_id: Number((data as { product_id: number | string }).product_id),
+      payload: (data as { payload: Record<string, string> }).payload ?? {},
+      revision: Number((data as { revision: number | string }).revision),
+      submitted_at: String((data as { submitted_at: string }).submitted_at),
+      updated_at: String((data as { updated_at: string }).updated_at),
+    };
+  }
+  const nextRevision = existing.revision + 1;
+  const { data, error } = await supabase
+    .from('order_delivery_submissions')
+    .update({
+      payload: args.payload,
+      revision: nextRevision,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('order_id', args.order_id)
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, args }, 'upsertDeliverySubmission update failed');
+    throw error ?? new Error('upsertDeliverySubmission update failed');
+  }
+  return {
+    id: Number((data as { id: number | string }).id),
+    order_id: Number((data as { order_id: number | string }).order_id),
+    user_id: Number((data as { user_id: number | string }).user_id),
+    product_id: Number((data as { product_id: number | string }).product_id),
+    payload: (data as { payload: Record<string, string> }).payload ?? {},
+    revision: Number((data as { revision: number | string }).revision),
+    submitted_at: String((data as { submitted_at: string }).submitted_at),
+    updated_at: String((data as { updated_at: string }).updated_at),
+  };
 }
 
 /**

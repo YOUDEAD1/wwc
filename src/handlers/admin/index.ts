@@ -1007,6 +1007,20 @@ async function showProductEditor(
   // query) and lets the admin see at a glance whether any user has a
   // non-default price on this product.
   const overrideCount = await countProductPriceOverrides(product_id);
+  // Post-purchase delivery form summary line. We show a one-liner
+  // with the toggle state + the number of fields configured so the
+  // admin can tell at a glance whether THIS product asks the buyer
+  // for extra details after payment, without expanding into the
+  // sub-editor.
+  const deliveryFieldsCount = Array.isArray(p.delivery_fields)
+    ? p.delivery_fields.length
+    : 0;
+  const deliveryStateLabel = p.delivery_form_enabled
+    ? `*ON* (${deliveryFieldsCount} field${deliveryFieldsCount === 1 ? '' : 's'})`
+    : '_OFF_';
+  const deliveryVendorLabel = p.delivery_vendor_chat_id
+    ? '`' + (p.delivery_vendor_label || p.delivery_vendor_chat_id) + '`'
+    : '_unset_';
   const lines = [
     `✏️ *Edit Product #${p.id}*`,
     '',
@@ -1021,6 +1035,8 @@ async function showProductEditor(
     `*Tutorial URL:* ${p.tutorial_url ? '`' + p.tutorial_url + '`' : '_unset_'}`,
     `*Items pool:* ${itemsCount} unconsumed`,
     `*Custom prices:* ${overrideCount} user override${overrideCount === 1 ? '' : 's'}`,
+    `*Delivery form:* ${deliveryStateLabel}`,
+    `*Delivery vendor:* ${deliveryVendorLabel}`,
     '',
     '_Tap a button to edit. For "Set Premium Emoji" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
   ];
@@ -1078,6 +1094,25 @@ async function showProductEditor(
   kb.text('🆔 Edit ID', `adm:prod:id:set:${p.id}:${page}`)
     .text('🔗 Share Link', `adm:prod:share:${p.id}:${page}`)
     .row();
+  // --- Post-purchase delivery form sub-editor ---
+  // First row toggles the feature ON/OFF; the rest of the rows only
+  // surface once it's ON so the editor stays tight for products that
+  // don't need this flow.
+  kb.text(
+    p.delivery_form_enabled ? '📥 Delivery Form: ON' : '📥 Delivery Form: OFF',
+    `adm:prod:del:tog:${p.id}:${page}`,
+  ).row();
+  if (p.delivery_form_enabled) {
+    kb.text('✏️ Instruction', `adm:prod:del:instr:${p.id}:${page}`)
+      .text('🗂 Fields', `adm:prod:del:fields:${p.id}:${page}`)
+      .row();
+    kb.text('✅ Success Message', `adm:prod:del:succ:${p.id}:${page}`)
+      .text('🤝 Vendor Chat ID', `adm:prod:del:vendor:${p.id}:${page}`)
+      .row();
+    kb.text('🏷 Vendor Label', `adm:prod:del:vlabel:${p.id}:${page}`)
+      .text('🧹 Clear Delivery', `adm:prod:del:clr:${p.id}:${page}`)
+      .row();
+  }
   kb.text('🧾 View Buyers', `adm:ord:p:${p.id}:0`).row();
   kb.text('⬅️ Back to list', `adm:prod:list:${page}`);
   await ctx.editMessageText(lines.join('\n'), {
@@ -1230,6 +1265,155 @@ adminBot.callbackQuery(/^adm:prod:tut:clrfile:(\d+):(\d+)$/, async (ctx) => {
   });
   await ctx.answerCallbackQuery({ text: 'Tutorial file cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// ---- Post-purchase delivery form sub-editor ----
+//
+// Each callback either toggles a boolean, prompts the admin for a
+// single text message that the matching handler in the bot.on
+// ('message:text') block applies + clears, or wipes the per-product
+// delivery config in one tap.
+
+adminBot.callbackQuery(/^adm:prod:del:tog:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const p = await getProduct(id);
+  if (!p) {
+    await ctx.answerCallbackQuery({ text: 'Product not found', show_alert: true });
+    return;
+  }
+  await updateProduct(id, { delivery_form_enabled: !p.delivery_form_enabled });
+  await ctx.answerCallbackQuery({
+    text: p.delivery_form_enabled ? 'Delivery form OFF' : 'Delivery form ON',
+  });
+  await showProductEditor(ctx, id, page);
+});
+
+adminBot.callbackQuery(/^adm:prod:del:instr:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_delivery_instruction',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    [
+      '✏️ *Send the delivery-form instruction text now.*',
+      '',
+      'This is the message buyers see _before_ the input box (e.g. _"Please send your account email & password so the seller can deliver your order."_). Premium emojis are preserved.',
+      '',
+      'Send `clear` to reset to the default instruction text, or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:del:succ:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_delivery_success',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    [
+      '✅ *Send the success-card text now.*',
+      '',
+      'Shown after the buyer submits their details (e.g. _"Your details has been submitted successfully — our team will approve it shortly."_). Premium emojis preserved.',
+      '',
+      'Send `clear` to reset to the default success text, or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:del:fields:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_delivery_fields',
+    step: 'spec',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    [
+      '🗂 *Send the field spec — one field per line.*',
+      '',
+      'Each line is `key | Label | required` (the third token is optional and defaults to *required*; type `optional` to make the field skippable).',
+      '',
+      '*Examples:*',
+      '```',
+      'email | Email | required',
+      'password | Password | required',
+      'recovery_code | Recovery Code | optional',
+      '```',
+      '',
+      'Send `clear` to remove every field, or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:del:vendor:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_delivery_vendor',
+    step: 'chat_id',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    [
+      '🤝 *Send the vendor chat ID.*',
+      '',
+      'This is the numeric Telegram id of the vendor (user OR group) that should receive every submitted details payload as an automated DM. The vendor must have `/start`-ed this bot (or the bot must be in the group) for the DM to land.',
+      '',
+      'Send `clear` to disable the vendor forward for this product, or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:del:vlabel:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_delivery_vendor_label',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    [
+      '🏷 *Send the vendor display label.*',
+      '',
+      'Optional short string shown in the admin-facing summary (e.g. `@john_vendor` or `Workspace A`). Buyer never sees this — it\'s just to help you tell vendors apart in the editor.',
+      '',
+      'Send `clear` to remove the label, or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:del:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  await updateProduct(id, {
+    delivery_form_enabled: false,
+    delivery_instruction: null,
+    delivery_fields: [],
+    delivery_success_message: null,
+    delivery_vendor_chat_id: null,
+    delivery_vendor_label: null,
+  });
+  await ctx.answerCallbackQuery({ text: 'Delivery config cleared' });
+  await showProductEditor(ctx, id, page);
 });
 
 // --- Items pool (bulk-add staging flow) ---
@@ -5208,6 +5392,120 @@ adminBot.on('message:text', async (ctx, next) => {
       ctx.session.adminFlow = undefined;
       await ctx.reply(`✅ Product ID changed: ${flow.data.product_id} → ${newId}`);
       await showProductEditor(ctx, newId, flow.data.page);
+      return;
+    }
+    // -------- Post-purchase delivery form sub-editor --------
+    if (flow.type === 'edit_product_delivery_instruction') {
+      const cleared = text.trim().toLowerCase() === 'clear';
+      await updateProduct(flow.data.product_id, {
+        delivery_instruction: cleared ? null : text,
+      });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(cleared ? '✅ Instruction reset to default.' : '✅ Instruction saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_delivery_success') {
+      const cleared = text.trim().toLowerCase() === 'clear';
+      await updateProduct(flow.data.product_id, {
+        delivery_success_message: cleared ? null : text,
+      });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(cleared ? '✅ Success card reset to default.' : '✅ Success card saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_delivery_fields') {
+      if (text.trim().toLowerCase() === 'clear') {
+        await updateProduct(flow.data.product_id, { delivery_fields: [] });
+        ctx.session.adminFlow = undefined;
+        await ctx.reply('✅ All fields cleared.');
+        await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+        return;
+      }
+      // Parse `key | Label | required?` rows. Empty/blank lines are
+      // skipped. We dedupe on `key` (last-write-wins) so a slip-of-the
+      // -finger duplicate row doesn't ask the buyer twice. `required`
+      // defaults to true; an explicit `optional` flips it.
+      const rawLines = text
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      const fields: { key: string; label: string; required?: boolean }[] = [];
+      const seenKeys = new Set<string>();
+      const errors: string[] = [];
+      for (const line of rawLines) {
+        const parts = line.split('|').map((p) => p.trim());
+        if (parts.length < 2 || !parts[0] || !parts[1]) {
+          errors.push(`• \`${line}\` — expected \`key | Label | required\``);
+          continue;
+        }
+        const key = parts[0].toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+        if (!key) {
+          errors.push(`• \`${line}\` — key must contain alphanumerics.`);
+          continue;
+        }
+        const required =
+          parts[2] === undefined
+            ? true
+            : !/^(optional|opt|false|no)$/i.test(parts[2]);
+        if (seenKeys.has(key)) {
+          // last-write-wins
+          const idx = fields.findIndex((f) => f.key === key);
+          if (idx >= 0) fields.splice(idx, 1);
+        }
+        seenKeys.add(key);
+        fields.push({ key, label: parts[1], required });
+      }
+      if (errors.length > 0) {
+        await ctx.reply(
+          ['❌ Could not parse:', ...errors, '', 'Try again or send `/cancel`.'].join('\n'),
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (fields.length === 0) {
+        await ctx.reply('❌ No valid fields found. Send `clear` to wipe the spec or `/cancel` to abort.');
+        return;
+      }
+      await updateProduct(flow.data.product_id, { delivery_fields: fields });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Saved \`${fields.length}\` field${fields.length === 1 ? '' : 's'}.`,
+        { parse_mode: 'Markdown' },
+      );
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_delivery_vendor') {
+      if (text.trim().toLowerCase() === 'clear') {
+        await updateProduct(flow.data.product_id, { delivery_vendor_chat_id: null });
+        ctx.session.adminFlow = undefined;
+        await ctx.reply('✅ Vendor forward disabled.');
+        await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+        return;
+      }
+      const chatId = Number(text.trim());
+      if (!Number.isInteger(chatId) || chatId === 0) {
+        await ctx.reply(
+          '❌ Expected a non-zero integer (positive for users, negative for groups). Try again or send `/cancel`.',
+        );
+        return;
+      }
+      await updateProduct(flow.data.product_id, { delivery_vendor_chat_id: chatId });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Vendor chat saved: \`${chatId}\``, { parse_mode: 'Markdown' });
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_delivery_vendor_label') {
+      const cleared = text.trim().toLowerCase() === 'clear';
+      await updateProduct(flow.data.product_id, {
+        delivery_vendor_label: cleared ? null : text.trim(),
+      });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(cleared ? '✅ Vendor label cleared.' : '✅ Vendor label saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
     if (flow.type === 'edit_bot_tutorial_text') {
