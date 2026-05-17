@@ -1115,8 +1115,15 @@ async function showProductEditor(
   const deliveryFieldsCount = Array.isArray(p.delivery_fields)
     ? p.delivery_fields.length
     : 0;
+  // When the form is ON but no fields are configured the buyer flow
+  // now falls back to a single default `Details` prompt — surface
+  // that here so the admin understands what their toggle is actually
+  // sending the buyer ("ON (using default Details prompt)") and can
+  // tap 🗂 Fields to override with a typed multi-field spec.
   const deliveryStateLabel = p.delivery_form_enabled
-    ? `*ON* (${deliveryFieldsCount} field${deliveryFieldsCount === 1 ? '' : 's'})`
+    ? deliveryFieldsCount > 0
+      ? `*ON* (${deliveryFieldsCount} field${deliveryFieldsCount === 1 ? '' : 's'})`
+      : '*ON* (using default `Details` prompt — tap 🗂 Fields to customise)'
     : '_OFF_';
   const deliveryVendorLabel = p.delivery_vendor_chat_id
     ? '`' + (p.delivery_vendor_label || p.delivery_vendor_chat_id) + '`'

@@ -51,17 +51,47 @@ export function buildOrderTag(orderPublicId: string): string {
 }
 
 /**
- * True iff the product has the delivery form turned on AND at least
- * one field declared. We treat zero-field configs as off so a buyer
- * can never get stuck waiting for "send your details" prompts that
- * never come.
+ * Default single field used when the admin has flipped
+ * `delivery_form_enabled` on but hasn't configured any fields yet.
+ * This way toggling the feature ON is enough on its own — the buyer
+ * still gets an instruction message + a single free-form "Details"
+ * prompt + a success/Admin Help card, instead of the form silently
+ * disappearing because the field spec is empty.
+ *
+ * Admins who need typed multi-field collection (email + password +
+ * recovery code, …) override this by tapping 🗂 Fields and sending
+ * a `key | Label | required` spec — the helper below favours those
+ * whenever they exist.
+ */
+const DEFAULT_DELIVERY_FIELDS: ReadonlyArray<DeliveryFieldSpec> = [
+  { key: 'details', label: 'Details', required: true },
+];
+
+/**
+ * Resolve the field spec to actually drive the buyer-side wizard
+ * with. Prefers the admin-configured `delivery_fields` row; falls
+ * back to a single default `Details` field when the admin just
+ * flipped the toggle ON without configuring any fields. We always
+ * return a NEW array so callers can safely mutate / push without
+ * leaking back into the shared default.
+ */
+export function getEffectiveDeliveryFields(p: DBProduct): DeliveryFieldSpec[] {
+  if (Array.isArray(p.delivery_fields) && p.delivery_fields.length > 0) {
+    return p.delivery_fields;
+  }
+  return DEFAULT_DELIVERY_FIELDS.map((f) => ({ ...f }));
+}
+
+/**
+ * True iff the product has the delivery form turned on. Empty
+ * `delivery_fields` no longer disqualifies the product — we
+ * synthesise a single default `Details` field at runtime via
+ * `getEffectiveDeliveryFields()` so the buyer-side wizard always
+ * surfaces the instruction message + prompt card the moment the
+ * admin flips the toggle ON.
  */
 export function productHasDeliveryForm(p: DBProduct): boolean {
-  return (
-    p.delivery_form_enabled === true &&
-    Array.isArray(p.delivery_fields) &&
-    p.delivery_fields.length > 0
-  );
+  return p.delivery_form_enabled === true;
 }
 
 /**
@@ -282,7 +312,8 @@ async function finalizeSubmission(args: {
   });
   // Compose the admin-help auto-text BEFORE building the keyboard
   // because the URL is staged inside the button itself.
-  const fieldSummary = renderFieldSummary(args.product.delivery_fields, args.payload);
+  const effectiveFields = getEffectiveDeliveryFields(args.product);
+  const fieldSummary = renderFieldSummary(effectiveFields, args.payload);
   const helpText = t(
     args.isResubmit
       ? 'shop.delivery.admin_help.resubmit'
@@ -296,7 +327,7 @@ async function finalizeSubmission(args: {
   const summaryHeader = renderMdHtml(
     t('shop.delivery.box.summary_header', { product_name: args.product.name }),
   );
-  const summaryRows = args.product.delivery_fields
+  const summaryRows = effectiveFields
     .map((f) =>
       t('shop.delivery.box.summary_row', {
         label: f.label,
@@ -339,7 +370,7 @@ async function finalizeSubmission(args: {
     orderPublicId: args.orderPublicId,
     qty: args.qty,
     submission,
-    fields: args.product.delivery_fields,
+    fields: effectiveFields,
     isResubmit: args.isResubmit,
   });
 }
@@ -373,6 +404,7 @@ export async function maybeStartDeliveryFormFromApi(args: {
 }): Promise<boolean> {
   if (!productHasDeliveryForm(args.product)) return false;
   const t = tFor(args.buyerLang);
+  const effectiveFields = getEffectiveDeliveryFields(args.product);
   const instruction = args.product.delivery_instruction?.trim();
   const instructionText =
     instruction && instruction.length > 0
@@ -395,7 +427,7 @@ export async function maybeStartDeliveryFormFromApi(args: {
     chatId: args.buyerTelegramId,
     lang: args.buyerLang,
     product_name: args.product.name,
-    fields: args.product.delivery_fields,
+    fields: effectiveFields,
     cursor: 0,
   });
   await seedDeliveryFormState({
@@ -430,6 +462,7 @@ export async function maybeStartDeliveryFormForCtx(args: {
   const ctx = args.ctx;
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return false;
+  const effectiveFields = getEffectiveDeliveryFields(args.product);
   const instruction = args.product.delivery_instruction?.trim();
   const instructionText =
     instruction && instruction.length > 0
@@ -447,7 +480,7 @@ export async function maybeStartDeliveryFormForCtx(args: {
     chatId,
     lang: ctx.lang,
     product_name: args.product.name,
-    fields: args.product.delivery_fields,
+    fields: effectiveFields,
     cursor: 0,
   });
   ctx.session.userFlow = {
@@ -458,7 +491,7 @@ export async function maybeStartDeliveryFormForCtx(args: {
       order_public_id: args.orderPublicId,
       product_id: args.product.id,
       product_name: args.product.name,
-      fields: args.product.delivery_fields,
+      fields: effectiveFields,
       collected: { ...(args.prefill ?? {}) },
       cursor: 0,
       edit_mode: args.editMode === true,
