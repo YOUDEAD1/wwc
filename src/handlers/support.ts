@@ -1441,7 +1441,7 @@ function aiSessionKeyboard(lang: Lang): InlineKeyboard {
  * `buildStoreContextBlock`) is appended.
  */
 const DEFAULT_AI_SYSTEM_PROMPT = [
-  'You are *Kiwi*, the automated support assistant for SafwanTiger',
+  'You are *Kiwi*, the automated support assistant for Homlander Store',
   'Shop — a Telegram digital storefront (subscriptions, gift cards,',
   'accounts).',
   '',

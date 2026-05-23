@@ -459,6 +459,8 @@ export type UserFlow =
          * stale vendor TXID can't be replayed.
          */
         opened_at_ms: number;
+        /** المبلغ الفريد المُولَّد لهذه الجلسة (مثلاً 10.037) لمنع replay */
+        unique_amount: number;
         /** Message id of the instruction screen — deleted on success. */
         instruction_message_id?: number;
       };
@@ -540,6 +542,8 @@ export type UserFlow =
         intent: import('../types.js').OrderIntent;
         /** See `chain_topup.opened_at_ms`. */
         opened_at_ms: number;
+        /** المبلغ الفريد لمنع replay */
+        unique_amount: number;
         /** Message id of the instruction screen — deleted on success. */
         instruction_message_id?: number;
       };

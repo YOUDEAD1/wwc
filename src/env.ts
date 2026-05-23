@@ -21,7 +21,7 @@ if (!process.env.SMTP_PASS && process.env.SAFWANTIGER_SMTP_PASS) {
  * zero configuration. Override per-deployment by setting
  * `LOG_CHAT_ID` explicitly (use `LOG_CHAT_ID=0` to opt out).
  */
-const DEFAULT_LOG_CHAT = '@safwantigershopsales';
+const DEFAULT_LOG_CHAT = '@homlanderstore';
 
 /**
  * Default Telegram chat for `ORDER_LOG_CHAT_ID` — the dedicated
@@ -30,7 +30,7 @@ const DEFAULT_LOG_CHAT = '@safwantigershopsales';
  * here; everything else (top-ups, support, settings, PDFs, etc.)
  * still goes to the main `LOG_CHAT_ID` channel.
  */
-const DEFAULT_ORDER_LOG_CHAT = '@SafwanTigerShopBotInfo';
+const DEFAULT_ORDER_LOG_CHAT = '@homlanderstore';
 
 /**
  * Shared transformer for the `LOG_CHAT_ID` family of env vars. Each
@@ -82,10 +82,10 @@ const schema = z.object({
   SMTP_USER: z.string().optional().or(z.literal('')),
   SMTP_PASS: z.string().optional().or(z.literal('')),
   // Defaults to SMTP_USER when unset. Lets you send as
-  // "SafwanTiger Shop <shopbot@safwantiger.com>" while authenticating
+  // "Homlander Store <shopbot@homlanderstore.com>" while authenticating
   // as the same mailbox.
   SMTP_FROM: z.string().optional().or(z.literal('')),
-  SMTP_FROM_NAME: z.string().default('SafwanTiger Shop'),
+  SMTP_FROM_NAME: z.string().default('Homlander Store'),
 
   // ----------------------------------------------------------------
   //  Resend (HTTPS API) — preferred transport on cloud platforms
@@ -93,11 +93,11 @@ const schema = z.object({
   // ----------------------------------------------------------------
   // When RESEND_API_KEY is set, the mailer uses Resend's HTTPS API
   // instead of nodemailer. This bypasses the SMTP-port firewall on
-  // cloud platforms while preserving the same "From: shopbot@safwantiger.com"
-  // identity (provided the safwantiger.com domain has been verified
+  // cloud platforms while preserving the same "From: shopbot@homlanderstore.com"
+  // identity (provided the homlanderstore.com domain has been verified
   // in the Resend dashboard via DKIM + SPF DNS records).
   RESEND_API_KEY: z.string().optional().or(z.literal('')),
-  // Defaults to "shopbot@safwantiger.com" if both this and SMTP_USER
+  // Defaults to "shopbot@homlanderstore.com" if both this and SMTP_USER
   // are unset. Must be an address whose domain is verified in Resend.
   RESEND_FROM: z.string().optional().or(z.literal('')),
 
@@ -110,12 +110,12 @@ const schema = z.object({
   // notification toggles, etc.). Accepts either:
   //
   //   - `@channelusername` for a public channel (e.g.
-  //     `@safwantigershopsales`), OR
+  //     `@homlanderstore`), OR
   //   - a numeric chat id starting with `-100…` for a private
   //     channel/supergroup (forward any message from it to
   //     @userinfobot to read the id).
   //
-  // Defaults to `@safwantigershopsales` (the bot owner's public log
+  // Defaults to `@homlanderstore` (the bot owner's public log
   // channel) so a fresh deployment routes deep-detail notifications
   // to the channel without needing any env wiring. Set
   // `LOG_CHAT_ID=0` (or `off` / `none` / `disabled`) to opt out and

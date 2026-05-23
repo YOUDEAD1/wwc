@@ -3,7 +3,7 @@ import { InlineKeyboard } from 'grammy';
 import type { AppCtx } from '../middleware/user.js';
 import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getOrder, getProduct } from '../db/queries.js';
+import { getOrder, getProduct, confirmPendingReferral, cancelPendingReferral } from '../db/queries.js';
 import { applyUserPriceToProduct } from '../services/pricing.js';
 import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
@@ -13,6 +13,7 @@ import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
 import { inlineBtn } from '../keyboards/helpers.js';
+import { enforceSubscription } from '../services/forceSub.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -172,12 +173,26 @@ async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
-    // Reset AI Support state so a stale session doesn't intercept
-    // later text messages after the user navigates away from it.
     clearAiSession(ctx.from?.id);
-    // First-start admin log — fires only on the very first /start so
-    // the admin sees a clean "new user joined" entry. The sentinel
-    // is set by getOrCreateUser when the row was just inserted.
+
+    // ===== تحقق الاشتراك الإجباري =====
+    const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
+    if (!subCheck.pass) {
+      const channelLink = subCheck.channelId.startsWith('@')
+        ? `https://t.me/${subCheck.channelId.slice(1)}`
+        : `https://t.me/c/${subCheck.channelId.replace('-100', '')}`;
+      const kb = new InlineKeyboard()
+        .url('📢 اشترك في القناة', channelLink)
+        .row()
+        .text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      await ctx.reply(
+        renderMdHtml(subCheck.message),
+        { parse_mode: 'HTML', reply_markup: kb },
+      );
+      return;
+    }
+    // ===================================
+
     const flagged = ctx.user as typeof ctx.user & { __just_created?: boolean };
     if (flagged.__just_created) {
       void adminLog.logFirstStart(ctx.api, {
@@ -191,30 +206,66 @@ export function registerStart(bot: Composer<AppCtx>): void {
         referredBy: ctx.user.referred_by ?? null,
       });
     }
+
+    // تأكيد الإحالة المعلّقة إذا اشترك
+    await confirmPendingReferral(ctx.user.telegram_id);
+
     if (await handleProductDeepLink(ctx)) return;
     if (await handleInvoiceDeepLink(ctx)) return;
+    await showMainMenu(ctx, { fresh: true });
+  });
+
+  // زر "اشتركت، تحقق الآن"
+  bot.callbackQuery('forcesub:check', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
+    if (!subCheck.pass) {
+      await ctx.answerCallbackQuery({
+        text: '❌ لم يتم التحقق من اشتراكك! اشترك في القناة أولاً.',
+        show_alert: true,
+      });
+      return;
+    }
+    // اشترك — أكّد الإحالة المعلّقة إن وجدت
+    await confirmPendingReferral(ctx.user.telegram_id);
+    // أدخله البوت
+    await ctx.editMessageText(
+      renderMdHtml('✅ *تم التحقق من اشتراكك!* مرحباً بك 🎉'),
+      { parse_mode: 'HTML' },
+    );
     await showMainMenu(ctx, { fresh: true });
   });
 
   bot.command('menu', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
     clearAiSession(ctx.from?.id);
+
+    // تحقق الاشتراك عند /menu أيضاً
+    const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
+    if (!subCheck.pass) {
+      const channelLink = subCheck.channelId.startsWith('@')
+        ? `https://t.me/${subCheck.channelId.slice(1)}`
+        : `https://t.me/c/${subCheck.channelId.replace('-100', '')}`;
+      const kb = new InlineKeyboard()
+        .url('📢 اشترك في القناة', channelLink)
+        .row()
+        .text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      await ctx.reply(
+        renderMdHtml(subCheck.message),
+        { parse_mode: 'HTML', reply_markup: kb },
+      );
+      return;
+    }
     await showMainMenu(ctx, { fresh: true });
   });
 
-  // "⬅️ Main Menu" inline button used across screens.
   bot.callbackQuery('main:open', async (ctx) => {
     await ctx.answerCallbackQuery();
-    // Reset any in-flight user flow when returning to the main menu so
-    // a stale prompt (e.g. set_email) can't capture later messages.
     ctx.session.userFlow = undefined;
     clearAiSession(ctx.from?.id);
     await showMainMenu(ctx);
   });
 
-  // Fallback for the channel button when admin hasn't set the URL yet.
-  // (When the URL is set, mainMenuKeyboard renders a direct URL button
-  // and Telegram never sends us this callback.)
   bot.callbackQuery('channel:open', async (ctx) => {
     await ctx.answerCallbackQuery({ text: ctx.t('channel.not_set'), show_alert: true });
   });

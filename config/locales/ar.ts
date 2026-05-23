@@ -1,10 +1,10 @@
 /* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
-  'welcome': 'مرحبًا بك في متجر SafwanTiger',
-  'welcome.title': 'مرحبًا بك في متجر SafwanTiger!',
+  'welcome': 'مرحبًا بك في متجر Homlander',
+  'welcome.title': 'مرحبًا بك في متجر Homlander!',
   'welcome.balance': 'رصيدك: *${balance}*',
   'welcome.tap_menu': 'اضغط *القائمة الرئيسية* بالأسفل للبدء.',
-  'menu.title': '🐯 *متجر SafwanTiger* — القائمة الرئيسية',
+  'menu.title': '🐯 *متجر Homlander* — القائمة الرئيسية',
 
   'btn.main_menu': '⬅️ رجوع',
   'btn.shop': '🛍 المتجر',
@@ -97,11 +97,11 @@ export const ar: Record<string, string> = {
   'shop.qty.keypad.instruction':
     '{qty_prompt_keypad} *طريقة الاستخدام:* اضغط الأرقام أدناه أو أرسل رقماً ' +
     'ثم اضغط ✅ تأكيد.\n' +
-    'الحالي: <code>{current}</code>',
+    'الحالي: `{current}`',
   // العنصر النائب الذي يظهر داخل `الحالي: <code>…</code>` قبل أن
   // يبدأ المستخدم بإدخال الأرقام. يقرأ كجملة (الحالي: (الكمية))
   // بدلاً من الشرطة الغامضة السابقة («—»).
-  'shop.qty.keypad.placeholder': '(الكمية)',
+  'shop.qty.keypad.placeholder': '1',
   'shop.qty.keypad.invalid':
     '{qty_invalid} *كمية غير صالحة.*\n\n' +
     'أرسل عدداً صحيحاً بين *1* و *{max}*.',
@@ -281,7 +281,7 @@ export const ar: Record<string, string> = {
   'support.body':
     '_*إذا تعذّر عليك إرسال رسالة أو واجهتك مشكلة، استخدم الدعم المباشر للتواصل مع المسؤول مباشرة.*_',
   'support.btn.contact': '📩 تواصل مع المسؤول',
-  'support.contact_prefill': 'مرحبًا، أحتاج مساعدة بخصوص ShopBot SafwanTiger، الرجاء المساعدة بشأن: ',
+  'support.contact_prefill': 'مرحبًا، أحتاج مساعدة بخصوص ShopBot Homlander Store، الرجاء المساعدة بشأن: ',
   'support.btn.cancel': 'إلغاء الدعم',
   'support.btn.live': '🟢 الدعم المباشر',
   'support.btn.end_session': '🔴 إنهاء الجلسة',

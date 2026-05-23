@@ -307,7 +307,7 @@ export async function verifyAndCreditDeposit(args: {
     provider === 'usdt_bep20' ||
     provider === 'usdt_ton'
   ) {
-    const txHash = submission.txHash?.trim();
+    const txHash = submission.txHash?.trim().toLowerCase();
     if (!txHash) return { ok: false, reason: 'tx hash required' };
     if (!method.address) return { ok: false, reason: 'wallet address not set' };
 
@@ -413,7 +413,7 @@ export async function verifyAndCreditDeposit(args: {
 
   // ----- LTC native (quote-on-display flow) -----
   if (provider === 'ltc') {
-    const txHash = submission.txHash?.trim();
+    const txHash = submission.txHash?.trim().toLowerCase();
     if (!txHash) return { ok: false, reason: 'tx hash required' };
     if (!method.address) return { ok: false, reason: 'wallet address not set' };
     // Strict format gate — Litecoin tx hashes are 64 lowercase hex.
@@ -671,7 +671,3 @@ async function finalizeApproval(args: {
     provider: method.provider,
   };
 }
-
-
-
-

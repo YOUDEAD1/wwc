@@ -28,6 +28,7 @@ import type { DBPaymentMethod, PaymentProvider } from '../types.js';
 import { getAdminContactUrlWithPrefill } from '../services/settings.js';
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
 import { PE } from './paymentInstructionEmojis.js';
+import { generateUniqueAmount } from '../services/uniqueAmount.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -177,6 +178,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       // address screen — anchors the 30-min freshness window in
       // `services/depositVerify.ts` so a stale vendor TXID can't be
       // replayed by re-opening the screen.
+      const { uniqueAmount, tag } = generateUniqueAmount(0, ctx.user.telegram_id, m.id);
       ctx.session.userFlow = {
         type: 'chain_topup',
         step: 'tx_hash',
@@ -186,10 +188,11 @@ export function registerTopup(bot: Composer<AppCtx>): void {
           provider: m.provider,
           address: m.address,
           opened_at_ms: Date.now(),
+          unique_amount: uniqueAmount,
           instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
-      await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m)), {
+      await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m, uniqueAmount, tag)), {
         parse_mode: 'HTML',
         reply_markup: topupInstructionKeyboard(ctx, m),
       });
@@ -317,21 +320,44 @@ export function registerTopup(bot: Composer<AppCtx>): void {
 
   bot.callbackQuery(/^topup:request:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
+
+    // rate limit — 3 طلبات يدوية كل 5 دقائق
+    const rl = await consume(`manual_topup:${ctx.user.telegram_id}`, 3, 5 * 60_000);
+    if (!rl.ok) {
+      await ctx.answerCallbackQuery({
+        text: `⏱ Too many requests. Try again in ${formatRetryAfter(rl.retryAfterMs)}.`,
+        show_alert: true,
+      });
+      return;
+    }
+
     const methods = await listPaymentMethods();
     const m = methods.find((x) => x.id === id);
     if (!m) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
-    const dep = await createDeposit({
-      user_id: ctx.user.telegram_id,
-      method: m.name,
-      amount: 0,
-    });
+
+    // اطلب المبلغ من المستخدم قبل إنشاء الإيداع
+    ctx.session.userFlow = {
+      type: 'manual_topup_amount' as any,
+      step: 'amount' as any,
+      data: { method_id: m.id, method_name: m.name } as any,
+    };
+
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(renderMdHtml(ctx.t('topup.requested', { id: dep.id })), {
-      parse_mode: 'HTML',
-    });
+    await ctx.editMessageText(
+      renderMdHtml(
+        `💸 *${m.name}*\n\n` +
+        `${m.instructions}\n\n` +
+        `*كم تريد أن تودع؟*\n` +
+        `_أرسل المبلغ بالدولار (مثل: \`50\` أو \`100.50\`)_`,
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
+      },
+    );
   });
 
   // ----- Auto-verify top-up flows -----
@@ -363,8 +389,51 @@ export function registerTopup(bot: Composer<AppCtx>): void {
         return;
       }
     }
+    // ----- الإيداع اليدوي — استقبال المبلغ -----
+    if ((flow as any).type === 'manual_topup_amount') {
+      await handleManualTopupAmount(ctx, flow as any, text);
+      return;
+    }
     return next();
   });
+}
+
+async function handleManualTopupAmount(
+  ctx: AppCtx,
+  flow: { type: string; step: string; data: { method_id: number; method_name: string } },
+  text: string,
+): Promise<void> {
+  const amount = Number(text.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    await ctx.reply(
+      renderMdHtml('❌ مبلغ غير صالح. أرسل رقماً موجباً مثل `50` أو `100.50`.'),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  if (amount < 1) {
+    await ctx.reply(renderMdHtml('❌ الحد الأدنى للإيداع هو **1 USDT**.'), { parse_mode: 'HTML' });
+    return;
+  }
+
+  ctx.session.userFlow = undefined;
+
+  const dep = await createDeposit({
+    user_id: ctx.user.telegram_id,
+    method: flow.data.method_name,
+    amount,
+    note: `Manual deposit request — $${amount}`,
+  });
+
+  await ctx.reply(
+    renderMdHtml(
+      `✅ *تم استلام طلبك!*\n\n` +
+      `🆔 رقم الطلب: \`#${dep.id}\`\n` +
+      `💰 المبلغ: *$${amount.toFixed(2)} USDT*\n\n` +
+      `_سيقوم الأدمن بمراجعة الطلب وإضافة الرصيد قريباً._`,
+    ),
+    { parse_mode: 'HTML' },
+  );
 }
 // ----- USDT chain flow (BEP20 / TRC20 / TON) -----------------------------
 
@@ -378,7 +447,7 @@ async function handleChainTopupSubmit(
   // TronGrid / BscScan). 10 attempts / 60s leaves plenty of headroom
   // for the legitimate "paste, indexer-lag retry" flow while making
   // scripted hash-mining useless.
-  const rl = consume(`chain_tx:${ctx.user.telegram_id}`, 10, 60_000);
+  const rl = await consume(`chain_tx:${ctx.user.telegram_id}`, 10, 60_000);
   if (!rl.ok) {
     await ctx.reply(
       renderMdHtml(
@@ -473,10 +542,13 @@ async function handleChainTopupSubmit(
       const dep = await createDeposit({
         user_id: ctx.user.telegram_id,
         method: flow.data.method_name,
-        amount: 0.01,
+        amount: flow.data.unique_amount ?? 0.01,
         reference: txHash,
         note: 'On-chain tx submitted via auto-verify',
         tx_hash: txHash,
+        unique_amount_tag: flow.data.unique_amount
+          ? `${ctx.user.telegram_id}:${flow.data.method_id}:${flow.data.unique_amount}`
+          : undefined,
       });
       depId = dep.id;
     } catch (err) {
@@ -906,7 +978,7 @@ async function handleBinancePayOrderId(
   // brute-force lookups. 5 attempts / 60s is generous for a real
   // user (one paste per deposit) and tight enough to make scripted
   // probing useless.
-  const rl = consume(`binance_pay:${ctx.user.telegram_id}`, 5, 60_000);
+  const rl = await consume(`binance_pay:${ctx.user.telegram_id}`, 5, 60_000);
   if (!rl.ok) {
     await ctx.reply(
       renderMdHtml(
@@ -1047,7 +1119,7 @@ async function handleBinancePayOrderId(
   }
 }
 
-function buildChainTopupScreen(m: DBPaymentMethod): string {
+function buildChainTopupScreen(m: DBPaymentMethod, uniqueAmount?: number, tag?: string): string {
   const headingGlyph =
     m.provider === 'usdt_ton' ? PE.ton_title : PE.usdt_title;
   const heading =
@@ -1056,37 +1128,36 @@ function buildChainTopupScreen(m: DBPaymentMethod): string {
       : m.provider === 'usdt_trc20'
         ? `${headingGlyph} *USDT (TRC-20) Deposit*`
         : `${headingGlyph} *TON Network Deposit*`;
-  // Per-provider "what to send" wording — TON / TRC accept both their
-  // native coin (auto-converted to USDT) and the matching jetton, while
-  // BEP-20 only auto-verifies USDT itself.
   const sendLine =
     m.provider === 'usdt_bep20'
-      ? `${PE.bullet_send} Send any USDT amount to the address above`
+      ? `${PE.bullet_send} Send *exactly \`${uniqueAmount ?? 'any'} USDT\`* to the address above`
       : m.provider === 'usdt_ton'
-        ? `${PE.bullet_send} Send Native TON Coin or USDT (TON) to the address above`
-        : `${PE.bullet_send} Send Native TRX or USDT (TRC-20) to the address above`;
+        ? `${PE.bullet_send} Send *exactly \`${uniqueAmount ?? 'any'} USDT\`* (TON) to the address above`
+        : `${PE.bullet_send} Send *exactly \`${uniqueAmount ?? 'any'} USDT\`* (TRC-20) to the address above`;
   const lines: string[] = [
     heading,
     '',
     `\`${m.address ?? '(address not set)'}\``,
     '',
     sendLine,
-    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
-    '',
   ];
+  if (uniqueAmount) {
+    lines.push(
+      ``,
+      `⚠️ _أرسل *المبلغ بالضبط* \`${uniqueAmount} USDT\` — هذا المبلغ فريد لجلستك ويمنع استخدام معاملتك من قِبل شخص آخر._`,
+    );
+  }
+  lines.push(
+    ``,
+    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
+    ``,
+  );
   if (m.provider === 'usdt_bep20') {
-    lines.push(
-      `${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`,
-    );
-    lines.push(`${PE.note} _Up to 3 decimal places only._`);
+    lines.push(`${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`);
   } else if (m.provider === 'usdt_ton') {
-    lines.push(
-      `${PE.convert} _TON coins are automatically converted to USDT at live market rates._`,
-    );
+    lines.push(`${PE.convert} _TON coins are automatically converted to USDT at live market rates._`);
   } else {
-    lines.push(
-      `${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`,
-    );
+    lines.push(`${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`);
   }
   lines.push('');
   lines.push('*Please send your TX hash below:*');
@@ -1135,5 +1206,3 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
 }
-
-

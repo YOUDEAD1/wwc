@@ -11,7 +11,7 @@
  *     them, even with valid credentials.
  *   - The cure: send via an HTTPS API. Resend is small, modern, has
  *     a free tier well-suited to a Telegram-bot welcome flow, and
- *     happily delivers from `shopbot@safwantiger.com` once the
+ *     happily delivers from `shopbot@homlanderstore.com` once the
  *     domain is verified.
  *   - The legacy SMTP path is preserved for self-hosted / VPS-style
  *     deploys where outbound 465/587 isn't firewalled.
@@ -43,15 +43,15 @@ export const WHY_EMAIL_PDF_PATH = path.resolve(
   __dirname,
   '../../../assets/email-explanation.pdf',
 );
-/** Path to the SafwanTiger Shop logo shown in the email header. */
+/** Path to the Homlander Store logo shown in the email header. */
 export const EMAIL_LOGO_PATH = path.resolve(
   __dirname,
   '../../../assets/email-logo.png',
 );
 
-const LOGO_FILENAME = 'safwantiger-logo.png';
+const LOGO_FILENAME = 'homlander-logo.png';
 /** CID used by the inline logo in the HTML body. */
-const LOGO_CID = 'safwantiger-logo';
+const LOGO_CID = 'homlander-logo';
 
 let logoBase64Cache: string | null = null;
 function readLogoBase64(): string | null {
@@ -113,17 +113,17 @@ function smtpTransporter(): Transporter<SMTPPool.SentMessageInfo> | null {
 }
 
 /**
- * Build the canonical "From: SafwanTiger Shop <shopbot@…>" header.
+ * Build the canonical "From: Homlander Store <shopbot@…>" header.
  * Order of precedence:
- *   RESEND_FROM > SMTP_FROM > SMTP_USER > 'shopbot@safwantiger.com'
+ *   RESEND_FROM > SMTP_FROM > SMTP_USER > 'shopbot@homlanderstore.com'
  */
 function fromAddress(): string {
   const addr =
     env.RESEND_FROM ||
     env.SMTP_USER ||
     env.SMTP_FROM ||
-    'shopbot@safwantiger.com';
-  const name = env.SMTP_FROM_NAME || 'SafwanTiger Shop';
+    'shopbot@homlanderstore.com';
+  const name = env.SMTP_FROM_NAME || 'Homlander Store';
   return `"${name}" <${addr}>`;
 }
 
@@ -153,10 +153,10 @@ function welcomeBody(args: {
 
   const subject =
     args.mode === 'delete'
-      ? 'SafwanTiger Shop — your email has been removed'
+      ? 'Homlander Store — your email has been removed'
       : args.mode === 'change'
-        ? 'SafwanTiger Shop — your email has been updated'
-        : 'Welcome to SafwanTiger Shop — your email is connected';
+        ? 'Homlander Store — your email has been updated'
+        : 'Welcome to Homlander Store — your email is connected';
 
   const headlineEyebrow =
     args.mode === 'delete'
@@ -174,10 +174,10 @@ function welcomeBody(args: {
   // ---------- plain-text alternative ----------
   const introText =
     args.mode === 'delete'
-      ? `Just confirming: the email on file for your SafwanTiger Shop account (${args.email}) has been deleted from the bot successfully. You will no longer receive receipts at this address.`
+      ? `Just confirming: the email on file for your Homlander Store account (${args.email}) has been deleted from the bot successfully. You will no longer receive receipts at this address.`
       : args.mode === 'change'
-        ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to ${args.email}.`
-        : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked ${args.email} to your Telegram account.`;
+        ? `Just confirming: the email on file for your Homlander Store account has been updated to ${args.email}.`
+        : `Thanks for setting up your email with Homlander Store. We've securely linked ${args.email} to your Telegram account.`;
   const lines: string[] = [greeting, '', introText];
   if (args.mode === 'change' && args.previousEmail) {
     lines.push('', `Previous email on file: ${args.previousEmail}`);
@@ -190,8 +190,8 @@ function welcomeBody(args: {
       '',
       "If you didn't just delete this address yourself, reply to this email immediately so we can secure your account.",
       '',
-      '— SafwanTiger Shop',
-      'https://t.me/safwantigershopbot',
+      '— Homlander Store',
+      'https://t.me/lara_v2',
     );
   } else {
     lines.push(
@@ -208,8 +208,8 @@ function welcomeBody(args: {
         ? "If you didn't just update this address yourself, reply to this email immediately so we can secure your account."
         : 'If you did not just save this address in our bot, please reply to this email and we will remove it from your account.',
       '',
-      '— SafwanTiger Shop',
-      'https://t.me/safwantigershopbot',
+      '— Homlander Store',
+      'https://t.me/lara_v2',
     );
   }
   const text = lines.join('\n');
@@ -239,17 +239,17 @@ function welcomeBody(args: {
 
   const securityNote =
     args.mode === 'delete'
-      ? "If you didn't just delete this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20deletion\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">reply to this email immediately</a> so we can secure your account."
+      ? "If you didn't just delete this address yourself, <a href=\"mailto:shopbot@homlanderstore.com?subject=Unauthorised%20email%20deletion\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">reply to this email immediately</a> so we can secure your account."
       : args.mode === 'change'
-        ? "If you didn't just update this address yourself, <a href=\"mailto:shopbot@safwantiger.com?subject=Unauthorised%20email%20change\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">reply to this email immediately</a> so we can secure your account."
-        : "Didn't just save this address? <a href=\"mailto:shopbot@safwantiger.com?subject=Remove%20my%20email\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">Reply to this email</a> and we'll remove it from your account.";
+        ? "If you didn't just update this address yourself, <a href=\"mailto:shopbot@homlanderstore.com?subject=Unauthorised%20email%20change\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">reply to this email immediately</a> so we can secure your account."
+        : "Didn't just save this address? <a href=\"mailto:shopbot@homlanderstore.com?subject=Remove%20my%20email\" style=\"color:#e6c08c;text-decoration:underline;text-underline-offset:2px;\">Reply to this email</a> and we'll remove it from your account.";
 
   const introCopy =
     args.mode === 'delete'
       ? `Just confirming: <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> has been deleted from the bot successfully. You will no longer receive receipts at this address.`
       : args.mode === 'change'
-        ? `Just confirming: the email on file for your SafwanTiger Shop account has been updated to <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong>.`
-        : `Thanks for setting up your email with SafwanTiger Shop. We've securely linked <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> to your Telegram account.`;
+        ? `Just confirming: the email on file for your Homlander Store account has been updated to <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong>.`
+        : `Thanks for setting up your email with Homlander Store. We've securely linked <strong style="color:#e6c08c;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(args.email)}</strong> to your Telegram account.`;
 
   // Circular logo with a thin champagne ring. 56×56 — small enough
   // to feel refined, large enough to read on retina displays. The
@@ -260,7 +260,7 @@ function welcomeBody(args: {
     <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:56pt;height:56pt;" stroked="t" strokeweight="1.5pt" strokecolor="#d4a574" fillcolor="#0a0a0a"><v:fill type="frame" src="cid:${LOGO_CID}"/></v:oval>
     <![endif]-->
     <!--[if !mso]><!-- -->
-    <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
+    <img src="cid:${LOGO_CID}" alt="Homlander Store" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
     <!--<![endif]-->`;
 
   const html = `<!doctype html>
@@ -289,7 +289,7 @@ function welcomeBody(args: {
         <!-- Header: centred logo + eyebrow + title on deep ink -->
         <tr><td align="center" style="padding:40px 36px 28px 36px;background:#0a0a0a;">
           ${logoBlock}
-          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">SafwanTiger Shop</div>
+          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">Homlander Store</div>
           <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a8378;margin-top:4px;font-weight:500;">${escapeHtml(headlineEyebrow)}</div>
           <div style="font-size:26px;color:#f5f1e8;font-weight:600;margin-top:18px;letter-spacing:-0.015em;line-height:1.25;">${escapeHtml(headlineTitle)}</div>
         </td></tr>
@@ -342,14 +342,14 @@ function welcomeBody(args: {
         <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(255,255,255,0.06);">&nbsp;</td></tr>
 
         <tr><td align="center" style="padding:24px 36px 28px 36px;background:#0a0a0a;">
-          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">SafwanTiger Shop Team</div>
+          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">Homlander Store Team</div>
           <div style="margin-top:6px;font-size:13px;color:#8a8378;line-height:1.6;">
-            <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:none;">@safwantigershopbot</a>
+            <a href="https://t.me/lara_v2" style="color:#e6c08c;text-decoration:none;">@lara_v2</a>
             <span style="color:#3a3631;">&nbsp;·&nbsp;</span>
-            <a href="mailto:shopbot@safwantiger.com" style="color:#8a8378;text-decoration:none;">shopbot@safwantiger.com</a>
+            <a href="mailto:shopbot@homlanderstore.com" style="color:#8a8378;text-decoration:none;">shopbot@homlanderstore.com</a>
           </div>
           <p style="margin:16px 0 0 0;font-size:11px;color:#5a5550;line-height:1.6;letter-spacing:.01em;">
-            This is an automated message confirming a change you made through the SafwanTiger Shop Telegram bot. Please don't share this email with anyone.
+            This is an automated message confirming a change you made through the Homlander Store Telegram bot. Please don't share this email with anyone.
           </p>
         </td></tr>
       </table>
@@ -382,7 +382,7 @@ async function sendViaResend(args: {
 }): Promise<boolean> {
   const client = resendClient();
   if (!client) return false;
-  // Inline header logo, referenced as `cid:safwantiger-logo` from the
+  // Inline header logo, referenced as `cid:homlander-logo` from the
   // HTML. Falls back gracefully if the file is missing.
   const logoB64 = readLogoBase64();
   const attachments: Array<{
@@ -593,7 +593,7 @@ export function describeMailerStatus(): string {
   }
   lines.push(
     'Transport: NONE — welcome emails are disabled',
-    'Set RESEND_API_KEY (preferred) or SMTP_HOST/PORT/USER/PASS in your environment to enable delivery from shopbot@safwantiger.com.',
+    'Set RESEND_API_KEY (preferred) or SMTP_HOST/PORT/USER/PASS in your environment to enable delivery from shopbot@homlanderstore.com.',
   );
   return lines.join('\n');
 }
@@ -615,13 +615,13 @@ const REPORT_TITLES: Record<ReportKind, string> = {
 
 const REPORT_INTROS: Record<ReportKind, string> = {
   orders:
-    "Here's a full PDF copy of every order on your SafwanTiger Shop account. Each order includes its product, quantity, total, status and timestamp.",
+    "Here's a full PDF copy of every order on your Homlander Store account. Each order includes its product, quantity, total, status and timestamp.",
   deposits:
-    "Here's a full PDF copy of every deposit and wallet ledger entry on your SafwanTiger Shop account. Approved totals are summarised on the cover page.",
+    "Here's a full PDF copy of every deposit and wallet ledger entry on your Homlander Store account. Approved totals are summarised on the cover page.",
   stats:
-    "Here's a PDF snapshot of your SafwanTiger Shop account stats — total orders, items, spend, deposits and last-order timestamp.",
+    "Here's a PDF snapshot of your Homlander Store account stats — total orders, items, spend, deposits and last-order timestamp.",
   support:
-    "Here's a chat-style PDF transcript of your most recent SafwanTiger Shop Live Support session. Every message exchanged with the admin is preserved exactly as it was sent, with timestamps, so you have a permanent record.",
+    "Here's a chat-style PDF transcript of your most recent Homlander Store Live Support session. Every message exchanged with the admin is preserved exactly as it was sent, with timestamps, so you have a permanent record.",
 };
 
 function reportBody(args: {
@@ -633,7 +633,7 @@ function reportBody(args: {
 }): { html: string; text: string; subject: string } {
   const title = REPORT_TITLES[args.kind];
   const intro = REPORT_INTROS[args.kind];
-  const subject = `SafwanTiger Shop — your ${title} report`;
+  const subject = `Homlander Store — your ${title} report`;
   const greeting = args.firstName
     ? `Hi ${args.firstName},`
     : args.username
@@ -647,11 +647,11 @@ function reportBody(args: {
     '',
     `Generated: ${args.generatedAt}`,
     '',
-    'You requested this PDF from the SafwanTiger Shop Telegram bot. If',
+    'You requested this PDF from the Homlander Store Telegram bot. If',
     "this wasn't you, reply to this email so we can secure your account.",
     '',
-    '— SafwanTiger Shop',
-    'https://t.me/safwantigershopbot',
+    '— Homlander Store',
+    'https://t.me/lara_v2',
   ];
   const text = lines.join('\n');
 
@@ -660,7 +660,7 @@ function reportBody(args: {
     <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:56pt;height:56pt;" stroked="t" strokeweight="1.5pt" strokecolor="#d4a574" fillcolor="#0a0a0a"><v:fill type="frame" src="cid:${LOGO_CID}"/></v:oval>
     <![endif]-->
     <!--[if !mso]><!-- -->
-    <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
+    <img src="cid:${LOGO_CID}" alt="Homlander Store" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
     <!--<![endif]-->`;
 
   const html = `<!doctype html>
@@ -679,7 +679,7 @@ function reportBody(args: {
         <tr><td style="height:2px;line-height:2px;font-size:0;background:linear-gradient(90deg,rgba(212,165,116,0) 0%,#d4a574 50%,rgba(212,165,116,0) 100%);">&nbsp;</td></tr>
         <tr><td align="center" style="padding:40px 36px 28px 36px;background:#0a0a0a;">
           ${logoBlock}
-          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">SafwanTiger Shop</div>
+          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">Homlander Store</div>
           <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a8378;margin-top:4px;font-weight:500;">Report ready</div>
           <div style="font-size:26px;color:#f5f1e8;font-weight:600;margin-top:18px;letter-spacing:-0.015em;line-height:1.25;">Your ${escapeHtml(title)} report</div>
         </td></tr>
@@ -691,25 +691,25 @@ function reportBody(args: {
         <tr><td style="padding:0 36px 22px 36px;">
           <div style="padding:16px 20px;border-radius:10px;background:#16151a;border:1px solid rgba(255,255,255,0.06);font-size:13px;color:#8a8378;line-height:1.7;">
             <span style="color:#d4a574;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:10px;">Attached</span><br>
-            <span style="color:#f5f1e8;font-weight:500;">SafwanTiger-Shop-${escapeHtml(args.kind)}.pdf</span>
+            <span style="color:#f5f1e8;font-weight:500;">Homlander-Shop-${escapeHtml(args.kind)}.pdf</span>
             <span style="color:#5a5550;"> · generated ${escapeHtml(args.generatedAt)}</span>
           </div>
         </td></tr>
         <tr><td style="padding:0 36px 28px 36px;">
           <div style="padding:16px 20px;border-radius:10px;background:rgba(212,165,116,0.06);border:1px solid rgba(212,165,116,0.22);font-size:13px;color:#d8d3c8;line-height:1.7;">
-            <strong style="color:#e6c08c;font-weight:600;letter-spacing:.02em;">Heads up.</strong> You requested this PDF from the SafwanTiger Shop Telegram bot. If this wasn't you, <a href="mailto:shopbot@safwantiger.com?subject=Report%20I%20did%20not%20request" style="color:#e6c08c;text-decoration:underline;text-underline-offset:2px;">reply to this email</a> so we can secure your account.
+            <strong style="color:#e6c08c;font-weight:600;letter-spacing:.02em;">Heads up.</strong> You requested this PDF from the Homlander Store Telegram bot. If this wasn't you, <a href="mailto:shopbot@homlanderstore.com?subject=Report%20I%20did%20not%20request" style="color:#e6c08c;text-decoration:underline;text-underline-offset:2px;">reply to this email</a> so we can secure your account.
           </div>
         </td></tr>
         <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(255,255,255,0.06);">&nbsp;</td></tr>
         <tr><td align="center" style="padding:24px 36px 28px 36px;background:#0a0a0a;">
-          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">SafwanTiger Shop Team</div>
+          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">Homlander Store Team</div>
           <div style="margin-top:6px;font-size:13px;color:#8a8378;line-height:1.6;">
-            <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:none;">@safwantigershopbot</a>
+            <a href="https://t.me/lara_v2" style="color:#e6c08c;text-decoration:none;">@lara_v2</a>
             <span style="color:#3a3631;">&nbsp;·&nbsp;</span>
-            <a href="mailto:shopbot@safwantiger.com" style="color:#8a8378;text-decoration:none;">shopbot@safwantiger.com</a>
+            <a href="mailto:shopbot@homlanderstore.com" style="color:#8a8378;text-decoration:none;">shopbot@homlanderstore.com</a>
           </div>
           <p style="margin:16px 0 0 0;font-size:11px;color:#5a5550;line-height:1.6;letter-spacing:.01em;">
-            This is an automated message confirming a report you requested through the SafwanTiger Shop Telegram bot. Please don't share this email with anyone.
+            This is an automated message confirming a report you requested through the Homlander Store Telegram bot. Please don't share this email with anyone.
           </p>
         </td></tr>
       </table>
@@ -755,8 +755,8 @@ export async function sendReportEmail(args: {
     username: args.username,
     generatedAt,
   });
-  const filename = `SafwanTiger-Shop-${args.kind}.pdf`;
-  const csvFilename = `SafwanTiger-Shop-${args.kind}.csv`;
+  const filename = `Homlander-Shop-${args.kind}.pdf`;
+  const csvFilename = `Homlander-Shop-${args.kind}.csv`;
 
   if (resendConfigured()) {
     const client = resendClient();
@@ -874,7 +874,7 @@ export async function sendReportEmail(args: {
 }
 
 /**
- * Send the live SafwanTiger Shop price list as a PDF attachment.
+ * Send the live Homlander Store price list as a PDF attachment.
  * Subject / body are intentionally simple — the customer-facing
  * spec asks for "send the file, no fancy template". Returns true
  * on transport success.
@@ -894,7 +894,7 @@ export async function sendPriceListEmail(args: {
     logger.warn({ email: args.email }, 'sendPriceListEmail: no transport configured');
     return false;
   }
-  const subject = 'SafwanTiger Shop — Price List';
+  const subject = 'Homlander Store — Price List';
   const greeting = args.firstName
     ? `Hi ${args.firstName},`
     : args.username
@@ -903,14 +903,14 @@ export async function sendPriceListEmail(args: {
   const text = [
     greeting,
     '',
-    'Attached is the live SafwanTiger Shop price list as a PDF.',
+    'Attached is the live Homlander Store price list as a PDF.',
     '',
     args.promoFooter,
     '',
-    '— SafwanTiger Shop',
+    '— Homlander Store',
   ].join('\n');
-  const html = `<p>${escapeHtml(greeting)}</p><p>Attached is the live SafwanTiger Shop price list as a PDF.</p><p>${escapeHtml(args.promoFooter)}</p><p>— SafwanTiger Shop</p>`;
-  const filename = `SafwanTiger-Shop-PriceList-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const html = `<p>${escapeHtml(greeting)}</p><p>Attached is the live Homlander Store price list as a PDF.</p><p>${escapeHtml(args.promoFooter)}</p><p>— Homlander Store</p>`;
+  const filename = `Homlander-Shop-PriceList-${new Date().toISOString().slice(0, 10)}.pdf`;
   if (resendConfigured()) {
     const client = resendClient();
     if (!client) return false;
@@ -998,7 +998,7 @@ function invoiceBody(args: {
     : args.username
       ? `Hi @${args.username},`
       : 'Hello,';
-  const subject = `SafwanTiger Shop — Invoice ${args.orderPublicId}`;
+  const subject = `Homlander Store — Invoice ${args.orderPublicId}`;
   const subtotal = args.unitPrice * args.qty;
   const issuedAt = formatInvoiceDate(args.orderDate);
 
@@ -1006,7 +1006,7 @@ function invoiceBody(args: {
   const textLines: string[] = [
     greeting,
     '',
-    `Thanks for purchasing from SafwanTiger Shop. Your invoice for ${args.orderPublicId} is below — a PDF copy is attached for your records.`,
+    `Thanks for purchasing from Homlander Store. Your invoice for ${args.orderPublicId} is below — a PDF copy is attached for your records.`,
     '',
     `Order ID:   ${args.orderPublicId}`,
     `Issued:     ${issuedAt}`,
@@ -1034,11 +1034,11 @@ function invoiceBody(args: {
     textLines.push(`Re-open this order in Telegram: ${args.invoiceLink}`, '');
   }
   textLines.push(
-    'Need help? Reply to this email or message @safwantigershopbot on',
+    'Need help? Reply to this email or message @lara_v2 on',
     'Telegram with your Order ID above.',
     '',
-    '— SafwanTiger Shop',
-    'https://t.me/safwantigershopbot',
+    '— Homlander Store',
+    'https://t.me/lara_v2',
   );
   const text = textLines.join('\n');
 
@@ -1075,7 +1075,7 @@ function invoiceBody(args: {
     <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:56pt;height:56pt;" stroked="t" strokeweight="1.5pt" strokecolor="#d4a574" fillcolor="#0a0a0a"><v:fill type="frame" src="cid:${LOGO_CID}"/></v:oval>
     <![endif]-->
     <!--[if !mso]><!-- -->
-    <img src="cid:${LOGO_CID}" alt="SafwanTiger Shop" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
+    <img src="cid:${LOGO_CID}" alt="Homlander Store" width="56" height="56" style="display:block;width:56px;height:56px;border:1.5px solid #d4a574;border-radius:50%;background:#0a0a0a;object-fit:cover;">
     <!--<![endif]-->`;
 
   const html = `<!doctype html>
@@ -1094,14 +1094,14 @@ function invoiceBody(args: {
         <tr><td style="height:2px;line-height:2px;font-size:0;background:linear-gradient(90deg,rgba(212,165,116,0) 0%,#d4a574 50%,rgba(212,165,116,0) 100%);">&nbsp;</td></tr>
         <tr><td align="center" style="padding:36px 36px 24px 36px;background:#0a0a0a;">
           ${logoBlock}
-          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">SafwanTiger Shop</div>
+          <div style="font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d4a574;font-weight:600;margin-top:18px;">Homlander Store</div>
           <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a8378;margin-top:4px;font-weight:500;">Tax invoice / receipt</div>
           <div style="font-size:26px;color:#f5f1e8;font-weight:600;margin-top:14px;letter-spacing:-0.015em;line-height:1.25;">Invoice ${escapeHtmlValue(args.orderPublicId)}</div>
         </td></tr>
         <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(212,165,116,0.16);">&nbsp;</td></tr>
         <tr><td style="padding:28px 36px 8px 36px;">
           <p style="margin:0 0 14px 0;color:#f5f1e8;font-size:15px;line-height:1.6;font-weight:500;">${escapeHtmlValue(greeting)}</p>
-          <p style="margin:0 0 22px 0;font-size:14px;line-height:1.7;color:#d8d3c8;">Thanks for purchasing from SafwanTiger Shop. Your receipt is below — a PDF copy is attached for your records.</p>
+          <p style="margin:0 0 22px 0;font-size:14px;line-height:1.7;color:#d8d3c8;">Thanks for purchasing from Homlander Store. Your receipt is below — a PDF copy is attached for your records.</p>
         </td></tr>
         <tr><td style="padding:0 36px 18px 36px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#16151a;border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
@@ -1147,19 +1147,19 @@ function invoiceBody(args: {
         ${ctaBlock}
         <tr><td style="padding:0 36px 24px 36px;">
           <div style="padding:14px 18px;border-radius:10px;background:rgba(212,165,116,0.06);border:1px solid rgba(212,165,116,0.22);font-size:13px;color:#d8d3c8;line-height:1.7;">
-            <strong style="color:#e6c08c;font-weight:600;letter-spacing:.02em;">Need help?</strong> Reply to this email or message <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:underline;text-underline-offset:2px;">@safwantigershopbot</a> on Telegram with the Order ID above.
+            <strong style="color:#e6c08c;font-weight:600;letter-spacing:.02em;">Need help?</strong> Reply to this email or message <a href="https://t.me/lara_v2" style="color:#e6c08c;text-decoration:underline;text-underline-offset:2px;">@lara_v2</a> on Telegram with the Order ID above.
           </div>
         </td></tr>
         <tr><td style="height:1px;line-height:1px;font-size:0;background:rgba(255,255,255,0.06);">&nbsp;</td></tr>
         <tr><td align="center" style="padding:22px 36px 26px 36px;background:#0a0a0a;">
-          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">SafwanTiger Shop Team</div>
+          <div style="font-size:13px;color:#d8d3c8;line-height:1.6;font-weight:500;">Homlander Store Team</div>
           <div style="margin-top:6px;font-size:13px;color:#8a8378;line-height:1.6;">
-            <a href="https://t.me/safwantigershopbot" style="color:#e6c08c;text-decoration:none;">@safwantigershopbot</a>
+            <a href="https://t.me/lara_v2" style="color:#e6c08c;text-decoration:none;">@lara_v2</a>
             <span style="color:#3a3631;">&nbsp;·&nbsp;</span>
-            <a href="mailto:shopbot@safwantiger.com" style="color:#8a8378;text-decoration:none;">shopbot@safwantiger.com</a>
+            <a href="mailto:shopbot@homlanderstore.com" style="color:#8a8378;text-decoration:none;">shopbot@homlanderstore.com</a>
           </div>
           <p style="margin:14px 0 0 0;font-size:11px;color:#5a5550;line-height:1.6;letter-spacing:.01em;">
-            This is an automated invoice for an order placed through the SafwanTiger Shop Telegram bot.
+            This is an automated invoice for an order placed through the Homlander Store Telegram bot.
           </p>
         </td></tr>
       </table>
@@ -1249,7 +1249,7 @@ export async function sendInvoiceEmail(args: {
     pdf = null;
   }
 
-  const filename = `SafwanTiger-Shop-Invoice-${args.orderPublicId}.pdf`;
+  const filename = `Homlander-Shop-Invoice-${args.orderPublicId}.pdf`;
 
   if (resendConfigured()) {
     const client = resendClient();

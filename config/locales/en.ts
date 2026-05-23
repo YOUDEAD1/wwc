@@ -1,11 +1,11 @@
 /* English (default) — edit text here. */
 export const en: Record<string, string> = {
   // ---------- Welcome / menu ----------
-  'welcome': 'Welcome to SafwanTiger Shop',
-  'welcome.title': 'Welcome to SafwanTiger Shop!',
+  'welcome': 'Welcome to Homlander Store',
+  'welcome.title': 'Welcome to Homlander Store!',
   'welcome.balance': 'Your balance: *${balance}*',
   'welcome.tap_menu': 'Tap *Main Menu* below to begin.',
-  'menu.title': '🐯 *SafwanTiger Shop* — Main Menu',
+  'menu.title': '🐯 *Homlander Store* — Main Menu',
 
   // ---------- Buttons ----------
   'btn.main_menu': '⬅️ Back',
@@ -146,7 +146,7 @@ export const en: Record<string, string> = {
   'shop.qty.keypad.instruction':
     '{qty_prompt_keypad} *How to use:* tap the digits below or send a number, ' +
     'then tap ✅ Confirm.\n' +
-    'Current: <code>{current}</code>',
+    'Current: `{current}`',
   // Placeholder shown inside `Current: <code>…</code>` while the
   // digit buffer is empty. Reads as a sentence to first-time users
   // ("Current: (Amount)") instead of the cryptic em-dash we used
@@ -547,13 +547,13 @@ export const en: Record<string, string> = {
   'profile.pricelist.csv.promo_format': 'Buy {min_qty}+ \u2212{discount} USDT',
   'profile.pricelist.csv.unlimited': '\u221e',
   // PDF (mail-only) — title / section header used by buildPriceListPdf.
-  'profile.pricelist.pdf.title': 'SafwanTiger Shop \u2014 Price List',
+  'profile.pricelist.pdf.title': 'Homlander Store \u2014 Price List',
   'profile.pricelist.pdf.section': 'Catalog',
   // Footer surfaced both in the CSV body and in the email subject /
   // body. Admin can override the marketing copy via /settext
   // `profile.pricelist.promo_footer`.
   'profile.pricelist.promo_footer':
-    'Thanks for choosing SafwanTiger Shop. Tap the bot to redeem promos and earn referral rewards. \ud83d\udc2f',
+    'Thanks for choosing Homlander Store. Tap the bot to redeem promos and earn referral rewards. \ud83d\udc2f',
   // Email Settings hub (the new submenu opened from a single Settings button).
   'profile.email.hub.title': '{email_bracket_l} *Email Settings* {profile_email}',
   'profile.email.hub.body':
@@ -739,7 +739,7 @@ export const en: Record<string, string> = {
   'support.btn.contact': '📩 Contact Admin',
   // Pre-filled into the admin DM's input bar when the user taps
   // Contact Admin (via t.me/<admin>?text=...).
-  'support.contact_prefill': 'Hi i need help about ShopBot SafwanTiger Please Help me about : ',
+  'support.contact_prefill': 'Hi i need help about ShopBot Homlander Store Please Help me about : ',
   'support.btn.cancel': 'Cancel Support',
   'support.btn.live': '🟢 Live Support',
   'support.btn.end_session': '🔴 End Session',

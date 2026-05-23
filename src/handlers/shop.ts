@@ -293,7 +293,7 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
   // ("Current: (Amount)") instead of the cryptic em-dash we used
   // before. Localised — falls back to "(Amount)" for languages
   // without a translation.
-  const placeholder = ctx.t('shop.qty.keypad.placeholder');
+  const placeholder = String(previewQty);
   const instruction = ctx.t('shop.qty.keypad.instruction', {
     current: buf.length > 0 ? buf : placeholder,
   });

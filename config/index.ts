@@ -1,5 +1,5 @@
 /**
- * SafwanTiger Shop Bot — central editable config.
+ * Homlander Store Bot — central editable config.
  *
  * Almost every user-facing string, button label, emoji, and color
  * mode lives in this single file. The admin can also override any

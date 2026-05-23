@@ -128,6 +128,8 @@ import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
 import { env } from '../../env.js';
 import type { DBOrder, DBUser, DBPromo } from '../../types.js';
+import { supabase } from '../../db/supabase.js';
+import { getForceSub, setForceSubEnabled, setForceSubChannel } from '../../services/forceSub.js';
 
 export const adminBot = new Composer<AppCtx>();
 
@@ -239,6 +241,8 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
     .row()
     .text('📘 Edit Bot Tutorial', 'adm:bot:tut')
     .row()
+    .text('📢 Forced Subscription', 'adm:fsub')
+    .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
   await ctx.editMessageText('⚙️ *Bot Settings*\n\nGeneral configuration knobs.', {
@@ -342,6 +346,111 @@ adminBot.callbackQuery('adm:bot:contact', async (ctx) => {
     '💬 *Set Admin Contact URL*\n\nSend a t.me URL the "Buy Code" / contact-admin buttons should open.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
+});
+
+// =====================================================================
+// 📢 Forced Subscription — قسم الاشتراك الإجباري
+// =====================================================================
+
+async function showFSubMenu(ctx: AppCtx): Promise<void> {
+  const config = await getForceSub();
+  const statusEmoji = config.enabled ? '✅' : '❌';
+  const statusText = config.enabled ? 'مفعّل' : 'معطّل';
+  const channelText = config.channelId ?? '_(لم يتم التعيين)_';
+
+  const lines = [
+    '📢 *الاشتراك الإجباري*',
+    '',
+    `• الحالة: ${statusEmoji} *${statusText}*`,
+    `• القناة: \`${channelText}\``,
+    '',
+    '*الرسالة عند الاشتراك:*',
+    '_(اضغط تعديل الرسالة لتغييرها)_',
+  ];
+
+  const kb = new InlineKeyboard();
+  if (config.enabled) {
+    kb.text('❌ تعطيل', 'adm:fsub:off');
+  } else {
+    kb.text('✅ تفعيل', 'adm:fsub:on');
+  }
+  kb.row()
+    .text('🔗 تعيين القناة', 'adm:fsub:setchannel')
+    .row()
+    .text('✏️ تعديل الرسالة', 'adm:fsub:setmsg')
+    .row()
+    .text('🧹 مسح الرسالة', 'adm:fsub:clrmsg');
+  backRow(kb);
+
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery('adm:fsub', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showFSubMenu(ctx);
+});
+
+// تفعيل
+adminBot.callbackQuery('adm:fsub:on', async (ctx) => {
+  const config = await getForceSub();
+  if (!config.channelId) {
+    await ctx.answerCallbackQuery({
+      text: '❌ عيّن القناة أولاً!',
+      show_alert: true,
+    });
+    return;
+  }
+  await setForceSubEnabled(true);
+  await ctx.answerCallbackQuery({ text: '✅ تم التفعيل' });
+  await showFSubMenu(ctx);
+});
+
+// تعطيل
+adminBot.callbackQuery('adm:fsub:off', async (ctx) => {
+  await setForceSubEnabled(false);
+  await ctx.answerCallbackQuery({ text: '✅ تم التعطيل' });
+  await showFSubMenu(ctx);
+});
+
+// تعيين القناة
+adminBot.callbackQuery('adm:fsub:setchannel', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'fsub.channel_id' } } as any;
+  await ctx.editMessageText(
+    '🔗 *تعيين القناة الإجبارية*\n\n' +
+    'أرسل معرف القناة، مثال:\n' +
+    '• `@myChannel` — قناة عامة\n' +
+    '• `-1001234567890` — قناة خاصة\n\n' +
+    '_ملاحظة: يجب إضافة البوت كأدمن في القناة._',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+// تعديل رسالة الاشتراك الإجباري
+adminBot.callbackQuery('adm:fsub:setmsg', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'fsub.message' } } as any;
+  await ctx.editMessageText(
+    '✏️ *تعديل رسالة الاشتراك الإجباري*\n\n' +
+    'أرسل الرسالة الجديدة. يمكنك استخدام:\n' +
+    '• `*نص عريض*`\n' +
+    '• `_نص مائل_`\n' +
+    '• الإيموجي مباشرة 🎉\n\n' +
+    '_الرسالة الحالية:_\n' +
+    '`⛔ يجب الاشتراك في القناة للوصول إلى البوت.`',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+// مسح رسالة الاشتراك (يرجع للافتراضية)
+adminBot.callbackQuery('adm:fsub:clrmsg', async (ctx) => {
+  await supabase.from('settings').delete().eq('key', 'fsub.message');
+  await ctx.answerCallbackQuery({ text: '✅ تم المسح — تم الرجوع للرسالة الافتراضية' });
+  await showFSubMenu(ctx);
 });
 
 // ---------- AI Setup ----------
@@ -6016,12 +6125,31 @@ adminBot.on('message:text', async (ctx, next) => {
         ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: text } };
         await ctx.reply(`Send the new value for \`${text}\`:`, { parse_mode: 'Markdown' });
       } else if (flow.step === 'value') {
-        await setText(flow.data.key, text, ctx.from!.id);
-        ctx.session.adminFlow = undefined;
-        await ctx.reply(`✅ Text \`${flow.data.key}\` updated.`, {
-          parse_mode: 'Markdown',
-          reply_markup: rootMenu(),
-        });
+        const key = flow.data.key;
+
+        // معالجة خاصة لمفاتيح fsub
+        if (key === 'fsub.channel_id') {
+          await setForceSubChannel(text.trim());
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(
+            `✅ تم تعيين القناة: \`${text.trim()}\`\n\nتأكد من إضافة البوت كأدمن في القناة.`,
+            { parse_mode: 'Markdown', reply_markup: rootMenu() },
+          );
+        } else if (key === 'fsub.message') {
+          await supabase.from('settings').upsert({ key: 'fsub.message', value: text });
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(
+            `✅ تم تحديث رسالة الاشتراك الإجباري.`,
+            { parse_mode: 'Markdown', reply_markup: rootMenu() },
+          );
+        } else {
+          await setText(key, text, ctx.from!.id);
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(`✅ Text \`${key}\` updated.`, {
+            parse_mode: 'Markdown',
+            reply_markup: rootMenu(),
+          });
+        }
       }
       return;
     }
@@ -7738,4 +7866,71 @@ adminBot.command('testemail', async (ctx) => {
       ? `✅ Sent. Check ${target}'s inbox (and spam). If nothing arrives, run /mailerstatus and check the bot logs for the Resend / SMTP error.`
       : `❌ Send failed. Run /mailerstatus and check the logs — usually missing RESEND_API_KEY or unverified domain.`,
   );
+});
+
+// =====================================================================
+// أوامر الاشتراك الإجباري
+// =====================================================================
+
+
+// /forcesub on  — تفعيل
+// /forcesub off — تعطيل
+// /forcesub set @channel — تعيين القناة
+// /forcesub status — عرض الحالة
+adminBot.command('forcesub', async (ctx) => {
+  const parts = (ctx.message?.text ?? '').split(/\s+/).slice(1);
+  const sub = parts[0]?.toLowerCase();
+
+  if (!sub) {
+    await ctx.reply(
+      '📢 *Force Subscription Commands:*\n\n' +
+      '`/forcesub on` — تفعيل الاشتراك الإجباري\n' +
+      '`/forcesub off` — تعطيل الاشتراك الإجباري\n' +
+      '`/forcesub set @channel` — تعيين القناة\n' +
+      '`/forcesub status` — عرض الحالة الحالية',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+
+  if (sub === 'on') {
+    const config = await getForceSub();
+    if (!config.channelId) {
+      await ctx.reply('❌ حدد القناة أولاً:\n`/forcesub set @channel`', { parse_mode: 'Markdown' });
+      return;
+    }
+    await setForceSubEnabled(true);
+    await ctx.reply('✅ تم تفعيل الاشتراك الإجباري.');
+    return;
+  }
+
+  if (sub === 'off') {
+    await setForceSubEnabled(false);
+    await ctx.reply('✅ تم تعطيل الاشتراك الإجباري.');
+    return;
+  }
+
+  if (sub === 'set') {
+    const channelId = parts[1];
+    if (!channelId) {
+      await ctx.reply('❌ Usage: `/forcesub set @channel`', { parse_mode: 'Markdown' });
+      return;
+    }
+    await setForceSubChannel(channelId);
+    await ctx.reply(`✅ تم تعيين القناة: \`${channelId}\`\n\nلتفعيل الاشتراك الإجباري: \`/forcesub on\``, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  if (sub === 'status') {
+    const config = await getForceSub();
+    await ctx.reply(
+      `📢 *حالة الاشتراك الإجباري:*\n\n` +
+      `• الحالة: ${config.enabled ? '✅ مفعّل' : '❌ معطّل'}\n` +
+      `• القناة: ${config.channelId ?? '(لم يتم التعيين)'}`,
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+
+  await ctx.reply('❌ أمر غير معروف. استخدم `/forcesub` لعرض الأوامر.', { parse_mode: 'Markdown' });
 });

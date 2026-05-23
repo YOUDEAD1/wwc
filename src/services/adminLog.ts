@@ -17,7 +17,7 @@
  *   👤 User
  *   🆔 Telegram ID: 8004955979
  *   👤 User link: tg://user?id=8004955979
- *   🏷 Username: @SafwanTiger
+ *   🏷 Username: @Homlander
  *
  *   <event-specific section>
  *

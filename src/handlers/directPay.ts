@@ -37,6 +37,7 @@ import {
 import { btn, inlineBtn } from '../keyboards/helpers.js';
 import { paymentMethodsKeyboard } from '../keyboards/payMethods.js';
 import { PE } from './paymentInstructionEmojis.js';
+import { generateUniqueAmount } from '../services/uniqueAmount.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
 import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
@@ -323,6 +324,9 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       // address screen. The verifier in `services/depositVerify.ts`
       // anchors its 30-min freshness window on this value so an
       // attacker can't replay an old vendor TXID.
+      const { uniqueAmount: directUniqueAmt } = generateUniqueAmount(
+        Number(intent.total), ctx.user.telegram_id, m.id,
+      );
       ctx.session.userFlow = {
         type: 'direct_chain',
         step: 'tx_hash',
@@ -333,11 +337,12 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           address: m.address,
           intent,
           opened_at_ms: Date.now(),
+          unique_amount: directUniqueAmt,
           instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
       await ctx.editMessageText(
-        renderMdHtml(buildChainDirectScreen(m, intent)),
+        renderMdHtml(buildChainDirectScreen(m, intent, directUniqueAmt)),
         {
           parse_mode: 'HTML',
           reply_markup: directPayInstructionKeyboard(ctx, m, productId),
@@ -625,7 +630,7 @@ async function handleBinanceDirectSubmit(
 
   // Rate-limit per user (shares the same key namespace as topup so
   // a single user can't probe via both flows in parallel).
-  const rl = consume(`binance_pay:${ctx.user.telegram_id}`, 5, 60_000);
+  const rl = await consume(`binance_pay:${ctx.user.telegram_id}`, 5, 60_000);
   if (!rl.ok) {
     await ctx.reply(
       renderMdHtml(
@@ -782,7 +787,7 @@ async function handleChainDirectSubmit(
   // brute-force probing — same envelope as `handleChainTopupSubmit`
   // (10 attempts / 60s) and shares the bucket with top-up so a buyer
   // bouncing between the two flows can't double their throughput.
-  const rl = consume(`chain_tx:${ctx.user.telegram_id}`, 10, 60_000);
+  const rl = await consume(`chain_tx:${ctx.user.telegram_id}`, 10, 60_000);
   if (!rl.ok) {
     await ctx.reply(
       renderMdHtml(
@@ -1183,6 +1188,7 @@ function buildBinanceDirectScreen(
 function buildChainDirectScreen(
   m: DBPaymentMethod,
   intent: OrderIntent,
+  uniqueAmount?: number,
 ): string {
   const headingGlyph =
     m.provider === 'usdt_ton' ? PE.ton_title : PE.usdt_title;
@@ -1192,15 +1198,14 @@ function buildChainDirectScreen(
       : m.provider === 'usdt_trc20'
         ? `${headingGlyph} *USDT (TRC-20) — Direct Pay*`
         : `${headingGlyph} *TON Network — Direct Pay*`;
-  const totalStr = intent.total.toFixed(2);
-  // Per-provider "send" line — same per-coin wording as the top-up
-  // screens, but pinned to the exact amount due for this order.
+  const exactAmount = uniqueAmount ?? intent.total;
+  const totalStr = exactAmount.toFixed(3);
   const sendLine =
     m.provider === 'usdt_bep20'
-      ? `${PE.bullet_send} Send *exactly ${totalStr} USDT* to the address above`
+      ? `${PE.bullet_send} Send *exactly \`${totalStr} USDT\`* to the address above`
       : m.provider === 'usdt_ton'
-        ? `${PE.bullet_send} Send *exactly ${totalStr} USDT* (TON Jetton) — or the live-rate equivalent in Native TON Coin — to the address above`
-        : `${PE.bullet_send} Send *exactly ${totalStr} USDT* (TRC-20) — or the live-rate equivalent in Native TRX — to the address above`;
+        ? `${PE.bullet_send} Send *exactly \`${totalStr} USDT\`* (TON Jetton) to the address above`
+        : `${PE.bullet_send} Send *exactly \`${totalStr} USDT\`* (TRC-20) to the address above`;
   const lines: string[] = [
     heading,
     '',
@@ -1210,29 +1215,26 @@ function buildChainDirectScreen(
     `\`${m.address ?? '(address not set)'}\``,
     '',
     sendLine,
-    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
-    '',
   ];
+  if (uniqueAmount) {
+    lines.push(
+      ``,
+      `⚠️ _أرسل *المبلغ بالضبط* \`${totalStr} USDT\` — هذا المبلغ فريد لجلستك ويمنع استخدام معاملتك من قِبل شخص آخر._`,
+    );
+  }
+  lines.push(
+    ``,
+    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
+    ``,
+  );
   if (m.provider === 'usdt_bep20') {
-    lines.push(
-      `${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`,
-    );
-    lines.push(`${PE.note} _Up to 3 decimal places only._`);
+    lines.push(`${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`);
   } else if (m.provider === 'usdt_ton') {
-    lines.push(
-      `${PE.convert} _TON coins are automatically converted to USDT at live market rates._`,
-    );
-    lines.push(
-      `${PE.note} _Send the *TON Jetton* — paste the tx hash from Tonviewer / Tonscan._`,
-    );
+    lines.push(`${PE.convert} _TON coins are automatically converted to USDT at live market rates._`);
   } else {
-    lines.push(
-      `${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`,
-    );
+    lines.push(`${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`);
   }
   lines.push('');
   lines.push('*Please send your TX hash below:*');
   return lines.join('\n');
 }
-
-

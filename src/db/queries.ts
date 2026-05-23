@@ -81,15 +81,56 @@ export async function getOrCreateUser(args: {
     throw error ?? new Error('Failed to create user');
   }
   if (args.referred_by && args.referred_by !== args.telegram_id) {
+    // لا نسجل الإحالة الآن — نحفظها كـ pending حتى يتحقق الاشتراك
     await supabase
-      .from('referrals')
-      .insert({ referrer_id: args.referred_by, referee_id: args.telegram_id })
-      .then(() => {});
+      .from('users')
+      .update({ pending_referral_by: args.referred_by })
+      .eq('telegram_id', args.telegram_id);
   }
   const created = data as DBUser & { __just_created?: boolean };
   created.__just_created = true;
   return created;
 }
+
+/**
+ * تأكيد الإحالة بعد التحقق من الاشتراك
+ * تُستدعى بعد ما يثبت المستخدم اشتراكه في القناة
+ */
+export async function confirmPendingReferral(telegram_id: number): Promise<void> {
+  const { data: user } = await supabase
+    .from('users')
+    .select('pending_referral_by, sub_verified')
+    .eq('telegram_id', telegram_id)
+    .single();
+
+  if (!user || user.sub_verified || !user.pending_referral_by) return;
+
+  const referrerId = user.pending_referral_by;
+
+  // سجّل الإحالة الآن
+  await supabase
+    .from('referrals')
+    .insert({ referrer_id: referrerId, referee_id: telegram_id })
+    .then(() => {});
+
+  // امسح الـ pending وضع sub_verified
+  await supabase
+    .from('users')
+    .update({ pending_referral_by: null, sub_verified: true, referred_by: referrerId })
+    .eq('telegram_id', telegram_id);
+}
+
+/**
+ * إلغاء الإحالة المعلّقة — يُستدعى لو رفض المستخدم الاشتراك
+ * المحيل لا يكسب شيئاً
+ */
+export async function cancelPendingReferral(telegram_id: number): Promise<void> {
+  await supabase
+    .from('users')
+    .update({ pending_referral_by: null, sub_verified: true })
+    .eq('telegram_id', telegram_id);
+}
+
 
 export async function setUserLanguage(telegram_id: number, language: Lang): Promise<void> {
   await supabase.from('users').update({ language }).eq('telegram_id', telegram_id);
@@ -170,14 +211,14 @@ export async function setUserBalance(telegram_id: number, balance: number): Prom
 }
 
 export async function adjustBalance(telegram_id: number, delta: number): Promise<number> {
-  const { data: u } = await supabase
-    .from('users')
-    .select('balance')
-    .eq('telegram_id', telegram_id)
-    .single();
-  const next = Number(u?.balance ?? 0) + delta;
-  await supabase.from('users').update({ balance: next }).eq('telegram_id', telegram_id);
-  return next;
+  // atomic UPDATE via Postgres function — prevents race condition
+  // where two concurrent credits both read the same old balance
+  const { data, error } = await supabase.rpc('adjust_balance', {
+    p_telegram_id: telegram_id,
+    p_delta: delta,
+  });
+  if (error) throw error;
+  return Number(data);
 }
 
 /**
@@ -1893,19 +1934,10 @@ export async function createDeposit(d: {
   reference?: string;
   note?: string;
   tx_hash?: string;
-  /**
-   * LTC quote-on-display: amount in LTC the user committed to send.
-   * Verifier compares the on-chain output value against this.
-   */
   expected_amount?: number;
-  /** ISO timestamp when an LTC quote stops being valid. */
   quote_expires_at?: string;
-  /**
-   * Per-order direct-pay only: locked-in order context the verifier
-   * uses to fulfil the order on success. When set, the verifier
-   * skips the legacy wallet-credit path entirely.
-   */
   order_intent?: OrderIntent;
+  unique_amount_tag?: string;
 }): Promise<DBDeposit> {
   const { data, error } = await supabase
     .from('deposits')
@@ -1917,6 +1949,7 @@ export async function createDeposit(d: {
       expected_amount: d.expected_amount ?? null,
       quote_expires_at: d.quote_expires_at ?? null,
       order_intent: d.order_intent ?? null,
+      unique_amount_tag: d.unique_amount_tag ?? null,
     })
     .select('*')
     .single();

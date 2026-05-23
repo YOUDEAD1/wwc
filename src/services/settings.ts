@@ -239,14 +239,14 @@ export function getEmailPdfUrl(): string | null {
  * Resolution order:
  *   1. settings.admin.contact_url (admin-editable via /settext)
  *   2. env ADMIN_CONTACT_URL
- *   3. https://t.me/safwantiger as the documented default.
+ *   3. https://t.me/lara_v2 as the documented default.
  */
 export function getAdminContactUrl(): string {
-  const v = cache.get('admin.contact_url');
+  const v = cache.get('text.admin.contact_url') ?? cache.get('admin.contact_url');
   if (typeof v === 'string' && v.length > 0) return v;
   const env = process.env.ADMIN_CONTACT_URL;
   if (env && env.length > 0) return env;
-  return 'https://t.me/safwantiger';
+  return 'https://t.me/lara_v2';
 }
 
 /**
