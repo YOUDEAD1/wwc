@@ -613,6 +613,8 @@ export const EMOJI: Record<string, EmojiSpec> = {
   orders_note: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
   orders_warranty: { unicode: '⏰', custom_emoji_id: '5280821895711697516' },
   orders_received: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
+  // Default premium icon for the broadcast "Shop Now" / "Buy Now" button.
+  broadcast_shop_now: { unicode: '🛍', custom_emoji_id: '5312361253610475399' },
 
   // ---- Find Order by ID prompt + invalid response --------------
   // The two glyphs below frame the "Send Your Order ID to find"
@@ -754,7 +756,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // viewers). Keys whose locale emoji has no exact premium twin are
   // left out so the original unicode emoji stays in the label.
   profile: 'profile_header',
-  buy_now: 'orders_received',
+  buy_now: 'broadcast_shop_now',
   topup_wallet: 'deposits_wallet',
   view_note: 'orders_note',
   my_orders: 'orders_title',
