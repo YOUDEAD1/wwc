@@ -464,9 +464,9 @@ adminBot.callbackQuery(/^adm:gift:del:(.+)$/, async (ctx) => {
 // at the first ~30 products and truncate the entire body to 3950
 // chars as a final guard.
 function escapeMd(s: string): string {
-  // Markdown v1 only treats `_*\`[` specially. We keep this minimal
-  // because the rest of the admin UI also uses Markdown v1.
-  return s.replace(/([_*`[\]])/g, '\\$1');
+  // Markdown v1 treats backslash plus `_*\`[` as special.
+  // Keep the escape set minimal to match the rest of the admin UI.
+  return s.replace(/([_*`[\]\\])/g, '\\$1');
 }
 
 adminBot.callbackQuery('adm:stats', async (ctx) => {
