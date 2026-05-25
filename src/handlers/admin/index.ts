@@ -3417,7 +3417,7 @@ adminBot.callbackQuery(/^adm:ann:buy:set:(\d+)$/, async (ctx) => {
   // icon) when the admin swaps to a different product. Defaults are
   // only applied on the very first product pick (no prior `buy`).
   const prior = (flow.data as { buy?: AnnounceBuy }).buy;
-  const defaultIconId = '5440841102871517055';
+  const defaultIconId = '5312361253610475399';
   const defaultIconUnicode = undefined;
   const buy: AnnounceBuy = prior
     ? { ...prior, product_id: product.id, product_name: product.name }
