@@ -3,6 +3,7 @@
  * callers don't have to know about the underlying client.
  */
 import { supabase } from './supabase.js';
+import { env } from '../env.js';
 import type {
   DBUser,
   DBCategory,
@@ -365,6 +366,8 @@ export async function getReferralEarnings(
 // ---------- Admins ----------
 
 export async function isAdmin(telegram_id: number): Promise<boolean> {
+  // تحقق من env.ADMIN_USER_ID أولاً — يعمل دائماً حتى لو جدول admins فارغ
+  if (telegram_id === env.ADMIN_USER_ID) return true;
   const { data } = await supabase
     .from('admins')
     .select('telegram_id')

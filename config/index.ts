@@ -929,7 +929,7 @@ export const LOCALES = { en, ar, vi } as const satisfies Record<Lang, Record<str
 export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_KEYS>> = [
   ['shop'],
   ['topup', 'profile'],
-  ['support', 'ai_support'],
+  ['support'],
   ['refer', 'channel'],
 ];
 

@@ -3,10 +3,23 @@ import { buildBot } from './bot.js';
 import { env } from './env.js';
 import { logger } from './logger.js';
 import { logMailerStatus } from './services/mailer.js';
+import { startAllTenantBots } from './tenants/manager.js';
+import { ensureTenantsTable } from './tenants/store.js';
 
 async function main() {
-  const bot = await buildBot();
+  // البوت الرئيسي
+  const bot = await buildBot({ isTenant: false });
   logMailerStatus();
+
+  // تهيئة جدول المستأجرين
+  await ensureTenantsTable();
+
+  // تشغيل بوتات المستأجرين
+  await startAllTenantBots();
+
+  // فحص انتهاء الاشتراكات كل ساعة
+  const { checkExpiredTenants } = await import('./tenants/manager.js');
+  setInterval(() => { void checkExpiredTenants(); }, 60 * 60 * 1000);
 
   if (env.BOT_MODE === 'webhook') {
     if (!env.WEBHOOK_URL) {
@@ -31,9 +44,17 @@ async function main() {
   } else {
     await bot.api.deleteWebhook({ drop_pending_updates: true });
 
-    logger.info('Starting bot with long-polling…');
+    const server = http.createServer((_, res) => {
+      res.writeHead(200);
+      res.end('OK');
+    });
+    server.listen(env.PORT, () => {
+      logger.info({ port: env.PORT }, 'Health server listening');
+    });
+
+    logger.info('Starting main bot with long-polling…');
     await bot.start({
-      onStart: (info) => logger.info({ username: info.username }, 'Bot is online'),
+      onStart: (info) => logger.info({ username: info.username }, 'Main bot is online'),
     });
   }
 }

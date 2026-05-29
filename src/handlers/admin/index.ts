@@ -121,7 +121,6 @@ import {
 } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
-import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
@@ -154,7 +153,7 @@ const requireAdmin: MiddlewareFn<AppCtx> = async (ctx, next) => {
 // Apply requireAdmin only to admin entry points.
 adminBot.callbackQuery(/^adm:/, requireAdmin, async (_ctx, next) => next());
 adminBot.command(
-  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload', 'mailerstatus', 'testemail', 'promo'],
+  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload', 'promo'],
   requireAdmin,
   async (_ctx, next) => next(),
 );
@@ -176,8 +175,8 @@ function rootMenu(): InlineKeyboard {
     .text('🎨 Customize', 'adm:cust')
     .text('⚙️ Bot Settings', 'adm:bot')
     .row()
-    .text('🤖 AI Setup', 'adm:ai')
     .text('📊 Stats', 'adm:stats')
+    .text('🏪 Store Settings', 'adm:store')
     .row()
     .text('🧾 Orders', 'adm:ord:0')
     .text('💸 Promos', 'adm:promo')
@@ -232,12 +231,37 @@ adminBot.callbackQuery('adm:close', async (ctx) => {
 adminBot.callbackQuery('adm:bot', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = undefined;
+  const { getLogChatIdOverride, getOrderLogChatIdOverride, getTextOverride } = await import('../../services/settings.js');
+  const logId = getLogChatIdOverride();
+  const orderLogId = getOrderLogChatIdOverride();
+  const binanceKey = getTextOverride('binance.api_key');
+  const binanceSecret = getTextOverride('binance.api_secret');
+
+  // جلب username من Telegram إذا كان فيه ID محفوظ
+  let logDisplay = '_(not set)_';
+  let orderLogDisplay = '_(not set)_';
+  if (logId) {
+    try {
+      const chat = await ctx.api.getChat(logId);
+      logDisplay = 'username' in chat && chat.username ? `@${chat.username}` : `\`${logId}\``;
+    } catch { logDisplay = `\`${logId}\``; }
+  }
+  if (orderLogId) {
+    try {
+      const chat = await ctx.api.getChat(orderLogId);
+      orderLogDisplay = 'username' in chat && chat.username ? `@${chat.username}` : `\`${orderLogId}\``;
+    } catch { orderLogDisplay = `\`${orderLogId}\``; }
+  }
   const kb = new InlineKeyboard()
     .text('🔗 Set Channel URL', 'adm:cust:channel')
     .row()
-    .text('📄 Set Email PDF URL', 'adm:bot:emailpdf')
-    .row()
     .text('💬 Set Admin Contact URL', 'adm:bot:contact')
+    .row()
+    .text('📋 Set Log Chat ID', 'adm:bot:logchat')
+    .row()
+    .text('🧾 Set Order Log Chat ID', 'adm:bot:orderlogchat')
+    .row()
+    .text('🟡 Binance Pay Credentials', 'adm:bot:binance')
     .row()
     .text('📘 Edit Bot Tutorial', 'adm:bot:tut')
     .row()
@@ -245,10 +269,17 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
     .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
-  await ctx.editMessageText('⚙️ *Bot Settings*\n\nGeneral configuration knobs.', {
-    parse_mode: 'Markdown',
-    reply_markup: kb,
-  });
+  await ctx.editMessageText(
+    [
+      '⚙️ *Bot Settings*',
+      '',
+      `• Log Chat: ${logDisplay}`,
+      `• Order Log Chat: ${orderLogDisplay}`,
+      `• Binance API Key: ${binanceKey ? '`✅ Set`' : '`Not set`'}`,
+      `• Binance API Secret: ${binanceSecret ? '`✅ Set`' : '`Not set`'}`,
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
 });
 
 // Bot Tutorial editor — surfaces the same fields as the legacy
@@ -330,11 +361,71 @@ adminBot.callbackQuery('adm:bot:tut:clrurl', async (ctx) => {
   await showBotTutorialEditor(ctx);
 });
 
-adminBot.callbackQuery('adm:bot:emailpdf', async (ctx) => {
+
+adminBot.callbackQuery('adm:bot:logchat', async (ctx) => {
   await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'email.pdf_url' } };
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'log.chat_id' } };
   await ctx.editMessageText(
-    '📄 *Set Email PDF URL*\n\nSend a public URL to a PDF (or `-` to clear). The Why Email "Know More" button becomes a URL button when this is set.',
+    '📋 *Set Log Chat*\n\n' +
+    'Send the channel username:\n' +
+    '`@mychannel`\n\n' +
+    '⚠️ Make sure the bot is added as *Admin* in the channel first.\n\n' +
+    'Send `0` to disable, or `/cancel` to abort.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:orderlogchat', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'log.order_chat_id' } };
+  await ctx.editMessageText(
+    '🧾 *Set Order Log Chat*\n\n' +
+    'Send the channel username:\n' +
+    '`@mychannel`\n\n' +
+    '⚠️ Make sure the bot is added as *Admin* in the channel first.\n\n' +
+    'Send `0` to disable, or `/cancel` to abort.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:binance', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const { getTextOverride } = await import('../../services/settings.js');
+  const key = getTextOverride('binance.api_key');
+  const secret = getTextOverride('binance.api_secret');
+  const kb = new InlineKeyboard()
+    .text('🟡 Set API Key', 'adm:bot:binance_key')
+    .row()
+    .text('🔐 Set API Secret', 'adm:bot:binance_secret')
+    .row();
+  backRow(kb);
+  await ctx.editMessageText(
+    [
+      '🟡 *Binance Pay Credentials*',
+      '',
+      `• API Key: ${key ? `\`${key.slice(0, 6)}••••${key.slice(-4)}\`` : '_Not set_'}`,
+      `• API Secret: ${secret ? '`✅ Set`' : '_Not set_'}`,
+      '',
+      'Get your credentials from:\nBinance → Profile → API Management',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:binance_key', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'binance.api_key' } };
+  await ctx.editMessageText(
+    '🟡 *Binance API Key*\n\nSend your Binance Pay API Key.\n\nGet it from: Binance → Profile → API Management\n\nSend `-` to clear, or `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:binance_secret', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'binance.api_secret' } };
+  await ctx.editMessageText(
+    '🔐 *Binance API Secret*\n\nSend your Binance Pay API Secret.\n\nSend `-` to clear, or `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
 });
@@ -344,6 +435,39 @@ adminBot.callbackQuery('adm:bot:contact', async (ctx) => {
   ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'admin.contact_url' } };
   await ctx.editMessageText(
     '💬 *Set Admin Contact URL*\n\nSend a t.me URL the "Buy Code" / contact-admin buttons should open.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+// =====================================================================
+// 🏪 Store Settings
+// =====================================================================
+
+adminBot.callbackQuery('adm:store', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  const currentName = (await import('../../services/settings.js')).getTextOverride('store.name') ?? 'Homlander Store';
+  const kb = new InlineKeyboard()
+    .text('✏️ Edit Store Name', 'adm:store:name')
+    .row();
+  backRow(kb);
+  await ctx.editMessageText(
+    [
+      '🏪 *Store Settings*',
+      '',
+      `*Store Name:* \`${currentName}\``,
+      '',
+      '_The store name appears in the welcome message, main menu, and throughout the bot._',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:store:name', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'store.name' } };
+  await ctx.editMessageText(
+    '✏️ *Edit Store Name*\n\nSend the new store name (e.g. `My Shop`).\n\nOr `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
 });
@@ -453,48 +577,6 @@ adminBot.callbackQuery('adm:fsub:clrmsg', async (ctx) => {
   await showFSubMenu(ctx);
 });
 
-// ---------- AI Setup ----------
-adminBot.callbackQuery('adm:ai', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = undefined;
-  const kb = new InlineKeyboard()
-    .text('🔑 Set AI API Key', 'adm:ai:key')
-    .row()
-    .text('💬 Set AI Prompt', 'adm:ai:prompt');
-  backRow(kb);
-  await ctx.editMessageText(
-    [
-      '🤖 *AI Setup*',
-      '',
-      'Configure the assistant used by the AI Support flow.',
-      '',
-      'Provider is auto-detected from the API-key shape:',
-      '• `AIza…` → Google AI Studio (Gemini)',
-      '• `sk-…`  → OpenAI Chat Completions',
-      '',
-      '_The key you paste here overrides `OPENAI_API_KEY` from the deployment env._',
-    ].join('\n'),
-    { parse_mode: 'Markdown', reply_markup: kb },
-  );
-});
-
-adminBot.callbackQuery('adm:ai:key', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'ai.api_key' } };
-  await ctx.editMessageText('🔑 *Set AI API Key*\n\nSend the key (or `-` to clear).', {
-    parse_mode: 'Markdown',
-    reply_markup: backRow(new InlineKeyboard()),
-  });
-});
-
-adminBot.callbackQuery('adm:ai:prompt', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'ai.system_prompt' } };
-  await ctx.editMessageText(
-    '💬 *Set AI Prompt*\n\nSend the system prompt (or `-` to clear).',
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-  );
-});
 
 // ---------- Gift Codes ----------
 adminBot.callbackQuery('adm:gift', async (ctx) => {
@@ -6142,6 +6224,97 @@ adminBot.on('message:text', async (ctx, next) => {
             `✅ تم تحديث رسالة الاشتراك الإجباري.`,
             { parse_mode: 'Markdown', reply_markup: rootMenu() },
           );
+        } else if (key === 'store.name') {
+          // تحديث اسم المتجر في كل المفاتيح ذات الصلة
+          const name = text.trim();
+          await setText('store.name', name, ctx.from!.id);
+          await setText('welcome', `Welcome to ${name}`, ctx.from!.id);
+          await setText('welcome.title', `Welcome to ${name}!`, ctx.from!.id);
+          await setText('menu.title', `🐯 *${name}* — Main Menu`, ctx.from!.id);
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(
+            `✅ Store name updated to *${name}*.\n\nAll welcome messages and menus updated.`,
+            { parse_mode: 'Markdown', reply_markup: rootMenu() },
+          );
+        } else if (key === 'log.chat_id' || key === 'log.order_chat_id') {
+          const label = key === 'log.chat_id' ? 'Log Chat' : 'Order Log Chat';
+          const raw = text.trim();
+
+          // إذا أرسل 0 — تعطيل
+          if (raw === '0') {
+            await setText(key, '0', ctx.from!.id);
+            ctx.session.adminFlow = undefined;
+            await ctx.reply(`✅ ${label} disabled.`, { parse_mode: 'Markdown', reply_markup: rootMenu() });
+            return;
+          }
+
+          // محاولة جلب معلومات القناة والتحقق من صلاحية البوت
+          let chatId: number | string = raw;
+          let chatTitle = '';
+          let chatUsername = '';
+          let botIsAdmin = false;
+
+          try {
+            const chat = await ctx.api.getChat(raw.startsWith('-') || /^\d/.test(raw) ? Number(raw) : raw);
+            chatId = chat.id;
+            chatTitle = 'title' in chat ? (chat.title ?? '') : '';
+            chatUsername = 'username' in chat && chat.username ? `@${chat.username}` : '';
+
+            // التحقق من صلاحية البوت
+            try {
+              const me = await ctx.api.getMe();
+              const member = await ctx.api.getChatMember(chat.id, me.id);
+              botIsAdmin = member.status === 'administrator' || member.status === 'creator';
+            } catch {
+              botIsAdmin = false;
+            }
+          } catch (err) {
+            ctx.session.adminFlow = undefined;
+            await ctx.reply(
+              `❌ Could not find that chat.\n\nMake sure:\n` +
+              `• The ID is correct\n` +
+              `• The bot is added to the channel/group\n\n` +
+              `Error: \`${(err as Error).message?.slice(0, 100)}\``,
+              { parse_mode: 'Markdown', reply_markup: rootMenu() },
+            );
+            return;
+          }
+
+          // حفظ الـ ID
+          await setText(key, String(chatId), ctx.from!.id);
+          ctx.session.adminFlow = undefined;
+
+          const adminStatus = botIsAdmin
+            ? '✅ Bot is Admin in this chat'
+            : '⚠️ Bot is NOT Admin — logs may fail! Add bot as admin first.';
+
+          await ctx.reply(
+            [
+              `✅ *${label} updated*`,
+              '',
+              `• Chat ID: \`${chatId}\``,
+              chatTitle ? `• Title: ${chatTitle}` : '',
+              chatUsername ? `• Username: ${chatUsername}` : '',
+              `• ${adminStatus}`,
+            ].filter(Boolean).join('\n'),
+            { parse_mode: 'Markdown', reply_markup: rootMenu() },
+          );
+        } else if (key === 'binance.api_key' || key === 'binance.api_secret') {
+          const label = key === 'binance.api_key' ? 'Binance API Key' : 'Binance API Secret';
+          if (text === '-') {
+            await setText(key, '', ctx.from!.id);
+            ctx.session.adminFlow = undefined;
+            await ctx.reply(`✅ ${label} cleared.`, { reply_markup: rootMenu() });
+          } else {
+            await setText(key, text, ctx.from!.id);
+            ctx.session.adminFlow = undefined;
+            // نخفي القيمة في الرد
+            const preview = text.slice(0, 6) + '••••••' + text.slice(-4);
+            await ctx.reply(
+              `✅ *${label} updated*\n\`${preview}\``,
+              { parse_mode: 'Markdown', reply_markup: rootMenu() },
+            );
+          }
         } else {
           await setText(key, text, ctx.from!.id);
           ctx.session.adminFlow = undefined;
@@ -7829,44 +8002,6 @@ adminBot.command('reload', async (ctx) => {
   await ctx.reply('🔁 Settings reloaded.');
 });
 
-// Diagnostic: show whether the welcome / change / delete emails will
-// actually leave the bot. Useful when "no emails are arriving" — it
-// answers the first question (transport configured?) without
-// requiring shell access to the Railway env vars.
-adminBot.command('mailerstatus', async (ctx) => {
-  const status = describeMailerStatus();
-  await ctx.reply(`📬 *Mailer status*\n\n\`\`\`\n${status}\n\`\`\``, {
-    parse_mode: 'Markdown',
-  });
-});
-
-// Diagnostic: send a real "set"-mode welcome email to the admin's
-// chosen address so they can verify the transport / domain / DNS
-// end-to-end. Usage: /testemail you@example.com [set|change|delete]
-adminBot.command('testemail', async (ctx) => {
-  const [, target, modeRaw] = (ctx.message?.text ?? '').split(/\s+/);
-  if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
-    await ctx.reply('Usage: /testemail <email> [set|change|delete]');
-    return;
-  }
-  const mode = (modeRaw === 'change' || modeRaw === 'delete' ? modeRaw : 'set') as
-    | 'set'
-    | 'change'
-    | 'delete';
-  await ctx.reply(`Sending ${mode} test email to ${target}…`);
-  const ok = await sendWelcomeEmail({
-    email: target,
-    previousEmail: mode === 'change' || mode === 'delete' ? target : null,
-    firstName: ctx.from?.first_name ?? null,
-    username: ctx.from?.username ?? null,
-    mode,
-  });
-  await ctx.reply(
-    ok
-      ? `✅ Sent. Check ${target}'s inbox (and spam). If nothing arrives, run /mailerstatus and check the bot logs for the Resend / SMTP error.`
-      : `❌ Send failed. Run /mailerstatus and check the logs — usually missing RESEND_API_KEY or unverified domain.`,
-  );
-});
 
 // =====================================================================
 // أوامر الاشتراك الإجباري

@@ -34,7 +34,6 @@ import {
 } from '../db/queries.js';
 import { credit } from './wallet.js';
 import { publicOrderId } from './orderId.js';
-import { sendInvoiceEmail } from './mailer.js';
 import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
 import { buildOrderDeliveredChunks } from './orderRender.js';
@@ -252,26 +251,6 @@ export async function fulfilOrderForDeposit(args: {
     );
   }
 
-  // Step 3: Email follow-up
-  if (user?.email) {
-    void sendInvoiceEmail({
-      email: user.email,
-      firstName: user.first_name ?? null,
-      username: user.username ?? null,
-      orderPublicId: publicId,
-      orderDate: order.created_at,
-      productName: intent.product_name,
-      qty: intent.qty,
-      unitPrice: intent.unit_price,
-      total: intent.total,
-      discount: intent.discount,
-      paidVia: paidViaLabel(provider, methodName),
-      items: claimed,
-      invoiceLink: env.BOT_USERNAME
-        ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
-        : '',
-    });
-  }
 
   // Step 4: Admin log entry. `balanceAfter` is the user's current
   // wallet balance (unchanged — direct-pay never touches the wallet);

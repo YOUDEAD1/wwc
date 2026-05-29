@@ -243,10 +243,15 @@ export function getEmailPdfUrl(): string | null {
  */
 export function getAdminContactUrl(): string {
   const v = cache.get('text.admin.contact_url') ?? cache.get('admin.contact_url');
-  if (typeof v === 'string' && v.length > 0) return v;
-  const env = process.env.ADMIN_CONTACT_URL;
-  if (env && env.length > 0) return env;
-  return 'https://t.me/lara_v2';
+  const raw = (typeof v === 'string' && v.length > 0)
+    ? v
+    : (process.env.ADMIN_CONTACT_URL ?? 'https://t.me/lara_v2');
+
+  // إصلاح تلقائي: لو بدأ بـ @ حوّله لـ https://t.me/
+  if (raw.startsWith('@')) return `https://t.me/${raw.slice(1)}`;
+  // لو مجرد يوزرنيم بدون @ أو https
+  if (!raw.startsWith('http')) return `https://t.me/${raw}`;
+  return raw;
 }
 
 /**
@@ -368,4 +373,25 @@ export async function clearPaymentMethodTutorial(methodId: number): Promise<void
 
 export function getPriceListPromoFooter(): string | null {
   return readString('profile.pricelist.promo_footer_override');
+}
+
+/** Get the store name — editable via /admin → Store Settings. */
+export function getStoreName(): string {
+  return readString('store.name') ?? 'Homlander Store';
+}
+
+/** Get the log chat id override — editable via /admin → Bot Settings. */
+export function getLogChatIdOverride(): number | null {
+  const v = readString('log.chat_id');
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n !== 0 ? n : null;
+}
+
+/** Get the order log chat id override — editable via /admin → Bot Settings. */
+export function getOrderLogChatIdOverride(): number | null {
+  const v = readString('log.order_chat_id');
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n !== 0 ? n : null;
 }

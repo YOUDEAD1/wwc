@@ -25,6 +25,7 @@
 import crypto from 'node:crypto';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
+import { getTextOverride } from './settings.js';
 
 const BASE_URL = 'https://api.binance.com';
 const ENDPOINT = '/sapi/v1/pay/transactions';
@@ -89,8 +90,8 @@ type BinanceApiErr = { ok: false; reason: string };
 type BinanceApiResult<T> = BinanceApiOk<T> | BinanceApiErr;
 
 function readCreds(): { apiKey: string; apiSecret: string } | null {
-  const apiKey = env.BINANCE_PAY_API_KEY;
-  const apiSecret = env.BINANCE_PAY_API_SECRET;
+  const apiKey = getTextOverride('binance.api_key') ?? env.BINANCE_PAY_API_KEY;
+  const apiSecret = getTextOverride('binance.api_secret') ?? env.BINANCE_PAY_API_SECRET;
   if (!apiKey || !apiSecret) return null;
   return { apiKey, apiSecret };
 }

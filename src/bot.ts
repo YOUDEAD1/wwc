@@ -11,13 +11,16 @@ import { registerSupport, restoreLiveSupportSession } from './handlers/support.j
 import { registerTopup } from './handlers/topup.js';
 import { registerDirectPay } from './handlers/directPay.js';
 import { adminBot } from './handlers/admin/index.js';
-import { refreshSettings } from './services/settings.js';
+import { superAdminBot } from './handlers/superAdmin.js';
 
-export async function buildBot(): Promise<Bot<AppCtx>> {
+export type BotOptions = {
+  isTenant?: boolean;
+};
+
+export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
+  const isTenant = opts.isTenant === true;
   const bot = new Bot<AppCtx>(env.BOT_TOKEN);
 
-  // Order matters: session → user (which depends on session) → ban
-  // (which depends on the loaded user row) → handlers.
   bot.use(sessionMiddleware as unknown as (ctx: SessionCtx, next: () => Promise<void>) => Promise<void>);
   bot.use(userMiddleware);
   bot.use(banMiddleware);
@@ -30,55 +33,32 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
   registerDirectPay(bot);
   bot.use(adminBot);
 
+  // Super Admin panel — فقط على البوت الرئيسي
+  if (!isTenant) {
+    bot.use(superAdminBot);
+  }
+
   bot.catch((err) => {
-    // "message is not modified" fires whenever the user taps a button
-    // that re-renders the exact same screen — purely cosmetic and harmless.
     const msg = (err.error as { description?: string } | undefined)?.description ?? '';
     if (msg.includes('message is not modified')) return;
     logger.error({ err: err.error }, 'Unhandled bot error');
   });
 
-  // Pre-load admin-editable settings into memory.
-  await refreshSettings();
+  if (!isTenant) {
+    await restoreLiveSupportSession();
+  }
 
-  // Rehydrate any in-flight Live Support session from the DB so a
-  // Render redeploy mid-session doesn't break the user→admin relay.
-  await restoreLiveSupportSession();
+  try {
+    await bot.api.setMyCommands([{ command: 'start', description: 'Open the main menu' }]);
+  } catch { /* ignore */ }
 
-  // Slash-menu shows only /start to everyone. /admin and /menu still
-  // work as typed commands but are intentionally hidden.
-  await bot.api.setMyCommands([{ command: 'start', description: 'Open the main menu' }]);
-
-  // Wipe any lingering admin-scoped commands left over from earlier
-  // versions of the bot (so /admin doesn't show up in the popup for
-  // the admin either).
-  if (env.ADMIN_USER_ID) {
+  const adminId = env.ADMIN_USER_ID;
+  if (adminId) {
     try {
-      await bot.api.deleteMyCommands({
-        scope: { type: 'chat', chat_id: env.ADMIN_USER_ID },
-      });
+      await bot.api.sendChatAction(adminId, 'typing');
+      logger.info({ adminUserId: adminId }, 'live-support: admin chat reachable');
     } catch (err) {
-      logger.debug({ err }, 'No admin-scoped commands to delete');
-    }
-
-    // Live Support reachability probe: Telegram won't let the bot
-    // initiate a DM to an account that has never tapped Start on it.
-    // We test this with a `sendChatAction(typing)` — lightweight, no
-    // visible artifact when it succeeds — so the operator can spot
-    // the misconfiguration in Railway logs (`live-support: ADMIN
-    // CHAT NOT REACHABLE …`) the moment the bot boots, instead of
-    // waiting for a user to open Live Support and get a silent fail.
-    try {
-      await bot.api.sendChatAction(env.ADMIN_USER_ID, 'typing');
-      logger.info(
-        { adminUserId: env.ADMIN_USER_ID },
-        'live-support: admin chat reachable',
-      );
-    } catch (err) {
-      logger.error(
-        { err, adminUserId: env.ADMIN_USER_ID },
-        'live-support: ADMIN CHAT NOT REACHABLE — Live Support relay will fail until the admin account opens this bot and taps Start. Check that ADMIN_USER_ID is set correctly and that the admin has started the bot at least once.',
-      );
+      logger.warn({ err, adminUserId: adminId }, 'live-support: admin chat not reachable');
     }
   }
 

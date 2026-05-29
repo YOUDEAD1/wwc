@@ -41,7 +41,6 @@ import { publicOrderId } from '../services/orderId.js';
 import { buildOrderDeliveredChunks } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
-import { sendInvoiceEmail } from '../services/mailer.js';
 import {
   handleDeliveryFormMessage,
   maybeStartDeliveryFormForCtx,
@@ -1048,67 +1047,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
       //   b) Has email → single-line "invoice sent" card that
       //      auto-deletes after 13 s + the polished invoice email.
       if (!ctx.user.email) {
-        const noEmailKb = new InlineKeyboard();
-        // Tag the callback with `:post:<orderId>` so the profile
-        // handler knows this came from a post-purchase nudge (vs.
-        // Settings → Set Email) and can run the auto-delete +
-        // retroactive-invoice path.
-        inlineBtn(
-          noEmailKb,
-          ctx.lang,
-          'set_email_now',
-          `profile:email:set:post:${order.id}`,
-        );
-        await ctx.reply(
-          renderMdHtml(ctx.t('shop.buy.add_email_prompt')),
-          { parse_mode: 'HTML', reply_markup: noEmailKb },
-        );
-      } else {
-        // Single bold confirmation line — no spam-folder note, no
-        // Invoice-Email / Invoice-Link block, no inline buttons.
-        // Auto-deletes ~13 s later so the chat stays clean once the
-        // user has had time to read it.
-        const invoiceSentMsg = await ctx.reply(
-          renderMdHtml(ctx.t('shop.buy.invoice_sent')),
-          {
-            parse_mode: 'HTML',
-            link_preview_options: { is_disabled: true },
-          },
-        );
-        const sentChatId = invoiceSentMsg.chat.id;
-        const sentMessageId = invoiceSentMsg.message_id;
-        setTimeout(() => {
-          void ctx.api
-            .deleteMessage(sentChatId, sentMessageId)
-            .catch((err) => {
-              logger.debug(
-                { err, chatId: sentChatId, messageId: sentMessageId },
-                'auto-delete of invoice_sent message failed (likely already gone)',
-              );
-            });
-        }, 13_000);
-        // Fire-and-forget the professional invoice. Failure modes
-        // (transport down, bad address) are logged inside mailer.ts
-        // and never surface to the buyer — they already have the
-        // delivery card with the items in-chat.
-        const invoiceLink = env.BOT_USERNAME
-          ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
-          : '';
-        void sendInvoiceEmail({
-          email: ctx.user.email,
-          firstName: ctx.user.first_name ?? null,
-          username: ctx.user.username ?? null,
-          orderPublicId: publicId,
-          orderDate: order.created_at,
-          productName: p.name,
-          qty,
-          unitPrice: p.price,
-          total,
-          discount,
-          paidVia: 'Wallet balance',
-          items: claimed,
-          invoiceLink,
-        });
       }
       // ---- Step 4: revert the original Order summary message --
       // The callback was triggered from the Order summary message

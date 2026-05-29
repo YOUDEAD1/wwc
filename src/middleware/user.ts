@@ -10,11 +10,15 @@ import { t as translate } from '../i18n/index.js';
 import type { DBUser } from '../types.js';
 import type { SessionCtx } from './session.js';
 import { maybeSendEmailNag } from '../services/emailNag.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDefaultClient } from '../db/context.js';
 
 export type AppCtx = SessionCtx & {
   user: DBUser;
   lang: Lang;
   t: (key: string, vars?: Record<string, string | number>) => string;
+  db: SupabaseClient; // قاعدة البيانات الخاصة بهذا البوت
+  adminUserId: number; // admin ID الخاص بهذا البوت
 };
 
 /**

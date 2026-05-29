@@ -15,7 +15,7 @@ const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   topup: 'topup:open',
   profile: 'profile:open',
   support: 'support:open',
-  ai_support: 'support:ai',
+
   main_menu: 'main:open',
   back: 'main:open',
   buy_now: 'noop:buy',

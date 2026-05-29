@@ -57,11 +57,11 @@ import {
   sanitizeButtonUrl,
 } from '../services/premium.js';
 import {
-  sendPriceListEmail,
+  type ReportKind,
   sendWelcomeEmail,
   sendReportEmail,
   sendInvoiceEmail,
-  type ReportKind,
+  sendPriceListEmail,
 } from '../services/mailer.js';
 
 import {
@@ -333,107 +333,10 @@ async function sendReportPdfFromCallback(
   ctx: AppCtx,
   kind: ReportKind,
 ): Promise<void> {
-  // Email Reports OFF blocks every Send-PDF button so we don't keep
-  // firing emails the user explicitly muted (per the bot-owner spec).
-  if (ctx.user.email_nag_disabled) {
-    await ctx.answerCallbackQuery({
-      text: ctx.t('profile.email.reports_off_popup'),
-      show_alert: true,
-    });
-    return;
-  }
-  const email = ctx.user.email;
-  if (!email) {
-    await ctx.answerCallbackQuery({
-      text: ctx.t('pdf.no_email_popup'),
-      show_alert: true,
-    });
-    return;
-  }
   await ctx.answerCallbackQuery({
-    text: ctx.t('pdf.sending_popup', { email }),
-    show_alert: false,
+    text: ctx.t('pdf.no_email_popup'),
+    show_alert: true,
   });
-  try {
-    const reportUser = {
-      telegram_id: ctx.user.telegram_id,
-      first_name: ctx.user.first_name ?? null,
-      username: ctx.user.username ?? null,
-      email,
-    };
-    let pdf: Buffer;
-    // Spreadsheet companion built from the same source data so a
-    // recipient can sort / filter / chart in Excel without retyping
-    // anything from the PDF.
-    let csv: Buffer;
-    let rowCount = 0;
-    if (kind === 'orders') {
-      const orders = await listOrders(ctx.user.telegram_id, 500);
-      rowCount = orders.length;
-      pdf = await buildOrdersPdf({ user: reportUser, orders });
-      csv = buildOrdersCsv({ user: reportUser, orders });
-    } else if (kind === 'deposits') {
-      const [deposits, ledger] = await Promise.all([
-        listDeposits(ctx.user.telegram_id, 500),
-        listWalletLedger(ctx.user.telegram_id, 500).catch(() => []),
-      ]);
-      rowCount = deposits.length + ledger.length;
-      pdf = await buildDepositsPdf({ user: reportUser, deposits, ledger });
-      csv = buildDepositsCsv({ user: reportUser, deposits, ledger });
-    } else {
-      const stats = await getUserStats(ctx.user.telegram_id);
-      rowCount = stats.orders;
-      pdf = await buildStatsPdf({ user: reportUser, stats });
-      csv = buildStatsCsv({ user: reportUser, stats });
-    }
-    const ok = await sendReportEmail({
-      email,
-      kind,
-      pdf,
-      csv,
-      firstName: ctx.user.first_name ?? null,
-      username: ctx.user.username ?? null,
-    });
-    if (ok) {
-      void adminLog.logPdfSent(ctx.api, {
-        user: {
-          telegram_id: ctx.user.telegram_id,
-          username: ctx.user.username ?? null,
-          first_name: ctx.user.first_name ?? null,
-          email,
-        },
-        kind,
-        destinationEmail: email,
-        rowCount,
-      });
-      // Surface success as a real chat message so the premium 📬
-      // custom emoji renders as a `<tg-emoji>` entity rather than a
-      // plain toast (Telegram strips custom_emoji from popup text).
-      // Auto-deleted 5 s later so the chat doesn't fill up with
-      // confirmations after multiple Send-PDF taps.
-      const sent = await ctx.reply(renderMdHtml(ctx.t('pdf.sent_message')), {
-        parse_mode: 'HTML',
-      });
-      const chatId = sent.chat.id;
-      const messageId = sent.message_id;
-      setTimeout(() => {
-        ctx.api.deleteMessage(chatId, messageId).catch((err) => {
-          logger.warn({ err, chatId, messageId }, 'pdf.sent_message auto-delete failed');
-        });
-      }, 5_000);
-    } else {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('pdf.failed_popup', { email }),
-        show_alert: true,
-      });
-    }
-  } catch (err) {
-    logger.error({ err, kind, telegram_id: ctx.user.telegram_id }, 'send-pdf flow failed');
-    await ctx.answerCallbackQuery({
-      text: ctx.t('pdf.failed_popup', { email }),
-      show_alert: true,
-    });
-  }
 }
 
 /**
@@ -449,71 +352,14 @@ async function sendReportPdfFromCallback(
  * expecting to see; surfacing a transport error here would confuse
  * the UX.
  */
-async function sendRetroactiveInvoiceForOrder(args: {
+async function sendRetroactiveInvoiceForOrder(_args: {
   telegramId: number;
   orderId: number;
   email: string;
   firstName: string | null;
   username: string | null;
 }): Promise<void> {
-  try {
-    const order = await getOrder(args.orderId);
-    if (!order) {
-      logger.info(
-        { orderId: args.orderId },
-        'retroactive invoice: order not found, skipping',
-      );
-      return;
-    }
-    if (order.user_id !== args.telegramId) {
-      logger.info(
-        { orderId: args.orderId, expectedUser: args.telegramId, actualUser: order.user_id },
-        'retroactive invoice: order belongs to another user, skipping',
-      );
-      return;
-    }
-    if (order.status !== 'paid') {
-      logger.info(
-        { orderId: args.orderId, status: order.status },
-        'retroactive invoice: order not paid, skipping',
-      );
-      return;
-    }
-    const items =
-      order.delivered_items && order.delivered_items.trim().length > 0
-        ? order.delivered_items
-            .split(/\r?\n/)
-            .map((s) => s.trim())
-            .filter((s) => s.length > 0)
-        : [];
-    const invoiceLink = env.BOT_USERNAME
-      ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicOrderId(order)}`
-      : '';
-    await sendInvoiceEmail({
-      email: args.email,
-      firstName: args.firstName,
-      username: args.username,
-      orderPublicId: publicOrderId(order),
-      orderDate: order.created_at,
-      productName: order.product_name,
-      qty: order.qty,
-      unitPrice: Number(order.unit_price),
-      total: Number(order.total),
-      discount: Number(order.discount ?? 0),
-      paidVia: 'Wallet balance',
-      items,
-      invoiceLink,
-    });
-    logger.info(
-      { orderId: args.orderId, telegramId: args.telegramId },
-      'retroactive invoice email queued',
-    );
-  } catch (err) {
-    logger.warn(
-      { err, orderId: args.orderId, telegramId: args.telegramId },
-      'retroactive invoice email failed',
-    );
-  }
+  // email system removed
 }
 
 export function registerProfile(bot: Composer<AppCtx>): void {
@@ -1176,48 +1022,12 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   }
 
+
   bot.callbackQuery('profile:pricelist:mail', async (ctx) => {
-    if (ctx.user.email_nag_disabled) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('profile.email.reports_off_popup'),
-        show_alert: true,
-      });
-      return;
-    }
-    if (!ctx.user.email) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('profile.pricelist.no_email_popup'),
-        show_alert: true,
-      });
-      return;
-    }
     await ctx.answerCallbackQuery({
-      text: ctx.t('profile.pricelist.sending'),
-      show_alert: false,
+      text: ctx.t('pdf.no_email_popup'),
+      show_alert: true,
     });
-    const pdf = await buildPriceListMailPdf(ctx);
-    if (!pdf) {
-      await ctx.reply(renderMdHtml(ctx.t('profile.pricelist.empty')), {
-        parse_mode: 'HTML',
-      });
-      return;
-    }
-    const ok = await sendPriceListEmail({
-      email: ctx.user.email,
-      pdf,
-      firstName: ctx.user.first_name ?? null,
-      username: ctx.user.username ?? null,
-      promoFooter: ctx.t('profile.pricelist.promo_footer'),
-    });
-    const sent = await ctx.reply(
-      renderMdHtml(
-        ok
-          ? ctx.t('profile.pricelist.mail_sent', { email: ctx.user.email })
-          : ctx.t('profile.pricelist.mail_failed'),
-      ),
-      { parse_mode: 'HTML' },
-    );
-    if (ok) autoDeleteMessage(ctx, sent.message_id);
   });
 
   bot.callbackQuery('profile:pricelist:chat', async (ctx) => {
@@ -1497,10 +1307,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       return;
     }
     ctx.user.email = null;
-    // Fire-and-forget the deletion confirmation email to the address
-    // we just removed so the (human) owner sees evidence of the
-    // change — important for the "I never deleted this" recovery
-    // path. No PDF attachment for this mode.
     void sendWelcomeEmail({
       email: oldEmail,
       previousEmail: oldEmail,
@@ -1625,8 +1431,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     ctx.session.userFlow = undefined;
     // Fire-and-forget: send the user a polished welcome / confirmation
     // email with the "Why we need your email" PDF attached. We
-    // deliberately do NOT await this — saving the address must always
-    // feel instant even if the SMTP relay is slow or unreachable.
     void sendWelcomeEmail({
       email: text,
       previousEmail,

@@ -29,6 +29,7 @@ import type { Api, InputFile } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
+import { getLogChatIdOverride, getOrderLogChatIdOverride } from './settings.js';
 
 /**
  * Shared user shape every event payload includes. Keep this small
@@ -161,10 +162,10 @@ function chatChain(channel: LogChannel): ChatId[] {
     chain.push(chat);
   };
   if (channel === 'orders') {
-    push(env.ORDER_LOG_CHAT_ID);
-    push(env.LOG_CHAT_ID);
+    push(getOrderLogChatIdOverride() ?? env.ORDER_LOG_CHAT_ID);
+    push(getLogChatIdOverride() ?? env.LOG_CHAT_ID);
   } else {
-    push(env.LOG_CHAT_ID);
+    push(getLogChatIdOverride() ?? env.LOG_CHAT_ID);
   }
   push(env.ADMIN_USER_ID);
   return chain;
