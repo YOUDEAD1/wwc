@@ -151,6 +151,17 @@ export async function fulfilOrderForDeposit(args: {
     delivery: `Order #${intent.product_id}-${intent.qty}`,
   });
   await decrementProductStock(intent.product_id, intent.qty);
+  // ── Stock alert: notify admin if stock depleted or low ──
+  if (!product.unlimited_stock) {
+    const remaining = product.stock - intent.qty;
+    if (remaining <= 3) {
+      void adminLog.logStockAlert(api, {
+        productId: product.id,
+        productName: product.name,
+        remaining: Math.max(0, remaining),
+      });
+    }
+  }
   const claimed = await claimProductItems(
     intent.product_id,
     intent.qty,
