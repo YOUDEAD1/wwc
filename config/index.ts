@@ -613,6 +613,8 @@ export const EMOJI: Record<string, EmojiSpec> = {
   orders_note: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
   orders_warranty: { unicode: '⏰', custom_emoji_id: '5280821895711697516' },
   orders_received: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
+  // Download TXT button icon
+  btn_download_txt: { unicode: '📥', custom_emoji_id: '5318845185348626090' },
   // Default premium icon for the broadcast "Shop Now" / "Buy Now" button.
   broadcast_shop_now: { unicode: '🛍', custom_emoji_id: '5312361253610475399' },
 
@@ -794,6 +796,9 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // buttons live on different screens and keep their icons.
   send_pdf_stats: 'pdf_sent_l',
   send_pdf_deposits: 'pdf_sent_l',
+
+  // Download TXT button
+  send_note_txt: 'btn_download_txt',
 
   // Refer copy-link
   copy_link: 'refer_transferred',

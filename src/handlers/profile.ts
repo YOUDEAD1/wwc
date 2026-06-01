@@ -623,6 +623,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       '',
       ctx.t('orders.detail.id', { id: pubId }),
       ctx.t('orders.detail.product', { name: order.product_name }),
+      '',
       ctx.t('orders.detail.type', { type: ctx.t('orders.detail.type.wallet') }),
       ctx.t('orders.detail.qty', { qty: order.qty }),
       ctx.t('orders.detail.total', { total }),
@@ -641,8 +642,18 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     // we ship as a `.txt` document right after the edited card, so
     // tapping a 37-link order in /myorders never fails on the 4096-
     // char limit.
+    // Format: (quantity)x (product name) (buying time)
+    const safeName = (order.product_name ?? 'Unknown')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const d = new Date(order.created_at);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const timeStr = `${hh}:${mm}Utc`;
+    const txtFilename = `${order.qty}x ${safeName} ${timeStr}.txt`;
     const itemsRender = buildOrderDetailReceivedBlock(order.delivered_items, {
-      filename: `order-${pubId}-items.txt`,
+      filename: txtFilename,
     });
     if (itemsRender.inlineBlock) {
       lines.push(
