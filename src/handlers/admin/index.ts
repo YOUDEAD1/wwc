@@ -5470,64 +5470,40 @@ adminBot.on('message:text', async (ctx, next) => {
 
   try {
     // ── API Connect flow ──────────────────────────────────────
-    if (flow.type === 'api_connect') {
-      if (flow.step === 'key') {
-        // Step 1: استقبال المفتاح
-        const key = text.trim();
-        if (!key.startsWith('sk_') || key.length < 10) {
-          await ctx.reply(
-            '❌ <b>مفتاح غير صالح</b>\n\nلازم يبدأ بـ <code>sk_</code>',
-            { parse_mode: 'HTML' },
-          );
-          return;
-        }
-        ctx.session.adminFlow = { type: 'api_connect', step: 'url', data: { api_key: key } };
-        const kb = new InlineKeyboard().text('❌ Cancel', 'adm:api');
-        await ctx.reply(
-          '🌐 <b>Step 2/2 — Server URL</b>\n\n' +
-          'الصق رابط السيرفر مع الـ Gateway:\n' +
-          '<code>https://your-server.com/8f71aedd3494e042bb06408f50b7f938</code>\n\n' +
-          '💡 هذا الرابط تحصل عليه من صاحب المتجر الأساسي.',
-          { parse_mode: 'HTML', reply_markup: kb },
-        );
+    if (flow.type === 'api_connect' && flow.step === 'key') {
+      const key = text.trim();
+      if (!key.startsWith('sk_') || key.length < 10) {
+        await ctx.reply('❌ المفتاح لازم يبدأ بـ <code>sk_</code>', { parse_mode: 'HTML' });
         return;
       }
-
-      if (flow.step === 'url') {
-        // Step 2: استقبال الرابط واختبار الاتصال
-        const url = text.trim().replace(/\/+$/, ''); // إزالة / من الآخر
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-          await ctx.reply(
-            '❌ <b>رابط غير صالح</b>\n\nلازم يبدأ بـ <code>https://</code>',
-            { parse_mode: 'HTML' },
-          );
-          return;
-        }
-
-        const api_key = flow.data.api_key;
+      if (!env.API_BASE_URL) {
+        await ctx.reply('❌ API_BASE_URL غير مضبوط في .env');
         ctx.session.adminFlow = undefined;
-
-        const { testConnection: apiTest, saveConnection: apiSave }
-          = await import('../../services/apiConnect.js');
-
-        await ctx.reply('⏳ جاري اختبار الاتصال...');
-        const result = await apiTest(api_key, url);
-        if (result.ok) {
-          await apiSave(api_key, url);
-          await ctx.reply(
-            `✅ <b>Connected Successfully!</b>\n\n` +
-            `📦 <b>${result.productCount}</b> products found.\n\n` +
-            `اضغط 🔌 API Manager للتحكم.`,
-            { parse_mode: 'HTML', reply_markup: rootMenu() },
-          );
-        } else {
-          await ctx.reply(
-            `❌ <b>Connection Failed</b>\n\n${result.error}`,
-            { parse_mode: 'HTML', reply_markup: rootMenu() },
-          );
-        }
         return;
       }
+
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('⏳ جاري اختبار الاتصال...');
+
+      const { testConnection: apiTest, saveConnection: apiSave }
+        = await import('../../services/apiConnect.js');
+
+      const result = await apiTest(key, env.API_BASE_URL);
+      if (result.ok) {
+        await apiSave(key, env.API_BASE_URL);
+        await ctx.reply(
+          `✅ <b>Connected!</b>\n\n` +
+          `📦 <b>${result.productCount}</b> products found.\n\n` +
+          `اضغط /api للتحكم.`,
+          { parse_mode: 'HTML', reply_markup: rootMenu() },
+        );
+      } else {
+        await ctx.reply(
+          `❌ <b>Connection Failed</b>\n\n${result.error}`,
+          { parse_mode: 'HTML', reply_markup: rootMenu() },
+        );
+      }
+      return;
     }
 
     if (flow.type === 'add_category') {
@@ -6739,17 +6715,19 @@ adminBot.on('message:text', async (ctx, next) => {
           // Render via the locale + premium-emoji pipeline so the
           // wallet credit / debit notification picks up `credit_emoji`,
           // `balance_emoji`, `debit_emoji` from the EMOJI map (and any
-          // admin override stored under `emoji.<key>`). Recipient's
-          // lang isn't loaded here, so we render in English; ar/vi
-          // fall through to en automatically via the i18n resolver.
+          // admin override stored under `emoji.<key>`). Now loads the
+          // recipient's language so they get the notification in their
+          // preferred language (ar / en / vi).
           const balanceFmt = Number(newBal).toFixed(2);
+          const recipientUser = await findUserById(flow.data.telegram_id);
+          const recipientLang = recipientUser?.language ?? env.DEFAULT_LANG;
           const tpl =
             delta > 0
-              ? translate('en', 'wallet.admin_credit', {
+              ? translate(recipientLang, 'wallet.admin_credit', {
                   amount: delta.toFixed(2),
                   balance: balanceFmt,
                 })
-              : translate('en', 'wallet.admin_debit', {
+              : translate(recipientLang, 'wallet.admin_debit', {
                   amount: Math.abs(delta).toFixed(2),
                   balance: balanceFmt,
                 });
@@ -8221,7 +8199,7 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
     .row()
     .text('📖 API Docs', 'adm:api:docs')
     .row()
-    .text('🔄 Change Code', 'adm:api:paste')
+    .text('🔑 Change Key', 'adm:api:paste')
     .text('❌ Disconnect', 'adm:api:disconnect:confirm')
     .row()
     .text('⬅️ Back', 'adm:root');
@@ -8239,15 +8217,33 @@ adminBot.callbackQuery('adm:api', async (ctx) => {
   await showApiRoot(ctx);
 });
 
-// ━━━ Paste API Key (step 1) ━━━
+// ━━━ Connect API — المفتاح فقط، الرابط من .env ━━━
 adminBot.callbackQuery('adm:api:paste', async (ctx) => {
   await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'api_connect', step: 'key', data: {} };
 
+  if (!env.API_BASE_URL) {
+    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
+    try {
+      await ctx.editMessageText(
+        '❌ <b>API_BASE_URL غير مضبوط</b>\n\n' +
+        'أضف رابط السيرفر في ملف <code>.env</code>:\n' +
+        '<code>API_BASE_URL=https://your-server.com/gateway</code>\n\n' +
+        'ثم أعد تشغيل البوت.',
+        { parse_mode: 'HTML', reply_markup: kb },
+      );
+    } catch {
+      await ctx.reply(
+        '❌ <b>API_BASE_URL غير مضبوط</b>\n\nأضف الرابط في .env وأعد التشغيل.',
+        { parse_mode: 'HTML', reply_markup: kb },
+      );
+    }
+    return;
+  }
+
+  ctx.session.adminFlow = { type: 'api_connect', step: 'key', data: {} };
   const text = [
-    '🔑 <b>Step 1/2 — API Key</b>',
+    '🔑 <b>الصق الـ API Key</b>',
     '',
-    'الصق الـ API Key هنا:',
     '<code>sk_xxxxxxxxxxxxxxxx</code>',
     '',
     '💡 تحصل عليه من البوت الأساسي (API Control Panel).',
@@ -8259,6 +8255,8 @@ adminBot.callbackQuery('adm:api:paste', async (ctx) => {
     await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
   }
 });
+
+// (حُذف زر تغيير URL — الرابط يُعدّل من .env فقط لأسباب أمنية)
 
 // ━━━ Test Connection ━━━
 adminBot.callbackQuery('adm:api:test', async (ctx) => {
