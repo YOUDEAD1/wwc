@@ -168,12 +168,15 @@ function productPageText(
   return lines.join('\n');
 }
 
+const BLANK_TXT_PAYLOAD = ' ';
+const MANUAL_DELIVERY_PLACEHOLDER = 'Manual delivery — admin will follow up shortly.';
+
 function deliveryPendingValues(): Set<string> {
   const values = new Set<string>();
   for (const lang of Object.keys(LOCALES) as Lang[]) {
     values.add(translate(lang, 'shop.buy.delivery_pending').trim());
   }
-  values.add('Manual delivery — admin will follow up shortly.');
+  values.add(MANUAL_DELIVERY_PLACEHOLDER);
   return values;
 }
 
@@ -183,12 +186,12 @@ function buildDeliveredItemsTxt(args: {
 }): string {
   const trimmed = (args.deliveredItems ?? '').trim();
   const pending = trimmed.length === 0 || deliveryPendingValues().has(trimmed);
-  if (args.isOneToOne || pending) return ' ';
+  if (args.isOneToOne || pending) return BLANK_TXT_PAYLOAD;
   const lines = (args.deliveredItems ?? '')
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  return lines.length > 0 ? lines.join('\n') + '\n' : ' ';
+  return lines.length > 0 ? lines.join('\n') + '\n' : BLANK_TXT_PAYLOAD;
 }
 
 /**
