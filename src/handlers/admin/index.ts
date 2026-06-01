@@ -184,6 +184,8 @@ function rootMenu(): InlineKeyboard {
     .text('🎁 Gift Codes', 'adm:gift')
     .text('💎 Custom Prices', 'adm:price')
     .row()
+    .text('🔌 API Manager', 'adm:api')
+    .row()
     .text('🏠 Main Menu', 'adm:close');
 }
 
@@ -8068,4 +8070,71 @@ adminBot.command('forcesub', async (ctx) => {
   }
 
   await ctx.reply('❌ أمر غير معروف. استخدم `/forcesub` لعرض الأوامر.', { parse_mode: 'Markdown' });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔌 API Manager — توثيق الـ API للأدمن
+// ─────────────────────────────────────────────────────────────────────────────
+
+adminBot.callbackQuery('adm:api', async (ctx) => {
+  await ctx.answerCallbackQuery();
+
+  const botUsername = env.BOT_USERNAME ?? 'yourbot';
+  // slug ثابت يمثل نقطة النهاية (يمكن تغييره لاحقاً عبر settings)
+  const slug = '8f71aedd3494e042bb06408f50b7f938';
+  const baseUrl = `https://api.${botUsername.replace(/^@/, '')}.com`;
+
+  const text = [
+    '📖 <b>API Documentation</b>',
+    '',
+    '🔐 <b>Auth Header:</b>',
+    '<code>Authorization: Bearer sk_xxx</code>',
+    '━━━━━━━━━━━━━━━━━━━',
+    '',
+    `📦 <code>GET /${slug}/products</code>`,
+    'All visible products with prices and stock',
+    '',
+    `📦 <code>GET /${slug}/product/ID</code>`,
+    'Single product details',
+    '',
+    `💰 <code>GET /${slug}/balance</code>`,
+    'Your current balance',
+    '',
+    `🛒 <code>POST /${slug}/purchase</code>`,
+    '<code>{"product_id":"x","qty":1,"buyer_info":"@user"}</code>',
+    '',
+    `📜 <code>GET /${slug}/orders?limit=10</code>`,
+    'Your recent API orders',
+    '',
+    `💲 <code>GET /${slug}/my_prices</code>`,
+    'Your custom prices',
+    '━━━━━━━━━━━━━━━━━━━',
+    '',
+    '<b>Responses:</b>',
+    '✅ <code>200</code> = Success',
+    '❌ <code>401</code> = Invalid API key',
+    '❌ <code>402</code> = Not enough balance',
+    '❌ <code>404</code> = Product not found',
+    '❌ <code>409</code> = Out of stock',
+    '',
+    '━━━━━━━━━━━━━━━━━━━',
+    '⚙️ <b>كيف تربط الـ API بمتجرك؟</b>',
+    '',
+    '١. شغّل سيرفر الـ API الخاص بك (Node/Python/إلخ)',
+    '٢. اربطه بنفس قاعدة بيانات Supabase',
+    '٣. استخدم <code>SUPABASE_SERVICE_ROLE_KEY</code> للوصول',
+    '٤. تحقق من الـ Bearer token في كل طلب',
+    '٥. استدعِ queries.ts مباشرة أو عبر Supabase REST',
+    '',
+    '💡 الـ API ليس مدمجاً في البوت — يعمل كسيرفر منفصل',
+    'يشارك نفس قاعدة البيانات مع البوت.',
+  ].join('\n');
+
+  const kb = new InlineKeyboard()
+    .text('⬅️ Back', 'adm:root');
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
 });
