@@ -1,10 +1,10 @@
 /* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
-  'welcome': 'مرحبًا بك في متجر Homlander',
-  'welcome.title': 'مرحبًا بك في متجر Homlander!',
+  'welcome': 'مرحبًا بك في متجر ',
+  'welcome.title': 'مرحبًا بك في متجر !',
   'welcome.balance': 'رصيدك: *${balance}*',
   'welcome.tap_menu': 'اضغط *القائمة الرئيسية* بالأسفل للبدء.',
-  'menu.title': '🐯 *متجر Homlander* — القائمة الرئيسية',
+  'menu.title': ' *متجر * — القائمة الرئيسية',
 
   'btn.main_menu': '⬅️ رجوع',
   'btn.shop': '🛍 المتجر',
@@ -353,4 +353,16 @@ export const ar: Record<string, string> = {
 
   'err.generic': '⚠️ حدث خطأ. حاول مرة أخرى.',
   'err.unknown_action': '⚠️ إجراء غير معروف.',
+
+  // ── إشعارات الرصيد ──
+  'wallet.admin_credit':
+    '{credit_emoji} تم إضافة *${amount}* لمحفظتك من قبل الإدارة.\n{balance_emoji} الرصيد الجديد: *${balance}*',
+  'wallet.admin_debit':
+    '{debit_emoji} تم خصم *${amount}* من محفظتك من قبل الإدارة.\n{balance_emoji} الرصيد الجديد: *${balance}*',
+
+  // ── إشعار نفاد الستوك ──
+  'stock.depleted':
+    '🔴 *تنبيه: نفاد المخزون!*\n\n📦 المنتج: *{name}*\n🆔 ID: `{id}`\n📊 المتبقي: *{remaining}*',
+  'stock.low':
+    '⚠️ *تنبيه: المخزون منخفض!*\n\n📦 المنتج: *{name}*\n🆔 ID: `{id}`\n📊 المتبقي: *{remaining}*',
 };
