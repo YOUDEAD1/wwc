@@ -901,6 +901,23 @@ export function registerShop(bot: Composer<AppCtx>): void {
       );
       ctx.user.balance = newBalance;
       await decrementProductStock(id, qty);
+      // ── Stock alert: notify admin if stock depleted or low ──
+      if (!p.unlimited_stock) {
+        const remaining = p.stock - qty;
+        if (remaining <= 0) {
+          void adminLog.logStockAlert(ctx.api, {
+            productId: p.id,
+            productName: p.name,
+            remaining: Math.max(0, remaining),
+          });
+        } else if (remaining <= 3) {
+          void adminLog.logStockAlert(ctx.api, {
+            productId: p.id,
+            productName: p.name,
+            remaining,
+          });
+        }
+      }
       delete ctx.session.qty[id];
       // Pull the actual delivery payload off the per-product items
       // pool. When the pool is empty (or short), fall back to a
