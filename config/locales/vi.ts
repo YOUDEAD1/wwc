@@ -53,7 +53,7 @@ export const vi: Record<string, string> = {
   'btn.qty.display': '📦 {qty} / {stock}',
   'btn.share_product': '🔗 Sao chép liên kết',
   'btn.view_note_file': '📥 Lưu ghi chú dạng TXT',
-  'btn.send_note_txt': '📥 Lưu dạng TXT',
+  'btn.send_note_txt': '📥 Tải TXT',
   'btn.out_of_stock': '❌ Hết hàng',
   'btn.my_orders': '🧾 Đơn hàng của tôi',
   'btn.refer': '🎁 Giới thiệu',

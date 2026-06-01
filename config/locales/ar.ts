@@ -52,7 +52,7 @@ export const ar: Record<string, string> = {
   'btn.qty.display': '📦 {qty} / {stock}',
   'btn.share_product': '🔗 نسخ الرابط',
   'btn.view_note_file': '📥 حفظ كملف TXT',
-  'btn.send_note_txt': '📥 حفظ كـ TXT',
+  'btn.send_note_txt': '📥 تنزيل TXT',
   'btn.out_of_stock': '❌ غير متوفر',
   'btn.my_orders': '🧾 طلباتي',
   'btn.refer': '🎁 إحالة',
