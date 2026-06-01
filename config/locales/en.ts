@@ -671,8 +671,7 @@ export const en: Record<string, string> = {
     '{refer_coin} *Available:* {available} USDT\n' +
     '{refer_transferred} *Transferred:* {transferred} USDT\n' +
     '{refer_withdrawn} *Withdrawn:* {withdrawn} USDT\n\n' +
-    '> Earn 1% of every top-up by your referred users.\n' +
-    '> Max $1.00 per top-up.\n' +
+    '> *Refer 10 users and win $0.50!*\n' +
     '> Transfer earnings to wallet anytime. For cash withdrawal, contact support ($1.00 min).\n\n' +
     '*Your Referral Link:*\n`{link}`',
   'btn.copy_link': '📋 Copy Link',

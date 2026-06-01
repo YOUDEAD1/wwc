@@ -45,10 +45,47 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   ctx.user = user;
   ctx.lang = user.language;
   ctx.t = (key, vars) => translate(ctx.lang, key, vars);
-  // Fire-and-forget the 12h email nag. The helper itself decides
-  // whether to send anything (skips when the user already has an
-  // email, when notifications are off, or when the cooldown is
-  // active) so the middleware never blocks on it.
+
+  // Fire-and-forget the 12h email nag.
   void maybeSendEmailNag(ctx);
+
+  // If this is a newly created user with a referrer, send notification to bot channel
+  if ((user as DBUser & { __just_created?: boolean }).__just_created && referred_by && env.BOT_REFERS_CHANNEL) {
+    void sendReferralNotification(ctx, referred_by, ctx.from.id, ctx.from.username ?? null, ctx.from.first_name);
+  }
+
   return next();
 };
+
+/**
+ * Send referral notification to the bot refers channel
+ */
+async function sendReferralNotification(
+  ctx: AppCtx,
+  referrerId: number,
+  refereeId: number,
+  refereeUsername: string | null,
+  refereeFirstName: string | null,
+) {
+  const { getUserByTelegramId } = await import('../db/queries.js');
+  const { countReferrals } = await import('../db/queries.js');
+
+  const referrer = await getUserByTelegramId(referrerId);
+  if (!referrer || !env.BOT_REFERS_CHANNEL) return;
+
+  const referrerUsername = referrer.username ? `@${referrer.username}` : referrer.first_name ?? `User ${referrer.telegram_id}`;
+  const refereeDisplay = refereeUsername ? `@${refereeUsername}` : refereeFirstName ?? `User ${refereeId}`;
+
+  // Get total referrals count
+  const totalRefs = await countReferrals(referrerId);
+  const remaining = Math.max(0, 10 - totalRefs);
+
+  const notificationMsg = `📈 *New Active Referral!*
+
+👤 *Referrer:* ${referrerUsername}
+🫠 *Refer to:* ${refereeDisplay}
+✅ *Active Referrals:* ${totalRefs}
+⏳ *${remaining} more to earn $0.50*`;
+
+  await ctx.api.sendMessage(env.BOT_REFERS_CHANNEL, notificationMsg, { parse_mode: 'Markdown' }).catch(() => {});
+}
