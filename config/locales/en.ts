@@ -842,4 +842,10 @@ export const en: Record<string, string> = {
   // ---------- Errors ----------
   'err.generic': '⚠️ Something went wrong. Please try again.',
   'err.unknown_action': '⚠️ Unknown action.',
+
+  // ── Stock alerts ──
+  'stock.depleted':
+    '🔴 *Stock Depleted!*\n\n📦 Product: *{name}*\n🆔 ID: `{id}`\n📊 Remaining: *{remaining}*',
+  'stock.low':
+    '⚠️ *Low Stock Alert!*\n\n📦 Product: *{name}*\n🆔 ID: `{id}`\n📊 Remaining: *{remaining}*',
 };
