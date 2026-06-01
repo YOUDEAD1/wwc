@@ -146,6 +146,17 @@ const schema = z.object({
     .transform(logChannelTransformer(DEFAULT_ORDER_LOG_CHAT)),
 
   // ----------------------------------------------------------------
+  //  Referral notifications channel
+  // ----------------------------------------------------------------
+  // Telegram chat that receives new referral notifications.
+  // Same input shapes as `LOG_CHAT_ID` (`@username`, numeric `-100…`).
+  BOT_REFERS_CHANNEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform(logChannelTransformer('')),
+
+  // ----------------------------------------------------------------
   //  TonCenter (TON USDT jetton verification)
   // ----------------------------------------------------------------
   // Optional API key for https://toncenter.com . Without it the

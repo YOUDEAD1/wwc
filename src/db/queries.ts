@@ -259,6 +259,18 @@ export async function countReferrals(telegram_id: number): Promise<number> {
 }
 
 /**
+ * Get user by telegram_id. Returns null if not found.
+ */
+export async function getUserByTelegramId(telegram_id: number): Promise<DBUser | null> {
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .eq('telegram_id', telegram_id)
+    .single();
+  return data as DBUser | null;
+}
+
+/**
  * Count referrals made by `telegram_id` within the last `windowMs`
  * milliseconds. Used by the Refer & Earn screen to render the 24-hour
  * and 7-day breakdowns.
