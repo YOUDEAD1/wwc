@@ -202,6 +202,14 @@ const schema = z.object({
   // README "VPN sidecar" section for the Railway setup.
   BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
   BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  External API (API Manager)
+  // ----------------------------------------------------------------
+  // رابط سيرفر الـ API الخارجي مع الـ Gateway.
+  // مثال: https://your-server.com/8f71aedd3494e042bb06408f50b7f938
+  // يُستخدم من قبل API Manager للاتصال بالمتجر الأساسي.
+  API_BASE_URL: z.string().url().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.
