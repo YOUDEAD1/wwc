@@ -5470,16 +5470,50 @@ adminBot.on('message:text', async (ctx, next) => {
 
   try {
     // ── API Connect flow ──────────────────────────────────────
-    if (flow.type === 'api_connect' && flow.step === 'code') {
-      ctx.session.adminFlow = undefined;
-      const { decodeConnectionCode, testConnection: apiTest, saveConnection: apiSave }
-        = await import('../../services/apiConnect.js');
-      try {
-        const { api_key, api_url } = decodeConnectionCode(text);
+    if (flow.type === 'api_connect') {
+      if (flow.step === 'key') {
+        // Step 1: استقبال المفتاح
+        const key = text.trim();
+        if (!key.startsWith('sk_') || key.length < 10) {
+          await ctx.reply(
+            '❌ <b>مفتاح غير صالح</b>\n\nلازم يبدأ بـ <code>sk_</code>',
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+        ctx.session.adminFlow = { type: 'api_connect', step: 'url', data: { api_key: key } };
+        const kb = new InlineKeyboard().text('❌ Cancel', 'adm:api');
+        await ctx.reply(
+          '🌐 <b>Step 2/2 — Server URL</b>\n\n' +
+          'الصق رابط السيرفر مع الـ Gateway:\n' +
+          '<code>https://your-server.com/8f71aedd3494e042bb06408f50b7f938</code>\n\n' +
+          '💡 هذا الرابط تحصل عليه من صاحب المتجر الأساسي.',
+          { parse_mode: 'HTML', reply_markup: kb },
+        );
+        return;
+      }
+
+      if (flow.step === 'url') {
+        // Step 2: استقبال الرابط واختبار الاتصال
+        const url = text.trim().replace(/\/+$/, ''); // إزالة / من الآخر
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          await ctx.reply(
+            '❌ <b>رابط غير صالح</b>\n\nلازم يبدأ بـ <code>https://</code>',
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+
+        const api_key = flow.data.api_key;
+        ctx.session.adminFlow = undefined;
+
+        const { testConnection: apiTest, saveConnection: apiSave }
+          = await import('../../services/apiConnect.js');
+
         await ctx.reply('⏳ جاري اختبار الاتصال...');
-        const result = await apiTest(api_key, api_url);
+        const result = await apiTest(api_key, url);
         if (result.ok) {
-          await apiSave(api_key, api_url);
+          await apiSave(api_key, url);
           await ctx.reply(
             `✅ <b>Connected Successfully!</b>\n\n` +
             `📦 <b>${result.productCount}</b> products found.\n\n` +
@@ -5492,11 +5526,8 @@ adminBot.on('message:text', async (ctx, next) => {
             { parse_mode: 'HTML', reply_markup: rootMenu() },
           );
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        await ctx.reply(`❌ <b>Invalid Code</b>\n\n${msg}`, { parse_mode: 'HTML', reply_markup: rootMenu() });
+        return;
       }
-      return;
     }
 
     if (flow.type === 'add_category') {
@@ -8131,11 +8162,11 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
       '',
       '⚪ <b>Not Connected</b>',
       '',
-      'الصق كود الاتصال الذي حصلت عليه من المتجر الأساسي.',
-      'شكل الكود: <code>conn_eyJr...</code>',
+      'اربط بوتك بمتجر خارجي عبر API.',
+      'تحتاج: 🔑 API Key + 🌐 Server URL',
     ].join('\n');
     const kb = new InlineKeyboard()
-      .text('📋 Paste Connection Code', 'adm:api:paste')
+      .text('🔗 Connect API', 'adm:api:paste')
       .row()
       .text('📖 API Docs', 'adm:api:docs')
       .row()
@@ -8208,18 +8239,18 @@ adminBot.callbackQuery('adm:api', async (ctx) => {
   await showApiRoot(ctx);
 });
 
-// ━━━ Paste connection code ━━━
+// ━━━ Paste API Key (step 1) ━━━
 adminBot.callbackQuery('adm:api:paste', async (ctx) => {
   await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'api_connect', step: 'code', data: {} };
+  ctx.session.adminFlow = { type: 'api_connect', step: 'key', data: {} };
 
   const text = [
-    '🔗 <b>Paste Connection Code</b>',
+    '🔑 <b>Step 1/2 — API Key</b>',
     '',
-    'الصق كود الاتصال هنا:',
-    '<code>conn_eyJrIjoic2tfeHh4IiwidSI6Imh0dHBzOi8vLi4uIn0=</code>',
+    'الصق الـ API Key هنا:',
+    '<code>sk_xxxxxxxxxxxxxxxx</code>',
     '',
-    '💡 تحصل على الكود من البوت الأساسي (المتجر المورّد).',
+    '💡 تحصل عليه من البوت الأساسي (API Control Panel).',
   ].join('\n');
   const kb = new InlineKeyboard().text('❌ Cancel', 'adm:api');
   try {
