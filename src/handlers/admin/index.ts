@@ -5471,35 +5471,31 @@ adminBot.on('message:text', async (ctx, next) => {
   try {
     // ── API Connect flow ──────────────────────────────────────
     if (flow.type === 'api_connect' && flow.step === 'key') {
-      const key = text.trim();
-      if (!key.startsWith('sk_') || key.length < 10) {
-        await ctx.reply('❌ المفتاح لازم يبدأ بـ <code>sk_</code>', { parse_mode: 'HTML' });
-        return;
-      }
-      if (!env.API_BASE_URL) {
-        await ctx.reply('❌ API_BASE_URL غير مضبوط في .env');
-        ctx.session.adminFlow = undefined;
-        return;
-      }
-
       ctx.session.adminFlow = undefined;
-      await ctx.reply('⏳ جاري اختبار الاتصال...');
-
-      const { testConnection: apiTest, saveConnection: apiSave }
+      const { decodeConnectionCode, testConnection: apiTest, saveConnection: apiSave }
         = await import('../../services/apiConnect.js');
-
-      const result = await apiTest(key, env.API_BASE_URL);
-      if (result.ok) {
-        await apiSave(key, env.API_BASE_URL);
+      try {
+        const { api_key, api_url } = decodeConnectionCode(text);
+        await ctx.reply('⏳ جاري اختبار الاتصال...');
+        const result = await apiTest(api_key, api_url);
+        if (result.ok) {
+          await apiSave(api_key, api_url);
+          await ctx.reply(
+            `✅ <b>Connected!</b>\n\n` +
+            `📦 <b>${result.productCount}</b> products found.\n\n` +
+            `اضغط /api للتحكم.`,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        } else {
+          await ctx.reply(
+            `❌ <b>Connection Failed</b>\n\n${result.error}`,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         await ctx.reply(
-          `✅ <b>Connected!</b>\n\n` +
-          `📦 <b>${result.productCount}</b> products found.\n\n` +
-          `اضغط /api للتحكم.`,
-          { parse_mode: 'HTML', reply_markup: rootMenu() },
-        );
-      } else {
-        await ctx.reply(
-          `❌ <b>Connection Failed</b>\n\n${result.error}`,
+          `❌ <b>Invalid Code</b>\n\n${msg}`,
           { parse_mode: 'HTML', reply_markup: rootMenu() },
         );
       }
@@ -8140,11 +8136,11 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
       '',
       '⚪ <b>Not Connected</b>',
       '',
-      'اربط بوتك بمتجر خارجي عبر API.',
-      'تحتاج: 🔑 API Key + 🌐 Server URL',
+      'اربط بوتك بمتجر خارجي.',
+      'الصق كود الاتصال من البوت الأساسي.',
     ].join('\n');
     const kb = new InlineKeyboard()
-      .text('🔗 Connect API', 'adm:api:paste')
+      .text('🔗 Connect', 'adm:api:paste')
       .row()
       .text('📖 API Docs', 'adm:api:docs')
       .row()
@@ -8199,7 +8195,7 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
     .row()
     .text('📖 API Docs', 'adm:api:docs')
     .row()
-    .text('🔑 Change Key', 'adm:api:paste')
+    .text('🔄 Change Code', 'adm:api:paste')
     .text('❌ Disconnect', 'adm:api:disconnect:confirm')
     .row()
     .text('⬅️ Back', 'adm:root');
@@ -8217,36 +8213,18 @@ adminBot.callbackQuery('adm:api', async (ctx) => {
   await showApiRoot(ctx);
 });
 
-// ━━━ Connect API — المفتاح فقط، الرابط من .env ━━━
+// ━━━ Connect API — كود conn_ فقط ━━━
 adminBot.callbackQuery('adm:api:paste', async (ctx) => {
   await ctx.answerCallbackQuery();
-
-  if (!env.API_BASE_URL) {
-    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
-    try {
-      await ctx.editMessageText(
-        '❌ <b>API_BASE_URL غير مضبوط</b>\n\n' +
-        'أضف رابط السيرفر في ملف <code>.env</code>:\n' +
-        '<code>API_BASE_URL=https://your-server.com/gateway</code>\n\n' +
-        'ثم أعد تشغيل البوت.',
-        { parse_mode: 'HTML', reply_markup: kb },
-      );
-    } catch {
-      await ctx.reply(
-        '❌ <b>API_BASE_URL غير مضبوط</b>\n\nأضف الرابط في .env وأعد التشغيل.',
-        { parse_mode: 'HTML', reply_markup: kb },
-      );
-    }
-    return;
-  }
-
   ctx.session.adminFlow = { type: 'api_connect', step: 'key', data: {} };
+
   const text = [
-    '🔑 <b>الصق الـ API Key</b>',
+    '🔗 <b>الصق كود الاتصال</b>',
     '',
-    '<code>sk_xxxxxxxxxxxxxxxx</code>',
+    'الصق الكود الذي حصلت عليه من المتجر الأساسي:',
+    '<code>conn_eyJrIjoic2tfeHh4Iiwi...</code>',
     '',
-    '💡 تحصل عليه من البوت الأساسي (API Control Panel).',
+    '💡 تحصل عليه من البوت الأساسي تلقائياً.',
   ].join('\n');
   const kb = new InlineKeyboard().text('❌ Cancel', 'adm:api');
   try {
@@ -8255,8 +8233,6 @@ adminBot.callbackQuery('adm:api:paste', async (ctx) => {
     await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
   }
 });
-
-// (حُذف زر تغيير URL — الرابط يُعدّل من .env فقط لأسباب أمنية)
 
 // ━━━ Test Connection ━━━
 adminBot.callbackQuery('adm:api:test', async (ctx) => {
