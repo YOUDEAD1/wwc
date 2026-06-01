@@ -5469,6 +5469,36 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 
   try {
+    // ── API Connect flow ──────────────────────────────────────
+    if (flow.type === 'api_connect' && flow.step === 'code') {
+      ctx.session.adminFlow = undefined;
+      const { decodeConnectionCode, testConnection: apiTest, saveConnection: apiSave }
+        = await import('../../services/apiConnect.js');
+      try {
+        const { api_key, api_url } = decodeConnectionCode(text);
+        await ctx.reply('⏳ جاري اختبار الاتصال...');
+        const result = await apiTest(api_key, api_url);
+        if (result.ok) {
+          await apiSave(api_key, api_url);
+          await ctx.reply(
+            `✅ <b>Connected Successfully!</b>\n\n` +
+            `📦 <b>${result.productCount}</b> products found.\n\n` +
+            `اضغط 🔌 API Manager للتحكم.`,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        } else {
+          await ctx.reply(
+            `❌ <b>Connection Failed</b>\n\n${result.error}`,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await ctx.reply(`❌ <b>Invalid Code</b>\n\n${msg}`, { parse_mode: 'HTML', reply_markup: rootMenu() });
+      }
+      return;
+    }
+
     if (flow.type === 'add_category') {
       if (flow.step === 'name') {
         ctx.session.adminFlow = {
@@ -8072,16 +8102,309 @@ adminBot.command('forcesub', async (ctx) => {
   await ctx.reply('❌ أمر غير معروف. استخدم `/forcesub` لعرض الأوامر.', { parse_mode: 'Markdown' });
 });
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔌 API Manager — توثيق الـ API للأدمن
+// 🔌 API Manager — اتصال كامل بـ API متجر خارجي
 // ─────────────────────────────────────────────────────────────────────────────
 
+import {
+  decodeConnectionCode,
+  testConnection as apiTestConnection,
+  getConnection as apiGetConnection,
+  saveConnection as apiSaveConnection,
+  deleteConnection as apiDeleteConnection,
+  fetchProducts as apiFetchProducts,
+  fetchBalance as apiFetchBalance,
+  fetchOrders as apiFetchOrders,
+  fetchMyPrices as apiFetchMyPrices,
+  purchase as apiPurchase,
+  type ApiConnection,
+} from '../../services/apiConnect.js';
+
+/** Show the API Manager root — dashboard or setup prompt. */
+async function showApiRoot(ctx: AppCtx): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const conn = await apiGetConnection();
+
+  if (!conn || !conn.connected) {
+    // ━━━ لا يوجد اتصال ━━━
+    const text = [
+      '🔌 <b>API Manager</b>',
+      '',
+      '⚪ <b>Not Connected</b>',
+      '',
+      'الصق كود الاتصال الذي حصلت عليه من المتجر الأساسي.',
+      'شكل الكود: <code>conn_eyJr...</code>',
+    ].join('\n');
+    const kb = new InlineKeyboard()
+      .text('📋 Paste Connection Code', 'adm:api:paste')
+      .row()
+      .text('📖 API Docs', 'adm:api:docs')
+      .row()
+      .text('⬅️ Back', 'adm:root');
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    } catch {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+    return;
+  }
+
+  // ━━━ متصل — جلب البيانات ━━━
+  let balanceStr = '...';
+  let productsStr = '...';
+  const balRes = await apiFetchBalance(conn);
+  if (balRes.ok) balanceStr = `$${balRes.balance.toFixed(2)}`;
+  else balanceStr = '❌ Error';
+
+  const prodRes = await apiFetchProducts(conn);
+  if (prodRes.ok) productsStr = String(prodRes.products.length);
+  else productsStr = '❌ Error';
+
+  const connDate = conn.connected_at
+    ? new Date(conn.connected_at).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'Unknown';
+
+  const text = [
+    '🔌 <b>API Manager</b>',
+    '',
+    '🟢 <b>Connected</b>',
+    `💰 Balance: <b>${balanceStr}</b>`,
+    `📦 Products: <b>${productsStr}</b>`,
+    `🕐 Since: ${connDate}`,
+    '━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const kb = new InlineKeyboard()
+    .text('🔍 Test Connection', 'adm:api:test')
+    .row()
+    .text('📦 View Products', 'adm:api:products:0')
+    .text('💰 Check Balance', 'adm:api:balance')
+    .row()
+    .text('📜 Recent Orders', 'adm:api:orders')
+    .text('💲 My Prices', 'adm:api:prices')
+    .row()
+    .text('📖 API Docs', 'adm:api:docs')
+    .row()
+    .text('🔄 Change Code', 'adm:api:paste')
+    .text('❌ Disconnect', 'adm:api:disconnect:confirm')
+    .row()
+    .text('⬅️ Back', 'adm:root');
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+// ━━━ Entry point ━━━
 adminBot.callbackQuery('adm:api', async (ctx) => {
   await ctx.answerCallbackQuery();
+  await showApiRoot(ctx);
+});
 
-  const botUsername = env.BOT_USERNAME ?? 'yourbot';
-  // slug ثابت يمثل نقطة النهاية (يمكن تغييره لاحقاً عبر settings)
-  const slug = '8f71aedd3494e042bb06408f50b7f938';
-  const baseUrl = `https://api.${botUsername.replace(/^@/, '')}.com`;
+// ━━━ Paste connection code ━━━
+adminBot.callbackQuery('adm:api:paste', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'api_connect', step: 'code', data: {} };
+
+  const text = [
+    '🔗 <b>Paste Connection Code</b>',
+    '',
+    'الصق كود الاتصال هنا:',
+    '<code>conn_eyJrIjoic2tfeHh4IiwidSI6Imh0dHBzOi8vLi4uIn0=</code>',
+    '',
+    '💡 تحصل على الكود من البوت الأساسي (المتجر المورّد).',
+  ].join('\n');
+  const kb = new InlineKeyboard().text('❌ Cancel', 'adm:api');
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+});
+
+// ━━━ Test Connection ━━━
+adminBot.callbackQuery('adm:api:test', async (ctx) => {
+  await ctx.answerCallbackQuery('⏳ Testing...');
+  const conn = await apiGetConnection();
+  if (!conn) {
+    await ctx.answerCallbackQuery({ text: '❌ Not connected', show_alert: true });
+    return;
+  }
+  const res = await apiTestConnection(conn.api_key, conn.api_url);
+  if (res.ok) {
+    await ctx.answerCallbackQuery({ text: `✅ Connected! ${res.productCount} products found.`, show_alert: true });
+  } else {
+    await ctx.answerCallbackQuery({ text: `❌ Failed: ${res.error}`, show_alert: true });
+  }
+});
+
+// ━━━ Check Balance ━━━
+adminBot.callbackQuery('adm:api:balance', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const conn = await apiGetConnection();
+  if (!conn) return;
+  const res = await apiFetchBalance(conn);
+  if (res.ok) {
+    await ctx.answerCallbackQuery({ text: `💰 Balance: $${res.balance.toFixed(2)}`, show_alert: true });
+  } else {
+    await ctx.answerCallbackQuery({ text: `❌ ${res.error}`, show_alert: true });
+  }
+});
+
+// ━━━ View Products (paginated) ━━━
+adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const page = Number(ctx.match[1]);
+  const conn = await apiGetConnection();
+  if (!conn) return;
+
+  const res = await apiFetchProducts(conn);
+  if (!res.ok) {
+    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
+    try {
+      await ctx.editMessageText(`❌ ${res.error}`, { reply_markup: kb });
+    } catch {
+      await ctx.reply(`❌ ${res.error}`, { reply_markup: kb });
+    }
+    return;
+  }
+
+  const perPage = 10;
+  const products = res.products;
+  const totalPages = Math.max(1, Math.ceil(products.length / perPage));
+  const safePage = Math.min(page, totalPages - 1);
+  const slice = products.slice(safePage * perPage, (safePage + 1) * perPage);
+
+  const lines = [
+    `📦 <b>API Products</b> (${products.length} total)`,
+    `Page ${safePage + 1}/${totalPages}`,
+    '━━━━━━━━━━━━━━━━━━━',
+    '',
+  ];
+  for (const p of slice) {
+    const stockIcon = p.stock > 0 ? '🟢' : '🔴';
+    const manualTag = p.is_manual ? ' [Manual]' : '';
+    lines.push(
+      `${stockIcon} <b>${escapeHtml(p.name_en)}</b>${manualTag}`,
+      `   💲 Base: $${p.base_price} | Your: $${p.your_price} | Stock: ${p.stock}`,
+      `   ID: <code>${p.id}</code>`,
+      '',
+    );
+  }
+
+  const kb = new InlineKeyboard();
+  if (safePage > 0) kb.text('◀️ Prev', `adm:api:products:${safePage - 1}`);
+  kb.text('🔄', `adm:api:products:${safePage}`);
+  if (safePage + 1 < totalPages) kb.text('Next ▶️', `adm:api:products:${safePage + 1}`);
+  kb.row().text('⬅️ Back', 'adm:api');
+
+  try {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  }
+});
+
+// ━━━ Recent Orders ━━━
+adminBot.callbackQuery('adm:api:orders', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const conn = await apiGetConnection();
+  if (!conn) return;
+
+  const res = await apiFetchOrders(conn, 10);
+  if (!res.ok) {
+    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
+    try { await ctx.editMessageText(`❌ ${res.error}`, { reply_markup: kb }); } catch { /* */ }
+    return;
+  }
+
+  const orders = res.orders;
+  const lines = [
+    `📜 <b>Recent API Orders</b> (${orders.length})`,
+    '━━━━━━━━━━━━━━━━━━━',
+    '',
+  ];
+
+  if (orders.length === 0) {
+    lines.push('No orders yet.');
+  } else {
+    for (const o of orders) {
+      const statusIcon = o.status === 'completed' ? '✅' : o.status === 'pending_manual' ? '⏳' : '📦';
+      lines.push(
+        `${statusIcon} <b>${o.order_id}</b>`,
+        `   Product: ${escapeHtml(o.product_name ?? o.product_id)} × ${o.qty}`,
+        `   Total: $${o.total_price} | ${o.status}`,
+        '',
+      );
+    }
+  }
+
+  const kb = new InlineKeyboard()
+    .text('🔄 Refresh', 'adm:api:orders')
+    .row()
+    .text('⬅️ Back', 'adm:api');
+
+  try {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  }
+});
+
+// ━━━ My Prices ━━━
+adminBot.callbackQuery('adm:api:prices', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const conn = await apiGetConnection();
+  if (!conn) return;
+
+  const res = await apiFetchMyPrices(conn);
+  if (!res.ok) {
+    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
+    try { await ctx.editMessageText(`❌ ${res.error}`, { reply_markup: kb }); } catch { /* */ }
+    return;
+  }
+
+  const prices = res.prices;
+  const lines = [
+    `💲 <b>My Custom Prices</b> (${prices.length})`,
+    '━━━━━━━━━━━━━━━━━━━',
+    '',
+  ];
+
+  if (prices.length === 0) {
+    lines.push('No custom prices set.');
+  } else {
+    for (const p of prices) {
+      lines.push(
+        `📦 <b>${escapeHtml(p.product_name ?? p.product_id)}</b>`,
+        `   Base: $${p.base_price} → Your: $${p.your_price}`,
+        '',
+      );
+    }
+  }
+
+  const kb = new InlineKeyboard()
+    .text('🔄 Refresh', 'adm:api:prices')
+    .row()
+    .text('⬅️ Back', 'adm:api');
+
+  try {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  }
+});
+
+// ━━━ API Docs ━━━
+adminBot.callbackQuery('adm:api:docs', async (ctx) => {
+  await ctx.answerCallbackQuery();
 
   const text = [
     '📖 <b>API Documentation</b>',
@@ -8090,22 +8413,22 @@ adminBot.callbackQuery('adm:api', async (ctx) => {
     '<code>Authorization: Bearer sk_xxx</code>',
     '━━━━━━━━━━━━━━━━━━━',
     '',
-    `📦 <code>GET /${slug}/products</code>`,
+    '📦 <code>GET /products</code>',
     'All visible products with prices and stock',
     '',
-    `📦 <code>GET /${slug}/product/ID</code>`,
+    '📦 <code>GET /product/ID</code>',
     'Single product details',
     '',
-    `💰 <code>GET /${slug}/balance</code>`,
+    '💰 <code>GET /balance</code>',
     'Your current balance',
     '',
-    `🛒 <code>POST /${slug}/purchase</code>`,
+    '🛒 <code>POST /purchase</code>',
     '<code>{"product_id":"x","qty":1,"buyer_info":"@user"}</code>',
     '',
-    `📜 <code>GET /${slug}/orders?limit=10</code>`,
+    '📜 <code>GET /orders?limit=10</code>',
     'Your recent API orders',
     '',
-    `💲 <code>GET /${slug}/my_prices</code>`,
+    '💲 <code>GET /my_prices</code>',
     'Your custom prices',
     '━━━━━━━━━━━━━━━━━━━',
     '',
@@ -8115,26 +8438,41 @@ adminBot.callbackQuery('adm:api', async (ctx) => {
     '❌ <code>402</code> = Not enough balance',
     '❌ <code>404</code> = Product not found',
     '❌ <code>409</code> = Out of stock',
-    '',
-    '━━━━━━━━━━━━━━━━━━━',
-    '⚙️ <b>كيف تربط الـ API بمتجرك؟</b>',
-    '',
-    '١. شغّل سيرفر الـ API الخاص بك (Node/Python/إلخ)',
-    '٢. اربطه بنفس قاعدة بيانات Supabase',
-    '٣. استخدم <code>SUPABASE_SERVICE_ROLE_KEY</code> للوصول',
-    '٤. تحقق من الـ Bearer token في كل طلب',
-    '٥. استدعِ queries.ts مباشرة أو عبر Supabase REST',
-    '',
-    '💡 الـ API ليس مدمجاً في البوت — يعمل كسيرفر منفصل',
-    'يشارك نفس قاعدة البيانات مع البوت.',
   ].join('\n');
 
-  const kb = new InlineKeyboard()
-    .text('⬅️ Back', 'adm:root');
-
+  const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
   try {
     await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
   } catch {
     await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
   }
 });
+
+// ━━━ Disconnect confirm ━━━
+adminBot.callbackQuery('adm:api:disconnect:confirm', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const text = [
+    '⚠️ <b>Disconnect API?</b>',
+    '',
+    'سيتم حذف بيانات الاتصال بالكامل.',
+    'هل أنت متأكد؟',
+  ].join('\n');
+  const kb = new InlineKeyboard()
+    .text('✅ Yes, Disconnect', 'adm:api:disconnect:yes')
+    .text('❌ Cancel', 'adm:api');
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+});
+
+adminBot.callbackQuery('adm:api:disconnect:yes', async (ctx) => {
+  await ctx.answerCallbackQuery('✅ Disconnected');
+  await apiDeleteConnection();
+  await showApiRoot(ctx);
+});
+
+// ━━━ Handle conn_ code text input ━━━
+// This is handled inside the main adminFlow text handler.
+// We need to add it to the existing on('message:text') handler.
