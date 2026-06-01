@@ -166,6 +166,7 @@ export type AdminFlow =
       step: 'url';
       data: { method_id: number };
     }
+  | { type: 'api_connect'; step: 'code'; data: Record<string, never> }
   | { type: 'add_payment'; step: 'name'; data: Record<string, never> }
   | { type: 'add_payment'; step: 'instructions'; data: { name: string } }
   | { type: 'set_text'; step: 'key'; data: Record<string, never> }
