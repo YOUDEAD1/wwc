@@ -1,10 +1,17 @@
 import type { Composer } from 'grammy';
-import { InlineKeyboard } from 'grammy';
-import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
+import { InlineKeyboard, InputFile } from 'grammy';
+import {
+  LOCALES,
+  PRODUCTS_PER_PAGE,
+  QTY_MAX,
+  QTY_MIN,
+  type Lang,
+} from '../../config/index.js';
 import {
   createOrder,
   decrementProductStock,
   getProduct,
+  getOrder,
   listActiveProducts,
   claimProductItems,
   setOrderDeliveredItems,
@@ -42,6 +49,7 @@ import { buildOrderDeliveredChunks } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
 import { sendInvoiceEmail } from '../services/mailer.js';
+import { t as translate } from '../i18n/index.js';
 import {
   handleDeliveryFormMessage,
   maybeStartDeliveryFormForCtx,
@@ -141,6 +149,7 @@ function productPageText(
       }),
     );
   }
+
   lines.push('', ctx.t('shop.product.line.qty', { qty }));
   // Total Amount: when a promo applies, render gross → effective as
   // a strikethrough so the buyer sees the saving inline. When no
@@ -157,6 +166,32 @@ function productPageText(
   }
   lines.push(ctx.t('shop.product.line.balance', { balance: ctx.user.balance }));
   return lines.join('\n');
+}
+
+const BLANK_TXT_PAYLOAD = ' ';
+const MANUAL_DELIVERY_PLACEHOLDER = 'Manual delivery — admin will follow up shortly.';
+
+function deliveryPendingValues(): Set<string> {
+  const values = new Set<string>();
+  for (const lang of Object.keys(LOCALES) as Lang[]) {
+    values.add(translate(lang, 'shop.buy.delivery_pending').trim());
+  }
+  values.add(MANUAL_DELIVERY_PLACEHOLDER);
+  return values;
+}
+
+function buildDeliveredItemsTxt(args: {
+  deliveredItems: string | null | undefined;
+  isOneToOne: boolean;
+}): string {
+  const trimmed = (args.deliveredItems ?? '').trim();
+  const pending = trimmed.length === 0 || deliveryPendingValues().has(trimmed);
+  if (args.isOneToOne || pending) return BLANK_TXT_PAYLOAD;
+  const lines = (args.deliveredItems ?? '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return lines.length > 0 ? lines.join('\n') + '\n' : BLANK_TXT_PAYLOAD;
 }
 
 /**
@@ -755,6 +790,28 @@ export function registerShop(bot: Composer<AppCtx>): void {
     }
   });
 
+  // ---- Download delivered items as TXT ----
+  bot.callbackQuery(/^order:txt:(\d+)$/, async (ctx) => {
+    const orderId = Number(ctx.match[1]);
+    const order = await getOrder(orderId);
+    if (!order || order.user_id !== ctx.from?.id) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action'), show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const product = order.product_id ? await getProduct(order.product_id) : null;
+    const contents = buildDeliveredItemsTxt({
+      deliveredItems: order.delivered_items,
+      isOneToOne: product?.delivery_form_enabled === true,
+    });
+    const filename = `order-${publicOrderId(order)}-items.txt`;
+    try {
+      await ctx.replyWithDocument(new InputFile(Buffer.from(contents, 'utf8'), filename));
+    } catch (err) {
+      logger.warn({ err, orderId }, 'order:txt download failed');
+    }
+  });
+
   // *Buy Now* on the product page no longer charges immediately —
   // it edits the message into a payment-method picker that lets the
   // user choose between paying with their wallet balance and topping
@@ -976,6 +1033,8 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // tapping Using Method.
       const deliveredKb = new InlineKeyboard();
       inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
+      deliveredKb.row();
+      inlineBtn(deliveredKb, ctx.lang, 'send_note_txt', `order:txt:${order.id}`);
       const headerHasKeyboard = deliveredChunks.length <= 1;
       await ctx.reply(
         renderMdHtml(

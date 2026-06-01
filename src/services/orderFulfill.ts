@@ -38,6 +38,7 @@ import { sendInvoiceEmail } from './mailer.js';
 import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
 import { buildOrderDeliveredChunks } from './orderRender.js';
+import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
 import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { t as translate } from '../i18n/index.js';
 import type { DBDeposit, OrderIntent, PaymentProvider } from '../types.js';
@@ -177,6 +178,10 @@ export async function fulfilOrderForDeposit(args: {
   const lang = user?.language ?? env.DEFAULT_LANG;
   const t = (key: string, vars?: Record<string, string | number>) =>
     translate(lang, key, vars);
+  const deliveredKb = new InlineKeyboard();
+  inlineBtn(deliveredKb, lang, 'using_method', `tut:${intent.product_id}`);
+  deliveredKb.row();
+  inlineBtn(deliveredKb, lang, 'send_note_txt', `order:txt:${order.id}`);
 
   // Step 1: Payment Verified card
   await safeSendHtml(
@@ -190,6 +195,7 @@ export async function fulfilOrderForDeposit(args: {
   );
 
   // Step 2: Order Delivered card with the first chunk of items.
+  const headerHasKeyboard = deliveredChunks.length <= 1;
   await safeSendHtml(
     api,
     deposit.user_id,
@@ -202,6 +208,7 @@ export async function fulfilOrderForDeposit(args: {
         items: firstChunkBlock,
       }),
     ),
+    headerHasKeyboard ? { reply_markup: deliveredKb } : undefined,
   );
 
   // Step 2b: send any remaining 7-link chunks as plain blockquote
@@ -211,11 +218,10 @@ export async function fulfilOrderForDeposit(args: {
     const chunk = deliveredChunks[i];
     if (!chunk) continue;
     try {
-      await api.sendMessage(
-        deposit.user_id,
-        renderMdHtml(chunk.inlineBlock),
-        { parse_mode: 'HTML' },
-      );
+      const opts = chunk.isLast
+        ? { parse_mode: 'HTML' as const, reply_markup: deliveredKb }
+        : { parse_mode: 'HTML' as const };
+      await api.sendMessage(deposit.user_id, renderMdHtml(chunk.inlineBlock), opts);
     } catch (err) {
       logger.warn(
         {
@@ -308,9 +314,14 @@ async function safeNotify(api: Api, userId: number, text: string): Promise<void>
   }
 }
 
-async function safeSendHtml(api: Api, userId: number, html: string): Promise<void> {
+async function safeSendHtml(
+  api: Api,
+  userId: number,
+  html: string,
+  opts?: Parameters<Api['sendMessage']>[2],
+): Promise<void> {
   try {
-    await api.sendMessage(userId, html, { parse_mode: 'HTML' });
+    await api.sendMessage(userId, html, { parse_mode: 'HTML', ...(opts ?? {}) });
   } catch (err) {
     logger.warn({ err, userId }, 'direct-pay: user HTML DM failed');
   }

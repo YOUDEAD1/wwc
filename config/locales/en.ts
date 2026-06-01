@@ -65,11 +65,11 @@ export const en: Record<string, string> = {
   'btn.qty.display': '📦 {qty} / {stock}',
   // Product-page extras.
   'btn.share_product': '🔗 Copy Link',
-  // `btn.view_note_file` / `btn.send_note_txt` are kept for backwards
-  // compat with /settext overrides; the new View Note screen no
-  // longer surfaces a Save button.
+  // `btn.view_note_file` is kept for backwards compat with /settext
+  // overrides. `btn.send_note_txt` is now reused for the Order
+  // Delivered "Download TXT" button.
   'btn.view_note_file': '📥 Save Note as TXT',
-  'btn.send_note_txt': '📥 Save as TXT',
+  'btn.send_note_txt': '📥 Download TXT',
   // Out-of-stock products still show a Buy Now button labelled with
   // a premium ❌ glyph — tapping it surfaces the "contact admin to
   // restock" popup (see `shop.product.out_of_stock_popup`).
