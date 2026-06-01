@@ -682,3 +682,28 @@ export async function logSupportTranscript(api: Api, args: {
   });
   await sendDocument(api, args.pdf, caption);
 }
+// ─── Stock Depletion / Low Stock Alert ────────────────────────
+export async function logStockAlert(api: Api, args: {
+  productId: number;
+  productName: string;
+  remaining: number;
+}): Promise<void> {
+  const isDepleted = args.remaining <= 0;
+  const tag = isDepleted ? 'STOCK_DEPLETED' : 'STOCK_LOW';
+  const lines = [
+    `<b>[${tag}]</b> ${isDepleted ? '🔴 Stock Depleted' : '⚠️ Low Stock'}`,
+    '',
+    `📅 ${formatLoggedAt()}`,
+    '',
+    `📦 Product: <b>${escapeHtml(args.productName)}</b>`,
+    `🆔 ID: <code>${args.productId}</code>`,
+    `📊 Remaining: <b>${args.remaining}</b>`,
+    '',
+    isDepleted
+      ? '⛔ This product is now <b>OUT OF STOCK</b>.'
+      : '⚠️ Restock recommended.',
+    '',
+    `<i>Source: bot • @${escapeHtml(env.BOT_USERNAME ?? '—')} • ${ADMIN_LOG_TZ_LABEL}</i>`,
+  ];
+  await send(api, lines.join('\n'));
+}
