@@ -804,7 +804,17 @@ export function registerShop(bot: Composer<AppCtx>): void {
       deliveredItems: order.delivered_items,
       isOneToOne: product?.delivery_form_enabled === true,
     });
-    const filename = `order-${publicOrderId(order)}-items.txt`;
+    // Format: (quantity)x (product name) (buying time)
+    // e.g: 10x Gemini 18M 1:48Utc
+    const safeName = (order.product_name ?? 'Unknown')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const d = new Date(order.created_at);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const timeStr = `${hh}:${mm}Utc`;
+    const filename = `${order.qty}x ${safeName} ${timeStr}.txt`;
     try {
       await ctx.replyWithDocument(new InputFile(Buffer.from(contents, 'utf8'), filename));
     } catch (err) {
