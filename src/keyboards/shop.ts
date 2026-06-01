@@ -72,6 +72,8 @@ export function shopProductsKeyboard(
     const style = colorModeToStyle(mode);
     if (style !== undefined) kb.style(style);
     kb.row();
+    // Add blank space between products
+    kb.row();
   });
 
   // Footer layout (bot-owner spec v2): the page indicator always
