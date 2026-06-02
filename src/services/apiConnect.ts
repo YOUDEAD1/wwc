@@ -35,6 +35,8 @@ export type ApiProduct = {
   your_price: number;
   stock: number;
   is_manual: boolean;
+  emoji?: string;
+  emoji_id?: string;
 };
 
 export type ApiPurchaseResult = {

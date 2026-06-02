@@ -26,6 +26,7 @@ export type ApiShopProduct = {
   custom_name: string;        // اسم مخصص (يظهر للعميل)
   custom_desc: string;        // وصف مخصص
   emoji: string;              // إيموجي مخصص
+  emoji_id?: string;          // إيموجي بريميوم مخصص
   sort_order: number;         // ترتيب العرض
   // بيانات من API (لا يعدّلها الأدمن)
   original_name: string;
@@ -95,7 +96,8 @@ export async function syncProducts(): Promise<
         sell_price: p.your_price,
         custom_name: p.name_en,
         custom_desc: '',
-        emoji: '📦',
+        emoji: p.emoji || '📦',
+        emoji_id: p.emoji_id || undefined,
         sort_order: nextOrder++,
         original_name: p.name_en,
         base_price: p.base_price,
@@ -108,6 +110,9 @@ export async function syncProducts(): Promise<
         existing.original_name = p.name_en;
         existing.base_price = p.base_price;
         existing.is_manual = p.is_manual;
+        if (p.emoji_id) {
+          existing.emoji_id = p.emoji_id;
+        }
       }
     }
   }
@@ -150,7 +155,8 @@ export async function syncProducts(): Promise<
             stock: Number(p.stock),
             active: s.enabled,
             description: s.custom_desc || '',
-            emoji: s.emoji || '📦',
+            emoji: s.emoji || p.emoji || '📦',
+            emoji_id: s.emoji_id || p.emoji_id || null,
           })
           .eq('id', existingProd.id);
       } else {
@@ -163,7 +169,8 @@ export async function syncProducts(): Promise<
           stock: Number(p.stock),
           description: s.custom_desc || '',
           note: noteTag,
-          emoji: s.emoji || '📦',
+          emoji: s.emoji || p.emoji || '📦',
+          emoji_id: s.emoji_id || p.emoji_id || null,
         });
       }
     }
@@ -179,7 +186,8 @@ export async function syncProducts(): Promise<
       sell_price: s?.sell_price ?? p.your_price,
       custom_name: s?.custom_name ?? p.name_en,
       custom_desc: s?.custom_desc ?? '',
-      emoji: s?.emoji ?? '📦',
+      emoji: s?.emoji ?? p.emoji ?? '📦',
+      emoji_id: s?.emoji_id ?? p.emoji_id ?? undefined,
       sort_order: s?.sort_order ?? 0,
     };
   });

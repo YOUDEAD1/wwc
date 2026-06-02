@@ -209,68 +209,7 @@ adminBot.command('admin', (ctx) => showRoot(ctx, true));
 
 // /api — اختصار لفتح API Manager مباشرة
 adminBot.command('api', async (ctx) => {
-  ctx.session.adminFlow = undefined;
-  const { getConnection: apiGetConnection, fetchBalance: apiFetchBalance, fetchProducts: apiFetchProducts }
-    = await import('../../services/apiConnect.js');
-  const conn = await apiGetConnection();
-
-  if (!conn || !conn.connected) {
-    const text = [
-      '🔌 <b>API Manager</b>',
-      '',
-      '⚪ <b>Not Connected</b>',
-      '',
-      'اربط بوتك بمتجر خارجي.',
-      'الصق كود الاتصال من البوت الأساسي.',
-    ].join('\n');
-    const kb = new InlineKeyboard()
-      .text('🔗 Connect', 'adm:api:paste')
-      .row()
-      .text('📖 API Docs', 'adm:api:docs')
-      .row()
-      .text('⬅️ Back', 'adm:root');
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-    return;
-  }
-
-  let balanceStr = '...';
-  let productsStr = '...';
-  const balRes = await apiFetchBalance(conn);
-  if (balRes.ok) balanceStr = `$${balRes.balance.toFixed(2)}`;
-  else balanceStr = '❌';
-
-  const prodRes = await apiFetchProducts(conn);
-  if (prodRes.ok) productsStr = String(prodRes.products.length);
-  else productsStr = '❌';
-
-  const text = [
-    '🔌 <b>API Manager</b>',
-    '',
-    '🟢 <b>Connected</b>',
-    `💰 Balance: <b>${balanceStr}</b>`,
-    `📦 Products: <b>${productsStr}</b>`,
-    '━━━━━━━━━━━━━━━━━━━',
-  ].join('\n');
-
-  const kb = new InlineKeyboard()
-    .text('🔍 Test Connection', 'adm:api:test')
-    .row()
-    .text('📦 View Products', 'adm:api:products:0')
-    .text('💰 Check Balance', 'adm:api:balance')
-    .row()
-    .text('📜 Recent Orders', 'adm:api:orders')
-    .row()
-    .text('🛍️ Manage Shop', 'adm:api:manage')
-    .text('💲 My Prices', 'adm:api:prices')
-    .row()
-    .text('📖 API Docs', 'adm:api:docs')
-    .row()
-    .text('🔄 Change Code', 'adm:api:paste')
-    .text('❌ Disconnect', 'adm:api:disconnect:confirm')
-    .row()
-    .text('⬅️ Back', 'adm:root');
-
-  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  await showApiRoot(ctx);
 });
 
 adminBot.callbackQuery('adm:root', async (ctx) => {
@@ -7838,11 +7777,20 @@ adminBot.callbackQuery('adm:prod:items:api', async (ctx) => {
     const kb = new InlineKeyboard();
     for (const p of enabled) {
       const stock = Number(p.stock);
-      const stockIcon = stock > 0 ? '🟢' : '🔴';
-      kb.text(
-        `${stockIcon} ${p.emoji} ${p.custom_name} — $${p.sell_price} (${stock})`,
-        `adm:prod:items:apisel:${p.id}`,
-      );
+      const inStock = stock !== 0;
+      const stockIcon = inStock ? '🟢' : '🔴';
+      const stockText = stock < 0 ? '♾️' : String(stock);
+      
+      const label = `${stockIcon} ${p.emoji} ${p.custom_name} — $${p.sell_price} (${stockText})`;
+      kb.text(label, `adm:prod:items:apisel:${p.id}`);
+      
+      // Attach Telegram Premium custom emoji icon if available
+      if (p.emoji_id) {
+        kb.icon(p.emoji_id);
+      }
+      
+      // Style buttons: success (green) for in stock / unlimited, danger (red) for out of stock
+      kb.style(inStock ? 'success' : 'danger');
       kb.row();
     }
     kb.text('⬅️ Back', 'adm:prod:items:back');
@@ -8415,8 +8363,6 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
     const kb = new InlineKeyboard()
       .text('🔗 Connect', 'adm:api:paste')
       .row()
-      .text('📖 API Docs', 'adm:api:docs')
-      .row()
       .text('⬅️ Back', 'adm:root');
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -8466,10 +8412,6 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
     .text('📜 Recent Orders', 'adm:api:orders')
     .text('💲 My Prices', 'adm:api:prices')
     .row()
-    .text('📖 API Docs', 'adm:api:docs')
-    .row()
-    .text('🛍️ Manage Shop', 'adm:api:manage')
-    .row()
     .text('🔄 Change Code', 'adm:api:paste')
     .text('❌ Disconnect', 'adm:api:disconnect:confirm')
     .row()
@@ -8482,7 +8424,6 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
   }
 }
 
-// ━━━ Entry point ━━━
 adminBot.callbackQuery('adm:api', async (ctx) => {
   await ctx.answerCallbackQuery();
   await showApiRoot(ctx);
@@ -8538,6 +8479,36 @@ adminBot.callbackQuery('adm:api:balance', async (ctx) => {
   }
 });
 
+/** Fallback keyword-based premium/Unicode emoji mapper for products. */
+function getProductEmoji(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('netflix')) return '🎬';
+  if (n.includes('spotify')) return '🎵';
+  if (n.includes('youtube') || n.includes('premium')) return '📺';
+  if (n.includes('steam') || n.includes('game') || n.includes('pubg') || n.includes('free fire')) return '🎮';
+  if (n.includes('key') || n.includes('license') || n.includes('windows') || n.includes('office')) return '🔑';
+  if (n.includes('vpn') || n.includes('nord') || n.includes('expressvpn')) return '🛡️';
+  if (n.includes('crunchyroll') || n.includes('anime')) return '🍙';
+  if (n.includes('discord') || n.includes('nitro')) return '👾';
+  if (n.includes('apple') || n.includes('itunes') || n.includes('icloud')) return '🍏';
+  if (n.includes('google') || n.includes('play')) return '🤖';
+  if (n.includes('amazon')) return '📦';
+  if (n.includes('chatgpt') || n.includes('ai') || n.includes('openai')) return '🧠';
+  if (n.includes('canva')) return '🎨';
+  if (n.includes('shahid')) return '🎭';
+  if (n.includes('playstation') || n.includes('psn')) return '🕹️';
+  if (n.includes('xbox')) return '💚';
+  if (n.includes('roblox') || n.includes('robux')) return '🧱';
+  
+  // Consistent hash fallback to choose one of many nice emojis
+  const emojis = ['💎', '✨', '⚡', '🎁', '🔥', '👑', '🌟', '🛡️', '🎫', '🕹️', '📱', '💻'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return emojis[Math.abs(hash) % emojis.length] || '🎁';
+}
+
 // ━━━ View Products (paginated) ━━━
 adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
@@ -8556,8 +8527,12 @@ adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
     return;
   }
 
+  // Sort API products alphabetically A-Z
+  const products = [...res.products].sort((a, b) =>
+    a.name_en.localeCompare(b.name_en, undefined, { sensitivity: 'base' })
+  );
+
   const perPage = 10;
-  const products = res.products;
   const totalPages = Math.max(1, Math.ceil(products.length / perPage));
   const safePage = Math.min(page, totalPages - 1);
   const slice = products.slice(safePage * perPage, (safePage + 1) * perPage);
@@ -8569,11 +8544,19 @@ adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
     '',
   ];
   for (const p of slice) {
-    const stockIcon = p.stock > 0 ? '🟢' : '🔴';
+    const isOutOfStock = p.stock === 0;
+    const stockIcon = isOutOfStock ? '🔴' : '🟢';
+    const stockVal = p.stock < 0 ? '♾️ Unlimited' : p.stock;
     const manualTag = p.is_manual ? ' [Manual]' : '';
+
+    // If API returns emoji_id, render animated <tg-emoji> tag, otherwise fallback
+    const premiumEmojiStr = p.emoji_id
+      ? `<tg-emoji emoji-id="${p.emoji_id}">${p.emoji || '📦'}</tg-emoji>`
+      : getProductEmoji(p.name_en);
+
     lines.push(
-      `${stockIcon} <b>${escapeHtml(p.name_en)}</b>${manualTag}`,
-      `   💲 Base: $${p.base_price} | Your: $${p.your_price} | Stock: ${p.stock}`,
+      `${stockIcon} ${premiumEmojiStr} <b>${escapeHtml(p.name_en)}</b>${manualTag}`,
+      `   💲 Base: $${p.base_price} | Your: $${p.your_price} | Stock: ${stockVal}`,
       `   ID: <code>${p.id}</code>`,
       '',
     );
@@ -8593,12 +8576,14 @@ adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
 });
 
 // ━━━ Recent Orders ━━━
-adminBot.callbackQuery('adm:api:orders', async (ctx) => {
+adminBot.callbackQuery(/^adm:api:orders(?::(\d+))?$/, async (ctx) => {
   await ctx.answerCallbackQuery();
+  const page = ctx.match[1] ? Number(ctx.match[1]) : 0;
   const conn = await apiGetConnection();
   if (!conn) return;
 
-  const res = await apiFetchOrders(conn, 10);
+  // Fetch up to 200 orders for local pagination
+  const res = await apiFetchOrders(conn, 200);
   if (!res.ok) {
     const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
     try { await ctx.editMessageText(`❌ ${res.error}`, { reply_markup: kb }); } catch { /* */ }
@@ -8606,8 +8591,14 @@ adminBot.callbackQuery('adm:api:orders', async (ctx) => {
   }
 
   const orders = res.orders;
+  const perPage = 5;
+  const totalPages = Math.max(1, Math.ceil(orders.length / perPage));
+  const safePage = Math.min(page, totalPages - 1);
+  const slice = orders.slice(safePage * perPage, (safePage + 1) * perPage);
+
   const lines = [
-    `📜 <b>Recent API Orders</b> (${orders.length})`,
+    `📜 <b>Recent API Orders</b> (${orders.length} total)`,
+    `Page ${safePage + 1}/${totalPages}`,
     '━━━━━━━━━━━━━━━━━━━',
     '',
   ];
@@ -8615,26 +8606,99 @@ adminBot.callbackQuery('adm:api:orders', async (ctx) => {
   if (orders.length === 0) {
     lines.push('No orders yet.');
   } else {
-    for (const o of orders) {
+    for (const o of slice) {
       const statusIcon = o.status === 'completed' ? '✅' : o.status === 'pending_manual' ? '⏳' : '📦';
       lines.push(
-        `${statusIcon} <b>${o.order_id}</b>`,
+        `${statusIcon} <code>${o.order_id}</code>`,
         `   Product: ${escapeHtml(o.product_name ?? o.product_id)} × ${o.qty}`,
         `   Total: $${o.total_price} | ${o.status}`,
+        o.created_at ? `   Date: ${new Date(o.created_at).toLocaleString('en-US')}` : '',
         '',
       );
     }
   }
 
-  const kb = new InlineKeyboard()
-    .text('🔄 Refresh', 'adm:api:orders')
-    .row()
-    .text('⬅️ Back', 'adm:api');
+  const kb = new InlineKeyboard();
+  if (safePage > 0) {
+    kb.text('◀️ Prev', `adm:api:orders:${safePage - 1}`);
+  }
+  kb.text('🔄', `adm:api:orders:${safePage}`);
+  if (safePage + 1 < totalPages) {
+    kb.text('Next ▶️', `adm:api:orders:${safePage + 1}`);
+  }
+
+  kb.row();
+  if (orders.length > 0) {
+    kb.text('📥 Download All (TXT)', 'adm:api:orders:download').row();
+  }
+  kb.text('⬅️ Back', 'adm:api');
 
   try {
     await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
   } catch {
     await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  }
+});
+
+adminBot.callbackQuery('adm:api:orders:download', async (ctx) => {
+  await ctx.answerCallbackQuery('⏳ Generating export file...');
+  const conn = await apiGetConnection();
+  if (!conn) return;
+
+  // Fetch up to 1000 orders to get as much history as possible
+  const res = await apiFetchOrders(conn, 1000);
+  if (!res.ok) {
+    await ctx.reply(`❌ Failed to fetch orders: ${res.error}`);
+    return;
+  }
+
+  const orders = res.orders;
+  if (orders.length === 0) {
+    await ctx.reply('No orders found to download.');
+    return;
+  }
+
+  const fileLines = [
+    `API ORDERS EXPORT`,
+    `Generated: ${new Date().toUTCString()}`,
+    `Total Orders: ${orders.length}`,
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '',
+  ];
+
+  for (const o of orders) {
+    fileLines.push(
+      `Order ID: ${o.order_id}`,
+      `Product ID: ${o.product_id}`,
+      `Product Name: ${o.product_name ?? 'N/A'}`,
+      `Quantity: ${o.qty}`,
+      `Total Price: $${o.total_price}`,
+      `Status: ${o.status}`,
+      `Buyer: ${o.buyer_info ?? 'N/A'}`,
+      `Date: ${o.created_at ?? 'N/A'}`,
+      o.codes && o.codes.length > 0 ? `Codes Delivered:\n  - ${o.codes.join('\n  - ')}` : 'Codes: None',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '',
+    );
+  }
+
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const filename = `api_orders_${stamp}.txt`;
+  
+  try {
+    await ctx.replyWithDocument(
+      new InputFile(Buffer.from(fileLines.join('\n') + '\n', 'utf8'), filename),
+      {
+        caption:
+          `📥 *API Orders — Export*\n` +
+          `Orders: *${orders.length}* · ` +
+          `Generated: ${new Date().toUTCString()}`,
+        parse_mode: 'Markdown',
+      },
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await ctx.reply(`❌ Failed to send document: ${msg}`);
   }
 });
 
