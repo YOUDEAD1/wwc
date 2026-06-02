@@ -1289,7 +1289,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
 
   // ━━━ Buy — confirm + execute purchase ━━━
   bot.callbackQuery(/^apishop:buy:(.+)$/, async (ctx) => {
-    const productId = ctx.match[1];
+    const productId = ctx.match![1] as string;
     const buyer = ctx.from?.username ? `@${ctx.from.username}` : String(ctx.from?.id ?? 'unknown');
 
     await ctx.answerCallbackQuery('⏳ جاري الشراء...');

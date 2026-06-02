@@ -101,9 +101,12 @@ export async function syncProducts(): Promise<
       };
     } else {
       // Update API-side data
-      config.products[p.id].original_name = p.name_en;
-      config.products[p.id].base_price = p.base_price;
-      config.products[p.id].is_manual = p.is_manual;
+      const existing = config.products[p.id];
+      if (existing) {
+        existing.original_name = p.name_en;
+        existing.base_price = p.base_price;
+        existing.is_manual = p.is_manual;
+      }
     }
   }
   await saveShopConfig(config);
@@ -112,12 +115,12 @@ export async function syncProducts(): Promise<
     const s = config.products[p.id];
     return {
       ...p,
-      enabled: s.enabled,
-      sell_price: s.sell_price,
-      custom_name: s.custom_name,
-      custom_desc: s.custom_desc,
-      emoji: s.emoji,
-      sort_order: s.sort_order,
+      enabled: s?.enabled ?? false,
+      sell_price: s?.sell_price ?? p.your_price,
+      custom_name: s?.custom_name ?? p.name_en,
+      custom_desc: s?.custom_desc ?? '',
+      emoji: s?.emoji ?? '📦',
+      sort_order: s?.sort_order ?? 0,
     };
   });
 
@@ -181,11 +184,15 @@ export async function moveProduct(id: string, direction: 'up' | 'down'): Promise
   if (swapIdx < 0 || swapIdx >= entries.length) return;
 
   // Swap sort_order
-  const [, current] = entries[idx];
-  const [, target] = entries[swapIdx];
-  const tmp = current.sort_order;
-  current.sort_order = target.sort_order;
-  target.sort_order = tmp;
+  const currentEntry = entries[idx];
+  const targetEntry = entries[swapIdx];
+  if (currentEntry && targetEntry) {
+    const [, current] = currentEntry;
+    const [, target] = targetEntry;
+    const tmp = current.sort_order;
+    current.sort_order = target.sort_order;
+    target.sort_order = tmp;
+  }
 
   await saveShopConfig(config);
 }
@@ -212,11 +219,11 @@ export async function getEnabledProducts(): Promise<
       return {
         ...p,
         enabled: true,
-        sell_price: s.sell_price,
-        custom_name: s.custom_name || p.name_en,
-        custom_desc: s.custom_desc || '',
-        emoji: s.emoji || '📦',
-        sort_order: s.sort_order ?? 999,
+        sell_price: s?.sell_price ?? p.your_price,
+        custom_name: s?.custom_name || p.name_en,
+        custom_desc: s?.custom_desc || '',
+        emoji: s?.emoji || '📦',
+        sort_order: s?.sort_order ?? 999,
       };
     });
 

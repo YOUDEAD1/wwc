@@ -8667,24 +8667,29 @@ async function showManageList(ctx: AppCtx, products: MergedProduct[], page: numb
 
 // ━━━ Toggle ━━━
 adminBot.callbackQuery(/^adm:api:tgl:(.+):([01]):(\d+)$/, async (ctx) => {
-  await apiToggleProduct(ctx.match[1], ctx.match[2] === '1');
-  await ctx.answerCallbackQuery(ctx.match[2] === '1' ? '✅' : '🔴');
+  await apiToggleProduct(ctx.match![1] as string, ctx.match![2] === '1');
+  await ctx.answerCallbackQuery(ctx.match![2] === '1' ? '✅' : '🔴');
   const res = await apiSyncProducts();
-  if (res.ok) await showManageList(ctx, res.products, Number(ctx.match[3]));
+  if (res.ok) await showManageList(ctx, res.products, Number(ctx.match![3]));
 });
 
 // ━━━ Move ⬆️⬇️ ━━━
 adminBot.callbackQuery(/^adm:api:mv:(.+):(up|down):(\d+)$/, async (ctx) => {
-  await apiMoveProduct(ctx.match[1], ctx.match[2] as 'up' | 'down');
-  await ctx.answerCallbackQuery(ctx.match[2] === 'up' ? '⬆️' : '⬇️');
+  await apiMoveProduct(ctx.match![1] as string, ctx.match![2] as 'up' | 'down');
+  await ctx.answerCallbackQuery(ctx.match![2] === 'up' ? '⬆️' : '⬇️');
   const res = await apiSyncProducts();
-  if (res.ok) await showManageList(ctx, res.products, Number(ctx.match[3]));
+  if (res.ok) await showManageList(ctx, res.products, Number(ctx.match![3]));
 });
 
 // ━━━ Enable/Disable All ━━━
 adminBot.callbackQuery('adm:api:eon', async (ctx) => {
   const c = await apiGetShopConfig();
-  for (const id of Object.keys(c.products)) c.products[id].enabled = true;
+  if (c && c.products) {
+    for (const id of Object.keys(c.products)) {
+      const prod = c.products[id];
+      if (prod) prod.enabled = true;
+    }
+  }
   await apiSaveShopConfig(c);
   await ctx.answerCallbackQuery('✅');
   const res = await apiSyncProducts();
@@ -8692,7 +8697,12 @@ adminBot.callbackQuery('adm:api:eon', async (ctx) => {
 });
 adminBot.callbackQuery('adm:api:eoff', async (ctx) => {
   const c = await apiGetShopConfig();
-  for (const id of Object.keys(c.products)) c.products[id].enabled = false;
+  if (c && c.products) {
+    for (const id of Object.keys(c.products)) {
+      const prod = c.products[id];
+      if (prod) prod.enabled = false;
+    }
+  }
   await apiSaveShopConfig(c);
   await ctx.answerCallbackQuery('❌');
   const res = await apiSyncProducts();
@@ -8702,7 +8712,7 @@ adminBot.callbackQuery('adm:api:eoff', async (ctx) => {
 // ━━━ Edit Product ━━━
 adminBot.callbackQuery(/^adm:api:edit:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
-  const id = ctx.match[1];
+  const id = ctx.match![1] as string;
   const config = await apiGetShopConfig();
   const p = config.products[id];
   if (!p) return;
@@ -8736,8 +8746,8 @@ adminBot.callbackQuery(/^adm:api:edit:(.+)$/, async (ctx) => {
 // ━━━ Set field prompt ━━━
 adminBot.callbackQuery(/^adm:api:sf:(.+):(emoji|custom_name|custom_desc|sell_price)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
-  const id = ctx.match[1];
-  const field = ctx.match[2];
+  const id = ctx.match![1] as string;
+  const field = ctx.match![2] as 'emoji' | 'custom_name' | 'custom_desc' | 'sell_price';
   const labels: Record<string, string> = {
     emoji: '😀 أرسل الإيموجي الجديد:',
     custom_name: '📝 أرسل الاسم الجديد:',
@@ -8752,7 +8762,7 @@ adminBot.callbackQuery(/^adm:api:sf:(.+):(emoji|custom_name|custom_desc|sell_pri
 
 // ━━━ Reset ━━━
 adminBot.callbackQuery(/^adm:api:rst:(.+)$/, async (ctx) => {
-  const id = ctx.match[1];
+  const id = ctx.match![1] as string;
   const config = await apiGetShopConfig();
   const p = config.products[id];
   if (!p) return;
