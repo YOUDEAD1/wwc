@@ -145,6 +145,13 @@ export async function syncProducts(): Promise<
         .like('note', `%[API_PRODUCT_ID:${p.id}]%`)
         .maybeSingle();
 
+      // Determine stock and unlimited status safely to prevent null PostgreSQL database violations
+      const isUnlimited = p.stock === null || p.stock === undefined || p.stock < 0;
+      let stockVal = isUnlimited ? 0 : Number(p.stock);
+      if (isNaN(stockVal)) {
+        stockVal = 0;
+      }
+
       if (existingProd) {
         // Sync API stock, price, enabled state, name and descriptions to standard products table
         await supabase
@@ -152,11 +159,12 @@ export async function syncProducts(): Promise<
           .update({
             name: s.custom_name || p.name_en,
             price: s.sell_price,
-            stock: Number(p.stock),
+            stock: stockVal,
             active: s.enabled,
             description: s.custom_desc || '',
             emoji: s.emoji || p.emoji || '📦',
             emoji_id: s.emoji_id || p.emoji_id || null,
+            unlimited_stock: isUnlimited,
           })
           .eq('id', existingProd.id);
       } else {
@@ -166,11 +174,12 @@ export async function syncProducts(): Promise<
           category_id: categoryId,
           name: s.custom_name || p.name_en,
           price: s.sell_price,
-          stock: Number(p.stock),
+          stock: stockVal,
           description: s.custom_desc || '',
           note: noteTag,
           emoji: s.emoji || p.emoji || '📦',
           emoji_id: s.emoji_id || p.emoji_id || null,
+          unlimited_stock: isUnlimited,
         });
       }
     }
