@@ -215,7 +215,7 @@ const schema = z.object({
   // Optional proxy used ONLY for Binance Pay API requests. Supports
   // HTTP(S) and SOCKS URLs (e.g. http://proxy.example.com:8080 or
   // socks5://proxy.example.com:1080). Leave blank to connect directly.
-  BINANCE_PROXY_URL: z.string().optional().or(z.literal('')),
+  BINANCE_PROXY_URL: z.string().url().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

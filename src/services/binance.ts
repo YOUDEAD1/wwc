@@ -31,15 +31,26 @@ const BASE_URL = 'https://api.binance.com';
 const ENDPOINT = '/sapi/v1/pay/transactions';
 const RECV_WINDOW_MS = 5000;
 const PROXY_URL = env.BINANCE_PROXY_URL?.trim();
+const PROXY_LABEL = PROXY_URL ? formatProxyLabel(PROXY_URL) : undefined;
 let proxyDispatcher: ProxyAgent | undefined;
 let proxyInitError: string | undefined;
+
+function formatProxyLabel(value: string): string {
+  try {
+    const parsed = new URL(value);
+    const port = parsed.port ? `:${parsed.port}` : '';
+    return `${parsed.protocol}//${parsed.hostname}${port}`;
+  } catch {
+    return 'invalid-proxy-url';
+  }
+}
 
 if (PROXY_URL) {
   try {
     proxyDispatcher = new ProxyAgent(PROXY_URL);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    proxyInitError = message;
+    proxyInitError = PROXY_LABEL ? `${message} (${PROXY_LABEL})` : message;
     logger.warn({ err }, 'binance: invalid BINANCE_PROXY_URL');
   }
 }
