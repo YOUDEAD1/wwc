@@ -7923,9 +7923,11 @@ async function finalizeProduct(
   },
   items: string[] = [],
 ): Promise<void> {
-  // Strip api_product_id — it's not a DB column, only used for the
-  // confirmation message below.
-  const { api_product_id: _apiId, ...dbData } = data;
+  // Strip fields that are NOT database columns before inserting.
+  // - api_product_id: only used for the confirmation message
+  // - unlimited: wizard-only flag; the real column is unlimited_stock,
+  //   set via updateProduct() below.
+  const { api_product_id: _apiId, unlimited: _unl, ...dbData } = data;
   const product = await addProduct(dbData);
   // If admin chose "Unlimited" earlier, persist the flag now that we
   // have a product id. addProduct() doesn't know about the new
