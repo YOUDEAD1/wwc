@@ -7923,7 +7923,10 @@ async function finalizeProduct(
   },
   items: string[] = [],
 ): Promise<void> {
-  const product = await addProduct(data);
+  // Strip api_product_id — it's not a DB column, only used for the
+  // confirmation message below.
+  const { api_product_id: _apiId, ...dbData } = data;
+  const product = await addProduct(dbData);
   // If admin chose "Unlimited" earlier, persist the flag now that we
   // have a product id. addProduct() doesn't know about the new
   // column, so we do this as a follow-up update — graceful no-op
