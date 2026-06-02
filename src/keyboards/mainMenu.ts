@@ -2,14 +2,8 @@ import { InlineKeyboard } from 'grammy';
 import { MAIN_MENU_LAYOUT, BUTTON_KEYS, type Lang } from '../../config/index.js';
 import { applyButtonChrome, btn, inlineBtn } from './helpers.js';
 import { getChannelUrl } from '../services/settings.js';
+import { getButtonConfig } from '../services/apiShop.js';
 
-/**
- * Map main-menu button keys to their callback data.
- *
- * `Partial` so we don't have to enumerate every BUTTON_KEYS entry —
- * only the ones reachable from MAIN_MENU_LAYOUT actually need a
- * callback here. Unknown keys fall back to a `noop:` callback below.
- */
 const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   shop: 'shop:home',
   topup: 'topup:open',
@@ -34,13 +28,27 @@ const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 };
 
 /** Inline keyboard rendered under the welcome message. */
-export function mainMenuKeyboard(lang: Lang): InlineKeyboard {
+export async function mainMenuKeyboard(lang: Lang): Promise<InlineKeyboard> {
   const kb = new InlineKeyboard();
   const channelUrl = getChannelUrl();
-  MAIN_MENU_LAYOUT.forEach((row, i) => {
+
+  // Read API shop button config
+  let apiBtn: { label: string; position: number; enabled: boolean } | null = null;
+  try {
+    const cfg = await getButtonConfig();
+    if (cfg.enabled) apiBtn = cfg;
+  } catch { /* not connected — skip */ }
+
+  const rows = [...MAIN_MENU_LAYOUT];
+
+  rows.forEach((row, i) => {
+    // Insert API button BEFORE this row if position matches
+    if (apiBtn && apiBtn.position === i) {
+      kb.text(apiBtn.label, 'apishop:home');
+      kb.row();
+    }
+
     row.forEach((k) => {
-      // Render the channel button as a direct URL when configured so
-      // the user is sent straight to Telegram's join screen.
       if (k === 'channel' && channelUrl) {
         kb.url(btn(lang, 'channel'), channelUrl);
         applyButtonChrome(kb, 'channel');
@@ -48,8 +56,15 @@ export function mainMenuKeyboard(lang: Lang): InlineKeyboard {
         inlineBtn(kb, lang, k, CALLBACK[k] ?? `noop:${k}`);
       }
     });
-    if (i < MAIN_MENU_LAYOUT.length - 1) kb.row();
+    if (i < rows.length - 1) kb.row();
   });
+
+  // If position is after all rows
+  if (apiBtn && apiBtn.position >= rows.length) {
+    kb.row();
+    kb.text(apiBtn.label, 'apishop:home');
+  }
+
   return kb;
 }
 
