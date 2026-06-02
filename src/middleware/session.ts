@@ -75,6 +75,22 @@ export type AdminFlow =
         note?: string;
       };
     }
+  | {
+      // Sub-step of items: admin chose "Add Manually" so we're now
+      // waiting for text payloads (one per line) or a .txt upload.
+      type: 'add_product';
+      step: 'items_manual';
+      data: {
+        category_id: number;
+        name: string;
+        price: number;
+        stock: number;
+        unlimited?: boolean;
+        warranty?: string;
+        description?: string;
+        note?: string;
+      };
+    }
   // -------- Per-product inline editor (premium-shop overhaul) --------
   // Each step waits for ONE message of the appropriate kind.
   | { type: 'edit_product_emoji'; step: 'premium'; data: { product_id: number; page: number } }

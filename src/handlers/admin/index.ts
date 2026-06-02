@@ -5713,23 +5713,32 @@ adminBot.on('message:text', async (ctx, next) => {
           step: 'items',
           data: { ...flow.data, note: text },
         };
-        const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:items');
+        const kb = new InlineKeyboard()
+          .text('🔌 Use API Product', 'adm:prod:items:api')
+          .row()
+          .text('✍️ Add Manually', 'adm:prod:items:manual')
+          .row()
+          .text('Skip', 'adm:prod:skip:items');
         await ctx.reply(
           [
-            '📦 *Send the deliverables (items pool)* — one payload per line.',
-            'These are the actual things buyers receive (acc emails+passwords, links, codes, etc).',
-            'Example:',
-            '```',
-            'email1@example.com|password123',
-            'email2@example.com|password456',
-            'https://account-link/...',
-            '```',
+            '📦 *Item Source — Choose how to deliver this product:*',
             '',
-            'Or tap *Skip* to leave the pool empty (you can always add items later from the Edit screen).',
+            '🔌 *Use API Product* — Link to an external API product. Codes will be fetched automatically when a customer buys.',
+            '',
+            '✍️ *Add Manually* — Paste your own accounts/codes (one per line).',
+            '',
+            'Or tap *Skip* to leave the pool empty.',
           ].join('\n'),
           { parse_mode: 'Markdown', reply_markup: kb },
         );
+      } else if (flow.step === 'items_manual') {
+        const payloads = text
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        await finalizeProduct(ctx, flow.data, payloads);
       } else if (flow.step === 'items') {
+        // User typed text while on the items source picker — treat as manual items
         const payloads = text
           .split(/\r?\n/)
           .map((s) => s.trim())
@@ -7362,7 +7371,7 @@ adminBot.on('message:document', async (ctx, next) => {
     await ctx.reply('✅ Tutorial document saved.');
     return;
   }
-  if (flow.type === 'add_product' && flow.step === 'items') {
+  if (flow.type === 'add_product' && (flow.step === 'items' || flow.step === 'items_manual')) {
     // .txt upload during the add-product wizard's items step.
     const isTxt =
       (doc.mime_type ?? '').toLowerCase().startsWith('text/') ||
@@ -7742,19 +7751,161 @@ adminBot.callbackQuery(/^adm:prod:skip:(warranty|description|note|items)$/, asyn
       step: 'items',
       data: flow.data,
     };
-    const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:items');
+    const kb = new InlineKeyboard()
+      .text('🔌 Use API Product', 'adm:prod:items:api')
+      .row()
+      .text('✍️ Add Manually', 'adm:prod:items:manual')
+      .row()
+      .text('Skip', 'adm:prod:skip:items');
     await ctx.reply(
       [
-        '📦 *Send the deliverables (items pool)* — one payload per line.',
-        'These are the actual things buyers receive (acc emails+passwords, links, codes, etc).',
+        '📦 *Item Source — Choose how to deliver this product:*',
         '',
-        'Or tap *Skip* to leave the pool empty (you can add items later from the Edit screen).',
+        '🔌 *Use API Product* — Link to an external API product. Codes will be fetched automatically when a customer buys.',
+        '',
+        '✍️ *Add Manually* — Paste your own accounts/codes (one per line).',
+        '',
+        'Or tap *Skip* to leave the pool empty.',
       ].join('\n'),
       { parse_mode: 'Markdown', reply_markup: kb },
     );
-  } else if (which === 'items' && flow.step === 'items') {
+  } else if (which === 'items' && (flow.step === 'items' || flow.step === 'items_manual')) {
     await finalizeProduct(ctx, flow.data, []);
   }
+});
+
+// ── Items source: "Add Manually" ── prompts admin for text items ──
+adminBot.callbackQuery('adm:prod:items:manual', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'add_product' || flow.step !== 'items') {
+    await ctx.answerCallbackQuery({ text: 'Stale flow' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'add_product',
+    step: 'items_manual',
+    data: flow.data,
+  };
+  const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:items');
+  await ctx.reply(
+    [
+      '📦 *Send the deliverables (items pool)* — one payload per line.',
+      'These are the actual things buyers receive (acc emails+passwords, links, codes, etc).',
+      'Example:',
+      '```',
+      'email1@example.com|password123',
+      'email2@example.com|password456',
+      'https://account-link/...',
+      '```',
+      '',
+      'Or tap *Skip* to leave the pool empty (you can always add items later from the Edit screen).',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+// ── Items source: "Use API Product" ── list API products to link ──
+adminBot.callbackQuery('adm:prod:items:api', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'add_product' || flow.step !== 'items') {
+    await ctx.answerCallbackQuery({ text: 'Stale flow' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+
+  try {
+    const { getEnabledProducts } = await import('../../services/apiShop.js');
+    const res = await getEnabledProducts();
+    if (!res.ok || res.products.length === 0) {
+      const errorText = res.ok
+        ? '❌ No enabled API products found. Enable products first in API Manager.'
+        : `❌ API Error: ${res.error}`;
+      await ctx.reply(errorText);
+      return;
+    }
+
+    const kb = new InlineKeyboard();
+    for (const p of res.products) {
+      const stock = Number(p.stock);
+      const stockIcon = stock > 0 ? '🟢' : '🔴';
+      kb.text(
+        `${stockIcon} ${p.emoji} ${p.custom_name} — $${p.sell_price}`,
+        `adm:prod:items:apisel:${p.id}`,
+      );
+      kb.row();
+    }
+    kb.text('⬅️ Back', 'adm:prod:items:back');
+
+    await ctx.reply(
+      [
+        '🔌 *Select an API product to link:*',
+        '',
+        'When a customer buys this product, the codes/accounts will be fetched automatically from the linked API product.',
+      ].join('\n'),
+      { parse_mode: 'Markdown', reply_markup: kb },
+    );
+  } catch (err) {
+    logger.error({ err }, 'adm:prod:items:api — failed to fetch API products');
+    await ctx.reply('❌ Failed to connect to API. Make sure API is connected in API Manager.');
+  }
+});
+
+// ── Back from API product list → re-show items source picker ──
+adminBot.callbackQuery('adm:prod:items:back', async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'add_product' || flow.step !== 'items') {
+    await ctx.answerCallbackQuery({ text: 'Stale flow' });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  const kb = new InlineKeyboard()
+    .text('🔌 Use API Product', 'adm:prod:items:api')
+    .row()
+    .text('✍️ Add Manually', 'adm:prod:items:manual')
+    .row()
+    .text('Skip', 'adm:prod:skip:items');
+  await ctx.reply(
+    [
+      '📦 *Item Source — Choose how to deliver this product:*',
+      '',
+      '🔌 *Use API Product* — Link to an external API product.',
+      '',
+      '✍️ *Add Manually* — Paste your own accounts/codes.',
+      '',
+      'Or tap *Skip* to leave the pool empty.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+// ── API product selected → finalize with API link ──
+adminBot.callbackQuery(/^adm:prod:items:apisel:(.+)$/, async (ctx) => {
+  const flow = ctx.session.adminFlow;
+  if (flow?.type !== 'add_product' || flow.step !== 'items') {
+    await ctx.answerCallbackQuery({ text: 'Stale flow' });
+    return;
+  }
+  const apiProductId = ctx.match![1] as string;
+  await ctx.answerCallbackQuery('🔌 Linking API product...');
+
+  // Fetch the API product name for confirmation
+  let apiProductName = apiProductId;
+  try {
+    const { getEnabledProducts } = await import('../../services/apiShop.js');
+    const res = await getEnabledProducts();
+    if (res.ok) {
+      const found = res.products.find((p) => p.id === apiProductId);
+      if (found) apiProductName = found.custom_name;
+    }
+  } catch { /* use raw id */ }
+
+  // Tag the note with the API product ID
+  const existingNote = (flow.data.note ?? '').trim();
+  const apiTag = `[API_PRODUCT_ID:${apiProductId}]`;
+  const taggedNote = existingNote ? `${existingNote}\n${apiTag}` : apiTag;
+
+  await finalizeProduct(ctx, { ...flow.data, note: taggedNote, api_product_id: apiProductId }, []);
 });
 
 async function finalizeProduct(
@@ -7768,6 +7919,7 @@ async function finalizeProduct(
     warranty?: string;
     description?: string;
     note?: string;
+    api_product_id?: string;
   },
   items: string[] = [],
 ): Promise<void> {
@@ -7796,10 +7948,16 @@ async function finalizeProduct(
   const stockBlurb = data.unlimited
     ? 'stock ∞'
     : `stock ${product.stock}`;
+
+  const apiLine = data.api_product_id
+    ? `🔌 Linked to API product: \`${data.api_product_id}\``
+    : null;
+
   await ctx.reply(
     [
       `✅ Product *${product.name}* added (id=${product.id}, $${product.price}, ${stockBlurb}).`,
       items.length > 0 ? `📦 ${items.length} items added to the pool.` : null,
+      apiLine,
       '',
       `_Tap_ ✏️ Edit #${product.id} _on the product list to add a premium emoji, view-note file, tutorial, or more items._`,
     ]
