@@ -212,6 +212,10 @@ const schema = z.object({
   // an exit IP Binance allows (e.g. ProtonVPN Netherlands).
   BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
   BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
+  // Optional proxy used ONLY for Binance Pay API requests. Supports
+  // HTTP(S) and SOCKS URLs (e.g. http://proxy.example.com:8080 or
+  // socks5://proxy.example.com:1080). Leave blank to connect directly.
+  BINANCE_PROXY_URL: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

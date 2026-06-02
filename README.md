@@ -269,10 +269,17 @@ pkgs.mkShell {
 5. Mount your WireGuard config file
 6. Set startup command: `wg-quick up wg0 && sleep infinity`
 
-#### Step 3: Connect Bot to VPN
+#### Step 3: Connect Bot to VPN / Proxy
 
-1. In your bot service, add a Nixpacks configuration to route traffic:
-2. Or use a SOCKS proxy through the VPN sidecar
+1. If your VPN provider exposes an HTTP/SOCKS proxy, set
+   `BINANCE_PROXY_URL` in your **bot** service variables (Railway →
+   Service → Variables).
+2. If you run a WireGuard sidecar, expose a small HTTP/SOCKS proxy
+   inside the private network and point `BINANCE_PROXY_URL` to it
+   (for example: `socks5://vpn-sidecar:1080`).
+3. Redeploy the bot service so the env change takes effect.
+
+> `BINANCE_PROXY_URL` is used only for Binance Pay auto-verify calls.
 
 #### Alternative: Use ProtonVPN Business (Easier)
 

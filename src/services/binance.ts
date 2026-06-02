@@ -23,12 +23,25 @@
  * a misconfigured VPN sidecar quickly.
  */
 import crypto from 'node:crypto';
+import { ProxyAgent, fetch } from 'undici';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 
 const BASE_URL = 'https://api.binance.com';
 const ENDPOINT = '/sapi/v1/pay/transactions';
 const RECV_WINDOW_MS = 5000;
+const proxyUrl = env.BINANCE_PROXY_URL?.trim();
+let proxyDispatcher: ProxyAgent | undefined;
+let proxyInitError: string | undefined;
+
+if (proxyUrl) {
+  try {
+    proxyDispatcher = new ProxyAgent(proxyUrl);
+  } catch (err) {
+    proxyInitError = (err as Error)?.message ?? String(err);
+    logger.warn({ err }, 'binance: invalid BINANCE_PROXY_URL');
+  }
+}
 
 /** Single Pay transaction returned by the API. */
 export type BinancePayTransaction = {
@@ -115,6 +128,9 @@ export async function listPayTransactions(opts: {
   if (!creds) {
     return { ok: false, reason: 'binance api credentials missing' };
   }
+  if (proxyInitError) {
+    return { ok: false, reason: `binance proxy misconfigured: ${proxyInitError}` };
+  }
   const params = new URLSearchParams();
   if (opts.startTime !== undefined) params.set('startTime', String(opts.startTime));
   if (opts.endTime !== undefined) params.set('endTime', String(opts.endTime));
@@ -125,10 +141,11 @@ export async function listPayTransactions(opts: {
   const sig = signQuery(query, creds.apiSecret);
   const url = `${BASE_URL}${ENDPOINT}?${query}&signature=${sig}`;
 
-  let resp: Response;
+  let resp;
   try {
     resp = await fetch(url, {
       headers: { 'X-MBX-APIKEY': creds.apiKey },
+      ...(proxyDispatcher ? { dispatcher: proxyDispatcher } : {}),
     });
   } catch (err) {
     logger.warn({ err }, 'binance: fetch threw — treating as transient network failure');
