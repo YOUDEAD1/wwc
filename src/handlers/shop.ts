@@ -61,6 +61,44 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   // matches what the user will actually be charged.
   const rows = await applyUserPriceToProducts(ctx.user.telegram_id, rawRows);
   if (total === 0) {
+    // ── No local products — check API products ──
+    try {
+      const { getEnabledProducts } = await import('../services/apiShop.js');
+      const apiRes = await getEnabledProducts();
+      if (apiRes.ok && apiRes.products.length > 0) {
+        // Redirect to API shop
+        const products = apiRes.products;
+        const perPage = 8;
+        const totalPages = Math.max(1, Math.ceil(products.length / perPage));
+        const slice = products.slice(0, perPage);
+
+        const kb = new InlineKeyboard();
+        for (const p of slice) {
+          const stock = Number(p.stock);
+          const stockIcon = stock > 0 ? '🟢' : '🔴';
+          const label = `${stockIcon} ${p.emoji} ${p.custom_name} — $${p.sell_price} (${stock})`;
+          kb.text(label, `apishop:prod:${p.id}`);
+          kb.row();
+        }
+        if (totalPages > 1) {
+          kb.text(`1/${totalPages}`, 'noop:page');
+          kb.text('▶️', 'apishop:home:1');
+          kb.row();
+        }
+        kb.text('🔄 Refresh', 'apishop:home:0');
+        kb.row();
+        kb.text('⬅️ Back', 'main:open');
+
+        const html = '<b>🛍️ Available Products:</b>';
+        if (ctx.callbackQuery) {
+          await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
+        } else {
+          await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
+        }
+        return;
+      }
+    } catch { /* API not connected — show empty */ }
+
     const empty = renderMdHtml(ctx.t('shop.empty_products'));
     if (ctx.callbackQuery) {
       await ctx.editMessageText(empty, { parse_mode: 'HTML' });
@@ -1143,5 +1181,156 @@ export function registerShop(bot: Composer<AppCtx>): void {
 
   bot.callbackQuery(/^noop:/, async (ctx) => {
     await ctx.answerCallbackQuery();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // 🛍️ API Shop — عرض المنتجات الخارجية وشراءها
+  // ═══════════════════════════════════════════════════════════════
+
+  // ━━━ API Shop Home — paginated products ━━━
+  bot.callbackQuery(/^apishop:home(?::(\d+))?$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const page = Number(ctx.match?.[1] ?? 0);
+
+    const { getEnabledProducts } = await import('../services/apiShop.js');
+    const res = await getEnabledProducts();
+    if (!res.ok || res.products.length === 0) {
+      const text = res.ok
+        ? '📦 لا توجد منتجات متوفرة حالياً.'
+        : `❌ ${res.error}`;
+      const kb = new InlineKeyboard().text('⬅️ Back', 'main:open');
+      try { await ctx.editMessageText(text, { reply_markup: kb }); } catch {
+        await ctx.reply(text, { reply_markup: kb });
+      }
+      return;
+    }
+
+    const products = res.products;
+    const perPage = 8;
+    const totalPages = Math.max(1, Math.ceil(products.length / perPage));
+    const safePage = Math.min(page, totalPages - 1);
+    const slice = products.slice(safePage * perPage, (safePage + 1) * perPage);
+
+    const kb = new InlineKeyboard();
+    for (const p of slice) {
+      const stock = Number(p.stock);
+      const stockIcon = stock > 0 ? '🟢' : '🔴';
+      const label = `${stockIcon} ${p.emoji} ${p.custom_name} — $${p.sell_price} (${stock})`;
+      kb.text(label, `apishop:prod:${p.id}`);
+      kb.row();
+    }
+
+    // Pagination
+    const nav: { text: string; data: string }[] = [];
+    if (safePage > 0) nav.push({ text: '◀️', data: `apishop:home:${safePage - 1}` });
+    nav.push({ text: `${safePage + 1}/${totalPages}`, data: 'noop:page' });
+    if (safePage + 1 < totalPages) nav.push({ text: '▶️', data: `apishop:home:${safePage + 1}` });
+    for (const n of nav) kb.text(n.text, n.data);
+    kb.row();
+    kb.text('🔄 Refresh', `apishop:home:${safePage}`);
+    kb.row();
+    kb.text('⬅️ Back', 'main:open');
+
+    const html = '<b>🛍️ Available Products:</b>';
+    try {
+      await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
+    } catch {
+      await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
+    }
+  });
+
+  // ━━━ Product Detail ━━━
+  bot.callbackQuery(/^apishop:prod:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const productId = ctx.match[1];
+
+    const { getEnabledProducts } = await import('../services/apiShop.js');
+    const res = await getEnabledProducts();
+    if (!res.ok) return;
+
+    const p = res.products.find((x) => x.id === productId);
+    if (!p) {
+      await ctx.answerCallbackQuery({ text: 'Product not found', show_alert: true });
+      return;
+    }
+
+    const stock = Number(p.stock);
+    const stockIcon = stock > 0 ? '🟢' : '🔴';
+    const manual = p.is_manual ? '\n⚠️ <i>يحتاج معالجة يدوية</i>' : '';
+    const desc = p.custom_desc ? `\n\n📝 ${p.custom_desc}` : '';
+
+    const text = [
+      `${p.emoji} <b>${p.custom_name}</b>`,
+      desc,
+      '',
+      `${stockIcon} Stock: <b>${stock}</b>`,
+      `💲 Price: <b>$${p.sell_price}</b>`,
+      manual,
+    ].join('\n');
+
+    const kb = new InlineKeyboard();
+    if (stock > 0) {
+      kb.text(`🛒 Buy — $${p.sell_price}`, `apishop:buy:${p.id}`);
+      kb.row();
+    } else {
+      kb.text('🔴 Out of Stock', 'noop:oos');
+      kb.row();
+    }
+    kb.text('🔄 Refresh', `apishop:prod:${p.id}`);
+    kb.row();
+    kb.text('⬅️ Back', 'apishop:home');
+
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    } catch {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+  });
+
+  // ━━━ Buy — confirm + execute purchase ━━━
+  bot.callbackQuery(/^apishop:buy:(.+)$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const buyer = ctx.from?.username ? `@${ctx.from.username}` : String(ctx.from?.id ?? 'unknown');
+
+    await ctx.answerCallbackQuery('⏳ جاري الشراء...');
+
+    const { purchaseProduct } = await import('../services/apiShop.js');
+    const res = await purchaseProduct(productId, 1, buyer);
+
+    if (res.ok) {
+      if (res.status === 'pending_manual') {
+        await ctx.reply(
+          `⏳ <b>طلبك قيد المعالجة</b>\n\n` +
+          `🆔 Order: <code>${res.order_id}</code>\n` +
+          `سيتم إرسال المنتج يدوياً قريباً.`,
+          { parse_mode: 'HTML' },
+        );
+      } else {
+        const codes = res.codes.map((c) => `<code>${c}</code>`).join('\n');
+        await ctx.reply(
+          `✅ <b>Purchase Successful!</b>\n\n` +
+          `🆔 Order: <code>${res.order_id}</code>\n` +
+          `💲 Total: $${res.total_price}\n\n` +
+          `📦 <b>Your Code(s):</b>\n${codes}`,
+          { parse_mode: 'HTML' },
+        );
+      }
+    } else {
+      let errorText: string;
+      if (res.error.toLowerCase().includes('balance')) {
+        errorText =
+          `❌ <b>رصيد غير كافي</b>\n\n` +
+          `💰 الرصيد: $${res.balance ?? '?'}\n` +
+          `💲 المطلوب: $${res.required ?? '?'}\n\n` +
+          `يجب شحن الرصيد من المتجر الأساسي.`;
+      } else if (res.error.toLowerCase().includes('stock')) {
+        errorText =
+          `❌ <b>غير متوفر حالياً</b>\n\n` +
+          `📦 المتوفر: ${res.available ?? 0}`;
+      } else {
+        errorText = `❌ <b>Error</b>\n\n${res.error}`;
+      }
+      await ctx.reply(errorText, { parse_mode: 'HTML' });
+    }
   });
 }
