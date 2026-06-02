@@ -1,6 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { MAIN_MENU_LAYOUT, BUTTON_KEYS, type Lang } from '../../config/index.js';
-import { applyButtonChrome, btn, inlineBtn } from './helpers.js';
+import { applyButtonChrome, btn, inlineBtn, resolveIconId, stripDecorativeEmoji } from './helpers.js';
 import { getChannelUrl } from '../services/settings.js';
 
 const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
@@ -27,7 +27,7 @@ const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 };
 
 /** Inline keyboard rendered under the welcome message. */
-export async function mainMenuKeyboard(lang: Lang): Promise<InlineKeyboard> {
+export async function mainMenuKeyboard(lang: Lang, balance?: number): Promise<InlineKeyboard> {
   const kb = new InlineKeyboard();
   const channelUrl = getChannelUrl();
 
@@ -38,6 +38,15 @@ export async function mainMenuKeyboard(lang: Lang): Promise<InlineKeyboard> {
       if (k === 'channel' && channelUrl) {
         kb.url(btn(lang, 'channel'), channelUrl);
         applyButtonChrome(kb, 'channel');
+      } else if (k === 'topup' && balance !== undefined) {
+        const label = lang === 'ar'
+          ? `💳 رصيدك: $${balance.toFixed(2)}`
+          : lang === 'vi'
+          ? `💳 Số dư của bạn: $${balance.toFixed(2)}`
+          : `💳 Your balance: $${balance.toFixed(2)}`;
+        const finalLabel = resolveIconId('topup') !== undefined ? stripDecorativeEmoji(label) : label;
+        kb.text(finalLabel, CALLBACK[k] ?? `noop:${k}`);
+        applyButtonChrome(kb, 'topup');
       } else {
         inlineBtn(kb, lang, k, CALLBACK[k] ?? `noop:${k}`);
       }

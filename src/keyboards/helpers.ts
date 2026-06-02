@@ -55,7 +55,7 @@ export function colored(
 const LEADING_EMOJI = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*\uFE0F?)\s?/u;
 const TRAILING_EMOJI = /\s?(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*\uFE0F?)$/u;
 
-function stripDecorativeEmoji(label: string): string {
+export function stripDecorativeEmoji(label: string): string {
   return label.replace(LEADING_EMOJI, '').replace(TRAILING_EMOJI, '');
 }
 

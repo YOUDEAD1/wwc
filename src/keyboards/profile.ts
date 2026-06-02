@@ -19,13 +19,7 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
   inlineBtn(kb, lang, 'stats', 'profile:stats');
   inlineBtn(kb, lang, 'my_orders', 'profile:orders');
   kb.row();
-  inlineBtn(kb, lang, 'language', 'profile:lang');
-  inlineBtn(kb, lang, 'notifications', 'profile:notifications');
-  kb.row();
   inlineBtn(kb, lang, 'deposit_history', 'profile:deposits');
-  inlineBtn(kb, lang, 'set_region', 'profile:region');
-  kb.row();
-  inlineBtn(kb, lang, 'redeem', 'profile:redeem');
   inlineBtn(kb, lang, 'bot_tutorial', 'profile:tutorial');
   kb.row();
   inlineBtn(kb, lang, 'send_price_list', 'profile:pricelist');

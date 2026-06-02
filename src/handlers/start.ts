@@ -45,13 +45,8 @@ async function clearOldReplyKeyboard(ctx: AppCtx): Promise<void> {
  * styled glyph and everyone else sees the unicode fallback.
  */
 function buildWelcomeHtml(ctx: AppCtx): string {
-  const title = ctx.t('welcome.title');
-  const balance = ctx.t('welcome.balance', { balance: Number(ctx.user.balance).toFixed(2) });
-  const body = `{welcome_banner} *${title}*\n\n{welcome_balance} ${balance}`;
-  return renderMdHtml(body, {
-    welcome_banner: 'welcome_banner',
-    welcome_balance: 'welcome_balance',
-  });
+  const guide = ctx.t('welcome.guide');
+  return renderMdHtml(guide);
 }
 
 export async function showMainMenu(
@@ -59,7 +54,7 @@ export async function showMainMenu(
   opts: { fresh?: boolean } = {},
 ): Promise<void> {
   const html = buildWelcomeHtml(ctx);
-  const reply_markup = await mainMenuKeyboard(ctx.lang);
+  const reply_markup = await mainMenuKeyboard(ctx.lang, ctx.user.balance);
 
   // If we got here via callback (e.g. "⬅️ Main Menu" button) edit in place.
   if (!opts.fresh && ctx.callbackQuery) {
