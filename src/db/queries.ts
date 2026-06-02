@@ -1074,6 +1074,19 @@ export async function decrementProductStock(id: number, qty: number): Promise<vo
   });
 }
 
+export async function incrementProductStock(id: number, qty: number): Promise<void> {
+  const { data } = await supabase.from('products').select('stock').eq('id', id).single();
+  const cur = Number((data as { stock?: number } | null)?.stock ?? 0);
+  const newStock = cur + qty;
+  await supabase.from('products').update({ stock: newStock }).eq('id', id);
+  await applyStockTransition(id, cur, newStock).catch((err) => {
+    logger.warn(
+      { err, id },
+      'applyStockTransition after incrementProductStock failed',
+    );
+  });
+}
+
 // ---------- Per-user price overrides ----------
 
 /**

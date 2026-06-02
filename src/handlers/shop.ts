@@ -4,6 +4,7 @@ import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   createOrder,
   decrementProductStock,
+  incrementProductStock,
   getProduct,
   listActiveProducts,
   claimProductItems,
@@ -20,7 +21,7 @@ import {
   type PromoMatch,
 } from '../services/promo.js';
 import type { DBPromo } from '../types.js';
-import { charge } from '../services/wallet.js';
+import { charge, credit } from '../services/wallet.js';
 import {
   paymentMethodKeyboard,
   productKeyboard,
@@ -957,11 +958,41 @@ export function registerShop(bot: Composer<AppCtx>): void {
         }
       }
       delete ctx.session.qty[id];
-      // Pull the actual delivery payload off the per-product items
-      // pool. When the pool is empty (or short), fall back to a
-      // "manual delivery" placeholder; the admin gets pinged via
-      // logOrderCreated either way.
-      const claimed = await claimProductItems(p.id, qty, order.id);
+
+      // Check if it is an API product
+      const apiMatch = p.note ? p.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/) : null;
+      const apiProductId = apiMatch ? apiMatch[1] : null;
+
+      let claimed: string[] = [];
+
+      if (apiProductId) {
+        // Intercept with API purchase
+        const buyer = ctx.from?.username ? `@${ctx.from.username}` : String(ctx.from?.id ?? 'unknown');
+        const { purchaseProduct } = await import('../services/apiShop.js');
+        const apiRes = await purchaseProduct(apiProductId, qty, buyer);
+
+        if (!apiRes.ok) {
+          // Rollback: refund wallet & restore stock & delete order
+          const refundedBalance = await credit(ctx.from!.id, total, `refund:${order.id}`, 'purchase_refund');
+          ctx.user.balance = refundedBalance;
+          await incrementProductStock(id, qty);
+          const { supabase } = await import('../db/supabase.js');
+          await supabase.from('orders').delete().eq('id', order.id);
+
+          // Raise error to trigger the catch block with custom API error message
+          throw new Error(`API_ERROR: ${apiRes.error}`);
+        }
+
+        // Success: check if it's pending manual or has codes
+        if (apiRes.status === 'pending_manual') {
+          claimed = []; // will trigger delivery_pending
+        } else {
+          claimed = apiRes.codes ?? [];
+        }
+      } else {
+        // Standard flow: Pull the actual delivery payload off the per-product items pool.
+        claimed = await claimProductItems(p.id, qty, order.id);
+      }
       const publicId = publicOrderId(order);
       // Items are rendered as Telegram blockquote pills (one `> line`
       // per claimed link / account) — same style as the View Note
@@ -1148,6 +1179,22 @@ export function registerShop(bot: Composer<AppCtx>): void {
         });
         return;
       }
+
+      const errMsg = (e as Error)?.message ?? '';
+      if (errMsg.startsWith('API_ERROR: ')) {
+        const apiErrorText = errMsg.replace('API_ERROR: ', '');
+        logger.error({ err: e, product_id: id, user: ctx.user.telegram_id }, 'pay:wallet API purchase failed');
+        try {
+          await ctx.answerCallbackQuery({
+            text: `❌ Error: ${apiErrorText}`,
+            show_alert: true,
+          });
+        } catch {
+          // swallow
+        }
+        return;
+      }
+
       // Anything else (DB column missing, RLS, network) MUST still
       // dismiss the loading spinner — otherwise the Wallet Pay button
       // sits in the "loading" state forever, which is exactly what

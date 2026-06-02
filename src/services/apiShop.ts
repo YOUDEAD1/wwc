@@ -5,7 +5,9 @@
  * Stored in Supabase `settings` table under key `api_shop_config`.
  */
 
-import { readSetting, setSetting } from '../db/queries.js';
+import { readSetting, setSetting, addCategory, addProduct } from '../db/queries.js';
+import { supabase } from '../db/supabase.js';
+import { logger } from '../logger.js';
 import {
   getConnection,
   fetchProducts as apiFetchProducts,
@@ -110,6 +112,64 @@ export async function syncProducts(): Promise<
     }
   }
   await saveShopConfig(config);
+
+  // --- DYNAMIC DATABASE SYNC ---
+  try {
+    let categoryId: number;
+    const { data: catRow } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('name', '🔌 API Shop')
+      .maybeSingle();
+
+    if (catRow) {
+      categoryId = catRow.id;
+    } else {
+      const newCat = await addCategory('🔌 API Shop', '🔌');
+      categoryId = newCat.id;
+    }
+
+    for (const p of res.products) {
+      const s = config.products[p.id];
+      if (!s) continue;
+
+      const { data: existingProd } = await supabase
+        .from('products')
+        .select('id')
+        .eq('category_id', categoryId)
+        .like('note', `%[API_PRODUCT_ID:${p.id}]%`)
+        .maybeSingle();
+
+      if (existingProd) {
+        // Sync API stock, price, enabled state, name and descriptions to standard products table
+        await supabase
+          .from('products')
+          .update({
+            name: s.custom_name || p.name_en,
+            price: s.sell_price,
+            stock: Number(p.stock),
+            active: s.enabled,
+            description: s.custom_desc || '',
+            emoji: s.emoji || '📦',
+          })
+          .eq('id', existingProd.id);
+      } else {
+        // Insert as a new standard local database product
+        const noteTag = `[API_PRODUCT_ID:${p.id}]`;
+        await addProduct({
+          category_id: categoryId,
+          name: s.custom_name || p.name_en,
+          price: s.sell_price,
+          stock: Number(p.stock),
+          description: s.custom_desc || '',
+          note: noteTag,
+          emoji: s.emoji || '📦',
+        });
+      }
+    }
+  } catch (syncErr) {
+    logger.error({ err: syncErr }, 'syncProducts database sync failed');
+  }
 
   const merged: MergedProduct[] = res.products.map((p) => {
     const s = config.products[p.id];
