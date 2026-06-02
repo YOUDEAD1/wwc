@@ -23,12 +23,37 @@
  * a misconfigured VPN sidecar quickly.
  */
 import crypto from 'node:crypto';
+import { ProxyAgent, fetch, type Response } from 'undici';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 
 const BASE_URL = 'https://api.binance.com';
 const ENDPOINT = '/sapi/v1/pay/transactions';
 const RECV_WINDOW_MS = 5000;
+const PROXY_URL = env.BINANCE_PROXY_URL?.trim();
+const PROXY_LABEL = PROXY_URL ? formatProxyLabel(PROXY_URL) : undefined;
+let proxyDispatcher: ProxyAgent | undefined;
+let proxyInitError: string | undefined;
+
+function formatProxyLabel(value: string): string {
+  try {
+    const parsed = new URL(value);
+    const port = parsed.port ? `:${parsed.port}` : '';
+    return `${parsed.protocol}//${parsed.hostname}${port}`;
+  } catch {
+    return 'invalid-proxy-url';
+  }
+}
+
+if (PROXY_URL) {
+  try {
+    proxyDispatcher = new ProxyAgent(PROXY_URL);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    proxyInitError = PROXY_LABEL ? `${message} (${PROXY_LABEL})` : message;
+    logger.warn({ err }, 'binance: invalid BINANCE_PROXY_URL');
+  }
+}
 
 /** Single Pay transaction returned by the API. */
 export type BinancePayTransaction = {
@@ -115,6 +140,9 @@ export async function listPayTransactions(opts: {
   if (!creds) {
     return { ok: false, reason: 'binance api credentials missing' };
   }
+  if (proxyInitError) {
+    return { ok: false, reason: `binance proxy misconfigured: ${proxyInitError}` };
+  }
   const params = new URLSearchParams();
   if (opts.startTime !== undefined) params.set('startTime', String(opts.startTime));
   if (opts.endTime !== undefined) params.set('endTime', String(opts.endTime));
@@ -129,6 +157,7 @@ export async function listPayTransactions(opts: {
   try {
     resp = await fetch(url, {
       headers: { 'X-MBX-APIKEY': creds.apiKey },
+      ...(proxyDispatcher ? { dispatcher: proxyDispatcher } : {}),
     });
   } catch (err) {
     logger.warn({ err }, 'binance: fetch threw — treating as transient network failure');
