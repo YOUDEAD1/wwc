@@ -1,0 +1,267 @@
+/**
+ * API Shop Config — manages external API products in the local shop.
+ * Each product can be customized: emoji, name, description, price, sort order.
+ *
+ * Stored in Supabase `settings` table under key `api_shop_config`.
+ */
+
+import { readSetting, setSetting } from '../db/queries.js';
+import {
+  getConnection,
+  fetchProducts as apiFetchProducts,
+  purchase as apiPurchase,
+  fetchBalance as apiFetchBalance,
+  type ApiProduct,
+} from './apiConnect.js';
+
+// ─────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────
+
+export type ApiShopProduct = {
+  enabled: boolean;
+  sell_price: number;
+  custom_name: string;        // اسم مخصص (يظهر للعميل)
+  custom_desc: string;        // وصف مخصص
+  emoji: string;              // إيموجي مخصص
+  sort_order: number;         // ترتيب العرض
+  // بيانات من API (لا يعدّلها الأدمن)
+  original_name: string;
+  base_price: number;
+  is_manual: boolean;
+};
+
+export type ApiShopConfig = {
+  products: Record<string, ApiShopProduct>;
+  button?: {
+    label: string;       // مثل "🎮 Products" أو "🛒 Shop"
+    position: number;    // الصف (0 = أول صف, 1 = ثاني, إلخ)
+    enabled: boolean;
+  };
+};
+
+const SETTINGS_KEY = 'api_shop_config';
+
+// ─────────────────────────────────────────────────────────────────
+// Read / Write
+// ─────────────────────────────────────────────────────────────────
+
+export async function getShopConfig(): Promise<ApiShopConfig> {
+  const raw = await readSetting(SETTINGS_KEY);
+  if (raw && typeof raw === 'object' && (raw as Record<string, unknown>).products) {
+    return raw as ApiShopConfig;
+  }
+  return { products: {} };
+}
+
+export async function saveShopConfig(config: ApiShopConfig): Promise<void> {
+  await setSetting(SETTINGS_KEY, config);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Sync — fetch from API + merge with saved config
+// ─────────────────────────────────────────────────────────────────
+
+export type MergedProduct = ApiProduct & {
+  enabled: boolean;
+  sell_price: number;
+  custom_name: string;
+  custom_desc: string;
+  emoji: string;
+  sort_order: number;
+};
+
+export async function syncProducts(): Promise<
+  { ok: true; products: MergedProduct[] } | { ok: false; error: string }
+> {
+  const conn = await getConnection();
+  if (!conn) return { ok: false, error: 'Not connected' };
+
+  const res = await apiFetchProducts(conn);
+  if (!res.ok) return { ok: false, error: res.error };
+
+  const config = await getShopConfig();
+  let nextOrder = Object.values(config.products).reduce(
+    (max, p) => Math.max(max, p.sort_order ?? 0), 0,
+  ) + 1;
+
+  // Merge
+  for (const p of res.products) {
+    if (!config.products[p.id]) {
+      config.products[p.id] = {
+        enabled: false,
+        sell_price: p.your_price,
+        custom_name: p.name_en,
+        custom_desc: '',
+        emoji: '📦',
+        sort_order: nextOrder++,
+        original_name: p.name_en,
+        base_price: p.base_price,
+        is_manual: p.is_manual,
+      };
+    } else {
+      // Update API-side data
+      config.products[p.id].original_name = p.name_en;
+      config.products[p.id].base_price = p.base_price;
+      config.products[p.id].is_manual = p.is_manual;
+    }
+  }
+  await saveShopConfig(config);
+
+  const merged: MergedProduct[] = res.products.map((p) => {
+    const s = config.products[p.id];
+    return {
+      ...p,
+      enabled: s.enabled,
+      sell_price: s.sell_price,
+      custom_name: s.custom_name,
+      custom_desc: s.custom_desc,
+      emoji: s.emoji,
+      sort_order: s.sort_order,
+    };
+  });
+
+  merged.sort((a, b) => a.sort_order - b.sort_order);
+  return { ok: true, products: merged };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CRUD
+// ─────────────────────────────────────────────────────────────────
+
+export async function toggleProduct(id: string, enabled: boolean): Promise<void> {
+  const config = await getShopConfig();
+  if (config.products[id]) {
+    config.products[id].enabled = enabled;
+    await saveShopConfig(config);
+  }
+}
+
+export async function setProductField(
+  id: string,
+  field: 'sell_price' | 'custom_name' | 'custom_desc' | 'emoji',
+  value: string | number,
+): Promise<void> {
+  const config = await getShopConfig();
+  if (config.products[id]) {
+    (config.products[id] as Record<string, unknown>)[field] = value;
+    await saveShopConfig(config);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Button config — إعداد الزر في القائمة الرئيسية
+// ─────────────────────────────────────────────────────────────────
+
+export async function getButtonConfig(): Promise<{
+  label: string;
+  position: number;
+  enabled: boolean;
+}> {
+  const config = await getShopConfig();
+  return config.button ?? { label: '🛒 Shop', position: 0, enabled: false };
+}
+
+export async function setButtonConfig(label: string, position: number, enabled: boolean): Promise<void> {
+  const config = await getShopConfig();
+  config.button = { label, position, enabled };
+  await saveShopConfig(config);
+}
+
+/** Move product up or down in sort order. */
+export async function moveProduct(id: string, direction: 'up' | 'down'): Promise<void> {
+  const config = await getShopConfig();
+  const entries = Object.entries(config.products).sort(
+    ([, a], [, b]) => a.sort_order - b.sort_order,
+  );
+  const idx = entries.findIndex(([k]) => k === id);
+  if (idx < 0) return;
+
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= entries.length) return;
+
+  // Swap sort_order
+  const [, current] = entries[idx];
+  const [, target] = entries[swapIdx];
+  const tmp = current.sort_order;
+  current.sort_order = target.sort_order;
+  target.sort_order = tmp;
+
+  await saveShopConfig(config);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Get enabled products for customers
+// ─────────────────────────────────────────────────────────────────
+
+export async function getEnabledProducts(): Promise<
+  { ok: true; products: MergedProduct[] } | { ok: false; error: string }
+> {
+  const conn = await getConnection();
+  if (!conn) return { ok: false, error: 'Not connected' };
+
+  const res = await apiFetchProducts(conn);
+  if (!res.ok) return { ok: false, error: res.error };
+
+  const config = await getShopConfig();
+
+  const enabled: MergedProduct[] = res.products
+    .filter((p) => config.products[p.id]?.enabled)
+    .map((p) => {
+      const s = config.products[p.id];
+      return {
+        ...p,
+        enabled: true,
+        sell_price: s.sell_price,
+        custom_name: s.custom_name || p.name_en,
+        custom_desc: s.custom_desc || '',
+        emoji: s.emoji || '📦',
+        sort_order: s.sort_order ?? 999,
+      };
+    });
+
+  enabled.sort((a, b) => a.sort_order - b.sort_order);
+  return { ok: true, products: enabled };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Purchase + Balance
+// ─────────────────────────────────────────────────────────────────
+
+export async function purchaseProduct(
+  productId: string,
+  qty: number,
+  buyerInfo: string,
+): Promise<
+  | { ok: true; codes: string[]; total_price: number; order_id: string; status: string }
+  | { ok: false; error: string; balance?: number; required?: number; available?: number }
+> {
+  const conn = await getConnection();
+  if (!conn) return { ok: false, error: 'Not connected to API' };
+
+  const res = await apiPurchase(conn, productId, qty, buyerInfo);
+  if (res.ok) {
+    return {
+      ok: true,
+      codes: res.data.codes,
+      total_price: res.data.total_price,
+      order_id: res.data.order_id,
+      status: res.data.status,
+    };
+  }
+  return {
+    ok: false,
+    error: res.error,
+    balance: (res.raw as Record<string, number> | undefined)?.balance,
+    required: (res.raw as Record<string, number> | undefined)?.required,
+    available: (res.raw as Record<string, number> | undefined)?.available,
+  };
+}
+
+export async function checkBalance(): Promise<
+  { ok: true; balance: number } | { ok: false; error: string }
+> {
+  const conn = await getConnection();
+  if (!conn) return { ok: false, error: 'Not connected' };
+  return apiFetchBalance(conn);
+}
