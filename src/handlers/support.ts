@@ -126,11 +126,29 @@ function supportKeyboard(contactUrl: string, lang: Lang): InlineKeyboard {
 }
 
 async function tryCreateTopic(ctx: AppCtx, chatId: number, name: string): Promise<number | undefined> {
+  if (chatId > 0) {
+    return undefined;
+  }
   try {
     const topic = await ctx.api.createForumTopic(chatId, name, { icon_color: TOPIC_ICON_COLOR });
     return topic.message_thread_id;
-  } catch (err) {
-    logger.warn({ err, chatId, name }, 'live-support: createForumTopic failed');
+  } catch (err: unknown) {
+    let isNotForum = false;
+    if (err instanceof Error && err.message.toLowerCase().includes('not a forum')) {
+      isNotForum = true;
+    }
+    if (err && typeof err === 'object') {
+      const obj = err as Record<string, unknown>;
+      if (typeof obj.description === 'string' && obj.description.toLowerCase().includes('not a forum')) {
+        isNotForum = true;
+      }
+    }
+
+    if (isNotForum) {
+      logger.info({ chatId, name }, 'live-support: createForumTopic skipped (chat is not a forum)');
+    } else {
+      logger.warn({ err, chatId, name }, 'live-support: createForumTopic failed');
+    }
     return undefined;
   }
 }
