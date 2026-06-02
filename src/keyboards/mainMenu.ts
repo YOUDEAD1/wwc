@@ -5,8 +5,7 @@ import { getChannelUrl } from '../services/settings.js';
 import { getButtonConfig } from '../services/apiShop.js';
 
 const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
-  shop: 'shop:home',
-  demo_vip: 'cat:1:0',
+  shop: 'apishop:home',
   topup: 'topup:open',
   profile: 'profile:open',
   support: 'support:open',

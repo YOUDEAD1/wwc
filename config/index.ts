@@ -247,7 +247,6 @@ export const BUTTON_KEYS = {
   //     `getAdminContactUrlWithPrefill`).
   delivery_edit: 'btn.delivery.edit',
   delivery_admin_help: 'btn.delivery.admin_help',
-  demo_vip: 'btn.demo_vip',
 } as const;
 
 /**
@@ -416,7 +415,6 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   // Post-purchase delivery form action buttons.
   delivery_edit: 'blue',
   delivery_admin_help: 'red',
-  demo_vip: 'green',
 };
 
 /**
@@ -930,8 +928,8 @@ export const LOCALES = { en, ar, vi } as const satisfies Record<Lang, Record<str
  */
 export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_KEYS>> = [
   ['shop'],
-  ['demo_vip', 'topup'],
-  ['profile', 'support'],
+  ['topup', 'profile'],
+  ['support'],
   ['refer', 'channel'],
 ];
 

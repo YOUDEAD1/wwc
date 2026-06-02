@@ -10,7 +10,6 @@ export const en: Record<string, string> = {
   // ---------- Buttons ----------
   'btn.main_menu': '⬅️ Back',
   'btn.shop': '🛍 Shop',
-  'btn.demo_vip': '🍿 VIP Demo',
   'btn.topup': '👛 Top-up Wallet',
   'btn.profile': '⚙️ Settings',
   'btn.support': '💬 Support',

@@ -8,7 +8,6 @@ export const vi: Record<string, string> = {
 
   'btn.main_menu': '⬅️ Quay lại',
   'btn.shop': '🛍 Cửa hàng',
-  'btn.demo_vip': '🍿 VIP Demo',
   'btn.topup': '👛 Nạp ví',
   'btn.profile': '⚙️ Cài đặt',
   'btn.support': '💬 Hỗ trợ',
