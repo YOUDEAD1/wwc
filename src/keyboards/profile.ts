@@ -22,17 +22,13 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
   inlineBtn(kb, lang, 'language', 'profile:lang');
   inlineBtn(kb, lang, 'notifications', 'profile:notifications');
   kb.row();
-  inlineBtn(kb, lang, 'email_settings', 'profile:email');
   inlineBtn(kb, lang, 'deposit_history', 'profile:deposits');
-  kb.row();
   inlineBtn(kb, lang, 'set_region', 'profile:region');
+  kb.row();
   inlineBtn(kb, lang, 'redeem', 'profile:redeem');
-  kb.row();
-  // Premium-shop overhaul: two new admin-editable info screens
-  // surfaced from Settings.
   inlineBtn(kb, lang, 'bot_tutorial', 'profile:tutorial');
-  inlineBtn(kb, lang, 'send_price_list', 'profile:pricelist');
   kb.row();
+  inlineBtn(kb, lang, 'send_price_list', 'profile:pricelist');
   inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
 }
@@ -43,8 +39,6 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
  */
 export function priceListKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  inlineBtn(kb, lang, 'send_price_list_mail', 'profile:pricelist:mail');
-  kb.row();
   inlineBtn(kb, lang, 'send_price_list_chat', 'profile:pricelist:chat');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
@@ -128,8 +122,6 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'stats_refresh', 'profile:stats:refresh');
   kb.row();
-  inlineBtn(kb, lang, 'send_pdf_stats', 'profile:stats:pdf');
-  kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }
@@ -137,8 +129,6 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
 /** Stand-alone Send-PDF row used at the bottom of My Deposits. */
 export function depositsActionsKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  inlineBtn(kb, lang, 'send_pdf_deposits', 'profile:deposits:pdf');
-  kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }
@@ -160,18 +150,12 @@ export function notificationsKeyboard(
   const stockKey = state.stock_alert ? 'notify_stock_on' : 'notify_stock_off';
   const annKey = state.announcements ? 'notify_ann_on' : 'notify_ann_off';
   const walletKey = state.wallet_alert ? 'notify_wallet_on' : 'notify_wallet_off';
-  const emailKey = state.email_reports ? 'notify_email_on' : 'notify_email_off';
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, stockKey, 'profile:toggle_stock');
   kb.row();
   inlineBtn(kb, lang, annKey, 'profile:toggle_ann');
   kb.row();
   inlineBtn(kb, lang, walletKey, 'profile:toggle_wallet');
-  kb.row();
-  // Email Reports controls both the 12h "add your email" nag AND
-  // the Send-PDF-to-mail buttons (those throw a popup error when
-  // this toggle is OFF).
-  inlineBtn(kb, lang, emailKey, 'profile:toggle_email_reports');
   kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;

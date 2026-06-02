@@ -2,7 +2,6 @@ import { InlineKeyboard } from 'grammy';
 import { MAIN_MENU_LAYOUT, BUTTON_KEYS, type Lang } from '../../config/index.js';
 import { applyButtonChrome, btn, inlineBtn } from './helpers.js';
 import { getChannelUrl } from '../services/settings.js';
-import { getButtonConfig } from '../services/apiShop.js';
 
 const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   shop: 'shop:home',
@@ -32,22 +31,9 @@ export async function mainMenuKeyboard(lang: Lang): Promise<InlineKeyboard> {
   const kb = new InlineKeyboard();
   const channelUrl = getChannelUrl();
 
-  // Read API shop button config
-  let apiBtn: { label: string; position: number; enabled: boolean } | null = null;
-  try {
-    const cfg = await getButtonConfig();
-    if (cfg.enabled) apiBtn = cfg;
-  } catch { /* not connected — skip */ }
-
   const rows = [...MAIN_MENU_LAYOUT];
 
   rows.forEach((row, i) => {
-    // Insert API button BEFORE this row if position matches
-    if (apiBtn && apiBtn.position === i) {
-      kb.text(apiBtn.label, 'apishop:home');
-      kb.row();
-    }
-
     row.forEach((k) => {
       if (k === 'channel' && channelUrl) {
         kb.url(btn(lang, 'channel'), channelUrl);
@@ -58,12 +44,6 @@ export async function mainMenuKeyboard(lang: Lang): Promise<InlineKeyboard> {
     });
     if (i < rows.length - 1) kb.row();
   });
-
-  // If position is after all rows
-  if (apiBtn && apiBtn.position >= rows.length) {
-    kb.row();
-    kb.text(apiBtn.label, 'apishop:home');
-  }
 
   return kb;
 }
