@@ -1,25 +1,25 @@
 /* English (default) — edit text here. */
 export const en: Record<string, string> = {
   // ---------- Welcome / menu ----------
-  'welcome': 'Welcome to Homlander Store',
-  'welcome.title': 'Welcome to Homlander Store!',
+  'welcome': 'Welcome to Homlander Store 👑',
+  'welcome.title': 'Welcome to Homlander Store 👑',
   'welcome.balance': 'Your balance: *${balance}*',
   'welcome.tap_menu': 'Tap *Main Menu* below to begin.',
-  'menu.title': '🐯 *Homlander Store* — Main Menu',
+  'menu.title': '👑 *Homlander Store* — Main Menu',
 
   // ---------- Buttons ----------
   'btn.main_menu': '⬅️ Back',
-  'btn.shop': '🛍 Shop',
-  'btn.topup': '👛 Top-up Wallet',
-  'btn.profile': '⚙️ Settings',
-  'btn.support': '💬 Support',
+  'btn.shop': '💎 Shop',
+  'btn.topup': '💳 Top-up Wallet',
+  'btn.profile': '👑 Settings',
+  'btn.support': '⚡ Support',
   'btn.ai_support': '🥝 Kiwi Ai',
   'btn.back': '⬅️ Back',
   'btn.next': 'Next ▶️',
   'btn.prev': '◀️ Prev',
   'btn.refresh': '🔄 Refresh',
   'btn.buy_now': '✅ Buy Now',
-  'btn.topup_wallet': '👛 Top-up Wallet',
+  'btn.topup_wallet': '💳 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
@@ -34,7 +34,7 @@ export const en: Record<string, string> = {
   // who wants the full lot doesn't have to type each digit.
   'btn.qty_keypad_max': '🎯 Max',
   // Buy-now payment-method screen.
-  'btn.pay_wallet': '👛 Wallet',
+  'btn.pay_wallet': '💳 Wallet',
   'btn.pay_direct': '💸 Pay Direct',
   'btn.pay_topup': '🪙 Top-up',
   // Wallet-confirm card (page 2 of the buy flow). The Confirm
@@ -92,8 +92,8 @@ export const en: Record<string, string> = {
   // Post-purchase email follow-up CTAs.
   'btn.set_email_now': '📧 Add Verified Email',
   'btn.view_invoice': '🔗 View Invoice',
-  'btn.my_orders': '🧾 My Orders',
-  'btn.refer': '🎁 Refer',
+  'btn.my_orders': '📊 My Orders',
+  'btn.refer': '✨ Refer & Earn',
   'btn.notifications': '🔔 Notifications',
   'btn.toggle_stock': '📢 Stock Alerts',
   'btn.toggle_announcements': '💬 Info Alerts',
@@ -420,7 +420,7 @@ export const en: Record<string, string> = {
   'shop.page.header': '🛒 *{category}*\n\n*Available Products:*\n_{total} products — page {page}/{pages}_',
 
   // ---------- Profile ----------
-  'profile.title': '*User Profile*',
+  'profile.title': '👑 *Settings*',
   'profile.notifications.title': '{notify_bell} *Notifications*',
   'profile.notifications.body':
     '{notify_on} _Tune in only the alerts you love_ {notify_bell}\n\n' +

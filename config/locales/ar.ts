@@ -1,23 +1,23 @@
 /* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
-  'welcome': 'مرحبًا بك في متجر ',
-  'welcome.title': 'مرحبًا بك في متجر !',
+  'welcome': 'مرحبًا بك في متجر Homlander Store 👑',
+  'welcome.title': 'مرحبًا بك في متجر Homlander Store 👑',
   'welcome.balance': 'رصيدك: *${balance}*',
   'welcome.tap_menu': 'اضغط *القائمة الرئيسية* بالأسفل للبدء.',
-  'menu.title': ' *متجر * — القائمة الرئيسية',
+  'menu.title': '👑 *Homlander Store* — القائمة الرئيسية',
 
   'btn.main_menu': '⬅️ رجوع',
-  'btn.shop': '🛍 المتجر',
-  'btn.topup': '👛 شحن المحفظة',
-  'btn.profile': '⚙️ الإعدادات',
-  'btn.support': '💬 الدعم',
+  'btn.shop': '💎 المتجر',
+  'btn.topup': '💳 شحن الرصيد',
+  'btn.profile': '👑 الحساب والضبط',
+  'btn.support': '⚡ الدعم الفني',
   'btn.ai_support': '🥝 Kiwi Ai',
   'btn.back': '⬅️ رجوع',
   'btn.next': 'التالي ▶️',
   'btn.prev': '◀️ السابق',
   'btn.refresh': '🔄 تحديث',
   'btn.buy_now': '✅ شراء الآن',
-  'btn.topup_wallet': '👛 شحن المحفظة',
+  'btn.topup_wallet': '💳 شحن الرصيد',
   'btn.view_note': '📝 عرض الملاحظة',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
@@ -29,7 +29,7 @@ export const ar: Record<string, string> = {
   // (`min(QTY_MAX, المخزون)`) بضغطة واحدة، للمشتري
   // الذي يرغب في شراء الكمية الكاملة دون إدخال الأرقام.
   'btn.qty_keypad_max': '🎯 الحد الأقصى',
-  'btn.pay_wallet': '👛 المحفظة',
+  'btn.pay_wallet': '💳 المحفظة',
   'btn.pay_direct': '💸 دفع مباشر',
   'btn.pay_topup': '🪙 شحن',
   'btn.confirm_pay': '✅ تأكيد',
@@ -54,8 +54,8 @@ export const ar: Record<string, string> = {
   'btn.view_note_file': '📥 حفظ كملف TXT',
   'btn.send_note_txt': '📥 حفظ كـ TXT',
   'btn.out_of_stock': '❌ غير متوفر',
-  'btn.my_orders': '🧾 طلباتي',
-  'btn.refer': '🎁 إحالة',
+  'btn.my_orders': '📊 طلباتي',
+  'btn.refer': '✨ الإحالة والكسب',
   'btn.notifications': '🔔 الإشعارات',
   'btn.toggle_stock': '📢 تنبيهات المخزون',
   'btn.toggle_announcements': '💬 تنبيهات عامة',
@@ -170,7 +170,7 @@ export const ar: Record<string, string> = {
   'shop.buy.no_stock': '❌ عذرًا، هذا المنتج غير متوفر.',
   'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
-  'profile.title': '⚙️ *الإعدادات*',
+  'profile.title': '👑 *الحساب والضبط*',
   'profile.notifications.title': '{notify_bell} *الإشعارات*',
   'profile.notifications.body':
     '{notify_on} _فعّل فقط التنبيهات التي تهمّك_ {notify_bell}\n\n' +
@@ -181,7 +181,7 @@ export const ar: Record<string, string> = {
     '{notify_off} معطلة',
   'profile.user_id': 'معرف المستخدم: `{id}`',
   'profile.username': 'اسم المستخدم: @{username}',
-  'profile.balance': '👛 الرصيد: *{balance}*',
+  'profile.balance': '💳 الرصيد: *{balance}*',
   'profile.language': '🌐 اللغة: *{language}*',
   'profile.joined': '📅 الانضمام: *{joined}*',
   // شاشة الإحالة والتربح.
@@ -236,7 +236,7 @@ export const ar: Record<string, string> = {
     '🪄 لا توجد طلبات بعد.\n\n' +
     '✨ 🛍️ 🚀 ابدأ التسوق وستظهر طلباتك هنا!',
   'profile.orders.empty': 'لا توجد طلبات بعد.',
-  'profile.orders.title': '🧾 *طلباتي*',
+  'profile.orders.title': '📊 *طلباتي*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
   'profile.notify.stock_on': 'تنبيهات المخزون: ✅ مفعلة',
   'profile.notify.stock_off': 'تنبيهات المخزون: ⛔ معطلة',
@@ -271,8 +271,8 @@ export const ar: Record<string, string> = {
     '_لم يضف المسؤول شرحًا لهذه الطريقة بعد. تحقق لاحقًا._',
   'pay.tutorial.body': '{body}',
 
-  'topup.title': '👛 *شحن المحفظة*',
-  'topup.choose_method': '👛 *شحن المحفظة*',
+  'topup.title': '💳 *شحن الرصيد*',
+  'topup.choose_method': '💳 *شحن الرصيد*',
   'topup.empty_methods': 'لا توجد طرق دفع مكوّنة. يرجى التواصل مع الدعم.',
   'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested': '✅ تم تقديم طلب الشحن (#{id}).\nسيتم التحقق وإضافة الرصيد قريبًا.',
