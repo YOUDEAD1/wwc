@@ -241,6 +241,55 @@ npm run lint
    Railway will route external traffic to `PORT` automatically.
 6. Trigger a deploy. The `worker` defined in the `Procfile` will start.
 
+### Binance Pay VPN Sidecar (Required for Auto-Verify)
+
+If you're using Binance Pay auto-verify and seeing `HTTP 451` errors, you need to route traffic through a VPN. Here's how to set it up on Railway:
+
+#### Step 1: Add VPN Config File
+
+Add the WireGuard VPN config file (`Binance_Config-NL-FREE-2.conf`) to your Railway project as a private service.
+
+#### Step 2: Create VPN Sidecar Service in Railway
+
+1. Go to Railway Dashboard → Your project
+2. Click **Add a Service** → **Private Service**
+3. Name it: `vpn-sidecar`
+4. Use Nixpacks with this Nix expression:
+
+```nix
+{ pkgs ? import <nixpkgs> {} }:
+pkgs.mkShell {
+  buildInputs = with pkgs; [ wireguard-tools ];
+  shellHook = ''
+    wg-quick up wg0 2>/dev/null || echo "VPN starting..."
+  '';
+}
+```
+
+5. Mount your WireGuard config file
+6. Set startup command: `wg-quick up wg0 && sleep infinity`
+
+#### Step 3: Connect Bot to VPN
+
+1. In your bot service, add a Nixpacks configuration to route traffic:
+2. Or use a SOCKS proxy through the VPN sidecar
+
+#### Alternative: Use ProtonVPN Business (Easier)
+
+1. Buy ProtonVPN Business
+2. Get dedicated Netherlands IP
+3. Configure your Railway service to use it
+
+#### Testing VPN Connection
+
+```bash
+# SSH into your server (if using VPS)
+curl -I https://api.binance.com
+
+# If you see HTTP 451, VPN is not working
+# If you see HTTP 200 or other, VPN is working
+```
+
 ### Alternative platforms
 
 The bot has no platform-specific code. Anywhere that runs `node dist/index.js`

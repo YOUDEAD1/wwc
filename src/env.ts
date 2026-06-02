@@ -209,8 +209,7 @@ const schema = z.object({
   // NOTE: `api.binance.com` returns HTTP 451 from many cloud
   // regions (Azure / Railway included). This integration assumes
   // outbound traffic from the bot host is routed through a VPN to
-  // an exit IP Binance allows (e.g. ProtonVPN Netherlands). See
-  // README "VPN sidecar" section for the Railway setup.
+  // an exit IP Binance allows (e.g. ProtonVPN Netherlands).
   BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
   BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
 });
