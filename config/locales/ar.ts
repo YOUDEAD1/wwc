@@ -8,6 +8,7 @@ export const ar: Record<string, string> = {
 
   'btn.main_menu': '⬅️ رجوع',
   'btn.shop': '🛍 المتجر',
+  'btn.demo_vip': '🍿 عرض خاص',
   'btn.topup': '👛 شحن المحفظة',
   'btn.profile': '⚙️ الإعدادات',
   'btn.support': '💬 الدعم',

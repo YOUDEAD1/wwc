@@ -6,6 +6,7 @@ import { getButtonConfig } from '../services/apiShop.js';
 
 const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   shop: 'shop:home',
+  demo_vip: 'cat:1:0',
   topup: 'topup:open',
   profile: 'profile:open',
   support: 'support:open',
