@@ -7815,22 +7815,32 @@ adminBot.callbackQuery('adm:prod:items:api', async (ctx) => {
   await ctx.answerCallbackQuery();
 
   try {
-    const { getEnabledProducts } = await import('../../services/apiShop.js');
-    const res = await getEnabledProducts();
+    const { syncProducts } = await import('../../services/apiShop.js');
+    const res = await syncProducts();
     if (!res.ok || res.products.length === 0) {
       const errorText = res.ok
-        ? '❌ No enabled API products found. Enable products first in API Manager.'
+        ? '❌ No API products found. Connect to an API first in API Manager.'
         : `❌ API Error: ${res.error}`;
       await ctx.reply(errorText);
       return;
     }
 
+    // Filter only enabled products and sort alphabetically A→Z
+    const enabled = res.products
+      .filter((p) => p.enabled)
+      .sort((a, b) => a.custom_name.localeCompare(b.custom_name, 'en', { sensitivity: 'base' }));
+
+    if (enabled.length === 0) {
+      await ctx.reply('❌ No enabled API products. Enable products first in API Manager → Products.');
+      return;
+    }
+
     const kb = new InlineKeyboard();
-    for (const p of res.products) {
+    for (const p of enabled) {
       const stock = Number(p.stock);
       const stockIcon = stock > 0 ? '🟢' : '🔴';
       kb.text(
-        `${stockIcon} ${p.emoji} ${p.custom_name} — $${p.sell_price}`,
+        `${stockIcon} ${p.emoji} ${p.custom_name} — $${p.sell_price} (${stock})`,
         `adm:prod:items:apisel:${p.id}`,
       );
       kb.row();
@@ -7842,6 +7852,8 @@ adminBot.callbackQuery('adm:prod:items:api', async (ctx) => {
         '🔌 *Select an API product to link:*',
         '',
         'When a customer buys this product, the codes/accounts will be fetched automatically from the linked API product.',
+        '',
+        `📦 *${enabled.length}* enabled products (A→Z):`,
       ].join('\n'),
       { parse_mode: 'Markdown', reply_markup: kb },
     );
