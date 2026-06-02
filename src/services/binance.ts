@@ -30,13 +30,13 @@ import { logger } from '../logger.js';
 const BASE_URL = 'https://api.binance.com';
 const ENDPOINT = '/sapi/v1/pay/transactions';
 const RECV_WINDOW_MS = 5000;
-const proxyUrl = env.BINANCE_PROXY_URL?.trim();
+const PROXY_URL = env.BINANCE_PROXY_URL?.trim();
 let proxyDispatcher: ProxyAgent | undefined;
 let proxyInitError: string | undefined;
 
-if (proxyUrl) {
+if (PROXY_URL) {
   try {
-    proxyDispatcher = new ProxyAgent(proxyUrl);
+    proxyDispatcher = new ProxyAgent(PROXY_URL);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     proxyInitError = message;
