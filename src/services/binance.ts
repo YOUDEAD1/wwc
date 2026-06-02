@@ -23,7 +23,7 @@
  * a misconfigured VPN sidecar quickly.
  */
 import crypto from 'node:crypto';
-import { ProxyAgent, fetch } from 'undici';
+import { ProxyAgent, fetch, type Response } from 'undici';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 
@@ -141,7 +141,7 @@ export async function listPayTransactions(opts: {
   const sig = signQuery(query, creds.apiSecret);
   const url = `${BASE_URL}${ENDPOINT}?${query}&signature=${sig}`;
 
-  let resp;
+  let resp: Response;
   try {
     resp = await fetch(url, {
       headers: { 'X-MBX-APIKEY': creds.apiKey },
