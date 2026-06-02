@@ -115,8 +115,11 @@ function productPageText(
   // screen so the buy page stays focused on the price / qty / total
   // trio.
   const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
+  const emojiStr = p.emoji_id
+    ? `<tg-emoji emoji-id="${p.emoji_id}">${p.emoji || '📦'}</tg-emoji>`
+    : (p.emoji ?? '');
   const lines: string[] = [
-    ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
+    ctx.t('shop.product.line.name', { name: p.name, emoji: emojiStr }),
   ];
   lines.push(
     ctx.t('shop.product.line.price', { price: p.price }),
@@ -779,15 +782,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
     const { discount, total } = priceBreakdown(p.price, qty, promo);
+    const emojiStr = p.emoji_id
+      ? `<tg-emoji emoji-id="${p.emoji_id}">${p.emoji || '📦'}</tg-emoji>`
+      : (p.emoji ?? '');
     const text = ctx.t('shop.pay.title', {
       name: p.name,
       qty,
       total: total.toFixed(2),
       balance: ctx.user.balance,
-      // Per-product unicode emoji rendered behind the product name.
-      // The premium auto-scan in `renderMdHtml` upgrades it to the
-      // animated `<tg-emoji>` if a `custom_emoji_id` is configured.
-      emoji: p.emoji ?? '',
+      emoji: emojiStr,
       promo_line: renderPromoLine(ctx, promo, discount),
     });
     await ctx.answerCallbackQuery();
@@ -831,14 +834,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
       discount > 0
         ? ctx.t('shop.pay.confirm.discount_line', { discount: discount.toFixed(2) })
         : '';
+    const emojiStr = p.emoji_id
+      ? `<tg-emoji emoji-id="${p.emoji_id}">${p.emoji || '📦'}</tg-emoji>`
+      : (p.emoji ?? '');
     const text = ctx.t('shop.pay.confirm', {
       name: p.name,
       qty,
       total: total.toFixed(2),
       balance: Number(ctx.user.balance).toFixed(2),
-      // Per-product unicode emoji prefix; auto-scan upgrades to
-      // `<tg-emoji>` when `custom_emoji_id` is configured.
-      emoji: p.emoji ?? '',
+      emoji: emojiStr,
       discount_line: discountLine,
     });
     const kb = new InlineKeyboard();

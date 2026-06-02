@@ -49,8 +49,7 @@ export function shopProductsKeyboard(
       // Add p1 button (Left column)
       const inStock1 = p1.unlimited_stock || p1.stock > 0;
       const stockLabel1 = p1.unlimited_stock ? '∞' : String(p1.stock);
-      const hasPremiumIcon1 = Boolean(p1.emoji_id);
-      const namePrefix1 = hasPremiumIcon1 ? '' : (p1.emoji ? `${p1.emoji} ` : '');
+      const namePrefix1 = p1.emoji ? `${p1.emoji} ` : '';
       const label1 = `${namePrefix1}${p1.name.slice(0, 10)} - ${p1.price}$ (${stockLabel1})`;
       kb.text(label1, `prod:${p1.id}`);
       
@@ -71,8 +70,7 @@ export function shopProductsKeyboard(
         // Add p2 button (Right column)
         const inStock2 = p2.unlimited_stock || p2.stock > 0;
         const stockLabel2 = p2.unlimited_stock ? '∞' : String(p2.stock);
-        const hasPremiumIcon2 = Boolean(p2.emoji_id);
-        const namePrefix2 = hasPremiumIcon2 ? '' : (p2.emoji ? `${p2.emoji} ` : '');
+        const namePrefix2 = p2.emoji ? `${p2.emoji} ` : '';
         const label2 = `${namePrefix2}${p2.name.slice(0, 10)} - ${p2.price}$ (${stockLabel2})`;
         kb.text(label2, `prod:${p2.id}`);
         
@@ -101,8 +99,7 @@ export function shopProductsKeyboard(
     products.forEach((p) => {
       const inStock = p.unlimited_stock || p.stock > 0;
       const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
-      const hasPremiumIcon = Boolean(p.emoji_id);
-      const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
+      const namePrefix = p.emoji ? `${p.emoji} ` : '';
       const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
       kb.text(label, `prod:${p.id}`);
       const iconId = inStock
