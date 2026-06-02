@@ -33,46 +33,93 @@ export function shopProductsKeyboard(
   products: DBProduct[],
   page: number,
   totalPages: number,
+  layoutStyle: 'list' | 'grid' = 'list',
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
   const defaultInStockIcon = premiumIconId('orders_product');
   const oosIcon = premiumIconId('gift_invalid');
 
-  products.forEach((p) => {
-    const inStock = p.unlimited_stock || p.stock > 0;
-    // Stock label format matches pic 1: `(Stock: ∞)` for unlimited
-    // products, otherwise `(Stock: N)` with the actual count.
-    const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
-    // Drop the leading unicode emoji from the label when a per-
-    // product premium icon is configured — the icon renders to the
-    // left of the label so we don't want a duplicate glyph.
-    const hasPremiumIcon = Boolean(p.emoji_id);
-    const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
-    const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
-    // Out-of-stock products still navigate to the product page so
-    // the user sees details + a popup-armed Buy Now button.
-    kb.text(label, `prod:${p.id}`);
-    const iconId = inStock
-      ? p.emoji_id ?? defaultInStockIcon
-      : p.emoji_id ?? oosIcon;
-    if (iconId) kb.icon(iconId);
-    // Colour resolution:
-    //   • Out-of-stock → state colour wins (red by default — the
-    //     red rail is a hard signal the buyer shouldn't tap).
-    //   • In-stock → category colour set by the admin via
-    //     /admin → Customize → 🎨 Set Color → 📂 Product Categories
-    //     wins, falling back to the in-stock state colour (blue
-    //     by default) when the category is on `'none'`.
-    let mode = getStateColor(inStock ? 'in_stock' : 'out_of_stock');
-    if (inStock && p.category_id != null) {
-      const catMode = getCategoryColor(p.category_id);
-      if (catMode !== 'none') mode = catMode;
+  if (layoutStyle === 'grid') {
+    let i = 0;
+    while (i < products.length) {
+      const p1 = products[i]!;
+      const p2 = products[i + 1];
+
+      // Add p1 button (Left column)
+      const inStock1 = p1.unlimited_stock || p1.stock > 0;
+      const stockLabel1 = p1.unlimited_stock ? '∞' : String(p1.stock);
+      const hasPremiumIcon1 = Boolean(p1.emoji_id);
+      const namePrefix1 = hasPremiumIcon1 ? '' : (p1.emoji ? `${p1.emoji} ` : '');
+      const label1 = `${namePrefix1}${p1.name.slice(0, 10)} - ${p1.price}$ (${stockLabel1})`;
+      kb.text(label1, `prod:${p1.id}`);
+      
+      const iconId1 = inStock1
+        ? p1.emoji_id ?? defaultInStockIcon
+        : p1.emoji_id ?? oosIcon;
+      if (iconId1) kb.icon(iconId1);
+      
+      let mode1 = getStateColor(inStock1 ? 'in_stock' : 'out_of_stock');
+      if (inStock1 && p1.category_id != null) {
+        const catMode = getCategoryColor(p1.category_id);
+        if (catMode !== 'none') mode1 = catMode;
+      }
+      const style1 = colorModeToStyle(mode1);
+      if (style1 !== undefined) kb.style(style1);
+
+      if (p2) {
+        // Add p2 button (Right column)
+        const inStock2 = p2.unlimited_stock || p2.stock > 0;
+        const stockLabel2 = p2.unlimited_stock ? '∞' : String(p2.stock);
+        const hasPremiumIcon2 = Boolean(p2.emoji_id);
+        const namePrefix2 = hasPremiumIcon2 ? '' : (p2.emoji ? `${p2.emoji} ` : '');
+        const label2 = `${namePrefix2}${p2.name.slice(0, 10)} - ${p2.price}$ (${stockLabel2})`;
+        kb.text(label2, `prod:${p2.id}`);
+        
+        const iconId2 = inStock2
+          ? p2.emoji_id ?? defaultInStockIcon
+          : p2.emoji_id ?? oosIcon;
+        if (iconId2) kb.icon(iconId2);
+        
+        let mode2 = getStateColor(inStock2 ? 'in_stock' : 'out_of_stock');
+        if (inStock2 && p2.category_id != null) {
+          const catMode = getCategoryColor(p2.category_id);
+          if (catMode !== 'none') mode2 = catMode;
+        }
+        const style2 = colorModeToStyle(mode2);
+        if (style2 !== undefined) kb.style(style2);
+        
+        kb.row();
+        i += 2;
+      } else {
+        kb.row();
+        i += 1;
+      }
     }
-    const style = colorModeToStyle(mode);
-    if (style !== undefined) kb.style(style);
-    kb.row();
-  });
+  } else {
+    // Traditional List View (one product per row)
+    products.forEach((p) => {
+      const inStock = p.unlimited_stock || p.stock > 0;
+      const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
+      const hasPremiumIcon = Boolean(p.emoji_id);
+      const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
+      const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
+      kb.text(label, `prod:${p.id}`);
+      const iconId = inStock
+        ? p.emoji_id ?? defaultInStockIcon
+        : p.emoji_id ?? oosIcon;
+      if (iconId) kb.icon(iconId);
+      
+      let mode = getStateColor(inStock ? 'in_stock' : 'out_of_stock');
+      if (inStock && p.category_id != null) {
+        const catMode = getCategoryColor(p.category_id);
+        if (catMode !== 'none') mode = catMode;
+      }
+      const style = colorModeToStyle(mode);
+      if (style !== undefined) kb.style(style);
+      kb.row();
+    });
+  }
 
   // Footer layout (bot-owner spec v2): the page indicator always
   // lives in the middle, the page-nav arrow takes its natural side

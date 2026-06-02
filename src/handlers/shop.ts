@@ -9,6 +9,7 @@ import {
   listActiveProducts,
   claimProductItems,
   setOrderDeliveredItems,
+  readSetting,
 } from '../db/queries.js';
 import {
   applyUserPriceToProduct,
@@ -76,7 +77,11 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   // total counts live in the keyboard footer where they don't
   // clutter the body copy.
   const html = renderMdHtml(ctx.t('shop.home.header'));
-  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages);
+  
+  // Read layout style dynamically from settings (defaults to list)
+  const layout = await readSetting('shop_layout_style') as 'list' | 'grid' ?? 'list';
+  
+  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages, layout);
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {

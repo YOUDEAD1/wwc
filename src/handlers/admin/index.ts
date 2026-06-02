@@ -2896,11 +2896,16 @@ adminBot.callbackQuery(/^adm:dep:rv:(\d+)$/, async (ctx) => {
   }
   await showDepositList(ctx);
 });
-
 // ---------- Customize ----------
 adminBot.callbackQuery('adm:cust', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = undefined;
+  
+  const { readSetting } = await import('../../db/queries.js');
+  // Read dynamic layout setting (defaults to list view)
+  const layout = await readSetting('shop_layout_style') as 'list' | 'grid' ?? 'list';
+  const layoutLabel = layout === 'list' ? '📋 Shop: List View' : '📱 Shop: Grid View';
+  
   const channelUrl = getChannelUrl();
   const kb = new InlineKeyboard()
     .text('📝 Edit Text', 'adm:cust:text')
@@ -2912,8 +2917,45 @@ adminBot.callbackQuery('adm:cust', async (ctx) => {
     .text('🎯 Set Button Icon', 'adm:cust:btnicon')
     .row()
     .text('🔗 Set Channel URL', 'adm:cust:channel')
+    .text(layoutLabel, 'adm:cust:layout') // Toggle shop layout style
+    .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
+  
+  const channelLine = channelUrl
+    ? `\n\nChannel URL: \`${channelUrl}\``
+    : '\n\n_No channel URL set yet._';
+  await ctx.editMessageText(
+    `✏️ *Customize*\n\nEdit any text, button color, emoji, or the channel link used by the bot.${channelLine}`,
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:cust:layout', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const { readSetting, setSetting } = await import('../../db/queries.js');
+  const current = await readSetting('shop_layout_style') as 'list' | 'grid' ?? 'list';
+  const nextStyle = current === 'list' ? 'grid' : 'list';
+  await setSetting('shop_layout_style', nextStyle);
+  
+  // Re-render Customize page with updated layout button
+  const channelUrl = getChannelUrl();
+  const layoutLabel = nextStyle === 'list' ? '📋 Shop: List View' : '📱 Shop: Grid View';
+  const kb = new InlineKeyboard()
+    .text('📝 Edit Text', 'adm:cust:text')
+    .text('🎨 Set Color', 'adm:cust:color:pick')
+    .row()
+    .text('🎯 Custom Color Glyphs', 'adm:cust:colorglyph')
+    .row()
+    .text('😀 Set Emoji', 'adm:cust:emoji')
+    .text('🎯 Set Button Icon', 'adm:cust:btnicon')
+    .row()
+    .text('🔗 Set Channel URL', 'adm:cust:channel')
+    .text(layoutLabel, 'adm:cust:layout')
+    .row()
+    .text('🔁 Reload Settings', 'adm:reload');
+  backRow(kb);
+  
   const channelLine = channelUrl
     ? `\n\nChannel URL: \`${channelUrl}\``
     : '\n\n_No channel URL set yet._';
@@ -8400,7 +8442,7 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
     `💰 Balance: <b>${balanceStr}</b>`,
     `📦 Products: <b>${productsStr}</b>`,
     `🕐 Since: ${connDate}`,
-    '━━━━━━━━━━━━━━━━━━━',
+    '━━━━━ ◆ ━━━━━',
   ].join('\n');
 
   const kb = new InlineKeyboard()
@@ -8540,7 +8582,7 @@ adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
   const lines = [
     `📦 <b>API Products</b> (${products.length} total)`,
     `Page ${safePage + 1}/${totalPages}`,
-    '━━━━━━━━━━━━━━━━━━━',
+    '━━━━━ ◆ ━━━━━',
     '',
   ];
   for (const p of slice) {
@@ -8599,7 +8641,7 @@ adminBot.callbackQuery(/^adm:api:orders(?::(\d+))?$/, async (ctx) => {
   const lines = [
     `📜 <b>Recent API Orders</b> (${orders.length} total)`,
     `Page ${safePage + 1}/${totalPages}`,
-    '━━━━━━━━━━━━━━━━━━━',
+    '━━━━━ ◆ ━━━━━',
     '',
   ];
 
@@ -8718,7 +8760,7 @@ adminBot.callbackQuery('adm:api:prices', async (ctx) => {
   const prices = res.prices;
   const lines = [
     `💲 <b>My Custom Prices</b> (${prices.length})`,
-    '━━━━━━━━━━━━━━━━━━━',
+    '━━━━━ ◆ ━━━━━',
     '',
   ];
 
@@ -8755,7 +8797,7 @@ adminBot.callbackQuery('adm:api:docs', async (ctx) => {
     '',
     '🔐 <b>Auth Header:</b>',
     '<code>Authorization: Bearer sk_xxx</code>',
-    '━━━━━━━━━━━━━━━━━━━',
+    '━━━━━ ◆ ━━━━━',
     '',
     '📦 <code>GET /products</code>',
     'All visible products with prices and stock',
@@ -8774,7 +8816,7 @@ adminBot.callbackQuery('adm:api:docs', async (ctx) => {
     '',
     '💲 <code>GET /my_prices</code>',
     'Your custom prices',
-    '━━━━━━━━━━━━━━━━━━━',
+    '━━━━━ ◆ ━━━━━',
     '',
     '<b>Responses:</b>',
     '✅ <code>200</code> = Success',
