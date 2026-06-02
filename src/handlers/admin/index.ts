@@ -207,6 +207,72 @@ async function showRoot(ctx: AppCtx, asReply = false): Promise<void> {
 
 adminBot.command('admin', (ctx) => showRoot(ctx, true));
 
+// /api — اختصار لفتح API Manager مباشرة
+adminBot.command('api', async (ctx) => {
+  ctx.session.adminFlow = undefined;
+  const { getConnection: apiGetConnection, fetchBalance: apiFetchBalance, fetchProducts: apiFetchProducts }
+    = await import('../../services/apiConnect.js');
+  const conn = await apiGetConnection();
+
+  if (!conn || !conn.connected) {
+    const text = [
+      '🔌 <b>API Manager</b>',
+      '',
+      '⚪ <b>Not Connected</b>',
+      '',
+      'اربط بوتك بمتجر خارجي.',
+      'الصق كود الاتصال من البوت الأساسي.',
+    ].join('\n');
+    const kb = new InlineKeyboard()
+      .text('🔗 Connect', 'adm:api:paste')
+      .row()
+      .text('📖 API Docs', 'adm:api:docs')
+      .row()
+      .text('⬅️ Back', 'adm:root');
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    return;
+  }
+
+  let balanceStr = '...';
+  let productsStr = '...';
+  const balRes = await apiFetchBalance(conn);
+  if (balRes.ok) balanceStr = `$${balRes.balance.toFixed(2)}`;
+  else balanceStr = '❌';
+
+  const prodRes = await apiFetchProducts(conn);
+  if (prodRes.ok) productsStr = String(prodRes.products.length);
+  else productsStr = '❌';
+
+  const text = [
+    '🔌 <b>API Manager</b>',
+    '',
+    '🟢 <b>Connected</b>',
+    `💰 Balance: <b>${balanceStr}</b>`,
+    `📦 Products: <b>${productsStr}</b>`,
+    '━━━━━━━━━━━━━━━━━━━',
+  ].join('\n');
+
+  const kb = new InlineKeyboard()
+    .text('🔍 Test Connection', 'adm:api:test')
+    .row()
+    .text('📦 View Products', 'adm:api:products:0')
+    .text('💰 Check Balance', 'adm:api:balance')
+    .row()
+    .text('📜 Recent Orders', 'adm:api:orders')
+    .row()
+    .text('🛍️ Manage Shop', 'adm:api:manage')
+    .text('💲 My Prices', 'adm:api:prices')
+    .row()
+    .text('📖 API Docs', 'adm:api:docs')
+    .row()
+    .text('🔄 Change Code', 'adm:api:paste')
+    .text('❌ Disconnect', 'adm:api:disconnect:confirm')
+    .row()
+    .text('⬅️ Back', 'adm:root');
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+});
+
 adminBot.callbackQuery('adm:root', async (ctx) => {
   await ctx.answerCallbackQuery();
   await showRoot(ctx);
@@ -5502,6 +5568,38 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
 
+    // ── API Set Field flow ─────────────────────────────────────
+    if ((flow as Record<string, unknown>).type === 'api_set_field') {
+      const f = flow as unknown as { type: string; step: string; data: { productId: string; field: string } };
+      ctx.session.adminFlow = undefined;
+
+      const { setProductField } = await import('../../services/apiShop.js');
+
+      if (f.data.field === 'sell_price') {
+        const price = parseFloat(text.trim());
+        if (isNaN(price) || price < 0) {
+          await ctx.reply('❌ أدخل رقم صحيح (مثل: 5.00)');
+          return;
+        }
+        await setProductField(f.data.productId, 'sell_price', price);
+        await ctx.reply(`✅ تم تحديث السعر: <b>$${price.toFixed(2)}</b>`, { parse_mode: 'HTML' });
+      } else if (f.data.field === 'label' && f.data.productId === '__button__') {
+        // تغيير اسم الزر في القائمة الرئيسية
+        const { getButtonConfig: gbc, setButtonConfig: sbc } = await import('../../services/apiShop.js');
+        const cfg = await gbc();
+        await sbc(text.trim(), cfg.position, cfg.enabled);
+        await ctx.reply(`✅ تم تغيير الزر إلى: <b>${text.trim()}</b>`, { parse_mode: 'HTML' });
+      } else if (f.data.field === 'custom_desc' && text.trim() === '-') {
+        await setProductField(f.data.productId, 'custom_desc', '');
+        await ctx.reply('✅ تم حذف الوصف');
+      } else {
+        const val = text.trim();
+        await setProductField(f.data.productId, f.data.field as 'emoji' | 'custom_name' | 'custom_desc', val);
+        await ctx.reply(`✅ تم التحديث!`);
+      }
+      return;
+    }
+
     if (flow.type === 'add_category') {
       if (flow.step === 'name') {
         ctx.session.adminFlow = {
@@ -8195,6 +8293,8 @@ async function showApiRoot(ctx: AppCtx): Promise<void> {
     .row()
     .text('📖 API Docs', 'adm:api:docs')
     .row()
+    .text('🛍️ Manage Shop', 'adm:api:manage')
+    .row()
     .text('🔄 Change Code', 'adm:api:paste')
     .text('❌ Disconnect', 'adm:api:disconnect:confirm')
     .row()
@@ -8480,4 +8580,298 @@ adminBot.callbackQuery('adm:api:disconnect:yes', async (ctx) => {
 
 // ━━━ Handle conn_ code text input ━━━
 // This is handled inside the main adminFlow text handler.
-// We need to add it to the existing on('message:text') handler.
+
+// ═══════════════════════════════════════════════════════════════════
+// 📦 API Shop Product Management — إدارة المنتجات الكاملة
+// ═══════════════════════════════════════════════════════════════════
+
+import {
+  syncProducts as apiSyncProducts,
+  toggleProduct as apiToggleProduct,
+  setProductField as apiSetProductField,
+  moveProduct as apiMoveProduct,
+  getShopConfig as apiGetShopConfig,
+  saveShopConfig as apiSaveShopConfig,
+  type MergedProduct,
+} from '../../services/apiShop.js';
+
+// ━━━ Manage Products (sync + list) ━━━
+adminBot.callbackQuery('adm:api:manage', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const res = await apiSyncProducts();
+  if (!res.ok) {
+    const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api');
+    try { await ctx.editMessageText(`❌ ${res.error}`, { reply_markup: kb }); } catch { /* */ }
+    return;
+  }
+  await showManageList(ctx, res.products, 0);
+});
+
+adminBot.callbackQuery(/^adm:api:manage:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const res = await apiSyncProducts();
+  if (!res.ok) return;
+  await showManageList(ctx, res.products, Number(ctx.match[1]));
+});
+
+async function showManageList(ctx: AppCtx, products: MergedProduct[], page: number) {
+  const perPage = 5;
+  const totalPages = Math.max(1, Math.ceil(products.length / perPage));
+  const safePage = Math.min(page, totalPages - 1);
+  const slice = products.slice(safePage * perPage, (safePage + 1) * perPage);
+
+  const lines = [
+    `🛍️ <b>Manage Shop</b> (${products.length})`,
+    `Page ${safePage + 1}/${totalPages}`,
+    '',
+  ];
+  for (const p of slice) {
+    const icon = p.enabled ? '🟢' : '🔴';
+    lines.push(
+      `${icon} ${p.emoji} <b>${escapeHtml(p.custom_name)}</b>`,
+      `   📦 ${p.stock} | Base: $${p.base_price} | Sell: <b>$${p.sell_price}</b>`,
+      `   📝 ${escapeHtml(p.custom_desc) || '<i>—</i>'}`,
+      '',
+    );
+  }
+
+  const kb = new InlineKeyboard();
+  for (const p of slice) {
+    const icon = p.enabled ? '🟢' : '🔴';
+    kb.text(icon, `adm:api:tgl:${p.id}:${p.enabled ? '0' : '1'}:${safePage}`);
+    kb.text(`✏️ ${p.emoji} ${p.custom_name.slice(0, 10)}`, `adm:api:edit:${p.id}`);
+    kb.text('⬆️', `adm:api:mv:${p.id}:up:${safePage}`);
+    kb.text('⬇️', `adm:api:mv:${p.id}:down:${safePage}`);
+    kb.row();
+  }
+  if (totalPages > 1) {
+    if (safePage > 0) kb.text('◀️', `adm:api:manage:${safePage - 1}`);
+    kb.text(`${safePage + 1}/${totalPages}`, 'noop:pg');
+    if (safePage + 1 < totalPages) kb.text('▶️', `adm:api:manage:${safePage + 1}`);
+    kb.row();
+  }
+  kb.text('🔄 Sync', 'adm:api:manage');
+  kb.text('✅ All', 'adm:api:eon');
+  kb.text('❌ All', 'adm:api:eoff');
+  kb.row();
+  kb.text('📍 Button Settings', 'adm:api:btn');
+  kb.row();
+  kb.text('⬅️ Back', 'adm:api');
+
+  try {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+// ━━━ Toggle ━━━
+adminBot.callbackQuery(/^adm:api:tgl:(.+):([01]):(\d+)$/, async (ctx) => {
+  await apiToggleProduct(ctx.match[1], ctx.match[2] === '1');
+  await ctx.answerCallbackQuery(ctx.match[2] === '1' ? '✅' : '🔴');
+  const res = await apiSyncProducts();
+  if (res.ok) await showManageList(ctx, res.products, Number(ctx.match[3]));
+});
+
+// ━━━ Move ⬆️⬇️ ━━━
+adminBot.callbackQuery(/^adm:api:mv:(.+):(up|down):(\d+)$/, async (ctx) => {
+  await apiMoveProduct(ctx.match[1], ctx.match[2] as 'up' | 'down');
+  await ctx.answerCallbackQuery(ctx.match[2] === 'up' ? '⬆️' : '⬇️');
+  const res = await apiSyncProducts();
+  if (res.ok) await showManageList(ctx, res.products, Number(ctx.match[3]));
+});
+
+// ━━━ Enable/Disable All ━━━
+adminBot.callbackQuery('adm:api:eon', async (ctx) => {
+  const c = await apiGetShopConfig();
+  for (const id of Object.keys(c.products)) c.products[id].enabled = true;
+  await apiSaveShopConfig(c);
+  await ctx.answerCallbackQuery('✅');
+  const res = await apiSyncProducts();
+  if (res.ok) await showManageList(ctx, res.products, 0);
+});
+adminBot.callbackQuery('adm:api:eoff', async (ctx) => {
+  const c = await apiGetShopConfig();
+  for (const id of Object.keys(c.products)) c.products[id].enabled = false;
+  await apiSaveShopConfig(c);
+  await ctx.answerCallbackQuery('❌');
+  const res = await apiSyncProducts();
+  if (res.ok) await showManageList(ctx, res.products, 0);
+});
+
+// ━━━ Edit Product ━━━
+adminBot.callbackQuery(/^adm:api:edit:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = ctx.match[1];
+  const config = await apiGetShopConfig();
+  const p = config.products[id];
+  if (!p) return;
+
+  const text = [
+    `✏️ <b>Edit Product</b>`,
+    '',
+    `${p.emoji} <b>${escapeHtml(p.custom_name)}</b>`,
+    `📝 ${escapeHtml(p.custom_desc) || '<i>No description</i>'}`,
+    '',
+    `💲 Sell: <b>$${p.sell_price}</b> | Base: $${p.base_price}`,
+    `📛 Original: ${escapeHtml(p.original_name)}`,
+    `🔢 Sort: #${p.sort_order}`,
+  ].join('\n');
+
+  const kb = new InlineKeyboard()
+    .text(`${p.emoji} Emoji`, `adm:api:sf:${id}:emoji`)
+    .text('📝 Name', `adm:api:sf:${id}:custom_name`)
+    .row()
+    .text('📄 Description', `adm:api:sf:${id}:custom_desc`)
+    .text('💲 Price', `adm:api:sf:${id}:sell_price`)
+    .row()
+    .text('🔄 Reset', `adm:api:rst:${id}`)
+    .row()
+    .text('⬅️ Back', 'adm:api:manage');
+
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+});
+
+// ━━━ Set field prompt ━━━
+adminBot.callbackQuery(/^adm:api:sf:(.+):(emoji|custom_name|custom_desc|sell_price)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const id = ctx.match[1];
+  const field = ctx.match[2];
+  const labels: Record<string, string> = {
+    emoji: '😀 أرسل الإيموجي الجديد:',
+    custom_name: '📝 أرسل الاسم الجديد:',
+    custom_desc: '📄 أرسل الوصف الجديد:\n(أرسل <code>-</code> لحذف الوصف)',
+    sell_price: '💲 أرسل السعر الجديد (رقم فقط):',
+  };
+  ctx.session.adminFlow = { type: 'api_set_field', step: 'value', data: { productId: id, field } } as never;
+  const kb = new InlineKeyboard().text('❌ Cancel', `adm:api:edit:${id}`);
+  try { await ctx.editMessageText(labels[field]!, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(labels[field]!, { parse_mode: 'HTML', reply_markup: kb }); }
+});
+
+// ━━━ Reset ━━━
+adminBot.callbackQuery(/^adm:api:rst:(.+)$/, async (ctx) => {
+  const id = ctx.match[1];
+  const config = await apiGetShopConfig();
+  const p = config.products[id];
+  if (!p) return;
+  p.custom_name = p.original_name;
+  p.custom_desc = '';
+  p.emoji = '📦';
+  p.sell_price = p.base_price;
+  await apiSaveShopConfig(config);
+  await ctx.answerCallbackQuery('🔄 Reset!');
+  // Trigger edit view
+  const text = `✏️ <b>${p.emoji} ${escapeHtml(p.custom_name)}</b>\n\n💲 $${p.sell_price} | 📝 —`;
+  const kb = new InlineKeyboard()
+    .text(`${p.emoji} Emoji`, `adm:api:sf:${id}:emoji`)
+    .text('📝 Name', `adm:api:sf:${id}:custom_name`)
+    .row()
+    .text('📄 Desc', `adm:api:sf:${id}:custom_desc`)
+    .text('💲 Price', `adm:api:sf:${id}:sell_price`)
+    .row()
+    .text('⬅️ Back', 'adm:api:manage');
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); } catch { /* */ }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 📍 API Shop Button — إعداد الزر في القائمة الرئيسية
+// ═══════════════════════════════════════════════════════════════════
+
+import {
+  getButtonConfig as apiGetButtonConfig,
+  setButtonConfig as apiSetButtonConfig,
+} from '../../services/apiShop.js';
+
+adminBot.callbackQuery('adm:api:btn', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const cfg = await apiGetButtonConfig();
+
+  const positions = ['🔝 قبل Shop (صف 0)', '2️⃣ صف 1', '3️⃣ صف 2', '4️⃣ صف 3', '🔚 آخر صف'];
+  const posLabel = positions[cfg.position] ?? `صف ${cfg.position}`;
+
+  const text = [
+    '📍 <b>Button Settings</b>',
+    '',
+    `🔘 Status: ${cfg.enabled ? '🟢 Enabled' : '🔴 Disabled'}`,
+    `📝 Label: <b>${cfg.label}</b>`,
+    `📍 Position: <b>${posLabel}</b>`,
+    '',
+    '💡 هذا الزر يظهر في القائمة الرئيسية (/start)',
+    'ويوصّل العملاء لمنتجات الـ API.',
+  ].join('\n');
+
+  const kb = new InlineKeyboard()
+    .text(cfg.enabled ? '🔴 Disable' : '🟢 Enable', `adm:api:btn:toggle:${cfg.enabled ? '0' : '1'}`)
+    .row()
+    .text('📝 Change Label', 'adm:api:btn:label')
+    .row()
+    .text('🔝 0', 'adm:api:btn:pos:0')
+    .text('2️⃣ 1', 'adm:api:btn:pos:1')
+    .text('3️⃣ 2', 'adm:api:btn:pos:2')
+    .text('4️⃣ 3', 'adm:api:btn:pos:3')
+    .text('🔚 4', 'adm:api:btn:pos:4')
+    .row()
+    .text('⬅️ Back', 'adm:api:manage');
+
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); }
+  catch { await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb }); }
+});
+
+// Toggle button
+adminBot.callbackQuery(/^adm:api:btn:toggle:([01])$/, async (ctx) => {
+  const enable = ctx.match[1] === '1';
+  const cfg = await apiGetButtonConfig();
+  await apiSetButtonConfig(cfg.label, cfg.position, enable);
+  await ctx.answerCallbackQuery(enable ? '🟢 Enabled!' : '🔴 Disabled!');
+  // Re-render
+  const newCfg = await apiGetButtonConfig();
+  const positions = ['🔝 صف 0', '2️⃣ صف 1', '3️⃣ صف 2', '4️⃣ صف 3', '🔚 صف 4'];
+  const text = [
+    '📍 <b>Button Settings</b>',
+    '',
+    `🔘 Status: ${newCfg.enabled ? '🟢 Enabled' : '🔴 Disabled'}`,
+    `📝 Label: <b>${newCfg.label}</b>`,
+    `📍 Position: <b>${positions[newCfg.position] ?? `صف ${newCfg.position}`}</b>`,
+  ].join('\n');
+  const kb = new InlineKeyboard()
+    .text(newCfg.enabled ? '🔴 Disable' : '🟢 Enable', `adm:api:btn:toggle:${newCfg.enabled ? '0' : '1'}`)
+    .row()
+    .text('📝 Change Label', 'adm:api:btn:label')
+    .row()
+    .text('🔝 0', 'adm:api:btn:pos:0')
+    .text('2️⃣ 1', 'adm:api:btn:pos:1')
+    .text('3️⃣ 2', 'adm:api:btn:pos:2')
+    .text('4️⃣ 3', 'adm:api:btn:pos:3')
+    .text('🔚 4', 'adm:api:btn:pos:4')
+    .row()
+    .text('⬅️ Back', 'adm:api:manage');
+  try { await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb }); } catch { /* */ }
+});
+
+// Set position
+adminBot.callbackQuery(/^adm:api:btn:pos:(\d+)$/, async (ctx) => {
+  const pos = Number(ctx.match[1]);
+  const cfg = await apiGetButtonConfig();
+  await apiSetButtonConfig(cfg.label, pos, cfg.enabled);
+  await ctx.answerCallbackQuery(`📍 Position: ${pos}`);
+  // Trigger re-render
+  const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api:btn');
+  await ctx.editMessageText(`✅ تم تغيير الموضع إلى صف <b>${pos}</b>`, { parse_mode: 'HTML', reply_markup: kb });
+});
+
+// Change label prompt
+adminBot.callbackQuery('adm:api:btn:label', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'api_set_field', step: 'value', data: { productId: '__button__', field: 'label' } } as never;
+  const kb = new InlineKeyboard().text('❌ Cancel', 'adm:api:btn');
+  try {
+    await ctx.editMessageText(
+      '📝 <b>أرسل اسم الزر الجديد:</b>\n\nمثال: 🎮 Products\nمثال: 🛒 Store\nمثال: 📦 Shop',
+      { parse_mode: 'HTML', reply_markup: kb },
+    );
+  } catch {
+    await ctx.reply('📝 أرسل اسم الزر الجديد:', { reply_markup: kb });
+  }
+});
