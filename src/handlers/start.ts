@@ -59,7 +59,7 @@ export async function showMainMenu(
   opts: { fresh?: boolean } = {},
 ): Promise<void> {
   const html = buildWelcomeHtml(ctx);
-  const reply_markup = mainMenuKeyboard(ctx.lang);
+  const reply_markup = await mainMenuKeyboard(ctx.lang);
 
   // If we got here via callback (e.g. "⬅️ Main Menu" button) edit in place.
   if (!opts.fresh && ctx.callbackQuery) {
