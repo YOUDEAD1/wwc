@@ -38,7 +38,8 @@ if (proxyUrl) {
   try {
     proxyDispatcher = new ProxyAgent(proxyUrl);
   } catch (err) {
-    proxyInitError = (err as Error)?.message ?? String(err);
+    const message = err instanceof Error ? err.message : String(err);
+    proxyInitError = message;
     logger.warn({ err }, 'binance: invalid BINANCE_PROXY_URL');
   }
 }
