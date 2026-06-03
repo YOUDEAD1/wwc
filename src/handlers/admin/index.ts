@@ -6236,6 +6236,7 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'announce') {
       if (flow.step === 'text') {
+        // Skip custom emojis / auto-detected URLs so markdown-only messages keep working.
         const hasFormatEntities = (ctx.message.entities ?? []).some(
           (entity) =>
             HTML_ENTITY_TYPES.has(entity.type) &&
