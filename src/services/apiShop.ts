@@ -110,9 +110,8 @@ export async function syncProducts(): Promise<
         existing.original_name = p.name_en;
         existing.base_price = p.base_price;
         existing.is_manual = p.is_manual;
-        if (p.emoji_id) {
-          existing.emoji_id = p.emoji_id;
-        }
+        existing.emoji = p.emoji || '📦';
+        existing.emoji_id = p.emoji_id || undefined;
       }
     }
   }
