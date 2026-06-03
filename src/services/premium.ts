@@ -90,6 +90,10 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>]/g, (c) => HTML_ESC[c]!);
 }
 
+function escapeHtmlAttr(s: string): string {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
 /**
  * Wrap an emoji unicode glyph as a `<tg-emoji>` tag if a premium
  * `custom_emoji_id` is configured for the given key; otherwise just
@@ -98,7 +102,7 @@ function escapeHtml(s: string): string {
 function tgEmojiTag(unicode: string, customEmojiId?: string): string {
   const safeUnicode = escapeHtml(unicode);
   if (!customEmojiId) return safeUnicode;
-  return `<tg-emoji emoji-id="${escapeHtml(customEmojiId)}">${safeUnicode}</tg-emoji>`;
+  return `<tg-emoji emoji-id="${escapeHtmlAttr(customEmojiId)}">${safeUnicode}</tg-emoji>`;
 }
 
 /** Replace `{key}` tokens with their (premium-aware) HTML rendering. */
@@ -159,17 +163,27 @@ function autoScanPremiumEmojis(html: string): string {
   if (idx.size === 0) return html;
   let out = '';
   let i = 0;
-  let inTag = false;
+  let tgEmojiDepth = 0;
   while (i < html.length) {
     const ch = html[i]!;
-    if (inTag) {
-      out += ch;
-      if (ch === '>') inTag = false;
-      i += 1;
+    if (ch === '<') {
+      const end = html.indexOf('>', i);
+      if (end === -1) {
+        out += html.slice(i);
+        break;
+      }
+      const tagBody = html.slice(i + 1, end).trim();
+      const isClosing = tagBody.startsWith('/');
+      const tagName = tagBody.replace(/^\/\s*/, '').split(/\s+/, 1)[0]?.toLowerCase();
+      if (tagName === 'tg-emoji') {
+        tgEmojiDepth += isClosing ? -1 : 1;
+        if (tgEmojiDepth < 0) tgEmojiDepth = 0;
+      }
+      out += html.slice(i, end + 1);
+      i = end + 1;
       continue;
     }
-    if (ch === '<') {
-      inTag = true;
+    if (tgEmojiDepth > 0) {
       out += ch;
       i += 1;
       continue;
@@ -183,7 +197,7 @@ function autoScanPremiumEmojis(html: string): string {
       const bare = glyph.replace(/\uFE0F$/, '');
       const id = idx.get(glyph) ?? idx.get(bare);
       if (id) {
-        out += `<tg-emoji emoji-id="${escapeHtml(id)}">${glyph}</tg-emoji>`;
+        out += `<tg-emoji emoji-id="${escapeHtmlAttr(id)}">${glyph}</tg-emoji>`;
       } else {
         out += glyph;
       }
@@ -264,6 +278,119 @@ function mdToHtml(md: string): string {
   return s;
 }
 
+type HtmlTagSpec = { open: string; close: string; length: number };
+
+export const HTML_ENTITY_TYPES = new Set<MessageEntity['type']>([
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'spoiler',
+  'code',
+  'pre',
+  'text_link',
+  'text_mention',
+  'url',
+  'custom_emoji',
+]);
+
+export const FORMAT_ENTITY_TYPES = new Set<MessageEntity['type']>([
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'spoiler',
+  'code',
+  'pre',
+  'text_link',
+  'text_mention',
+]);
+
+function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | null {
+  switch (entity.type) {
+    case 'bold':
+      return { open: '<b>', close: '</b>', length: entity.length };
+    case 'italic':
+      return { open: '<i>', close: '</i>', length: entity.length };
+    case 'underline':
+      return { open: '<u>', close: '</u>', length: entity.length };
+    case 'strikethrough':
+      return { open: '<s>', close: '</s>', length: entity.length };
+    case 'spoiler':
+      return { open: '<span class="tg-spoiler">', close: '</span>', length: entity.length };
+    case 'code':
+      return { open: '<code>', close: '</code>', length: entity.length };
+    case 'pre':
+      return { open: '<pre>', close: '</pre>', length: entity.length };
+    case 'text_link':
+      return {
+        open: `<a href="${escapeHtmlAttr(entity.url ?? '')}">`,
+        close: '</a>',
+        length: entity.length,
+      };
+    case 'text_mention':
+      return {
+        open: `<a href="tg://user?id=${escapeHtmlAttr(String(entity.user?.id ?? ''))}">`,
+        close: '</a>',
+        length: entity.length,
+      };
+    case 'url': {
+      const url = source.slice(entity.offset, entity.offset + entity.length);
+      return {
+        open: `<a href="${escapeHtmlAttr(url)}">`,
+        close: '</a>',
+        length: entity.length,
+      };
+    }
+    case 'custom_emoji':
+      return {
+        open: `<tg-emoji emoji-id="${escapeHtmlAttr(entity.custom_emoji_id ?? '')}">`,
+        close: '</tg-emoji>',
+        length: entity.length,
+      };
+    default:
+      return null;
+  }
+}
+
+export function entitiesToHtml(
+  text: string,
+  entities: ReadonlyArray<MessageEntity> | undefined | null,
+): string {
+  if (!entities || entities.length === 0) return escapeHtml(text);
+  const opens = new Map<number, HtmlTagSpec[]>();
+  const closes = new Map<number, HtmlTagSpec[]>();
+  for (const entity of entities) {
+    const tag = entityToHtmlTag(entity, text);
+    if (!tag) continue;
+    // Clamp offsets to guard against malformed entity ranges.
+    const start = Math.max(0, Math.min(entity.offset, text.length));
+    const end = Math.max(start, Math.min(entity.offset + entity.length, text.length));
+    if (start === end) continue;
+    if (!opens.has(start)) opens.set(start, []);
+    if (!closes.has(end)) closes.set(end, []);
+    opens.get(start)!.push(tag);
+    closes.get(end)!.push(tag);
+  }
+  // Sort so outer tags open before inner, and inner tags close before outer.
+  for (const list of opens.values()) list.sort((a, b) => b.length - a.length);
+  for (const list of closes.values()) list.sort((a, b) => a.length - b.length);
+
+  let out = '';
+  for (let i = 0; i <= text.length; i++) {
+    const closeTags = closes.get(i);
+    if (closeTags) {
+      for (const tag of closeTags) out += tag.close;
+    }
+    const openTags = opens.get(i);
+    if (openTags) {
+      for (const tag of openTags) out += tag.open;
+    }
+    if (i < text.length) out += escapeHtml(text[i]!);
+  }
+  return out;
+}
+
 /**
  * Render a template containing `{key}` tokens to HTML, with
  * `<tg-emoji>` tags for premium-mapped emojis. Plain text only — use
@@ -322,7 +449,7 @@ export function renderMdHtml(template: string, map: Record<string, string> = {})
     const p = placeholders[i]!;
     out = out.replace(
       `\u{E000}TGCE${i}\u{E001}`,
-      `<tg-emoji emoji-id="${escapeHtml(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
+      `<tg-emoji emoji-id="${escapeHtmlAttr(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
     );
   }
   return out;
@@ -333,6 +460,33 @@ export function renderMdHtml(template: string, map: Record<string, string> = {})
 // part allows ASCII brackets / colons but is bounded by `}` and `|`
 // so the regex stays anchored.
 const CE_MARKER_RX = /\{\{ce:([^|}\n]+)\|([^}\n]+)\}\}/g;
+
+/**
+ * Render a pre-escaped HTML template that may already contain tags
+ * (from Telegram entities), while still applying `{key}` tokens,
+ * premium emoji auto-scan, and custom-emoji markers.
+ */
+export function renderHtmlTemplate(template: string, map: Record<string, string> = {}): string {
+  const placeholders: Array<{ id: string; glyph: string }> = [];
+  const stripped = template.replace(
+    CE_MARKER_RX,
+    (_m: string, id: string, glyph: string) => {
+      const idx = placeholders.length;
+      placeholders.push({ id, glyph });
+      return `\u{E000}TGCE${idx}\u{E001}`;
+    },
+  );
+  const scanned = autoScanPremiumEmojis(stripped);
+  let out = replaceTokensHtml(scanned, map);
+  for (let i = 0; i < placeholders.length; i++) {
+    const p = placeholders[i]!;
+    out = out.replace(
+      `\u{E000}TGCE${i}\u{E001}`,
+      `<tg-emoji emoji-id="${escapeHtmlAttr(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
+    );
+  }
+  return out;
+}
 
 /**
  * Convert admin-authored text + Telegram MessageEntity[] into a
