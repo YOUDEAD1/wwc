@@ -294,6 +294,18 @@ export const HTML_ENTITY_TYPES = new Set<MessageEntity['type']>([
   'custom_emoji',
 ]);
 
+export const FORMAT_ENTITY_TYPES = new Set<MessageEntity['type']>([
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'spoiler',
+  'code',
+  'pre',
+  'text_link',
+  'text_mention',
+]);
+
 function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | null {
   switch (entity.type) {
     case 'bold':

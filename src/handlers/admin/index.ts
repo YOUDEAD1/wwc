@@ -116,7 +116,7 @@ import {
   setCategoryDefaultColor,
 } from '../../services/settings.js';
 import {
-  HTML_ENTITY_TYPES,
+  FORMAT_ENTITY_TYPES,
   entitiesToHtml,
   injectCustomEmojiMarkers,
   renderHtmlTemplate,
@@ -6236,12 +6236,8 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'announce') {
       if (flow.step === 'text') {
-        // Skip custom emojis / auto-detected URLs so markdown-only messages keep working.
-        const hasFormatEntities = (ctx.message.entities ?? []).some(
-          (entity) =>
-            HTML_ENTITY_TYPES.has(entity.type) &&
-            entity.type !== 'custom_emoji' &&
-            entity.type !== 'url',
+        const hasFormatEntities = (ctx.message.entities ?? []).some((entity) =>
+          FORMAT_ENTITY_TYPES.has(entity.type),
         );
         const format: 'md' | 'html' = hasFormatEntities ? 'html' : 'md';
         const body = hasFormatEntities
