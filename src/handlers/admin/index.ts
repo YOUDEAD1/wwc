@@ -7404,13 +7404,14 @@ async function finalizeProduct(
   },
   items: string[] = [],
 ): Promise<void> {
-  const product = await addProduct(data);
+  const { unlimited, ...payload } = data;
+  const product = await addProduct(payload);
   // If admin chose "Unlimited" earlier, persist the flag now that we
   // have a product id. addProduct() doesn't know about the new
   // column, so we do this as a follow-up update — graceful no-op
   // when migration 0015 isn't applied (updateProduct will just throw
   // and we log/swallow).
-  if (data.unlimited === true) {
+  if (unlimited === true) {
     try {
       await updateProduct(product.id, { unlimited_stock: true });
     } catch (err) {
@@ -7426,7 +7427,7 @@ async function finalizeProduct(
   }
   ctx.session.adminFlow = undefined;
   cache.del('cats');
-  const stockBlurb = data.unlimited
+  const stockBlurb = unlimited
     ? 'stock ∞'
     : `stock ${product.stock}`;
   await ctx.reply(
