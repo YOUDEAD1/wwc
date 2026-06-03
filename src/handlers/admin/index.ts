@@ -7404,7 +7404,8 @@ async function finalizeProduct(
   },
   items: string[] = [],
 ): Promise<void> {
-  const product = await addProduct(data);
+  const { unlimited: _unlimited, ...payload } = data;
+  const product = await addProduct(payload);
   // If admin chose "Unlimited" earlier, persist the flag now that we
   // have a product id. addProduct() doesn't know about the new
   // column, so we do this as a follow-up update — graceful no-op
