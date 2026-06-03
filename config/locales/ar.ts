@@ -189,6 +189,7 @@ export const ar: Record<string, string> = {
     '',
     '{delivering} _جارٍ تسليم طلبك…_',
   ].join('\n'),
+  'shop.referral.delivery': 'مكافأة إحالة للمنتج #{product_id} (الكمية: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
   'profile.title': '⚙️ *الإعدادات*',

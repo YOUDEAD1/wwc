@@ -336,6 +336,7 @@ export const en: Record<string, string> = {
     '',
     '{delivering} _Delivering your order…_',
   ].join('\n'),
+  'shop.referral.delivery': 'Referral reward for product #{product_id} (qty: {qty})',
   // Kept for backwards compat with any /settext overrides referencing
   // the old key, even though the email gate is no longer enforced.
   'shop.buy.email_required':

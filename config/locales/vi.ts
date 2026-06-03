@@ -192,6 +192,7 @@ export const vi: Record<string, string> = {
     '',
     '{delivering} _Đang giao đơn hàng…_',
   ].join('\n'),
+  'shop.referral.delivery': 'Thưởng giới thiệu cho sản phẩm #{product_id} (SL: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
 
   'profile.title': '⚙️ *Cài đặt*',

@@ -1203,7 +1203,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         total,
         discount,
         promo_id: null,
-        delivery: `Referral reward for product #${p.id} (qty: ${qty})`,
+        delivery: ctx.t('shop.referral.delivery', { product_id: p.id, qty }),
       });
       await recordReferralRedemption({
         user_id: ctx.user.telegram_id,
