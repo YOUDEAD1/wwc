@@ -52,6 +52,8 @@ export type DBProduct = {
   note: string | null;
   price: number;
   stock: number;
+  /** Referrals required to unlock a free redemption (0 = disabled). */
+  referral_required: number;
   warranty: string | null;
   emoji: string | null;
   /** Premium custom_emoji_id for the row icon. Falls back to `emoji`. */
@@ -281,6 +283,14 @@ export type DBGiftCodeRedemption = {
   code: string;
   user_id: number;
   amount: number;
+  redeemed_at: string;
+};
+
+export type DBReferralRedemption = {
+  id: number;
+  user_id: number;
+  product_id: number;
+  order_id: number | null;
   redeemed_at: string;
 };
 

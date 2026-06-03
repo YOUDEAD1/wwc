@@ -13,6 +13,7 @@ import type {
   DBWalletLedger,
   DBGiftCode,
   DBGiftCodeRedemption,
+  DBReferralRedemption,
   DBUserPriceOverride,
   DBPromo,
   DBOrderDeliverySubmission,
@@ -258,6 +259,44 @@ export async function countReferrals(telegram_id: number): Promise<number> {
   return count ?? 0;
 }
 
+export async function hasReferralRedemption(
+  user_id: number,
+  product_id: number,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('referral_redemptions')
+    .select('id')
+    .eq('user_id', user_id)
+    .eq('product_id', product_id)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, user_id, product_id }, 'hasReferralRedemption failed');
+    return false;
+  }
+  return Boolean(data);
+}
+
+export async function recordReferralRedemption(args: {
+  user_id: number;
+  product_id: number;
+  order_id: number | null;
+}): Promise<DBReferralRedemption> {
+  const { data, error } = await supabase
+    .from('referral_redemptions')
+    .insert({
+      user_id: args.user_id,
+      product_id: args.product_id,
+      order_id: args.order_id,
+    })
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, args }, 'recordReferralRedemption failed');
+    throw error ?? new Error('recordReferralRedemption failed');
+  }
+  return data as DBReferralRedemption;
+}
+
 /**
  * Get user by telegram_id. Returns null if not found.
  */
@@ -407,6 +446,7 @@ export async function addProduct(p: {
   emoji?: string | null;
   emoji_id?: string | null;
   unlimited_stock?: boolean;
+  referral_required?: number;
 }): Promise<DBProduct> {
   const { data, error } = await supabase.from('products').insert(p).select('*').single();
   if (error || !data) throw error ?? new Error('addProduct failed');
@@ -425,6 +465,7 @@ export async function updateProduct(
     name: string;
     price: number;
     stock: number;
+    referral_required: number;
     warranty: string | null;
     description: string | null;
     note: string | null;

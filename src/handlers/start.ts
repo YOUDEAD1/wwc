@@ -3,7 +3,7 @@ import { InlineKeyboard } from 'grammy';
 import type { AppCtx } from '../middleware/user.js';
 import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getOrder, getProduct } from '../db/queries.js';
+import { countReferrals, getOrder, getProduct, hasReferralRedemption } from '../db/queries.js';
 import { applyUserPriceToProduct } from '../services/pricing.js';
 import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
@@ -91,12 +91,35 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[p.id] ?? QTY_MIN;
   const total = (p.price * qty).toFixed(2);
+  let referralLine = '';
+  let canRedeem = false;
+  if (p.referral_required > 0) {
+    const [totalReferrals, redeemed] = await Promise.all([
+      countReferrals(ctx.user.telegram_id),
+      hasReferralRedemption(ctx.user.telegram_id, p.id),
+    ]);
+    const requiredTotal = p.referral_required * qty;
+    const remaining = Math.max(0, requiredTotal - totalReferrals);
+    if (redeemed) {
+      referralLine = ctx.t('shop.product.line.referral.claimed');
+    } else if (remaining <= 0) {
+      referralLine = ctx.t('shop.product.line.referral.ready', { required: requiredTotal });
+      canRedeem = true;
+    } else {
+      referralLine = ctx.t('shop.product.line.referral.progress', {
+        total: totalReferrals,
+        required: requiredTotal,
+        remaining,
+      });
+    }
+  }
   const body = [
     ctx.t('shop.product.line.name', { name: p.name }),
     p.description ? p.description : '',
     ctx.t('shop.product.line.price', { price: p.price }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
+    referralLine,
     ctx.t('shop.product.line.qty', { qty }),
     ctx.t('shop.product.line.total', { total }),
     ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
@@ -109,7 +132,7 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const shareUrl = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
   await ctx.reply(renderMdHtml(body), {
     parse_mode: 'HTML',
-    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, { canRedeem }),
   });
   return true;
 }

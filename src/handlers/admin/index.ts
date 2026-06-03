@@ -1131,12 +1131,17 @@ async function showProductEditor(
   const deliveryVendorLabel = p.delivery_vendor_chat_id
     ? '`' + (p.delivery_vendor_label || p.delivery_vendor_chat_id) + '`'
     : '_unset_';
+  const referralLabel =
+    p.referral_required > 0
+      ? `*${p.referral_required} referral${p.referral_required === 1 ? '' : 's'}*`
+      : '_OFF_';
   const lines = [
     `✏️ *Edit Product #${p.id}*`,
     '',
     `*Name:* ${p.name}`,
     `*Price:* ${Number(p.price).toFixed(2)} USDT`,
     `*Stock:* ${stockCell}`,
+    `*Referral reward:* ${referralLabel}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
     `*Description:* ${p.description ? '`set`' : '_unset_'}`,
     `*Note Text:* ${p.note ? '`set`' : '_unset_'}`,
@@ -1195,6 +1200,9 @@ async function showProductEditor(
   kb.text('💰 Edit Price', `adm:prod:price:set:${p.id}:${page}`)
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
+    .row();
+  kb.text('🎁 Referral Reward', `adm:prod:ref:set:${p.id}:${page}`)
+    .text('🧹 Clear Referral', `adm:prod:ref:clr:${p.id}:${page}`)
     .row();
   // One-click wipe of every user's custom-price override for this
   // product so they all fall back to the default Price above. Hidden
@@ -1306,6 +1314,29 @@ adminBot.callbackQuery(/^adm:prod:desc:set:(\d+):(\d+)$/, async (ctx) => {
 adminBot.callbackQuery(/^adm:prod:desc:clr:(\d+):(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   await updateProduct(id, { description: null });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Referral reward ---
+adminBot.callbackQuery(/^adm:prod:ref:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_referral_required',
+    step: 'count',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '🎁 Send the number of referrals required to unlock this product for free (0 to disable). Send `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:ref:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, { referral_required: 0 });
   await ctx.answerCallbackQuery({ text: 'Cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
@@ -5532,6 +5563,21 @@ adminBot.on('message:text', async (ctx, next) => {
       await updateProduct(flow.data.product_id, { name: text });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Name updated.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_referral_required') {
+      const trimmed = text.trim().toLowerCase();
+      const count = trimmed === 'clear' || trimmed === 'off' ? 0 : Number(text);
+      if (!Number.isInteger(count) || count < 0) {
+        await ctx.reply('❌ Bad number. Send an integer ≥ 0.');
+        return;
+      }
+      await updateProduct(flow.data.product_id, { referral_required: count });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        count > 0 ? `✅ Referral reward set: ${count} referrals.` : '✅ Referral reward disabled.',
+      );
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }

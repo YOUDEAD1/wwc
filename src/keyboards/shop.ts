@@ -140,6 +140,7 @@ export function productKeyboard(
   product: DBProduct,
   qty: number,
   shareUrl: string,
+  options?: { canRedeem?: boolean },
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const inStock = product.unlimited_stock || product.stock > 0;
@@ -158,6 +159,10 @@ export function productKeyboard(
     kb.text(String(qty), 'noop:qty');
     inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
     kb.row();
+    if (options?.canRedeem) {
+      inlineBtn(kb, lang, 'redeem_referral', `redeem:ref:${product.id}`);
+      kb.row();
+    }
     // Buy Now sits directly under the stepper so the user's tap
     // path is "set qty → buy".
     inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);

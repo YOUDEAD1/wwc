@@ -17,6 +17,7 @@ export const vi: Record<string, string> = {
   'btn.prev': '◀️ Trước',
   'btn.refresh': '🔄 Làm mới',
   'btn.buy_now': '✅ Mua ngay',
+  'btn.redeem_referral': '🎁 Đổi miễn phí',
   'btn.topup_wallet': '👛 Nạp ví',
   'btn.view_note': '📝 Xem ghi chú',
   'btn.qty_plus': '➕',
@@ -139,6 +140,12 @@ export const vi: Record<string, string> = {
   'shop.product.line.price': '{prod_price_base} *Giá gốc:* {price} USDT',
   'shop.product.line.stock': '{prod_stock} *Còn lại:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Bảo hành:* {warranty}',
+  'shop.product.line.referral.progress':
+    '{prod_referral} *Thưởng giới thiệu:* {total}/{required} lượt (còn {remaining})',
+  'shop.product.line.referral.ready':
+    '{prod_referral} *Thưởng giới thiệu:* Đã mở — nhấn *Đổi miễn phí*',
+  'shop.product.line.referral.claimed':
+    '{prod_referral} *Thưởng giới thiệu:* Đã đổi trước đó',
   'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
@@ -171,6 +178,20 @@ export const vi: Record<string, string> = {
   'shop.buy.insufficient':
     '❌ Số dư ví không đủ. Cần *{need}* nhưng chỉ có *{have}*. Vui lòng nạp tiền trước.',
   'shop.buy.no_stock': '❌ Xin lỗi, sản phẩm đã hết hàng.',
+  'shop.referral.disabled': '❌ Sản phẩm này không có thưởng giới thiệu.',
+  'shop.referral.already_redeemed': '✅ Bạn đã đổi thưởng giới thiệu này rồi.',
+  'shop.referral.insufficient':
+    '❌ Cần {required} lượt giới thiệu để đổi. Bạn có {total} (còn {remaining}).',
+  'shop.referral.failed':
+    '❌ Đổi thưởng giới thiệu thất bại. Vui lòng thử lại hoặc liên hệ admin.',
+  'shop.referral.confirmed': [
+    '{refer_title} *Đã mở thưởng giới thiệu!*',
+    '',
+    '*Sản phẩm:* {name}',
+    '*Số lượng:* {qty}',
+    '',
+    '{delivering} _Đang giao đơn hàng…_',
+  ].join('\n'),
   'shop.page.header': '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
 
   'profile.title': '⚙️ *Cài đặt*',

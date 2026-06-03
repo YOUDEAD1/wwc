@@ -9,11 +9,14 @@ import {
 } from '../../config/index.js';
 import {
   createOrder,
+  countReferrals,
   decrementProductStock,
   getProduct,
   getOrder,
+  hasReferralRedemption,
   listActiveProducts,
   claimProductItems,
+  recordReferralRedemption,
   setOrderDeliveredItems,
 } from '../db/queries.js';
 import {
@@ -110,6 +113,7 @@ function productPageText(
   qty: number,
   promo: PromoMatch | null = null,
   teaser: DBPromo | null = null,
+  referral: ReferralRewardState | null = null,
 ) {
   const { gross, discount, total } = priceBreakdown(p.price, qty, promo);
   const eligible = !!promo && discount > 0;
@@ -126,6 +130,25 @@ function productPageText(
     ctx.t('shop.product.line.stock', { stock: stockLabel }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
+  if (referral) {
+    if (referral.redeemed) {
+      lines.push(ctx.t('shop.product.line.referral.claimed'));
+    } else if (referral.remaining <= 0) {
+      lines.push(
+        ctx.t('shop.product.line.referral.ready', {
+          required: referral.requiredTotal,
+        }),
+      );
+    } else {
+      lines.push(
+        ctx.t('shop.product.line.referral.progress', {
+          total: referral.totalReferrals,
+          required: referral.requiredTotal,
+          remaining: referral.remaining,
+        }),
+      );
+    }
+  }
   // Teaser line under Warranty.
   //   - Always shows when there is no active promo yet but an
   //     upcoming threshold exists (the original "Buy 10+ −$5 Off"
@@ -231,6 +254,284 @@ function renderPromoLine(
   );
 }
 
+type ReferralRewardState = {
+  requiredPerUnit: number;
+  requiredTotal: number;
+  totalReferrals: number;
+  remaining: number;
+  redeemed: boolean;
+  eligible: boolean;
+};
+
+async function getReferralRewardState(
+  ctx: AppCtx,
+  product: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
+  qty: number,
+): Promise<ReferralRewardState | null> {
+  if (!product.referral_required || product.referral_required <= 0) return null;
+  const [totalReferrals, redeemed] = await Promise.all([
+    countReferrals(ctx.user.telegram_id),
+    hasReferralRedemption(ctx.user.telegram_id, product.id),
+  ]);
+  const requiredPerUnit = product.referral_required;
+  const requiredTotal = requiredPerUnit * qty;
+  const remaining = Math.max(0, requiredTotal - totalReferrals);
+  return {
+    requiredPerUnit,
+    requiredTotal,
+    totalReferrals,
+    remaining,
+    redeemed,
+    eligible: !redeemed && remaining <= 0,
+  };
+}
+
+async function finalizeOrderDelivery(args: {
+  ctx: AppCtx;
+  product: NonNullable<Awaited<ReturnType<typeof getProduct>>>;
+  qty: number;
+  total: number;
+  discount: number;
+  order: Awaited<ReturnType<typeof createOrder>>;
+  paidVia: string;
+  balanceAfter: number;
+  confirmationText: string;
+}): Promise<void> {
+  const { ctx, product: p, qty, total, discount, order, paidVia, balanceAfter, confirmationText } = args;
+  await decrementProductStock(p.id, qty);
+  delete ctx.session.qty[p.id];
+  // Pull the actual delivery payload off the per-product items
+  // pool. When the pool is empty (or short), fall back to a
+  // "manual delivery" placeholder; the admin gets pinged via
+  // logOrderCreated either way.
+  const claimed = await claimProductItems(p.id, qty, order.id);
+  const publicId = publicOrderId(order);
+  // Items are rendered as Telegram blockquote pills (one `> line`
+  // per claimed link / account) — same style as the View Note
+  // "luli" / "Hey" pills the bot owner pointed to.
+  //
+  // For bulk orders (10/30/50/100+ links) we split the items
+  // across multiple messages of `ORDER_DELIVERED_CHUNK_SIZE` each
+  // (the bot owner's preferred 7-per-msg layout). The first
+  // chunk goes inside the Order Delivered header card; the
+  // remaining chunks are sent as plain blockquote messages right
+  // below. Only the last chunk's message carries the Using
+  // Method inline keyboard so the buyer scrolls to the bottom
+  // and finds it there. This replaces the previous .txt
+  // attachment workaround.
+  //
+  // The DB-stored copy keeps plain single-line separation so the
+  // existing /myorders renderer (and the /admin orders block)
+  // doesn't suddenly contain blockquote markers.
+  const deliveredChunks = buildOrderDeliveredChunks(claimed);
+  const firstChunkBlock =
+    deliveredChunks[0]?.inlineBlock ?? `> ${ctx.t('shop.buy.delivery_pending')}`;
+  const deliveredItemsForDb =
+    claimed.length > 0 ? claimed.join('\n') : ctx.t('shop.buy.delivery_pending');
+  // Always persist `delivered_items` — even the manual-delivery
+  // placeholder — so the My Orders detail screen can render the
+  // order without falling back to the legacy `delivery` blob.
+  // Without this, a bulk order whose item pool is empty or whose
+  // chat-render failed would leave `delivered_items` NULL, and
+  // tapping the order in /myorders would render a broken
+  // "Received: Order #N-37" line that confused buyers.
+  await setOrderDeliveredItems(order.id, deliveredItemsForDb);
+  await ctx.answerCallbackQuery();
+  // ---- Step 1: Payment Verified card (auto-deletes after 15s) ----
+  // We capture the message_id and schedule a delete via setTimeout
+  // so the chat stays clean: by the time the user finishes reading
+  // "Order Delivered!" the verified card has slid away.
+  const verifiedMsg = await ctx.reply(renderMdHtml(confirmationText), {
+    parse_mode: 'HTML',
+  });
+  const verifiedChatId = verifiedMsg.chat.id;
+  const verifiedMessageId = verifiedMsg.message_id;
+  setTimeout(() => {
+    // Fire-and-forget; if the user already deleted it manually
+    // or 48h have passed, Telegram will reject — we just swallow.
+    void ctx.api.deleteMessage(verifiedChatId, verifiedMessageId).catch((err) => {
+      logger.debug(
+        { err, chatId: verifiedChatId, messageId: verifiedMessageId },
+        'auto-delete of payment_verified message failed (likely already gone)',
+      );
+    });
+  }, 15_000);
+  // ---- Step 2: Order Delivered card -----------------------
+  // The keyboard carries only the per-product Using Method
+  // button — the standalone "View Invoice" button was removed
+  // per the bot owner's follow-up note. For bulk orders we send
+  // the keyboard with the LAST items message instead of the
+  // header card, so the buyer scrolls past every link before
+  // tapping Using Method.
+  const deliveredKb = new InlineKeyboard();
+  inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
+  deliveredKb.row();
+  inlineBtn(deliveredKb, ctx.lang, 'send_note_txt', `order:txt:${order.id}`);
+  const headerHasKeyboard = deliveredChunks.length <= 1;
+  await ctx.reply(
+    renderMdHtml(
+      ctx.t('shop.buy.order_delivered', {
+        order_id: publicId,
+        name: p.name,
+        qty,
+        total: total.toFixed(2),
+        items: firstChunkBlock,
+      }),
+    ),
+    headerHasKeyboard ? { parse_mode: 'HTML', reply_markup: deliveredKb } : { parse_mode: 'HTML' },
+  );
+  // Send the remaining 7-link chunks as plain blockquote
+  // follow-up messages. Only the very last one gets the inline
+  // keyboard. If a follow-up message fails to render we still
+  // press on so a single bad link doesn't keep the buyer from
+  // seeing the rest. The DB has the full list either way.
+  for (let i = 1; i < deliveredChunks.length; i++) {
+    const chunk = deliveredChunks[i];
+    if (!chunk) continue;
+    const opts = chunk.isLast
+      ? { parse_mode: 'HTML' as const, reply_markup: deliveredKb }
+      : { parse_mode: 'HTML' as const };
+    try {
+      await ctx.reply(renderMdHtml(chunk.inlineBlock), opts);
+    } catch (err) {
+      logger.warn(
+        {
+          err,
+          orderId: order.id,
+          chunkIndex: i,
+          chunkSize: deliveredChunks.length,
+        },
+        'order delivery — chunked items follow-up failed',
+      );
+    }
+  }
+  // ---- Step 2b: Post-purchase delivery form ---------------
+  // Some products require the buyer to send extra details
+  // (account email + password, recovery key, voucher code, …)
+  // BEFORE the seller can finish provisioning. When the product
+  // has `delivery_form_enabled` we drop an instruction message
+  // + a single in-place prompt card right under the items so
+  // the buyer can submit their details directly. Vendor DM +
+  // success / edit / admin-help buttons all live in the
+  // `postPurchaseDelivery` service.
+  try {
+    await maybeStartDeliveryFormForCtx({
+      ctx,
+      product: p,
+      orderId: order.id,
+      orderPublicId: publicId,
+      qty,
+    });
+  } catch (err) {
+    logger.warn(
+      { err, orderId: order.id, productId: p.id },
+      'order delivery — delivery form start failed',
+    );
+  }
+  // ---- Step 3: Email follow-up ----------------------------
+  // Two branches per the bot-owner spec:
+  //   a) No email → polite prompt with a `Set Email` deep link
+  //      that opens Settings → Email Settings → Set Email and
+  //      remembers `order.id` so once the email is saved we can
+  //      retroactively fire the invoice for THIS purchase.
+  //   b) Has email → single-line "invoice sent" card that
+  //      auto-deletes after 13 s + the polished invoice email.
+  if (!ctx.user.email) {
+    const noEmailKb = new InlineKeyboard();
+    // Tag the callback with `:post:<orderId>` so the profile
+    // handler knows this came from a post-purchase nudge (vs.
+    // Settings → Set Email) and can run the auto-delete +
+    // retroactive-invoice path.
+    inlineBtn(
+      noEmailKb,
+      ctx.lang,
+      'set_email_now',
+      `profile:email:set:post:${order.id}`,
+    );
+    await ctx.reply(renderMdHtml(ctx.t('shop.buy.add_email_prompt')), {
+      parse_mode: 'HTML',
+      reply_markup: noEmailKb,
+    });
+  } else {
+    // Single bold confirmation line — no spam-folder note, no
+    // Invoice-Email / Invoice-Link block, no inline buttons.
+    // Auto-deletes ~13 s later so the chat stays clean once the
+    // user has had time to read it.
+    const invoiceSentMsg = await ctx.reply(renderMdHtml(ctx.t('shop.buy.invoice_sent')), {
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+    });
+    const sentChatId = invoiceSentMsg.chat.id;
+    const sentMessageId = invoiceSentMsg.message_id;
+    setTimeout(() => {
+      void ctx.api.deleteMessage(sentChatId, sentMessageId).catch((err) => {
+        logger.debug(
+          { err, chatId: sentChatId, messageId: sentMessageId },
+          'auto-delete of invoice_sent message failed (likely already gone)',
+        );
+      });
+    }, 13_000);
+    // Fire-and-forget the professional invoice. Failure modes
+    // (transport down, bad address) are logged inside mailer.ts
+    // and never surface to the buyer — they already have the
+    // delivery card with the items in-chat.
+    const invoiceLink = env.BOT_USERNAME
+      ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
+      : '';
+    void sendInvoiceEmail({
+      email: ctx.user.email,
+      firstName: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+      orderPublicId: publicId,
+      orderDate: order.created_at,
+      productName: p.name,
+      qty,
+      unitPrice: p.price,
+      total,
+      discount,
+      paidVia,
+      items: claimed,
+      invoiceLink,
+    });
+  }
+  // ---- Step 4: revert the original Order summary message --
+  // The callback was triggered from the Order summary message
+  // (the one that contained Wallet Pay / Top Up / Back). After
+  // the new delivery + email cards are sent we edit THAT same
+  // message back to the product's quantity page so the user
+  // can immediately buy more or browse — instead of leaving a
+  // stale "Choose a payment method" card pinned in the chat.
+  try {
+    await showProduct(ctx, p.id);
+  } catch (err) {
+    // The original message could be gone (manual delete, 48h
+    // expiry, no longer the latest update) — that's fine; the
+    // delivery cards above are what the user actually needs.
+    logger.debug(
+      { err, productId: p.id, orderId: order.id },
+      'post-delivery revert to product page failed (likely message gone)',
+    );
+  }
+  // Notify admin with the deep-detail order block.
+  void adminLog.logOrderCreated(ctx.api, {
+    user: {
+      telegram_id: ctx.user.telegram_id,
+      username: ctx.user.username ?? null,
+      first_name: ctx.user.first_name ?? null,
+      email: ctx.user.email ?? null,
+    },
+    orderDbId: order.id,
+    orderPublicId: publicOrderId(order),
+    productId: p.id,
+    productName: p.name,
+    qty,
+    unitPrice: p.price,
+    total,
+    paidVia,
+    balanceAfter: Number(balanceAfter.toFixed(3)),
+  });
+}
+
 async function showProduct(ctx: AppCtx, productId: number) {
   const raw = await getProduct(productId);
   if (!raw) {
@@ -246,10 +547,13 @@ async function showProduct(ctx: AppCtx, productId: number) {
     qty,
     promo?.discount ?? 0,
   );
+  const referral = await getReferralRewardState(ctx, p, qty);
   const shareUrl = buildProductShareUrl(p.id);
-  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser)), {
+  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)), {
     parse_mode: 'HTML',
-    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
+      canRedeem: referral?.eligible ?? false,
+    }),
   });
 }
 
@@ -274,12 +578,15 @@ export async function sendProductPage(
     qty,
     promo?.discount ?? 0,
   );
+  const referral = await getReferralRewardState(ctx, p, qty);
   const shareUrl = buildProductShareUrl(p.id);
   await ctx.reply(
-    renderMdHtml(productPageText(ctx, p, qty, promo, teaser)),
+    renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)),
     {
       parse_mode: 'HTML',
-      reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
+      reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
+        canRedeem: referral?.eligible ?? false,
+      }),
     },
   );
 }
@@ -322,7 +629,8 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
     previewQty,
     promo?.discount ?? 0,
   );
-  const body = productPageText(ctx, p, previewQty, promo, teaser);
+  const referral = await getReferralRewardState(ctx, p, previewQty);
+  const body = productPageText(ctx, p, previewQty, promo, teaser, referral);
   // The placeholder text is rendered when the digit buffer is
   // empty so the line reads as a sentence to first-time users
   // ("Current: (Amount)") instead of the cryptic em-dash we used
@@ -589,11 +897,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
       next_,
       promo?.discount ?? 0,
     );
+    const referral = await getReferralRewardState(ctx, p, next_);
     await ctx.reply(
-      renderMdHtml(productPageText(ctx, p, next_, promo, teaser)),
+      renderMdHtml(productPageText(ctx, p, next_, promo, teaser, referral)),
       {
         parse_mode: 'HTML',
-        reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl),
+        reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl, {
+          canRedeem: referral?.eligible ?? false,
+        }),
       },
     );
   });
@@ -826,6 +1137,99 @@ export function registerShop(bot: Composer<AppCtx>): void {
   // it edits the message into a payment-method picker that lets the
   // user choose between paying with their wallet balance and topping
   // up first. The actual charge happens on `pay:wallet:<id>`.
+  bot.callbackQuery(/^redeem:ref:(\d+)$/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const raw = await getProduct(id);
+    if (!raw) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    if (!p.referral_required || p.referral_required <= 0) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.disabled'),
+        show_alert: true,
+      });
+      return;
+    }
+    if (!p.unlimited_stock && p.stock <= 0) {
+      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
+      return;
+    }
+    const qty = ctx.session.qty[id] ?? QTY_MIN;
+    const referral = await getReferralRewardState(ctx, p, qty);
+    if (!referral) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.disabled'),
+        show_alert: true,
+      });
+      return;
+    }
+    if (referral.redeemed) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.already_redeemed'),
+        show_alert: true,
+      });
+      return;
+    }
+    if (!referral.eligible) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.insufficient', {
+          required: referral.requiredTotal,
+          total: referral.totalReferrals,
+          remaining: referral.remaining,
+        }),
+        show_alert: true,
+      });
+      return;
+    }
+    try {
+      const total = 0;
+      const discount = p.price * qty;
+      const order = await createOrder({
+        user_id: ctx.from!.id,
+        product_id: id,
+        product_name: p.name,
+        qty,
+        unit_price: p.price,
+        total,
+        discount,
+        promo_id: null,
+        delivery: `Order #${id}-${qty}`,
+      });
+      await recordReferralRedemption({
+        user_id: ctx.user.telegram_id,
+        product_id: p.id,
+        order_id: order.id,
+      });
+      const confirmationText = ctx.t('shop.referral.confirmed', {
+        name: p.name,
+        qty,
+      });
+      await finalizeOrderDelivery({
+        ctx,
+        product: p,
+        qty,
+        total,
+        discount,
+        order,
+        paidVia: 'Referral reward',
+        balanceAfter: ctx.user.balance,
+        confirmationText,
+      });
+    } catch (err) {
+      logger.error({ err, product_id: id, user: ctx.user.telegram_id }, 'redeem:ref failed');
+      try {
+        await ctx.answerCallbackQuery({
+          text: ctx.t('shop.referral.failed'),
+          show_alert: true,
+        });
+      } catch {
+        // noop
+      }
+    }
+  });
+
   bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
@@ -968,252 +1372,19 @@ export function registerShop(bot: Composer<AppCtx>): void {
         `order:${order.id}`,
       );
       ctx.user.balance = newBalance;
-      await decrementProductStock(id, qty);
-      delete ctx.session.qty[id];
-      // Pull the actual delivery payload off the per-product items
-      // pool. When the pool is empty (or short), fall back to a
-      // "manual delivery" placeholder; the admin gets pinged via
-      // logOrderCreated either way.
-      const claimed = await claimProductItems(p.id, qty, order.id);
-      const publicId = publicOrderId(order);
-      // Items are rendered as Telegram blockquote pills (one `> line`
-      // per claimed link / account) — same style as the View Note
-      // "luli" / "Hey" pills the bot owner pointed to.
-      //
-      // For bulk orders (10/30/50/100+ links) we split the items
-      // across multiple messages of `ORDER_DELIVERED_CHUNK_SIZE` each
-      // (the bot owner's preferred 7-per-msg layout). The first
-      // chunk goes inside the Order Delivered header card; the
-      // remaining chunks are sent as plain blockquote messages right
-      // below. Only the last chunk's message carries the Using
-      // Method inline keyboard so the buyer scrolls to the bottom
-      // and finds it there. This replaces the previous .txt
-      // attachment workaround.
-      //
-      // The DB-stored copy keeps plain single-line separation so the
-      // existing /myorders renderer (and the /admin orders block)
-      // doesn't suddenly contain blockquote markers.
-      const deliveredChunks = buildOrderDeliveredChunks(claimed);
-      const firstChunkBlock =
-        deliveredChunks[0]?.inlineBlock ??
-        `> ${ctx.t('shop.buy.delivery_pending')}`;
-      const deliveredItemsForDb =
-        claimed.length > 0
-          ? claimed.join('\n')
-          : ctx.t('shop.buy.delivery_pending');
-      // Always persist `delivered_items` — even the manual-delivery
-      // placeholder — so the My Orders detail screen can render the
-      // order without falling back to the legacy `delivery` blob.
-      // Without this, a bulk order whose item pool is empty or whose
-      // chat-render failed would leave `delivered_items` NULL, and
-      // tapping the order in /myorders would render a broken
-      // "Received: Order #N-37" line that confused buyers.
-      await setOrderDeliveredItems(order.id, deliveredItemsForDb);
-      await ctx.answerCallbackQuery();
-      // ---- Step 1: Payment Verified card (auto-deletes after 15s) ----
-      // We capture the message_id and schedule a delete via setTimeout
-      // so the chat stays clean: by the time the user finishes reading
-      // "Order Delivered!" the verified card has slid away.
-      const verifiedMsg = await ctx.reply(
-        renderMdHtml(
-          ctx.t('shop.buy.payment_verified', {
-            total: total.toFixed(2),
-          }),
-        ),
-        { parse_mode: 'HTML' },
-      );
-      const verifiedChatId = verifiedMsg.chat.id;
-      const verifiedMessageId = verifiedMsg.message_id;
-      setTimeout(() => {
-        // Fire-and-forget; if the user already deleted it manually
-        // or 48h have passed, Telegram will reject — we just swallow.
-        void ctx.api.deleteMessage(verifiedChatId, verifiedMessageId).catch((err) => {
-          logger.debug(
-            { err, chatId: verifiedChatId, messageId: verifiedMessageId },
-            'auto-delete of payment_verified message failed (likely already gone)',
-          );
-        });
-      }, 15_000);
-      // ---- Step 2: Order Delivered card -----------------------
-      // The keyboard carries only the per-product Using Method
-      // button — the standalone "View Invoice" button was removed
-      // per the bot owner's follow-up note. For bulk orders we send
-      // the keyboard with the LAST items message instead of the
-      // header card, so the buyer scrolls past every link before
-      // tapping Using Method.
-      const deliveredKb = new InlineKeyboard();
-      inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
-      deliveredKb.row();
-      inlineBtn(deliveredKb, ctx.lang, 'send_note_txt', `order:txt:${order.id}`);
-      const headerHasKeyboard = deliveredChunks.length <= 1;
-      await ctx.reply(
-        renderMdHtml(
-          ctx.t('shop.buy.order_delivered', {
-            order_id: publicId,
-            name: p.name,
-            qty,
-            total: total.toFixed(2),
-            items: firstChunkBlock,
-          }),
-        ),
-        headerHasKeyboard
-          ? { parse_mode: 'HTML', reply_markup: deliveredKb }
-          : { parse_mode: 'HTML' },
-      );
-      // Send the remaining 7-link chunks as plain blockquote
-      // follow-up messages. Only the very last one gets the inline
-      // keyboard. If a follow-up message fails to render we still
-      // press on so a single bad link doesn't keep the buyer from
-      // seeing the rest. The DB has the full list either way.
-      for (let i = 1; i < deliveredChunks.length; i++) {
-        const chunk = deliveredChunks[i];
-        if (!chunk) continue;
-        const opts = chunk.isLast
-          ? { parse_mode: 'HTML' as const, reply_markup: deliveredKb }
-          : { parse_mode: 'HTML' as const };
-        try {
-          await ctx.reply(renderMdHtml(chunk.inlineBlock), opts);
-        } catch (err) {
-          logger.warn(
-            {
-              err,
-              orderId: order.id,
-              chunkIndex: i,
-              chunkSize: deliveredChunks.length,
-            },
-            'pay:wallet — chunked items follow-up failed',
-          );
-        }
-      }
-      // ---- Step 2b: Post-purchase delivery form ---------------
-      // Some products require the buyer to send extra details
-      // (account email + password, recovery key, voucher code, …)
-      // BEFORE the seller can finish provisioning. When the product
-      // has `delivery_form_enabled` we drop an instruction message
-      // + a single in-place prompt card right under the items so
-      // the buyer can submit their details directly. Vendor DM +
-      // success / edit / admin-help buttons all live in the
-      // `postPurchaseDelivery` service.
-      try {
-        await maybeStartDeliveryFormForCtx({
-          ctx,
-          product: p,
-          orderId: order.id,
-          orderPublicId: publicId,
-          qty,
-        });
-      } catch (err) {
-        logger.warn(
-          { err, orderId: order.id, productId: p.id },
-          'pay:wallet — delivery form start failed',
-        );
-      }
-      // ---- Step 3: Email follow-up ----------------------------
-      // Two branches per the bot-owner spec:
-      //   a) No email → polite prompt with a `Set Email` deep link
-      //      that opens Settings → Email Settings → Set Email and
-      //      remembers `order.id` so once the email is saved we can
-      //      retroactively fire the invoice for THIS purchase.
-      //   b) Has email → single-line "invoice sent" card that
-      //      auto-deletes after 13 s + the polished invoice email.
-      if (!ctx.user.email) {
-        const noEmailKb = new InlineKeyboard();
-        // Tag the callback with `:post:<orderId>` so the profile
-        // handler knows this came from a post-purchase nudge (vs.
-        // Settings → Set Email) and can run the auto-delete +
-        // retroactive-invoice path.
-        inlineBtn(
-          noEmailKb,
-          ctx.lang,
-          'set_email_now',
-          `profile:email:set:post:${order.id}`,
-        );
-        await ctx.reply(
-          renderMdHtml(ctx.t('shop.buy.add_email_prompt')),
-          { parse_mode: 'HTML', reply_markup: noEmailKb },
-        );
-      } else {
-        // Single bold confirmation line — no spam-folder note, no
-        // Invoice-Email / Invoice-Link block, no inline buttons.
-        // Auto-deletes ~13 s later so the chat stays clean once the
-        // user has had time to read it.
-        const invoiceSentMsg = await ctx.reply(
-          renderMdHtml(ctx.t('shop.buy.invoice_sent')),
-          {
-            parse_mode: 'HTML',
-            link_preview_options: { is_disabled: true },
-          },
-        );
-        const sentChatId = invoiceSentMsg.chat.id;
-        const sentMessageId = invoiceSentMsg.message_id;
-        setTimeout(() => {
-          void ctx.api
-            .deleteMessage(sentChatId, sentMessageId)
-            .catch((err) => {
-              logger.debug(
-                { err, chatId: sentChatId, messageId: sentMessageId },
-                'auto-delete of invoice_sent message failed (likely already gone)',
-              );
-            });
-        }, 13_000);
-        // Fire-and-forget the professional invoice. Failure modes
-        // (transport down, bad address) are logged inside mailer.ts
-        // and never surface to the buyer — they already have the
-        // delivery card with the items in-chat.
-        const invoiceLink = env.BOT_USERNAME
-          ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
-          : '';
-        void sendInvoiceEmail({
-          email: ctx.user.email,
-          firstName: ctx.user.first_name ?? null,
-          username: ctx.user.username ?? null,
-          orderPublicId: publicId,
-          orderDate: order.created_at,
-          productName: p.name,
-          qty,
-          unitPrice: p.price,
-          total,
-          discount,
-          paidVia: 'Wallet balance',
-          items: claimed,
-          invoiceLink,
-        });
-      }
-      // ---- Step 4: revert the original Order summary message --
-      // The callback was triggered from the Order summary message
-      // (the one that contained Wallet Pay / Top Up / Back). After
-      // the new delivery + email cards are sent we edit THAT same
-      // message back to the product's quantity page so the user
-      // can immediately buy more or browse — instead of leaving a
-      // stale "Choose a payment method" card pinned in the chat.
-      try {
-        await showProduct(ctx, p.id);
-      } catch (err) {
-        // The original message could be gone (manual delete, 48h
-        // expiry, no longer the latest update) — that's fine; the
-        // delivery cards above are what the user actually needs.
-        logger.debug(
-          { err, productId: p.id, orderId: order.id },
-          'post-delivery revert to product page failed (likely message gone)',
-        );
-      }
-      // Notify admin with the deep-detail order block.
-      void adminLog.logOrderCreated(ctx.api, {
-        user: {
-          telegram_id: ctx.user.telegram_id,
-          username: ctx.user.username ?? null,
-          first_name: ctx.user.first_name ?? null,
-          email: ctx.user.email ?? null,
-        },
-        orderDbId: order.id,
-        orderPublicId: publicOrderId(order),
-        productId: p.id,
-        productName: p.name,
+      const confirmationText = ctx.t('shop.buy.payment_verified', {
+        total: total.toFixed(2),
+      });
+      await finalizeOrderDelivery({
+        ctx,
+        product: p,
         qty,
-        unitPrice: p.price,
         total,
+        discount,
+        order,
         paidVia: 'Wallet balance',
-        balanceAfter: Number(newBalance.toFixed(3)),
+        balanceAfter: newBalance,
+        confirmationText,
       });
     } catch (e: unknown) {
       const code = (e as { code?: string }).code;

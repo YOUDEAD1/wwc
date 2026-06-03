@@ -87,6 +87,7 @@ export const BUTTON_KEYS = {
   prev: 'btn.prev',
   refresh: 'btn.refresh',
   buy_now: 'btn.buy_now',
+  redeem_referral: 'btn.redeem_referral',
   topup_wallet: 'btn.topup_wallet',
   view_note: 'btn.view_note',
   qty_plus: 'btn.qty_plus',
@@ -273,6 +274,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   prev: 'none',
   refresh: 'none',
   buy_now: 'green',
+  redeem_referral: 'green',
   topup_wallet: 'blue',
   view_note: 'none',
   qty_plus: 'none',
@@ -571,6 +573,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   prod_qty_selected: { unicode: '🔢', custom_emoji_id: '5363964615657017717' },
   prod_total_amount: { unicode: '🧮', custom_emoji_id: '5366223171454278937' },
   prod_wallet: { unicode: '👛', custom_emoji_id: '6102840685835066490' },
+  prod_referral: { unicode: '🎁', custom_emoji_id: '4958699241137505132' },
   // Promo line (qty-threshold flat-USDT discount). Reuses the
   // existing 🎁 premium glyph from the gift-codes screen for
   // visual consistency.
@@ -759,6 +762,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // left out so the original unicode emoji stays in the label.
   profile: 'profile_header',
   buy_now: 'broadcast_shop_now',
+  redeem_referral: 'refer_title',
   topup_wallet: 'deposits_wallet',
   view_note: 'orders_note',
   my_orders: 'orders_title',
