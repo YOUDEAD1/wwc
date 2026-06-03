@@ -271,7 +271,7 @@ export async function hasReferralRedemption(
     .maybeSingle();
   if (error) {
     logger.error({ err: error, user_id, product_id }, 'hasReferralRedemption failed');
-    return false;
+    throw error;
   }
   return Boolean(data);
 }

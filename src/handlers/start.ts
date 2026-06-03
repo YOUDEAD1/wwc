@@ -13,6 +13,7 @@ import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
 import { inlineBtn } from '../keyboards/helpers.js';
+import { logger } from '../logger.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -94,23 +95,30 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   let referralLine = '';
   let canRedeem = false;
   if (p.referral_required_count > 0) {
-    const [totalReferrals, redeemed] = await Promise.all([
-      countReferrals(ctx.user.telegram_id),
-      hasReferralRedemption(ctx.user.telegram_id, p.id),
-    ]);
-    const requiredTotal = p.referral_required_count * qty;
-    const remaining = Math.max(0, requiredTotal - totalReferrals);
-    if (redeemed) {
-      referralLine = ctx.t('shop.product.line.referral.claimed');
-    } else if (remaining <= 0) {
-      referralLine = ctx.t('shop.product.line.referral.ready', { required: requiredTotal });
-      canRedeem = true;
-    } else {
-      referralLine = ctx.t('shop.product.line.referral.progress', {
-        total: totalReferrals,
-        required: requiredTotal,
-        remaining,
-      });
+    try {
+      const [totalReferrals, redeemed] = await Promise.all([
+        countReferrals(ctx.user.telegram_id),
+        hasReferralRedemption(ctx.user.telegram_id, p.id),
+      ]);
+      const requiredTotal = p.referral_required_count * qty;
+      const remaining = Math.max(0, requiredTotal - totalReferrals);
+      if (redeemed) {
+        referralLine = ctx.t('shop.product.line.referral.claimed');
+      } else if (remaining <= 0) {
+        referralLine = ctx.t('shop.product.line.referral.ready', { required: requiredTotal });
+        canRedeem = true;
+      } else {
+        referralLine = ctx.t('shop.product.line.referral.progress', {
+          total: totalReferrals,
+          required: requiredTotal,
+          remaining,
+        });
+      }
+    } catch (err) {
+      logger.warn(
+        { err, product_id: p.id, user: ctx.user.telegram_id },
+        'start: referral state failed',
+      );
     }
   }
   const body = [

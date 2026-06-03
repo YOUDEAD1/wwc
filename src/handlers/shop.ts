@@ -269,21 +269,29 @@ async function getReferralRewardState(
   qty: number,
 ): Promise<ReferralRewardState | null> {
   if (!product.referral_required_count || product.referral_required_count <= 0) return null;
-  const [totalReferrals, redeemed] = await Promise.all([
-    countReferrals(ctx.user.telegram_id),
-    hasReferralRedemption(ctx.user.telegram_id, product.id),
-  ]);
-  const requiredPerUnit = product.referral_required_count;
-  const requiredTotal = requiredPerUnit * qty;
-  const remaining = Math.max(0, requiredTotal - totalReferrals);
-  return {
-    requiredPerUnit,
-    requiredTotal,
-    totalReferrals,
-    remaining,
-    redeemed,
-    eligible: !redeemed && remaining <= 0,
-  };
+  try {
+    const [totalReferrals, redeemed] = await Promise.all([
+      countReferrals(ctx.user.telegram_id),
+      hasReferralRedemption(ctx.user.telegram_id, product.id),
+    ]);
+    const requiredPerUnit = product.referral_required_count;
+    const requiredTotal = requiredPerUnit * qty;
+    const remaining = Math.max(0, requiredTotal - totalReferrals);
+    return {
+      requiredPerUnit,
+      requiredTotal,
+      totalReferrals,
+      remaining,
+      redeemed,
+      eligible: !redeemed && remaining <= 0,
+    };
+  } catch (err) {
+    logger.warn(
+      { err, product_id: product.id, user: ctx.user.telegram_id },
+      'getReferralRewardState failed',
+    );
+    return null;
+  }
 }
 
 async function finalizeOrderDelivery(args: {
@@ -1138,8 +1146,8 @@ export function registerShop(bot: Composer<AppCtx>): void {
   // user choose between paying with their wallet balance and topping
   // up first. The actual charge happens on `pay:wallet:<id>`.
   bot.callbackQuery(/^redeem:ref:(\d+)$/, async (ctx) => {
-    const id = Number(ctx.match[1]);
-    const raw = await getProduct(id);
+    const productId = Number(ctx.match[1]);
+    const raw = await getProduct(productId);
     if (!raw) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
@@ -1156,7 +1164,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
       return;
     }
-    const qty = ctx.session.qty[id] ?? QTY_MIN;
+    const qty = ctx.session.qty[productId] ?? QTY_MIN;
     const referral = await getReferralRewardState(ctx, p, qty);
     if (!referral) {
       await ctx.answerCallbackQuery({
@@ -1188,14 +1196,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
       const discount = p.price * qty;
       const order = await createOrder({
         user_id: ctx.from!.id,
-        product_id: id,
+        product_id: productId,
         product_name: p.name,
         qty,
         unit_price: p.price,
         total,
         discount,
         promo_id: null,
-        delivery: `Referral reward #${id}-${qty}`,
+        delivery: `Referral reward for product #${p.id} (qty: ${qty})`,
       });
       await recordReferralRedemption({
         user_id: ctx.user.telegram_id,
@@ -1218,7 +1226,10 @@ export function registerShop(bot: Composer<AppCtx>): void {
         confirmationText,
       });
     } catch (err) {
-      logger.error({ err, product_id: id, user: ctx.user.telegram_id }, 'redeem:ref failed');
+      logger.error(
+        { err, product_id: productId, user: ctx.user.telegram_id },
+        'redeem:ref failed',
+      );
       try {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.referral.failed'),
