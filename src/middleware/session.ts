@@ -113,6 +113,11 @@ export type AdminFlow =
   | { type: 'edit_product_stock'; step: 'stock'; data: { product_id: number; page: number } }
   | { type: 'edit_product_name'; step: 'name'; data: { product_id: number; page: number } }
   | { type: 'edit_product_id'; step: 'id'; data: { product_id: number; page: number } }
+  | {
+      type: 'edit_product_referral_required';
+      step: 'count';
+      data: { product_id: number; page: number };
+    }
   // -------- Per-product post-purchase delivery form editor --------
   // Each step waits for ONE message of the appropriate kind. The
   // message handler in `handlers/admin/index.ts` applies the patch,

@@ -17,6 +17,7 @@ export const ar: Record<string, string> = {
   'btn.prev': '◀️ السابق',
   'btn.refresh': '🔄 تحديث',
   'btn.buy_now': '✅ شراء الآن',
+  'btn.redeem_referral': '🎁 استبدال مجاني',
   'btn.topup_wallet': '👛 شحن المحفظة',
   'btn.view_note': '📝 عرض الملاحظة',
   'btn.qty_plus': '➕',
@@ -137,6 +138,12 @@ export const ar: Record<string, string> = {
   'shop.product.line.price': '{prod_price_base} *السعر الأساسي:* {price} USDT',
   'shop.product.line.stock': '{prod_stock} *المتوفر:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *الضمان:* {warranty}',
+  'shop.product.line.referral.progress':
+    '{prod_referral} *مكافأة الإحالة:* {total}/{required} إحالة (باقي {remaining})',
+  'shop.product.line.referral.ready':
+    '{prod_referral} *مكافأة الإحالة:* تم الفتح — اضغط *استبدال مجاني*',
+  'shop.product.line.referral.claimed':
+    '{prod_referral} *مكافأة الإحالة:* تم الاستبدال مسبقاً',
   'shop.product.line.qty': '{prod_qty_selected} *الكمية المختارة:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance} USDT',
@@ -168,6 +175,21 @@ export const ar: Record<string, string> = {
     '✅ تمت عملية الشراء!\n\nالمنتج: *{name}*\nالكمية: *{qty}*\nالإجمالي: *{total}*\n\nالتسليم:\n```\n{delivery}\n```',
   'shop.buy.insufficient': '❌ رصيد غير كافٍ. تحتاج *{need}* ولديك *{have}* فقط. يرجى الشحن أولاً.',
   'shop.buy.no_stock': '❌ عذرًا، هذا المنتج غير متوفر.',
+  'shop.referral.disabled': '❌ هذا المنتج لا يحتوي على مكافأة إحالة.',
+  'shop.referral.already_redeemed': '✅ لقد استبدلت مكافأة الإحالة مسبقاً.',
+  'shop.referral.insufficient':
+    '❌ تحتاج {required} إحالة للاستبدال. لديك {total} (باقي {remaining}).',
+  'shop.referral.failed':
+    '❌ فشل استبدال الإحالة. حاول لاحقاً أو تواصل مع الإدارة.',
+  'shop.referral.confirmed': [
+    '{refer_title} *تم فتح مكافأة الإحالة!*',
+    '',
+    '*المنتج:* {name}',
+    '*الكمية:* {qty}',
+    '',
+    '{delivering} _جارٍ تسليم طلبك…_',
+  ].join('\n'),
+  'shop.referral.delivery': 'مكافأة إحالة للمنتج #{product_id} (الكمية: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
   'profile.title': '⚙️ *الإعدادات*',

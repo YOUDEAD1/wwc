@@ -19,6 +19,7 @@ export const en: Record<string, string> = {
   'btn.prev': '◀️ Prev',
   'btn.refresh': '🔄 Refresh',
   'btn.buy_now': '✅ Buy Now',
+  'btn.redeem_referral': '🎁 Redeem Free',
   'btn.topup_wallet': '👛 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
@@ -208,6 +209,12 @@ export const en: Record<string, string> = {
   // products with `unlimited_stock = true`).
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
+  'shop.product.line.referral.progress':
+    '{prod_referral} *Referral Reward:* {total}/{required} referrals (need {remaining} more)',
+  'shop.product.line.referral.ready':
+    '{prod_referral} *Referral Reward:* Unlocked — tap *Redeem Free*',
+  'shop.product.line.referral.claimed':
+    '{prod_referral} *Referral Reward:* Already redeemed',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
@@ -315,6 +322,21 @@ export const en: Record<string, string> = {
   // network) so the loading spinner is always dismissed.
   'shop.buy.failed':
     '❌ Payment could not be completed right now. Please try again in a moment, or contact admin if it keeps happening.',
+  'shop.referral.disabled': '❌ This product has no referral reward.',
+  'shop.referral.already_redeemed': '✅ You already redeemed this referral reward.',
+  'shop.referral.insufficient':
+    '❌ You need {required} referrals to redeem. You have {total} (need {remaining} more).',
+  'shop.referral.failed':
+    '❌ Referral redemption failed. Please try again later or contact admin.',
+  'shop.referral.confirmed': [
+    '{refer_title} *Referral Reward Unlocked!*',
+    '',
+    '*Product:* {name}',
+    '*Qty:* {qty}',
+    '',
+    '{delivering} _Delivering your order…_',
+  ].join('\n'),
+  'shop.referral.delivery': 'Referral reward for product #{product_id} (qty: {qty})',
   // Kept for backwards compat with any /settext overrides referencing
   // the old key, even though the email gate is no longer enforced.
   'shop.buy.email_required':
