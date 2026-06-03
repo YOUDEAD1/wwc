@@ -37,7 +37,6 @@ export function shopProductsKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
-  const defaultInStockIcon = premiumIconId('orders_product');
   const oosIcon = premiumIconId('gift_invalid');
 
   if (layoutStyle === 'grid') {
@@ -54,8 +53,8 @@ export function shopProductsKeyboard(
       kb.text(label1, `prod:${p1.id}`);
       
       const iconId1 = inStock1
-        ? p1.emoji_id ?? defaultInStockIcon
-        : p1.emoji_id ?? oosIcon;
+        ? (p1.emoji_id ?? undefined)
+        : (p1.emoji_id ?? oosIcon);
       if (iconId1) kb.icon(iconId1);
       
       let mode1 = getStateColor(inStock1 ? 'in_stock' : 'out_of_stock');
@@ -75,8 +74,8 @@ export function shopProductsKeyboard(
         kb.text(label2, `prod:${p2.id}`);
         
         const iconId2 = inStock2
-          ? p2.emoji_id ?? defaultInStockIcon
-          : p2.emoji_id ?? oosIcon;
+          ? (p2.emoji_id ?? undefined)
+          : (p2.emoji_id ?? oosIcon);
         if (iconId2) kb.icon(iconId2);
         
         let mode2 = getStateColor(inStock2 ? 'in_stock' : 'out_of_stock');
@@ -103,8 +102,8 @@ export function shopProductsKeyboard(
       const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
       kb.text(label, `prod:${p.id}`);
       const iconId = inStock
-        ? p.emoji_id ?? defaultInStockIcon
-        : p.emoji_id ?? oosIcon;
+        ? (p.emoji_id ?? undefined)
+        : (p.emoji_id ?? oosIcon);
       if (iconId) kb.icon(iconId);
       
       let mode = getStateColor(inStock ? 'in_stock' : 'out_of_stock');

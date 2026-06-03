@@ -8,6 +8,7 @@
 import { readSetting, setSetting, addCategory, addProduct } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
+import { getProductEmoji } from '../../config/index.js';
 import {
   getConnection,
   fetchProducts as apiFetchProducts,
@@ -96,7 +97,7 @@ export async function syncProducts(): Promise<
         sell_price: p.your_price,
         custom_name: p.name_en,
         custom_desc: '',
-        emoji: p.emoji || '📦',
+        emoji: p.emoji || getProductEmoji(p.name_en),
         emoji_id: p.emoji_id || undefined,
         sort_order: nextOrder++,
         original_name: p.name_en,
@@ -110,7 +111,7 @@ export async function syncProducts(): Promise<
         existing.original_name = p.name_en;
         existing.base_price = p.base_price;
         existing.is_manual = p.is_manual;
-        existing.emoji = p.emoji || '📦';
+        existing.emoji = p.emoji || getProductEmoji(p.name_en);
         existing.emoji_id = p.emoji_id || undefined;
       }
     }
@@ -139,7 +140,7 @@ export async function syncProducts(): Promise<
 
       const { data: existingProd } = await supabase
         .from('products')
-        .select('id')
+        .select('id, emoji, emoji_id')
         .eq('category_id', categoryId)
         .like('note', `%[API_PRODUCT_ID:${p.id}]%`)
         .maybeSingle();
@@ -161,8 +162,8 @@ export async function syncProducts(): Promise<
             stock: stockVal,
             active: s.enabled,
             description: s.custom_desc || '',
-            emoji: s.emoji || p.emoji || '📦',
-            emoji_id: s.emoji_id || p.emoji_id || null,
+            emoji: s.emoji || p.emoji || existingProd.emoji || getProductEmoji(p.name_en),
+            emoji_id: s.emoji_id || p.emoji_id || existingProd.emoji_id || null,
             unlimited_stock: isUnlimited,
           })
           .eq('id', existingProd.id);
@@ -176,7 +177,7 @@ export async function syncProducts(): Promise<
           stock: stockVal,
           description: s.custom_desc || '',
           note: noteTag,
-          emoji: s.emoji || p.emoji || '📦',
+          emoji: s.emoji || p.emoji || getProductEmoji(p.name_en),
           emoji_id: s.emoji_id || p.emoji_id || null,
           unlimited_stock: isUnlimited,
         });
@@ -194,7 +195,7 @@ export async function syncProducts(): Promise<
       sell_price: s?.sell_price ?? p.your_price,
       custom_name: s?.custom_name ?? p.name_en,
       custom_desc: s?.custom_desc ?? '',
-      emoji: s?.emoji ?? p.emoji ?? '📦',
+      emoji: s?.emoji ?? p.emoji ?? getProductEmoji(p.name_en),
       emoji_id: s?.emoji_id ?? p.emoji_id ?? undefined,
       sort_order: s?.sort_order ?? 0,
     };

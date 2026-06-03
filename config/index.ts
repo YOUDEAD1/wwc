@@ -945,3 +945,33 @@ export const QTY_MAX = 999;
 
 /** Default language for new users (overridable via env DEFAULT_LANG) */
 export const DEFAULT_LANG: Lang = 'en';
+
+/** Fallback keyword-based premium/Unicode emoji mapper for products. */
+export function getProductEmoji(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('netflix')) return '🎬';
+  if (n.includes('spotify')) return '🎵';
+  if (n.includes('youtube') || n.includes('premium')) return '📺';
+  if (n.includes('steam') || n.includes('game') || n.includes('pubg') || n.includes('free fire')) return '🎮';
+  if (n.includes('key') || n.includes('license') || n.includes('windows') || n.includes('office')) return '🔑';
+  if (n.includes('vpn') || n.includes('nord') || n.includes('expressvpn')) return '🛡️';
+  if (n.includes('crunchyroll') || n.includes('anime')) return '🍙';
+  if (n.includes('discord') || n.includes('nitro')) return '👾';
+  if (n.includes('apple') || n.includes('itunes') || n.includes('icloud')) return '🍏';
+  if (n.includes('google') || n.includes('play')) return '🤖';
+  if (n.includes('amazon')) return '📦';
+  if (n.includes('chatgpt') || n.includes('ai') || n.includes('openai')) return '🧠';
+  if (n.includes('canva')) return '🎨';
+  if (n.includes('shahid')) return '🎭';
+  if (n.includes('playstation') || n.includes('psn')) return '🕹️';
+  if (n.includes('xbox')) return '💚';
+  if (n.includes('roblox') || n.includes('robux')) return '🧱';
+  
+  // Consistent hash fallback to choose one of many nice emojis
+  const emojis = ['💎', '✨', '⚡', '🎁', '🔥', '👑', '🌟', '🛡️', '🎫', '🕹️', '📱', '💻'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return emojis[Math.abs(hash) % emojis.length] || '🎁';
+}
