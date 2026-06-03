@@ -116,6 +116,7 @@ import {
   setCategoryDefaultColor,
 } from '../../services/settings.js';
 import {
+  HTML_ENTITY_TYPES,
   entitiesToHtml,
   injectCustomEmojiMarkers,
   renderHtmlTemplate,
@@ -6235,19 +6236,11 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'announce') {
       if (flow.step === 'text') {
-        const hasFormatEntities = (ctx.message.entities ?? []).some((entity) =>
-          [
-            'bold',
-            'italic',
-            'underline',
-            'strikethrough',
-            'spoiler',
-            'code',
-            'pre',
-            'text_link',
-            'text_mention',
-            'url',
-          ].includes(entity.type),
+        const hasFormatEntities = (ctx.message.entities ?? []).some(
+          (entity) =>
+            HTML_ENTITY_TYPES.has(entity.type) &&
+            entity.type !== 'custom_emoji' &&
+            entity.type !== 'url',
         );
         const format: 'md' | 'html' = hasFormatEntities ? 'html' : 'md';
         const body = hasFormatEntities

@@ -90,6 +90,10 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>]/g, (c) => HTML_ESC[c]!);
 }
 
+function escapeHtmlAttr(s: string): string {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
 /**
  * Wrap an emoji unicode glyph as a `<tg-emoji>` tag if a premium
  * `custom_emoji_id` is configured for the given key; otherwise just
@@ -98,7 +102,7 @@ function escapeHtml(s: string): string {
 function tgEmojiTag(unicode: string, customEmojiId?: string): string {
   const safeUnicode = escapeHtml(unicode);
   if (!customEmojiId) return safeUnicode;
-  return `<tg-emoji emoji-id="${escapeHtml(customEmojiId)}">${safeUnicode}</tg-emoji>`;
+  return `<tg-emoji emoji-id="${escapeHtmlAttr(customEmojiId)}">${safeUnicode}</tg-emoji>`;
 }
 
 /** Replace `{key}` tokens with their (premium-aware) HTML rendering. */
@@ -193,7 +197,7 @@ function autoScanPremiumEmojis(html: string): string {
       const bare = glyph.replace(/\uFE0F$/, '');
       const id = idx.get(glyph) ?? idx.get(bare);
       if (id) {
-        out += `<tg-emoji emoji-id="${escapeHtml(id)}">${glyph}</tg-emoji>`;
+        out += `<tg-emoji emoji-id="${escapeHtmlAttr(id)}">${glyph}</tg-emoji>`;
       } else {
         out += glyph;
       }
@@ -276,6 +280,20 @@ function mdToHtml(md: string): string {
 
 type HtmlTagSpec = { open: string; close: string; length: number };
 
+export const HTML_ENTITY_TYPES = new Set<MessageEntity['type']>([
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'spoiler',
+  'code',
+  'pre',
+  'text_link',
+  'text_mention',
+  'url',
+  'custom_emoji',
+]);
+
 function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | null {
   switch (entity.type) {
     case 'bold':
@@ -294,27 +312,27 @@ function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | n
       return { open: '<pre>', close: '</pre>', length: entity.length };
     case 'text_link':
       return {
-        open: `<a href="${escapeHtml(entity.url ?? '').replace(/"/g, '&quot;')}">`,
+        open: `<a href="${escapeHtmlAttr(entity.url ?? '')}">`,
         close: '</a>',
         length: entity.length,
       };
     case 'text_mention':
       return {
-        open: `<a href="tg://user?id=${escapeHtml(String(entity.user?.id ?? ''))}">`,
+        open: `<a href="tg://user?id=${escapeHtmlAttr(String(entity.user?.id ?? ''))}">`,
         close: '</a>',
         length: entity.length,
       };
     case 'url': {
       const url = source.slice(entity.offset, entity.offset + entity.length);
       return {
-        open: `<a href="${escapeHtml(url).replace(/"/g, '&quot;')}">`,
+        open: `<a href="${escapeHtmlAttr(url)}">`,
         close: '</a>',
         length: entity.length,
       };
     }
     case 'custom_emoji':
       return {
-        open: `<tg-emoji emoji-id="${escapeHtml(entity.custom_emoji_id ?? '')}">`,
+        open: `<tg-emoji emoji-id="${escapeHtmlAttr(entity.custom_emoji_id ?? '')}">`,
         close: '</tg-emoji>',
         length: entity.length,
       };
@@ -333,6 +351,7 @@ export function entitiesToHtml(
   for (const entity of entities) {
     const tag = entityToHtmlTag(entity, text);
     if (!tag) continue;
+    // Clamp offsets to guard against malformed entity ranges.
     const start = Math.max(0, Math.min(entity.offset, text.length));
     const end = Math.max(start, Math.min(entity.offset + entity.length, text.length));
     if (start === end) continue;
@@ -341,6 +360,7 @@ export function entitiesToHtml(
     opens.get(start)!.push(tag);
     closes.get(end)!.push(tag);
   }
+  // Sort so outer tags open before inner, and inner tags close before outer.
   for (const list of opens.values()) list.sort((a, b) => b.length - a.length);
   for (const list of closes.values()) list.sort((a, b) => a.length - b.length);
 
@@ -417,7 +437,7 @@ export function renderMdHtml(template: string, map: Record<string, string> = {})
     const p = placeholders[i]!;
     out = out.replace(
       `\u{E000}TGCE${i}\u{E001}`,
-      `<tg-emoji emoji-id="${escapeHtml(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
+      `<tg-emoji emoji-id="${escapeHtmlAttr(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
     );
   }
   return out;
@@ -450,7 +470,7 @@ export function renderHtmlTemplate(template: string, map: Record<string, string>
     const p = placeholders[i]!;
     out = out.replace(
       `\u{E000}TGCE${i}\u{E001}`,
-      `<tg-emoji emoji-id="${escapeHtml(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
+      `<tg-emoji emoji-id="${escapeHtmlAttr(p.id)}">${escapeHtml(p.glyph)}</tg-emoji>`,
     );
   }
   return out;
