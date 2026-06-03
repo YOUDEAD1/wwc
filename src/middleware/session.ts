@@ -187,6 +187,7 @@ export type AdminFlow =
       step: 'confirm';
       data: {
         text: string;
+        format?: 'md' | 'html';
         buy?: {
           product_id: number;
           product_name: string;
@@ -205,6 +206,7 @@ export type AdminFlow =
       step: 'buy_label';
       data: {
         text: string;
+        format?: 'md' | 'html';
         buy: {
           product_id: number;
           product_name: string;
@@ -223,6 +225,7 @@ export type AdminFlow =
       step: 'buy_icon';
       data: {
         text: string;
+        format?: 'md' | 'html';
         buy: {
           product_id: number;
           product_name: string;

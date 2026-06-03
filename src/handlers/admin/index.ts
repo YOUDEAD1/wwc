@@ -116,7 +116,9 @@ import {
   setCategoryDefaultColor,
 } from '../../services/settings.js';
 import {
+  entitiesToHtml,
   injectCustomEmojiMarkers,
+  renderHtmlTemplate,
   renderMdHtml,
 } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
@@ -3266,9 +3268,16 @@ async function showAnnounceConfirm(ctx: AppCtx): Promise<void> {
   // Always normalize to step:'confirm' on entry — callers may have
   // landed here from any of the buy_* sub-steps.
   const buy = (flow.data as { buy?: AnnounceBuy }).buy;
-  ctx.session.adminFlow = { type: 'announce', step: 'confirm', data: { text: flow.data.text, buy } };
+  ctx.session.adminFlow = {
+    type: 'announce',
+    step: 'confirm',
+    data: { text: flow.data.text, format: flow.data.format, buy },
+  };
   const recipients = await listUsersForAnnouncement();
-  const previewHtml = renderMdHtml(flow.data.text);
+  const previewHtml =
+    flow.data.format === 'html'
+      ? renderHtmlTemplate(flow.data.text)
+      : renderMdHtml(flow.data.text);
   const buyLine = buy
     ? `\n\n🛒 <b>Buy button:</b> <code>${escapeHtml(buy.label)}</code>` +
       `\n   • Product: <code>${escapeHtml(buy.product_name)}</code> (id=${buy.product_id})` +
@@ -3432,7 +3441,7 @@ adminBot.callbackQuery(/^adm:ann:buy:set:(\d+)$/, async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'confirm',
-    data: { text: flow.data.text, buy },
+    data: { text: flow.data.text, format: flow.data.format, buy },
   };
   await showAnnounceBuyEdit(ctx);
 });
@@ -3478,7 +3487,7 @@ adminBot.callbackQuery('adm:ann:buy:remove', async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'confirm',
-    data: { text: flow.data.text },
+    data: { text: flow.data.text, format: flow.data.format },
   };
   await showAnnounceConfirm(ctx);
 });
@@ -3498,7 +3507,7 @@ adminBot.callbackQuery('adm:ann:buy:label', async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'buy_label',
-    data: { text: flow.data.text, buy },
+    data: { text: flow.data.text, format: flow.data.format, buy },
   };
   await ctx.editMessageText(
     `📝 *Edit Buy button label*\n\nCurrent: \`${buy.label}\`\n\n` +
@@ -3552,7 +3561,7 @@ adminBot.callbackQuery(/^adm:ann:buy:color:(.+)$/, async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'confirm',
-    data: { text: flow.data.text, buy: { ...buy, color } },
+    data: { text: flow.data.text, format: flow.data.format, buy: { ...buy, color } },
   };
   await showAnnounceBuyEdit(ctx);
 });
@@ -3572,7 +3581,7 @@ adminBot.callbackQuery('adm:ann:buy:icon', async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'buy_icon',
-    data: { text: flow.data.text, buy },
+    data: { text: flow.data.text, format: flow.data.format, buy },
   };
   await ctx.editMessageText(
     '✨ *Set Buy button icon*\n\n' +
@@ -3602,7 +3611,7 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
   await ctx.editMessageText(`📣 Broadcasting to ${recipients.length} user(s)…`);
   // Render once: HTML output expands `{tokens}` AND auto-wraps any
   // unicode emoji that has a configured premium custom_emoji_id.
-  const html = renderMdHtml(body);
+  const html = flow.data.format === 'html' ? renderHtmlTemplate(body) : renderMdHtml(body);
   let ok = 0;
   let fail = 0;
   for (const r of recipients) {
@@ -6226,10 +6235,28 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'announce') {
       if (flow.step === 'text') {
+        const hasFormatEntities = (ctx.message.entities ?? []).some((entity) =>
+          [
+            'bold',
+            'italic',
+            'underline',
+            'strikethrough',
+            'spoiler',
+            'code',
+            'pre',
+            'text_link',
+            'text_mention',
+            'url',
+          ].includes(entity.type),
+        );
+        const format: 'md' | 'html' = hasFormatEntities ? 'html' : 'md';
+        const body = hasFormatEntities
+          ? entitiesToHtml(ctx.message.text, ctx.message.entities).trim()
+          : text;
         ctx.session.adminFlow = {
           type: 'announce',
           step: 'confirm',
-          data: { text },
+          data: { text: body, format },
         };
         await showAnnounceConfirm(ctx);
         return;
@@ -6252,7 +6279,11 @@ adminBot.on('message:text', async (ctx, next) => {
         ctx.session.adminFlow = {
           type: 'announce',
           step: 'confirm',
-          data: { text: flow.data.text, buy: { ...flow.data.buy, label: trimmed } },
+          data: {
+            text: flow.data.text,
+            format: flow.data.format,
+            buy: { ...flow.data.buy, label: trimmed },
+          },
         };
         await ctx.reply(`✅ Label updated → \`${trimmed}\``, { parse_mode: 'Markdown' });
         await showAnnounceBuyEdit(ctx);
@@ -6269,6 +6300,7 @@ adminBot.on('message:text', async (ctx, next) => {
             step: 'confirm',
             data: {
               text: flow.data.text,
+              format: flow.data.format,
               buy: {
                 ...flow.data.buy,
                 icon_unicode: undefined,
@@ -6304,6 +6336,7 @@ adminBot.on('message:text', async (ctx, next) => {
           step: 'confirm',
           data: {
             text: flow.data.text,
+            format: flow.data.format,
             buy: {
               ...flow.data.buy,
               icon_unicode: unicode,
