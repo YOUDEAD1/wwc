@@ -1,7 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import { MAIN_MENU_LAYOUT, BUTTON_KEYS, type Lang } from '../../config/index.js';
 import { applyButtonChrome, btn, inlineBtn, resolveIconId, stripDecorativeEmoji } from './helpers.js';
-import { getChannelUrl } from '../services/settings.js';
+import { getChannelUrl, getButtonIcon } from '../services/settings.js';
 
 const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   shop: 'shop:home',
@@ -39,13 +39,24 @@ export async function mainMenuKeyboard(lang: Lang, balance?: number): Promise<In
         kb.url(btn(lang, 'channel'), channelUrl);
         applyButtonChrome(kb, 'channel');
       } else if (k === 'topup' && balance !== undefined) {
-        const label = lang === 'ar'
-          ? `💳 رصيدك: $${balance.toFixed(2)}`
+        let label = lang === 'ar'
+          ? `رصيدك: $${balance.toFixed(2)}`
           : lang === 'vi'
-          ? `💳 Số dư của bạn: $${balance.toFixed(2)}`
-          : `💳 Your balance: $${balance.toFixed(2)}`;
-        const finalLabel = resolveIconId('topup') !== undefined ? stripDecorativeEmoji(label) : label;
-        kb.text(finalLabel, CALLBACK[k] ?? `noop:${k}`);
+          ? `Số dư của bạn: $${balance.toFixed(2)}`
+          : `Your balance: $${balance.toFixed(2)}`;
+        const iconOverride = getButtonIcon('topup');
+        if (iconOverride) {
+          if (iconOverride.custom_emoji_id) {
+            // Premium icon will be handled by applyButtonChrome, so keep label stripped
+          } else {
+            // Plain unicode icon override -> prepend it to the label
+            label = `${iconOverride.unicode} ${label}`;
+          }
+        } else {
+          // No override -> prepend default '💳'
+          label = `💳 ${label}`;
+        }
+        kb.text(label, CALLBACK[k] ?? `noop:${k}`);
         applyButtonChrome(kb, 'topup');
       } else {
         inlineBtn(kb, lang, k, CALLBACK[k] ?? `noop:${k}`);

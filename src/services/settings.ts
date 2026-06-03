@@ -165,16 +165,15 @@ export async function clearEmoji(key: string): Promise<void> {
  * Returns `undefined` when no override is set or the stored value
  * has no premium id (icons require a real `custom_emoji_id`).
  */
-export function getButtonIcon(key: string): { unicode: string; custom_emoji_id: string } | undefined {
+export function getButtonIcon(key: string): { unicode: string; custom_emoji_id?: string | null } | undefined {
   const v = cache.get(`btnicon.${key}`);
   if (
     v &&
     typeof v === 'object' &&
-    'unicode' in (v as Record<string, unknown>) &&
-    'custom_emoji_id' in (v as Record<string, unknown>)
+    'unicode' in (v as Record<string, unknown>)
   ) {
-    const obj = v as { unicode: string; custom_emoji_id: string };
-    if (obj.custom_emoji_id && obj.custom_emoji_id.length > 0) return obj;
+    const obj = v as { unicode: string; custom_emoji_id?: string | null };
+    if (obj.unicode && obj.unicode.length > 0) return obj;
   }
   return undefined;
 }
@@ -182,10 +181,10 @@ export function getButtonIcon(key: string): { unicode: string; custom_emoji_id: 
 export async function setButtonIcon(
   key: string,
   unicode: string,
-  custom_emoji_id: string,
+  custom_emoji_id?: string | null,
   updated_by?: number,
 ): Promise<void> {
-  const value = { unicode, custom_emoji_id };
+  const value = custom_emoji_id ? { unicode, custom_emoji_id } : { unicode };
   await setSetting(`btnicon.${key}`, value, updated_by);
   cache.set(`btnicon.${key}`, value);
 }

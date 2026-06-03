@@ -3344,7 +3344,13 @@ const BTN_ICON_PER_PAGE = 8;
 
 function buttonIconLabel(key: keyof typeof BUTTON_KEYS): string {
   const spec = getButtonIcon(key);
-  if (spec) return `${spec.unicode} ${key} — premium`;
+  if (spec) {
+    if (spec.custom_emoji_id) {
+      return `${spec.unicode} ${key} — premium`;
+    } else {
+      return `${spec.unicode} ${key} — unicode`;
+    }
+  }
   return `· ${key} — default`;
 }
 
@@ -3373,10 +3379,9 @@ function buttonIconPickerKb(page: number): InlineKeyboard {
 async function showButtonIconPicker(ctx: AppCtx, page: number): Promise<void> {
   await ctx.editMessageText(
     '🎯 *Set Button Icon*\n\n' +
-      'Pick a button to assign your own *premium emoji* icon to it. ' +
-      'Send a premium emoji message and the bot will read its ' +
-      '`custom_emoji_id` automatically. Each override is per-button — ' +
-      "changing one button's icon won't affect anything else.",
+      'Pick a button to assign your own *emoji* icon to it. ' +
+      'You can send a plain emoji (e.g. `🛍️`) or a premium emoji. ' +
+      'If you send a premium emoji, the bot reads its `custom_emoji_id` automatically.',
     { parse_mode: 'Markdown', reply_markup: buttonIconPickerKb(page) },
   );
 }
@@ -3402,7 +3407,9 @@ adminBot.callbackQuery(/^adm:btnicon:pick:(.+)$/, async (ctx) => {
   ctx.session.adminFlow = { type: 'set_btnicon', step: 'value', data: { btnKey: key } };
   const cur = getButtonIcon(key);
   const curLine = cur
-    ? `Current: ${cur.unicode}  *premium id* \`${cur.custom_emoji_id}\``
+    ? (cur.custom_emoji_id
+        ? `Current: ${cur.unicode}  *premium id* \`${cur.custom_emoji_id}\``
+        : `Current: ${cur.unicode}  *unicode*`)
     : 'Current: _default (none set)_';
   const kb = new InlineKeyboard()
     .text('🗑 Clear icon', `adm:btnicon:clear:${key}`)
@@ -3411,11 +3418,11 @@ adminBot.callbackQuery(/^adm:btnicon:pick:(.+)$/, async (ctx) => {
   await ctx.editMessageText(
     `🎯 *Set Button Icon* — \`${key}\`\n\n` +
       `${curLine}\n\n` +
-      'Send a *premium emoji message* — the bot reads its ' +
-      '`custom_emoji_id` and uses it as the icon for this button.\n\n' +
-      'The emoji must be one your bot owner has access to (any premium ' +
-      'emoji visible to the owner). Plain unicode emojis without a ' +
-      'premium id can\'t be used as button icons.\n\n' +
+      'Send a single emoji (e.g. `🛍️`) or a *premium emoji message* — ' +
+      'the bot will use it as the icon for this button.\n\n' +
+      'If you send a premium emoji, the bot reads its `custom_emoji_id` and renders it ' +
+      'using Telegram\'s premium button-icon features. If you send a plain emoji, ' +
+      'it will prefix the button label directly.\n\n' +
       'Or `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -6559,9 +6566,8 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'set_btnicon') {
       // Per-button icon override → stored under `btnicon.<key>`,
-      // separate from the shared `emoji.<key>` map. Requires a real
-      // premium emoji (custom_emoji_id) — plain unicode can't be used
-      // in `icon_custom_emoji_id` per Bot API 9.4.
+      // separate from the shared `emoji.<key>` map. Supports both
+      // plain unicode emojis and premium custom emojis.
       const ce = (ctx.message.entities ?? []).find(
         (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
       ) as { offset: number; length: number; custom_emoji_id: string } | undefined;
@@ -6572,24 +6578,38 @@ adminBot.on('message:text', async (ctx, next) => {
         unicode = raw.slice(ce.offset, ce.offset + ce.length);
         customId = ce.custom_emoji_id;
       } else {
-        const parts = text.split(/\s+/, 2);
-        unicode = parts[0];
-        customId = parts[1];
+        const trimmed = text.trim();
+        const parts = trimmed.split(/\s+/);
+        const secondPart = parts[1];
+        if (parts.length === 2 && secondPart && /^\d{8,}$/.test(secondPart)) {
+          unicode = parts[0];
+          customId = secondPart;
+        } else {
+          unicode = trimmed;
+        }
       }
-      if (!unicode || !customId || !/^\d{8,}$/.test(customId)) {
+      const finalUnicode = unicode;
+      if (!finalUnicode) {
+        await ctx.reply('❌ Empty value.');
+        return;
+      }
+      // Sanity-check length of plain emoji (max 8 chars)
+      if (!customId && finalUnicode.length > 8) {
         await ctx.reply(
-          '❌ This needs a *premium* emoji. Send a premium emoji message ' +
-            'directly (the bot will read its `custom_emoji_id`), or type ' +
-            '`<unicode> <custom_emoji_id>` with a numeric id.',
+          '⚠️ That doesn\'t look like a single emoji.\n\n' +
+            'Send a single emoji (or a *premium* custom emoji message). ' +
+            'Send `/cancel` to abort.',
           { parse_mode: 'Markdown' },
         );
         return;
       }
-      await setButtonIcon(flow.data.btnKey, unicode, customId, ctx.from!.id);
+      await setButtonIcon(flow.data.btnKey, finalUnicode, customId ?? null, ctx.from!.id);
       ctx.session.adminFlow = undefined;
+      const statusLine = customId
+        ? `updated → ${unicode} (premium id \`${customId}\`)`
+        : `updated → ${unicode} (unicode)`;
       await ctx.reply(
-        `✅ Button \`${flow.data.btnKey}\` icon updated → ${unicode} ` +
-          `(premium id \`${customId}\`).`,
+        `✅ Button \`${flow.data.btnKey}\` icon ${statusLine}.`,
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;

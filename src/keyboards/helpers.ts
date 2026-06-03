@@ -66,7 +66,17 @@ export function btn(lang: Lang, key: keyof typeof BUTTON_KEYS, override?: ColorM
   // e.g. `[premium-play-icon] Next ▶️` or `🛍 Shop` with a premium
   // shop icon to its left.
   const raw = t(lang, BUTTON_KEYS[key]);
-  const baseLabel = resolveIconId(key) !== undefined ? stripDecorativeEmoji(raw) : raw;
+  const iconOverride = getButtonIcon(key);
+  if (iconOverride) {
+    const stripped = stripDecorativeEmoji(raw);
+    if (iconOverride.custom_emoji_id) {
+      return colored(stripped, key, override);
+    } else {
+      return colored(`${iconOverride.unicode} ${stripped}`, key, override);
+    }
+  }
+  const hasDefaultPremiumIcon = resolveIconId(key) !== undefined;
+  const baseLabel = hasDefaultPremiumIcon ? stripDecorativeEmoji(raw) : raw;
   return colored(baseLabel, key, override);
 }
 
@@ -87,7 +97,7 @@ export function btn(lang: Lang, key: keyof typeof BUTTON_KEYS, override?: ColorM
  */
 export function resolveIconId(key: keyof typeof BUTTON_KEYS): string | undefined {
   const override = getButtonIcon(key);
-  if (override) return override.custom_emoji_id;
+  if (override) return override.custom_emoji_id || undefined;
   const emojiKey = BUTTON_ICONS[key];
   if (!emojiKey) return undefined;
   const spec = getEmoji(emojiKey);
