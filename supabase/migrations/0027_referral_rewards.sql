@@ -4,7 +4,8 @@
 -- =====================================================================
 
 alter table public.products
-    add column if not exists referral_required int not null default 0 check (referral_required >= 0);
+    add column if not exists referral_required_count int not null default 0
+        check (referral_required_count >= 0);
 
 create table if not exists public.referral_redemptions (
     id           bigserial primary key,

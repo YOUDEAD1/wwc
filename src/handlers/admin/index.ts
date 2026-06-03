@@ -1132,8 +1132,8 @@ async function showProductEditor(
     ? '`' + (p.delivery_vendor_label || p.delivery_vendor_chat_id) + '`'
     : '_unset_';
   const referralLabel =
-    p.referral_required > 0
-      ? `*${p.referral_required} referral${p.referral_required === 1 ? '' : 's'}*`
+    p.referral_required_count > 0
+      ? `*${p.referral_required_count} referral${p.referral_required_count === 1 ? '' : 's'}*`
       : '_OFF_';
   const lines = [
     `✏️ *Edit Product #${p.id}*`,
@@ -1336,7 +1336,7 @@ adminBot.callbackQuery(/^adm:prod:ref:set:(\d+):(\d+)$/, async (ctx) => {
 
 adminBot.callbackQuery(/^adm:prod:ref:clr:(\d+):(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
-  await updateProduct(id, { referral_required: 0 });
+  await updateProduct(id, { referral_required_count: 0 });
   await ctx.answerCallbackQuery({ text: 'Cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
@@ -5573,7 +5573,7 @@ adminBot.on('message:text', async (ctx, next) => {
         await ctx.reply('❌ Bad number. Send an integer ≥ 0.');
         return;
       }
-      await updateProduct(flow.data.product_id, { referral_required: count });
+      await updateProduct(flow.data.product_id, { referral_required_count: count });
       ctx.session.adminFlow = undefined;
       await ctx.reply(
         count > 0 ? `✅ Referral reward set: ${count} referrals.` : '✅ Referral reward disabled.',

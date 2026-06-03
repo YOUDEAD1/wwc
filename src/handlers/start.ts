@@ -93,12 +93,12 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const total = (p.price * qty).toFixed(2);
   let referralLine = '';
   let canRedeem = false;
-  if (p.referral_required > 0) {
+  if (p.referral_required_count > 0) {
     const [totalReferrals, redeemed] = await Promise.all([
       countReferrals(ctx.user.telegram_id),
       hasReferralRedemption(ctx.user.telegram_id, p.id),
     ]);
-    const requiredTotal = p.referral_required * qty;
+    const requiredTotal = p.referral_required_count * qty;
     const remaining = Math.max(0, requiredTotal - totalReferrals);
     if (redeemed) {
       referralLine = ctx.t('shop.product.line.referral.claimed');

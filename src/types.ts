@@ -53,7 +53,7 @@ export type DBProduct = {
   price: number;
   stock: number;
   /** Referrals required to unlock a free redemption (0 = disabled). */
-  referral_required: number;
+  referral_required_count: number;
   warranty: string | null;
   emoji: string | null;
   /** Premium custom_emoji_id for the row icon. Falls back to `emoji`. */

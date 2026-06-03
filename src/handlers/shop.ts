@@ -268,12 +268,12 @@ async function getReferralRewardState(
   product: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
   qty: number,
 ): Promise<ReferralRewardState | null> {
-  if (!product.referral_required || product.referral_required <= 0) return null;
+  if (!product.referral_required_count || product.referral_required_count <= 0) return null;
   const [totalReferrals, redeemed] = await Promise.all([
     countReferrals(ctx.user.telegram_id),
     hasReferralRedemption(ctx.user.telegram_id, product.id),
   ]);
-  const requiredPerUnit = product.referral_required;
+  const requiredPerUnit = product.referral_required_count;
   const requiredTotal = requiredPerUnit * qty;
   const remaining = Math.max(0, requiredTotal - totalReferrals);
   return {
@@ -1145,7 +1145,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.referral_required || p.referral_required <= 0) {
+    if (!p.referral_required_count || p.referral_required_count <= 0) {
       await ctx.answerCallbackQuery({
         text: ctx.t('shop.referral.disabled'),
         show_alert: true,
@@ -1195,7 +1195,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         total,
         discount,
         promo_id: null,
-        delivery: `Order #${id}-${qty}`,
+        delivery: `Referral reward #${id}-${qty}`,
       });
       await recordReferralRedemption({
         user_id: ctx.user.telegram_id,
