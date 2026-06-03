@@ -5534,8 +5534,14 @@ adminBot.on('message:text', async (ctx, next) => {
         const result = await apiTest(api_key, api_url);
         if (result.ok) {
           await apiSave(api_key, api_url);
+          try {
+            const { syncProducts } = await import('../../services/apiShop.js');
+            await syncProducts();
+          } catch (syncErr) {
+            logger.error({ err: syncErr }, 'api_connect auto-sync failed');
+          }
           await ctx.reply(
-            `✅ <b>Connected!</b>\n\n` +
+            `✅ <b>Connected & Synced!</b>\n\n` +
             `📦 <b>${result.productCount}</b> products found.\n\n` +
             `اضغط /api للتحكم.`,
             { parse_mode: 'HTML', reply_markup: rootMenu() },
@@ -8522,7 +8528,13 @@ adminBot.callbackQuery('adm:api:test', async (ctx) => {
   }
   const res = await apiTestConnection(conn.api_key, conn.api_url);
   if (res.ok) {
-    await ctx.answerCallbackQuery({ text: `✅ Connected! ${res.productCount} products found.`, show_alert: true });
+    try {
+      const { syncProducts } = await import('../../services/apiShop.js');
+      await syncProducts();
+    } catch (syncErr) {
+      logger.error({ err: syncErr }, 'adm:api:test auto-sync failed');
+    }
+    await ctx.answerCallbackQuery({ text: `✅ Connected & Synced! ${res.productCount} products found.`, show_alert: true });
   } else {
     await ctx.answerCallbackQuery({ text: `❌ Failed: ${res.error}`, show_alert: true });
   }
@@ -8577,6 +8589,14 @@ adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
   const page = Number(ctx.match[1]);
   const conn = await apiGetConnection();
   if (!conn) return;
+
+  // Run syncProducts first to update all emojis and product details in the database
+  try {
+    const { syncProducts } = await import('../../services/apiShop.js');
+    await syncProducts();
+  } catch (syncErr) {
+    logger.error({ err: syncErr }, 'adm:api:products view auto-sync failed');
+  }
 
   const res = await apiFetchProducts(conn);
   if (!res.ok) {
