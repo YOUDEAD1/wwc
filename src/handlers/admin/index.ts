@@ -4530,11 +4530,30 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
   }
   // Hydrate side-tables in parallel — none of them block on each
   // other and only the first three are guaranteed to fire.
+  // Use timeout wrapper to prevent hangs if a query stalls.
+  const withTimeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+
   const [product, targetUser, actorUser, impact] = await Promise.all([
-    p.product_id !== null ? getProduct(p.product_id) : Promise.resolve(null),
-    p.telegram_id !== null ? findUserById(p.telegram_id) : Promise.resolve(null),
-    p.created_by !== null ? findUserById(p.created_by) : Promise.resolve(null),
-    getPromoImpact(p.id),
+    withTimeout(
+      p.product_id !== null ? getProduct(p.product_id) : Promise.resolve(null),
+      5000,
+      null,
+    ),
+    withTimeout(
+      p.telegram_id !== null ? findUserById(p.telegram_id) : Promise.resolve(null),
+      5000,
+      null,
+    ),
+    withTimeout(
+      p.created_by !== null ? findUserById(p.created_by) : Promise.resolve(null),
+      5000,
+      null,
+    ),
+    withTimeout(getPromoImpact(p.id), 5000, { orders: 0, total_discount: 0, last_used: null }),
   ]);
 
   const scope = promoScopeLabel({ ...p, product_name: product?.name ?? null });
@@ -4656,8 +4675,16 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
 }
 
 adminBot.callbackQuery(/^adm:promo:v:(\d+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
-  await showPromoCard(ctx, Number(ctx.match[1]));
+  const id = Number(ctx.match[1]);
+  try {
+    await ctx.answerCallbackQuery();
+    await showPromoCard(ctx, id);
+  } catch (err) {
+    logger.error({ err, promo_id: id }, 'adm:promo:v failed');
+    try {
+      await ctx.answerCallbackQuery({ text: 'Failed to load promo', show_alert: true });
+    } catch { /* noop */ }
+  }
 });
 
 adminBot.callbackQuery(/^adm:promo:toggle:(\d+)$/, async (ctx) => {
