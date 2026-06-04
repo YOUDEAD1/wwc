@@ -4498,7 +4498,9 @@ async function sendOrEdit(
   reply_markup: InlineKeyboard,
 ): Promise<void> {
   const opts = { parse_mode: 'Markdown' as const, reply_markup };
+  // Answer callback immediately before editing to stop loading spinner
   if (ctx.callbackQuery) {
+    await ctx.answerCallbackQuery().catch(() => {});
     try {
       await ctx.editMessageText(text, opts);
       return;
@@ -4676,8 +4678,9 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
 
 adminBot.callbackQuery(/^adm:promo:v:(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
+  // Answer immediately to stop loading spinner - before any async work
+  await ctx.answerCallbackQuery().catch(() => {});
   try {
-    await ctx.answerCallbackQuery();
     await showPromoCard(ctx, id);
   } catch (err) {
     logger.error({ err, promo_id: id }, 'adm:promo:v failed');
