@@ -19,6 +19,7 @@ import {
   recordReferralRedemption,
   setOrderDeliveredItems,
 } from '../db/queries.js';
+import { supabase } from '../db/supabase.js';
 import {
   applyUserPriceToProduct,
   applyUserPriceToProducts,
@@ -1205,11 +1206,21 @@ export function registerShop(bot: Composer<AppCtx>): void {
         promo_id: null,
         delivery: ctx.t('shop.referral.delivery', { product_id: p.id, qty }),
       });
-      await recordReferralRedemption({
-        user_id: ctx.user.telegram_id,
-        product_id: p.id,
-        order_id: order.id,
-      });
+      try {
+        await recordReferralRedemption({
+          user_id: ctx.user.telegram_id,
+          product_id: p.id,
+          order_id: order.id,
+        });
+      } catch (redemptionErr) {
+        // Rollback: delete the order we just created since redemption failed
+        logger.warn(
+          { err: redemptionErr, order_id: order.id, product_id: p.id, user: ctx.user.telegram_id },
+          'referral redemption failed — rolling back order',
+        );
+        await supabase.from('orders').delete().eq('id', order.id);
+        throw redemptionErr;
+      }
       const confirmationText = ctx.t('shop.referral.confirmed', {
         name: p.name,
         qty,
