@@ -50,8 +50,12 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   void maybeSendEmailNag(ctx);
 
   // If this is a newly created user with a referrer, send notification to bot channel
-  if ((user as DBUser & { __just_created?: boolean }).__just_created && referred_by && env.BOT_REFERS_CHANNEL) {
-    void sendReferralNotification(ctx, referred_by, ctx.from.id, ctx.from.username ?? null, ctx.from.first_name);
+  if (
+    (user as DBUser & { __just_created?: boolean }).__just_created &&
+    user.referred_by &&
+    env.BOT_REFERS_CHANNEL
+  ) {
+    void sendReferralNotification(ctx, user.referred_by, ctx.from.id, ctx.from.username ?? null, ctx.from.first_name);
   }
 
   return next();
