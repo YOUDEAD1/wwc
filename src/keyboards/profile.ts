@@ -208,10 +208,16 @@ export function backToMainKeyboard(lang: Lang): InlineKeyboard {
  * `copy_text` button so tapping it copies the referral link to the
  * user's clipboard) followed by a Back row.
  */
-export function referKeyboard(lang: Lang, link: string): InlineKeyboard {
+export function referKeyboard(
+  lang: Lang,
+  link: string,
+  options: { refreshCallback?: string; backCallback?: string } = {},
+): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineCopyText(kb, lang, 'copy_link', link);
   kb.row();
-  inlineBtn(kb, lang, 'back', 'main:open');
+  inlineBtn(kb, lang, 'refresh', options.refreshCallback ?? 'profile:refer');
+  kb.row();
+  inlineBtn(kb, lang, 'back', options.backCallback ?? 'main:open');
   return kb;
 }
