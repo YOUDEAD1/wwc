@@ -106,8 +106,13 @@ export const BUTTON_KEYS = {
   back_to_settings: 'btn.back_to_settings',
   stats: 'btn.stats',
   stats_refresh: 'btn.stats_refresh',
+  stats_24h: 'btn.stats.24h',
+  stats_7d: 'btn.stats.7d',
+  stats_30d: 'btn.stats.30d',
+  stats_custom: 'btn.stats.custom',
   set_region: 'btn.set_region',
   set_email: 'btn.set_email',
+  currency: 'btn.currency',
 
   // ---- Email hub & sub-screens ---------------------------------
   email_settings: 'btn.email.settings',
@@ -134,6 +139,7 @@ export const BUTTON_KEYS = {
 
   // ---- Refer screen --------------------------------------------
   copy_link: 'btn.copy_link',
+  live_refers: 'btn.live_refers',
 
   // ---- Redeem Gift Code ---------------------------------------
   redeem: 'btn.redeem',
@@ -296,8 +302,13 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   back_to_settings: 'none',
   stats: 'none',
   stats_refresh: 'none',
+  stats_24h: 'blue',
+  stats_7d: 'blue',
+  stats_30d: 'blue',
+  stats_custom: 'blue',
   set_region: 'none',
   set_email: 'none',
+  currency: 'blue',
 
   // Email hub: Set/Change blue, Delete red, Why neutral.
   email_settings: 'none',
@@ -324,6 +335,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 
   // Refer copy-link: green (positive action).
   copy_link: 'green',
+  live_refers: 'blue',
 
   // Redeem flow.
   redeem: 'none',
@@ -791,8 +803,13 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // restore a premium icon if you change your mind.
   stats: 'stats',
   stats_refresh: 'stats_refresh',
+  stats_24h: 'stats',
+  stats_7d: 'stats',
+  stats_30d: 'stats',
+  stats_custom: 'stats',
   set_region: 'profile_region',
   set_email: 'profile_email',
+  currency: 'refer_coin',
 
   // Email hub & sub-screens
   email_settings: 'profile_email',
@@ -822,6 +839,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 
   // Refer copy-link
   copy_link: 'refer_transferred',
+  live_refers: 'profile_link',
 
   // Redeem
   redeem: 'gift_title',
