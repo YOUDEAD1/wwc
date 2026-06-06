@@ -531,6 +531,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       getReferralEarnings(ctx.user.telegram_id),
     ]);
     const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
+    const referralCycleLeft =
+      refBalance.total > 0 && refBalance.total % 10 === 0 ? 0 : Math.max(0, 10 - (refBalance.total % 10));
     const body = ctx.t('profile.refer.body', {
       link,
       ref24h,
@@ -538,6 +540,10 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       refTotal: refBalance.total,
       refSpent: refBalance.spent,
       refAvailable: refBalance.available,
+      clicks: 0,
+      pending: 0,
+      active: refBalance.available,
+      left: referralCycleLeft,
       earnedTotal: fmt(earnings.total),
       available: fmt(earnings.available),
       transferred: fmt(earnings.transferred),
@@ -891,6 +897,13 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await showReferScreen(ctx, {
       refreshCallback: `profile:refer:buy:${productId}`,
       backCallback: `buy:${productId}`,
+    });
+  });
+
+  bot.callbackQuery('profile:refer:convert', async (ctx) => {
+    await ctx.answerCallbackQuery({
+      text: ctx.t('profile.refer.convert_soon'),
+      show_alert: true,
     });
   });
 
