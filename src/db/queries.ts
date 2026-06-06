@@ -13,7 +13,6 @@ import type {
   DBWalletLedger,
   DBGiftCode,
   DBGiftCodeRedemption,
-  DBReferralRedemption,
   DBUserPriceOverride,
   DBPromo,
   DBOrderDeliverySubmission,
@@ -28,6 +27,43 @@ import { logger } from '../logger.js';
 
 function makeRefCode(id: number): string {
   return `R${id.toString(36).toUpperCase()}`;
+}
+
+async function resolveValidReferrer(
+  referrerId: number | null | undefined,
+  refereeId: number,
+): Promise<number | null> {
+  if (!referrerId || referrerId === refereeId) return null;
+  const { data, error } = await supabase
+    .from('users')
+    .select('telegram_id')
+    .eq('telegram_id', referrerId)
+    .maybeSingle();
+  if (error) {
+    logger.warn({ err: error, referrerId, refereeId }, 'referrer lookup failed');
+    return null;
+  }
+  return data ? referrerId : null;
+}
+
+async function ensureReferralRecord(
+  referrerId: number | null | undefined,
+  refereeId: number,
+): Promise<void> {
+  const validReferrer = await resolveValidReferrer(referrerId, refereeId);
+  if (!validReferrer) return;
+  const { error } = await supabase
+    .from('referrals')
+    .upsert(
+      { referrer_id: validReferrer, referee_id: refereeId },
+      { onConflict: 'referrer_id,referee_id', ignoreDuplicates: true },
+    );
+  if (error) {
+    logger.warn(
+      { err: error, referrerId: validReferrer, refereeId },
+      'ensureReferralRecord failed',
+    );
+  }
 }
 
 export async function getOrCreateUser(args: {
@@ -63,10 +99,12 @@ export async function getOrCreateUser(args: {
         (existing as { wallet_alert?: boolean }).wallet_alert ?? true,
     } as DBUser & { __just_created?: boolean };
     out.__just_created = false;
+    await ensureReferralRecord(out.referred_by, out.telegram_id);
     return out;
   }
 
   const ref_code = makeRefCode(args.telegram_id);
+  const validReferrer = await resolveValidReferrer(args.referred_by, args.telegram_id);
   const insert = {
     telegram_id: args.telegram_id,
     username: args.username ?? null,
@@ -74,19 +112,14 @@ export async function getOrCreateUser(args: {
     last_name: args.last_name ?? null,
     language: args.language,
     ref_code,
-    referred_by: args.referred_by ?? null,
+    referred_by: validReferrer,
   };
   const { data, error } = await supabase.from('users').insert(insert).select('*').single();
   if (error || !data) {
     logger.error({ err: error }, 'getOrCreateUser failed');
     throw error ?? new Error('Failed to create user');
   }
-  if (args.referred_by && args.referred_by !== args.telegram_id) {
-    await supabase
-      .from('referrals')
-      .insert({ referrer_id: args.referred_by, referee_id: args.telegram_id })
-      .then(() => {});
-  }
+  await ensureReferralRecord(validReferrer, args.telegram_id);
   const created = data as DBUser & { __just_created?: boolean };
   created.__just_created = true;
   return created;
@@ -252,49 +285,84 @@ export async function toggleNotification(
 }
 
 export async function countReferrals(telegram_id: number): Promise<number> {
-  const { count } = await supabase
+  const { count, error } = await supabase
     .from('referrals')
     .select('id', { count: 'exact', head: true })
     .eq('referrer_id', telegram_id);
+  if (error) {
+    logger.error({ err: error, telegram_id }, 'countReferrals failed');
+    throw error;
+  }
   return count ?? 0;
 }
 
-export async function hasReferralRedemption(
-  user_id: number,
-  product_id: number,
-): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('referral_redemptions')
-    .select('id')
-    .eq('user_id', user_id)
-    .eq('product_id', product_id)
-    .maybeSingle();
-  if (error) {
-    logger.error({ err: error, user_id, product_id }, 'hasReferralRedemption failed');
-    throw error;
+export type ReferralBalance = {
+  total: number;
+  spent: number;
+  available: number;
+};
+
+export async function getReferralBalance(user_id: number): Promise<ReferralBalance> {
+  const [total, spendRows] = await Promise.all([
+    countReferrals(user_id),
+    supabase
+      .from('referral_redemptions')
+      .select('referral_cost')
+      .eq('user_id', user_id),
+  ]);
+  if (spendRows.error) {
+    logger.error({ err: spendRows.error, user_id }, 'getReferralBalance failed');
+    throw spendRows.error;
   }
-  return Boolean(data);
+  const spent = (spendRows.data ?? []).reduce(
+    (sum, row) => sum + Number((row as { referral_cost?: number }).referral_cost ?? 0),
+    0,
+  );
+  return {
+    total,
+    spent,
+    available: Math.max(0, total - spent),
+  };
 }
 
-export async function recordReferralRedemption(args: {
+export class InsufficientReferralBalanceError extends Error {
+  constructor() {
+    super('INSUFFICIENT_REFERRALS');
+    this.name = 'InsufficientReferralBalanceError';
+  }
+}
+
+export async function spendReferralBalance(args: {
   user_id: number;
   product_id: number;
-  order_id: number | null;
-}): Promise<DBReferralRedemption> {
-  const { data, error } = await supabase
-    .from('referral_redemptions')
-    .insert({
-      user_id: args.user_id,
-      product_id: args.product_id,
-      order_id: args.order_id,
-    })
-    .select('*')
-    .single();
-  if (error || !data) {
-    logger.error({ err: error, args }, 'recordReferralRedemption failed');
-    throw error ?? new Error('recordReferralRedemption failed');
+  order_id: number;
+  referral_cost: number;
+}): Promise<ReferralBalance> {
+  const { data, error } = await supabase.rpc('spend_referral_balance', {
+    p_user_id: args.user_id,
+    p_product_id: args.product_id,
+    p_order_id: args.order_id,
+    p_referral_cost: args.referral_cost,
+  });
+  if (error) {
+    if (error.message.includes('INSUFFICIENT_REFERRALS')) {
+      throw new InsufficientReferralBalanceError();
+    }
+    logger.error({ err: error, args }, 'spendReferralBalance failed');
+    throw error;
   }
-  return data as DBReferralRedemption;
+  const result = (Array.isArray(data) ? data[0] : data) as
+    | {
+        total_referrals?: number;
+        spent_referrals?: number;
+        available_referrals?: number;
+      }
+    | null;
+  return {
+    total: Number(result?.total_referrals ?? 0),
+    spent: Number(result?.spent_referrals ?? 0),
+    available: Number(result?.available_referrals ?? 0),
+  };
 }
 
 /**
@@ -543,8 +611,8 @@ export const OUT_OF_STOCK_SORT_ORDER = 1_000_000_000;
  * manually repositioned an out-of-stock row (no stock change → no
  * transition → no auto-move-to-end).
  *
- * No-op when the product is pinned (`is_pinned = true`) or marked
- * `unlimited_stock` (catalog renders ∞, never goes OOS).
+ * No-op when the product is marked `unlimited_stock` (catalog renders
+ * ∞, never goes OOS).
  */
 export async function applyStockTransition(
   product_id: number,
@@ -556,17 +624,15 @@ export async function applyStockTransition(
   if (wasInStock === isInStock) return;
   const { data } = await supabase
     .from('products')
-    .select('sort_order, stashed_sort_order, is_pinned, unlimited_stock')
+    .select('sort_order, stashed_sort_order, unlimited_stock')
     .eq('id', product_id)
     .maybeSingle();
   if (!data) return;
   const p = data as {
     sort_order: number;
     stashed_sort_order: number | null;
-    is_pinned: boolean | null;
     unlimited_stock: boolean | null;
   };
-  if (p.is_pinned === true) return;
   if (p.unlimited_stock === true) return;
   // OOS transition: stash the current admin-placed sort_order and
   // sink the row to the bottom of the catalog. The `stashed_sort_order
