@@ -19,6 +19,7 @@ export const ar: Record<string, string> = {
   'btn.buy_now': '✅ شراء الآن',
   'btn.redeem_referral': '🎁 الدفع بالإحالات',
   'btn.referral_earn_buy': '🔗 اكسب إحالات واشترِ',
+  'btn.convert_refers': '💱 تحويل الإحالات إلى USDT',
   'btn.topup_wallet': '👛 شحن المحفظة',
   'btn.view_note': '📝 عرض الملاحظة',
   'btn.qty_plus': '➕',
@@ -115,10 +116,10 @@ export const ar: Record<string, string> = {
     '{promo_line}' +
     '{prod_total_amount} الإجمالي: *{total} USDT*\n' +
     '{prod_wallet} المحفظة: *{balance} USDT*\n' +
-    '{referral_line}\n' +
+    '{referral_line}' +
     'اختر طريقة الدفع:',
   'shop.pay.referral_line':
-    '{prod_referral} دفع الإحالات: *{available} متاح* • *{required} مطلوب*',
+    '{prod_referral} دفع الإحالات:\n\n*{available} متاح* • *{required} مطلوب*\n\n',
   // بطاقة تأكيد الدفع من المحفظة (الصفحة 2).
   'shop.pay.confirm':
     '{prod_wallet} *تأكيد الدفع*\n\n' +
@@ -234,19 +235,20 @@ export const ar: Record<string, string> = {
   // شاشة الإحالة والتربح.
   'profile.refer.title': '{refer_title} *إحالة وتربح*',
   'profile.refer.body':
-    '{refer_user} *الإحالات (24س):* {ref24h}\n' +
-    '{refer_user} *الإحالات (7أ):* {ref7d}\n' +
-    '{refer_user} *الإحالات (الإجمالي):* {refTotal}\n\n' +
-    '{prod_referral} *رصيد دفع الإحالات:* {refAvailable} إحالات\n' +
-    '{delivery_check} *المستخدم للمشتريات:* {refSpent} إحالات\n\n' +
+    '{refer_prize_l} *ادعُ 10 مستخدمين واربح $0.50* {refer_prize_r}\n\n' +
+    '{refer_clicks} *النقرات:* {clicks}\n' +
+    '{refer_pending} *المعلق:* {pending}\n' +
+    '{refer_active} *النشط:* {active}\n' +
+    '{refer_left} *المتبقي:* {left}\n' +
+    '{refer_total} *الإحالات (الإجمالي):* {refTotal}\n' +
     '{refer_coin} *إجمالي الأرباح:* {earnedTotal} USDT\n' +
-    '{refer_coin} *المتاح:* {available} USDT\n' +
-    '{refer_transferred} *المحول:* {transferred} USDT\n' +
     '{refer_withdrawn} *المسحوب:* {withdrawn} USDT\n\n' +
-    '> اربح 1٪ من كل شحن يقوم به مستخدموك المدعوون.\n' +
-    '> بحد أقصى 1$ لكل عملية شحن.\n' +
-    '> حوّل الأرباح إلى المحفظة في أي وقت. للسحب النقدي تواصل مع الدعم (الحد الأدنى 1$).\n\n' +
+    '{prod_referral} *رصيد دفع الإحالات:* {refAvailable} إحالات\n' +
+    '{refer_spent} *المستخدم للمشتريات:* {refSpent} إحالات\n\n' +
+    'حوّل الأرباح إلى المحفظة في أي وقت. للسحب النقدي تواصل مع الدعم (الحد الأدنى 1$).\n\n' +
     '*رابط الإحالة الخاص بك:*\n`{link}`',
+  'profile.refer.convert_soon':
+    '💱 تحويل الإحالات إلى USDT قريباً. حالياً تواصل مع الدعم للسحب اليدوي.',
   'btn.copy_link': '📋 نسخ الرابط',
   'btn.redeem': '🎁 رمز هدية',
   'profile.language.title': '{lang_left} *اختر اللغة* {lang_right}',
