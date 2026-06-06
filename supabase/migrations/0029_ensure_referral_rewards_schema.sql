@@ -1,9 +1,9 @@
 -- =====================================================================
 -- 0029_ensure_referral_rewards_schema.sql
--- Safety net for referral rewards.
+-- Safety net for Referral Pay.
 --
 -- Some live databases may have older migrations applied but still miss
--- the referral reward schema. This keeps the admin "Referral Reward"
+-- the Referral Pay schema. This keeps the admin "Referral Pay"
 -- button from failing when it saves products.referral_required_count.
 -- =====================================================================
 
