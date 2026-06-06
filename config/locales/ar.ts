@@ -1,410 +1,410 @@
-/* Ø§Ù„Ø¹Ø±Ø¨ÙŠØ© â€” keep keys in sync with en.ts */
+/* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
-  'welcome': 'Ù…Ø±Ø­Ø¨Ù‹Ø§ Ø¨Ùƒ ÙÙŠ Ù…ØªØ¬Ø± SafwanTiger',
-  'welcome.title': 'Ù…Ø±Ø­Ø¨Ù‹Ø§ Ø¨Ùƒ ÙÙŠ Ù…ØªØ¬Ø± SafwanTiger!',
-  'welcome.balance': 'Ø±ØµÙŠØ¯Ùƒ: *${balance}*',
-  'welcome.tap_menu': 'Ø§Ø¶ØºØ· *Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©* Ø¨Ø§Ù„Ø£Ø³ÙÙ„ Ù„Ù„Ø¨Ø¯Ø¡.',
-  'menu.title': 'ðŸ¯ *Ù…ØªØ¬Ø± SafwanTiger* â€” Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©',
+  'welcome': 'مرحبًا بك في متجر SafwanTiger',
+  'welcome.title': 'مرحبًا بك في متجر SafwanTiger!',
+  'welcome.balance': 'رصيدك: *${balance}*',
+  'welcome.tap_menu': 'اضغط *القائمة الرئيسية* بالأسفل للبدء.',
+  'menu.title': '🐯 *متجر SafwanTiger* — القائمة الرئيسية',
 
-  'btn.main_menu': 'â¬…ï¸ Ø±Ø¬ÙˆØ¹',
-  'btn.shop': 'ðŸ› Ø§Ù„Ù…ØªØ¬Ø±',
-  'btn.topup': 'ðŸ‘› Ø´Ø­Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø©',
-  'btn.profile': 'âš™ï¸ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª',
-  'btn.support': 'ðŸ’¬ Ø§Ù„Ø¯Ø¹Ù…',
-  'btn.ai_support': 'ðŸ¥ Kiwi Ai',
-  'btn.back': 'â¬…ï¸ Ø±Ø¬ÙˆØ¹',
-  'btn.next': 'Ø§Ù„ØªØ§Ù„ÙŠ â–¶ï¸',
-  'btn.prev': 'â—€ï¸ Ø§Ù„Ø³Ø§Ø¨Ù‚',
-  'btn.refresh': 'ðŸ”„ ØªØ­Ø¯ÙŠØ«',
-  'btn.buy_now': 'âœ… Ø´Ø±Ø§Ø¡ Ø§Ù„Ø¢Ù†',
-  'btn.redeem_referral': 'ðŸŽ Ø§Ù„Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª',
-  'btn.referral_earn_buy': 'ðŸ”— Ø§ÙƒØ³Ø¨ Ø¥Ø­Ø§Ù„Ø§Øª ÙˆØ§Ø´ØªØ±Ù',
-  'btn.convert_refers': 'ðŸ’± ØªØ­ÙˆÙŠÙ„ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª Ø¥Ù„Ù‰ USDT',
-  'btn.topup_wallet': 'ðŸ‘› Ø´Ø­Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø©',
-  'btn.view_note': 'ðŸ“ Ø¹Ø±Ø¶ Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø©',
-  'btn.qty_plus': 'âž•',
-  'btn.qty_minus': 'âž–',
-  'btn.custom_qty': 'ðŸ”¢ ÙƒÙ…ÙŠØ© Ù…Ø®ØµÙ‘ØµØ©',
-  'btn.qty_keypad_back': 'âŒ«',
-  'btn.qty_keypad_clear': 'ðŸ—‘ Ù…Ø³Ø­',
-  'btn.qty_keypad_confirm': 'âœ… ØªØ£ÙƒÙŠØ¯',
-  // Â«Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰Â» ÙŠØ¶Ø¨Ø· Ø§Ù„Ø¨Ø§ÙØ± Ø¹Ù„Ù‰ Ø§Ù„Ø­Ø¯ Ø§Ù„Ù…Ø³Ù…ÙˆØ­ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù…
-  // (`min(QTY_MAX, Ø§Ù„Ù…Ø®Ø²ÙˆÙ†)`) Ø¨Ø¶ØºØ·Ø© ÙˆØ§Ø­Ø¯Ø©ØŒ Ù„Ù„Ù…Ø´ØªØ±ÙŠ
-  // Ø§Ù„Ø°ÙŠ ÙŠØ±ØºØ¨ ÙÙŠ Ø´Ø±Ø§Ø¡ Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ÙƒØ§Ù…Ù„Ø© Ø¯ÙˆÙ† Ø¥Ø¯Ø®Ø§Ù„ Ø§Ù„Ø£Ø±Ù‚Ø§Ù….
-  'btn.qty_keypad_max': 'ðŸŽ¯ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰',
-  'btn.pay_wallet': 'ðŸ‘› Ø§Ù„Ù…Ø­ÙØ¸Ø©',
-  'btn.pay_referral': 'ðŸŽ Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª',
-  'btn.pay_direct': 'ðŸ’¸ Ø¯ÙØ¹ Ù…Ø¨Ø§Ø´Ø±',
-  'btn.pay_topup': 'ðŸª™ Ø´Ø­Ù†',
-  'btn.confirm_pay': 'âœ… ØªØ£ÙƒÙŠØ¯',
-  'btn.cancel_pay': 'â—€ï¸ Ø¥Ù„ØºØ§Ø¡',
-  // ØµÙÙˆÙ "Ø£Ø®Ø±Ù‰" Ùˆ"Ø±Ø¬ÙˆØ¹" ÙÙŠ Ù„ÙˆØ­Ø© Ø·Ø±Ù‚ Ø§Ù„Ø¯ÙØ¹ â€” Ø§Ù„Ø±Ù…Ø² Ø§Ù„Ù…ØªÙ…ÙŠØ²
-  // Ø§Ù„Ù…Ø¹Ø±Ù ÙÙŠ EMOJI.paymethod_others / paymethod_back ÙŠØ¸Ù‡Ø± Ù„Ù„Ù…Ø´ØªØ±ÙƒÙŠÙ†
-  // Ø§Ù„Ù…Ù…ÙŠØ²ÙŠÙ†ØŒ ÙˆØ§Ù„Ø¨Ø§Ù‚ÙŠ ÙŠØ±Ù‰ Ø§Ù„Ø±Ù…Ø² Ø§Ù„ØªÙ‚Ù„ÙŠØ¯ÙŠ Ø£Ø¯Ù†Ø§Ù‡ ÙƒØ§Ø­ØªÙŠØ§Ø·ÙŠ.
-  'btn.paymethod_others': 'ðŸ’¡ Ø£Ø®Ø±Ù‰',
-  'btn.paymethod_back': 'â—€ï¸ Ø±Ø¬ÙˆØ¹',
-  'btn.qty.max': 'ðŸŽ¯ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰',
-  'btn.qty.reset': 'ðŸ”„ Ø¥Ø¹Ø§Ø¯Ø©',
-  'btn.qty.confirm': 'âœ… ØªØ£ÙƒÙŠØ¯',
-  'btn.contact_admin': 'ðŸ’¬ ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©',
-  'btn.qty.dec_1': 'âž– 1',
-  'btn.qty.dec_10': 'âª 10',
-  'btn.qty.dec_100': 'â® 100',
-  'btn.qty.inc_1': 'âž• 1',
-  'btn.qty.inc_10': 'â© 10',
-  'btn.qty.inc_100': 'â­ 100',
-  'btn.qty.display': 'ðŸ“¦ {qty} / {stock}',
-  'btn.share_product': 'ðŸ”— Ù†Ø³Ø® Ø§Ù„Ø±Ø§Ø¨Ø·',
-  'btn.view_note_file': 'ðŸ“¥ Ø­ÙØ¸ ÙƒÙ…Ù„Ù TXT',
-  'btn.send_note_txt': 'ðŸ“¥ ØªÙ†Ø²ÙŠÙ„ TXT',
-  'btn.out_of_stock': 'âŒ ØºÙŠØ± Ù…ØªÙˆÙØ±',
-  'btn.my_orders': 'ðŸ§¾ Ø·Ù„Ø¨Ø§ØªÙŠ',
-  'btn.refer': 'ðŸŽ Ø¥Ø­Ø§Ù„Ø©',
-  'btn.notifications': 'ðŸ”” Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª',
-  'btn.toggle_stock': 'ðŸ“¢ ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø®Ø²ÙˆÙ†',
-  'btn.toggle_announcements': 'ðŸ’¬ ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø¹Ø§Ù…Ø©',
-  'btn.toggle_wallet': 'ðŸ’° ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø­ÙØ¸Ø©',
-  // ÙƒÙ„ Ø²Ø± Ø¹Ù„Ù‰ ØµÙ Ù…Ø³ØªÙ‚Ù„ØŒ Ù„Ø°Ù„Ùƒ Ù†Ø¹Ø±Ø¶ Ø§Ù„Ø§Ø³Ù… Ø§Ù„ÙƒØ§Ù…Ù„ ÙˆØ­Ø§Ù„Ø© Ø§Ù„ØªÙØ¹ÙŠÙ„.
-  'btn.notify.stock.on': 'ðŸŸ¢ ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø®Ø²ÙˆÙ†: Ù…ÙØ¹Ù„Ø©',
-  'btn.notify.stock.off': 'ðŸ”• ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø®Ø²ÙˆÙ†: Ù…Ø¹Ø·Ù„Ø©',
-  'btn.notify.ann.on': 'ðŸŸ¢ ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø¹Ø§Ù…Ø©: Ù…ÙØ¹Ù„Ø©',
-  'btn.notify.ann.off': 'ðŸ”• ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø¹Ø§Ù…Ø©: Ù…Ø¹Ø·Ù„Ø©',
-  'btn.notify.wallet.on': 'ðŸŸ¢ ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø­ÙØ¸Ø©: Ù…ÙØ¹Ù„Ø©',
-  'btn.notify.wallet.off': 'ðŸ”• ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø­ÙØ¸Ø©: Ù…Ø¹Ø·Ù„Ø©',
-  'btn.back_to_settings': 'â¬…ï¸ Ø±Ø¬ÙˆØ¹ Ù„Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª',
-  'btn.language': 'ðŸŒ Ø§Ù„Ù„ØºØ©',
-  'btn.language.english': 'ðŸ‡¬ðŸ‡§ English',
-  'btn.language.arabic': 'ðŸ‡¸ðŸ‡¦ Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©',
-  'btn.language.vietnamese': 'ðŸ‡»ðŸ‡³ Tiáº¿ng Viá»‡t',
-  'btn.region.clear': 'ðŸš« Ù…Ø³Ø­',
-  'btn.deposit_history': 'ðŸ’³ Ø³Ø¬Ù„ Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹Ø§Øª',
-  'btn.channel': 'Ø§Ù„Ù‚Ù†Ø§Ø©',
-  'btn.stats': 'ðŸ“Š Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª',
-  'btn.stats_refresh': 'ðŸ”„ ØªØ­Ø¯ÙŠØ«',
-  'btn.stats_back': 'â—€ï¸ Ø±Ø¬ÙˆØ¹',
-  // Ø£Ø²Ø±Ø§Ø± Ø´Ø±Ø­ Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹ Ø§Ù„Ù…Ø¹Ø±ÙˆØ¶Ø© Ø£Ø³ÙÙ„ ÙƒÙ„ Ø´Ø§Ø´Ø© Ø¹Ù†ÙˆØ§Ù† Ø´Ø¨ÙƒØ© /
-  // Binance / LTC. ÙŠÙ†Ù‚Ù„ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ Ù‡Ø°Ù‡ Ø§Ù„Ø´Ø§Ø´Ø§Øª Ù…Ù† ÙˆØ§Ø¬Ù‡Ø© Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©.
-  'btn.where_txid': 'ðŸ“˜ Ø£ÙŠÙ† Ø£Ø¬Ø¯ TXIDØŸ',
-  'btn.where_order_id': 'ðŸ“˜ Ø£ÙŠÙ† Ø£Ø¬Ø¯ Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨ØŸ',
-  // Bot tutorial + Using Method (Ù†Ø³Ø®Ø© Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª).
-  'btn.using_method': 'ðŸ“˜ Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…',
-  'btn.tutorial_open_link': 'ðŸ”— ÙØªØ­ Ø§Ù„Ø±Ø§Ø¨Ø·',
-  'btn.bot_tutorial': 'ðŸ“˜ Ø´Ø±Ø­ Ø§Ù„Ø¨ÙˆØª',
+  'btn.main_menu': '⬅️ رجوع',
+  'btn.shop': '🛍 المتجر',
+  'btn.topup': '👛 شحن المحفظة',
+  'btn.profile': '⚙️ الإعدادات',
+  'btn.support': '💬 الدعم',
+  'btn.ai_support': '🥝 Kiwi Ai',
+  'btn.back': '⬅️ رجوع',
+  'btn.next': 'التالي ▶️',
+  'btn.prev': '◀️ السابق',
+  'btn.refresh': '🔄 تحديث',
+  'btn.buy_now': '✅ شراء الآن',
+  'btn.redeem_referral': '🎁 الدفع بالإحالات',
+  'btn.referral_earn_buy': '🔗 اكسب إحالات واشترِ',
+  'btn.convert_refers': '💱 تحويل الإحالات إلى USDT',
+  'btn.topup_wallet': '👛 شحن المحفظة',
+  'btn.view_note': '📝 عرض الملاحظة',
+  'btn.qty_plus': '➕',
+  'btn.qty_minus': '➖',
+  'btn.custom_qty': '🔢 كمية مخصّصة',
+  'btn.qty_keypad_back': '⌫',
+  'btn.qty_keypad_clear': '🗑 مسح',
+  'btn.qty_keypad_confirm': '✅ تأكيد',
+  // «الحد الأقصى» يضبط البافر على الحد المسموح للمستخدم
+  // (`min(QTY_MAX, المخزون)`) بضغطة واحدة، للمشتري
+  // الذي يرغب في شراء الكمية الكاملة دون إدخال الأرقام.
+  'btn.qty_keypad_max': '🎯 الحد الأقصى',
+  'btn.pay_wallet': '👛 المحفظة',
+  'btn.pay_referral': '🎁 دفع بالإحالات',
+  'btn.pay_direct': '💸 دفع مباشر',
+  'btn.pay_topup': '🪙 شحن',
+  'btn.confirm_pay': '✅ تأكيد',
+  'btn.cancel_pay': '◀️ إلغاء',
+  // صفوف "أخرى" و"رجوع" في لوحة طرق الدفع — الرمز المتميز
+  // المعرف في EMOJI.paymethod_others / paymethod_back يظهر للمشتركين
+  // المميزين، والباقي يرى الرمز التقليدي أدناه كاحتياطي.
+  'btn.paymethod_others': '💡 أخرى',
+  'btn.paymethod_back': '◀️ رجوع',
+  'btn.qty.max': '🎯 الحد الأقصى',
+  'btn.qty.reset': '🔄 إعادة',
+  'btn.qty.confirm': '✅ تأكيد',
+  'btn.contact_admin': '💬 تواصل مع الإدارة',
+  'btn.qty.dec_1': '➖ 1',
+  'btn.qty.dec_10': '⏪ 10',
+  'btn.qty.dec_100': '⏮ 100',
+  'btn.qty.inc_1': '➕ 1',
+  'btn.qty.inc_10': '⏩ 10',
+  'btn.qty.inc_100': '⏭ 100',
+  'btn.qty.display': '📦 {qty} / {stock}',
+  'btn.share_product': '🔗 نسخ الرابط',
+  'btn.view_note_file': '📥 حفظ كملف TXT',
+  'btn.send_note_txt': '📥 تنزيل TXT',
+  'btn.out_of_stock': '❌ غير متوفر',
+  'btn.my_orders': '🧾 طلباتي',
+  'btn.refer': '🎁 إحالة',
+  'btn.notifications': '🔔 الإشعارات',
+  'btn.toggle_stock': '📢 تنبيهات المخزون',
+  'btn.toggle_announcements': '💬 تنبيهات عامة',
+  'btn.toggle_wallet': '💰 تنبيهات المحفظة',
+  // كل زر على صف مستقل، لذلك نعرض الاسم الكامل وحالة التفعيل.
+  'btn.notify.stock.on': '🟢 تنبيهات المخزون: مفعلة',
+  'btn.notify.stock.off': '🔕 تنبيهات المخزون: معطلة',
+  'btn.notify.ann.on': '🟢 تنبيهات عامة: مفعلة',
+  'btn.notify.ann.off': '🔕 تنبيهات عامة: معطلة',
+  'btn.notify.wallet.on': '🟢 تنبيهات المحفظة: مفعلة',
+  'btn.notify.wallet.off': '🔕 تنبيهات المحفظة: معطلة',
+  'btn.back_to_settings': '⬅️ رجوع للإعدادات',
+  'btn.language': '🌐 اللغة',
+  'btn.language.english': '🇬🇧 English',
+  'btn.language.arabic': '🇸🇦 العربية',
+  'btn.language.vietnamese': '🇻🇳 Tiếng Việt',
+  'btn.region.clear': '🚫 مسح',
+  'btn.deposit_history': '💳 سجل الإيداعات',
+  'btn.channel': 'القناة',
+  'btn.stats': '📊 إحصائيات',
+  'btn.stats_refresh': '🔄 تحديث',
+  'btn.stats_back': '◀️ رجوع',
+  // أزرار شرح طريقة الدفع المعروضة أسفل كل شاشة عنوان شبكة /
+  // Binance / LTC. ينقل المسؤول هذه الشاشات من واجهة الإدارة.
+  'btn.where_txid': '📘 أين أجد TXID؟',
+  'btn.where_order_id': '📘 أين أجد رقم الطلب؟',
+  // Bot tutorial + Using Method (نسخة الإعدادات).
+  'btn.using_method': '📘 طريقة الاستخدام',
+  'btn.tutorial_open_link': '🔗 فتح الرابط',
+  'btn.bot_tutorial': '📘 شرح البوت',
 
-  'shop.home.header': '*Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„Ù…ØªØ§Ø­Ø©:*',
-  'shop.choose_category': '*Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„Ù…ØªØ§Ø­Ø©:*',
-  'shop.qty.prompt': 'ðŸ”¢ Ø§ÙƒØªØ¨ Ø§Ù„ÙƒÙ…ÙŠØ© (1â€“{max}) ÙˆØ£Ø±Ø³Ù„.',
-  'shop.qty.invalid': 'âŒ Ø±Ù‚Ù… ØºÙŠØ± ØµØ§Ù„Ø­ â€” Ø£Ø±Ø³Ù„ Ù‚ÙŠÙ…Ø© Ø¨ÙŠÙ† 1 Ùˆ {max}.',
-  // Ø§Ù„Ø±Ù…Ø² `{current}` Ù‡Ùˆ Ø¨Ø§ÙØ± Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ø°ÙŠ Ø£Ø¯Ø®Ù„Ù‡ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…
-  // Ø­ØªÙ‰ Ø§Ù„Ø¢Ù†. Ù‚Ø¨Ù„ Ø£ÙˆÙ„ Ù„Ù…Ø³Ø© ÙŠØ¸Ù‡Ø± Ø§Ù„Ù†Øµ `(Ø§Ù„ÙƒÙ…ÙŠØ©)` ÙƒØªÙˆØ¬ÙŠÙ‡
-  // Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø´Ø±Ø·Ø© Ø§Ù„ØºØ§Ù…Ø¶Ø© Ø§Ù„Ø³Ø§Ø¨Ù‚Ø© (Â«â€”Â»).
+  'shop.home.header': '*المنتجات المتاحة:*',
+  'shop.choose_category': '*المنتجات المتاحة:*',
+  'shop.qty.prompt': '🔢 اكتب الكمية (1–{max}) وأرسل.',
+  'shop.qty.invalid': '❌ رقم غير صالح — أرسل قيمة بين 1 و {max}.',
+  // الرمز `{current}` هو بافر الأرقام الذي أدخله المستخدم
+  // حتى الآن. قبل أول لمسة يظهر النص `(الكمية)` كتوجيه
+  // للمستخدم بدلاً من الشرطة الغامضة السابقة («—»).
   'shop.qty.keypad.instruction':
-    '{qty_prompt_keypad} *Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…:* Ø§Ø¶ØºØ· Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ø£Ø¯Ù†Ø§Ù‡ Ø£Ùˆ Ø£Ø±Ø³Ù„ Ø±Ù‚Ù…Ø§Ù‹ ' +
-    'Ø«Ù… Ø§Ø¶ØºØ· âœ… ØªØ£ÙƒÙŠØ¯.\n' +
-    'Ø§Ù„Ø­Ø§Ù„ÙŠ: <code>{current}</code>',
-  // Ø§Ù„Ø¹Ù†ØµØ± Ø§Ù„Ù†Ø§Ø¦Ø¨ Ø§Ù„Ø°ÙŠ ÙŠØ¸Ù‡Ø± Ø¯Ø§Ø®Ù„ `Ø§Ù„Ø­Ø§Ù„ÙŠ: <code>â€¦</code>` Ù‚Ø¨Ù„ Ø£Ù†
-  // ÙŠØ¨Ø¯Ø£ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ø¥Ø¯Ø®Ø§Ù„ Ø§Ù„Ø£Ø±Ù‚Ø§Ù…. ÙŠÙ‚Ø±Ø£ ÙƒØ¬Ù…Ù„Ø© (Ø§Ù„Ø­Ø§Ù„ÙŠ: (Ø§Ù„ÙƒÙ…ÙŠØ©))
-  // Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø´Ø±Ø·Ø© Ø§Ù„ØºØ§Ù…Ø¶Ø© Ø§Ù„Ø³Ø§Ø¨Ù‚Ø© (Â«â€”Â»).
-  'shop.qty.keypad.placeholder': '(Ø§Ù„ÙƒÙ…ÙŠØ©)',
+    '{qty_prompt_keypad} *طريقة الاستخدام:* اضغط الأرقام أدناه أو أرسل رقماً ' +
+    'ثم اضغط ✅ تأكيد.\n' +
+    'الحالي: <code>{current}</code>',
+  // العنصر النائب الذي يظهر داخل `الحالي: <code>…</code>` قبل أن
+  // يبدأ المستخدم بإدخال الأرقام. يقرأ كجملة (الحالي: (الكمية))
+  // بدلاً من الشرطة الغامضة السابقة («—»).
+  'shop.qty.keypad.placeholder': '(الكمية)',
   'shop.qty.keypad.invalid':
-    '{qty_invalid} *ÙƒÙ…ÙŠØ© ØºÙŠØ± ØµØ§Ù„Ø­Ø©.*\n\n' +
-    'Ø£Ø±Ø³Ù„ Ø¹Ø¯Ø¯Ø§Ù‹ ØµØ­ÙŠØ­Ø§Ù‹ Ø¨ÙŠÙ† *1* Ùˆ *{max}*.',
+    '{qty_invalid} *كمية غير صالحة.*\n\n' +
+    'أرسل عدداً صحيحاً بين *1* و *{max}*.',
   'shop.pay.title':
-    '{pay_summary} *Ù…Ù„Ø®Øµ Ø§Ù„Ø·Ù„Ø¨*\n\n' +
+    '{pay_summary} *ملخص الطلب*\n\n' +
     '{emoji} *{name}*\n' +
-    '{prod_qty_selected} Ø§Ù„ÙƒÙ…ÙŠØ©: *{qty}*\n' +
+    '{prod_qty_selected} الكمية: *{qty}*\n' +
     '{promo_line}' +
-    '{prod_total_amount} Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ: *{total} USDT*\n' +
-    '{prod_wallet} Ø§Ù„Ù…Ø­ÙØ¸Ø©: *{balance} USDT*\n' +
+    '{prod_total_amount} الإجمالي: *{total} USDT*\n' +
+    '{prod_wallet} المحفظة: *{balance} USDT*\n' +
     '{referral_line}' +
-    'Ø§Ø®ØªØ± Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹:',
+    'اختر طريقة الدفع:',
   'shop.pay.referral_line':
-    '{prod_referral} Ø¯ÙØ¹ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª:\n*{available} Ù…ØªØ§Ø­* â€¢ *{required} Ù…Ø·Ù„ÙˆØ¨*\n\n',
-  // Ø¨Ø·Ø§Ù‚Ø© ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø¯ÙØ¹ Ù…Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø© (Ø§Ù„ØµÙØ­Ø© 2).
+    '{prod_referral} دفع الإحالات:\n*{available} متاح* • *{required} مطلوب*\n\n',
+  // بطاقة تأكيد الدفع من المحفظة (الصفحة 2).
   'shop.pay.confirm':
-    '{prod_wallet} *ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø¯ÙØ¹*\n\n' +
-    '{pay_summary} *Ø§Ù„Ø·Ù„Ø¨*\n' +
-    '{emoji} *{name}* Ã— *{qty}*\n' +
+    '{prod_wallet} *تأكيد الدفع*\n\n' +
+    '{pay_summary} *الطلب*\n' +
+    '{emoji} *{name}* × *{qty}*\n' +
     '{discount_line}' +
-    '{prod_total_amount} *Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ:* {total} USDT\n' +
-    '{prod_wallet} *Ø§Ù„Ù…Ø­ÙØ¸Ø©:* {balance} USDT\n\n' +
-    '_Ø®ØµÙ… *{total} USDT* Ù…Ù† Ù…Ø­ÙØ¸ØªÙƒØŸ_',
+    '{prod_total_amount} *الإجمالي:* {total} USDT\n' +
+    '{prod_wallet} *المحفظة:* {balance} USDT\n\n' +
+    '_خصم *{total} USDT* من محفظتك؟_',
   'shop.pay.confirm.discount_line':
-    '{prod_promo} *Ø®ØµÙ…:* âˆ’{discount} USDT\n',
+    '{prod_promo} *خصم:* −{discount} USDT\n',
   'shop.qty.editor.title':
-    'ðŸ”¢ *Ø§Ø®ØªØ± Ø§Ù„ÙƒÙ…ÙŠØ©*\n\n' +
+    '🔢 *اختر الكمية*\n\n' +
     '*{name}*\n' +
-    'Ø§Ù„Ù…Ø®Ø²ÙˆÙ†: *{stock}*\n' +
-    'Ø§Ù„Ø³Ø¹Ø± Ù„Ù„ÙˆØ­Ø¯Ø©: *{price} USDT*\n\n' +
-    'Ø§Ù„Ù…Ø­Ø¯Ø¯: <code>{qty}</code>\n' +
-    'Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ: *{total} USDT*',
-  'shop.empty_categories': 'Ù„Ø§ ØªÙˆØ¬Ø¯ ÙØ¦Ø§Øª Ø¨Ø¹Ø¯. ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªØ­Ù‚Ù‚ Ù„Ø§Ø­Ù‚Ù‹Ø§.',
-  'shop.empty_products': 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù†ØªØ¬Ø§Øª ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„ÙØ¦Ø© Ø¨Ø¹Ø¯.',
+    'المخزون: *{stock}*\n' +
+    'السعر للوحدة: *{price} USDT*\n\n' +
+    'المحدد: <code>{qty}</code>\n' +
+    'الإجمالي: *{total} USDT*',
+  'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
+  'shop.empty_products': 'لا توجد منتجات في هذه الفئة بعد.',
   'shop.product.line.name': '{emoji} *{name}*',
-  'shop.product.line.price': '{prod_price_base} *Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ:* {price} USDT',
-  'shop.product.line.stock': '{prod_stock} *Ø§Ù„Ù…ØªÙˆÙØ±:* {stock}',
-  'shop.product.line.warranty': '{prod_warranty} *Ø§Ù„Ø¶Ù…Ø§Ù†:* {warranty}',
+  'shop.product.line.price': '{prod_price_base} *السعر الأساسي:* {price} USDT',
+  'shop.product.line.stock': '{prod_stock} *المتوفر:* {stock}',
+  'shop.product.line.warranty': '{prod_warranty} *الضمان:* {warranty}',
   'shop.product.line.referral.progress':
-    '{prod_referral} *Ø§Ù„Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª:* Ø§Ù„Ù…Ø·Ù„ÙˆØ¨ {required} â€¢ Ø§Ù„Ù…ØªØ§Ø­ {total} â€¢ Ø§Ù„Ù†Ø§Ù‚Øµ {remaining}',
+    '{prod_referral} *الدفع بالإحالات:* المطلوب {required} • المتاح {total} • الناقص {remaining}',
   'shop.product.line.referral.ready':
-    '{prod_referral} *Ø§Ù„Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª:* Ø§Ù„Ù…Ø·Ù„ÙˆØ¨ {required} â€¢ Ø§Ù„Ù…ØªØ§Ø­ {total} â€¢ Ø¬Ø§Ù‡Ø²',
+    '{prod_referral} *الدفع بالإحالات:* المطلوب {required} • المتاح {total} • جاهز',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *Ø§Ù„Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª:* ØªÙ… Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø±ØµÙŠØ¯ ÙÙŠ Ø·Ù„Ø¨ Ù‚Ø¯ÙŠÙ…',
-  'shop.product.line.qty': '{prod_qty_selected} *Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø®ØªØ§Ø±Ø©:* {qty}',
-  'shop.product.line.total': '{prod_total_amount} *Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ:* {total} USDT',
-  'shop.product.line.balance': '{prod_wallet} *Ø§Ù„Ù…Ø­ÙØ¸Ø©:* {balance} USDT',
+    '{prod_referral} *الدفع بالإحالات:* تم استخدام الرصيد في طلب قديم',
+  'shop.product.line.qty': '{prod_qty_selected} *الكمية المختارة:* {qty}',
+  'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total} USDT',
+  'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance} USDT',
   'shop.product.line.promo':
-    '{prod_promo} *Ø¹Ø±Ø¶ ØªØ±ÙˆÙŠØ¬ÙŠ:* {label} â€” âˆ’{discount} USDT',
-  'shop.product.line.promo.fallback_label': 'Ø§Ù„ÙƒÙ…ÙŠØ© â‰¥ {min_qty}',
+    '{prod_promo} *عرض ترويجي:* {label} — −{discount} USDT',
+  'shop.product.line.promo.fallback_label': 'الكمية ≥ {min_qty}',
   'shop.product.line.promo.teaser':
-    '{prod_promo} *Ø¹Ø±Ø¶ ØªØ±ÙˆÙŠØ¬ÙŠ:* Ø§Ø´ØªØ±Ù {min_qty}+ Ø¨Ø®ØµÙ… âˆ’${discount}',
+    '{prod_promo} *عرض ترويجي:* اشترِ {min_qty}+ بخصم −${discount}',
   'shop.product.line.total.discounted':
-    '{prod_total_amount} *Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ:* ~~{gross}~~ {total} USDT',
+    '{prod_total_amount} *الإجمالي:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
-    'âŒ Ù‡Ø°Ø§ Ø§Ù„Ù…Ù†ØªØ¬ ØºÙŠØ± Ù…ØªÙˆÙØ± Ø­Ø§Ù„ÙŠÙ‹Ø§. Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¥Ø¯Ø§Ø±Ø© Ù„Ø¥Ø¹Ø§Ø¯Ø© ØªØ¬Ø¯ÙŠØ¯ Ø§Ù„Ù…Ø®Ø²ÙˆÙ† Ø£Ùˆ Ø§Ø®ØªÙŠØ§Ø± Ù…Ù†ØªØ¬ Ù…Ø´Ø§Ø¨Ù‡.',
-  'shop.note.title': 'ðŸ“ *Ù…Ù„Ø§Ø­Ø¸Ø© Ø§Ù„Ù…Ù†ØªØ¬*',
-  'shop.note.empty': 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù„Ø§Ø­Ø¸Ø© Ù„Ù‡Ø°Ø§ Ø§Ù„Ù…Ù†ØªØ¬.',
+    '❌ هذا المنتج غير متوفر حاليًا. الرجاء التواصل مع الإدارة لإعادة تجديد المخزون أو اختيار منتج مشابه.',
+  'shop.note.title': '📝 *ملاحظة المنتج*',
+  'shop.note.empty': 'لا توجد ملاحظة لهذا المنتج.',
   'shop.note.full': [
-    '*ðŸ“ Ù…Ù„Ø§Ø­Ø¸Ø© Ø§Ù„Ù…Ù†ØªØ¬ â€” {name}*',
+    '*📝 ملاحظة المنتج — {name}*',
     '',
-    '*Ø§Ù„Ø³Ø¹Ø±:* `{price} USDT`',
-    '*Ø§Ù„Ù…Ø®Ø²ÙˆÙ†:* `{stock}`',
-    '*Ø§Ù„Ø¶Ù…Ø§Ù†:* `{warranty}`',
+    '*السعر:* `{price} USDT`',
+    '*المخزون:* `{stock}`',
+    '*الضمان:* `{warranty}`',
     '',
-    '*Ø§Ù„ÙˆØµÙ:*',
+    '*الوصف:*',
     '{description}',
     '',
-    '*Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø©:*',
+    '*الملاحظة:*',
     '{note}',
   ].join('\n'),
   'shop.buy.success':
-    'âœ… ØªÙ…Øª Ø¹Ù…Ù„ÙŠØ© Ø§Ù„Ø´Ø±Ø§Ø¡!\n\nØ§Ù„Ù…Ù†ØªØ¬: *{name}*\nØ§Ù„ÙƒÙ…ÙŠØ©: *{qty}*\nØ§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ: *{total}*\n\nØ§Ù„ØªØ³Ù„ÙŠÙ…:\n```\n{delivery}\n```',
-  'shop.buy.insufficient': 'âŒ Ø±ØµÙŠØ¯ ØºÙŠØ± ÙƒØ§ÙÙ. ØªØ­ØªØ§Ø¬ *{need}* ÙˆÙ„Ø¯ÙŠÙƒ *{have}* ÙÙ‚Ø·. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ø´Ø­Ù† Ø£ÙˆÙ„Ø§Ù‹.',
-  'shop.buy.no_stock': 'âŒ Ø¹Ø°Ø±Ù‹Ø§ØŒ Ù‡Ø°Ø§ Ø§Ù„Ù…Ù†ØªØ¬ ØºÙŠØ± Ù…ØªÙˆÙØ±.',
-  'shop.referral.disabled': 'âŒ Ø¯ÙØ¹ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª ØºÙŠØ± Ù…ÙØ¹Ù‘Ù„ Ù„Ù‡Ø°Ø§ Ø§Ù„Ù…Ù†ØªØ¬.',
-  'shop.referral.already_redeemed': 'âœ… ØªÙ… Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø¯ÙØ¹ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª Ø¹Ù„Ù‰ Ø·Ù„Ø¨ Ù‚Ø¯ÙŠÙ….',
+    '✅ تمت عملية الشراء!\n\nالمنتج: *{name}*\nالكمية: *{qty}*\nالإجمالي: *{total}*\n\nالتسليم:\n```\n{delivery}\n```',
+  'shop.buy.insufficient': '❌ رصيد غير كافٍ. تحتاج *{need}* ولديك *{have}* فقط. يرجى الشحن أولاً.',
+  'shop.buy.no_stock': '❌ عذرًا، هذا المنتج غير متوفر.',
+  'shop.referral.disabled': '❌ دفع الإحالات غير مفعّل لهذا المنتج.',
+  'shop.referral.already_redeemed': '✅ تم استخدام دفع الإحالات على طلب قديم.',
   'shop.referral.insufficient':
-    'âŒ ØªØ­ØªØ§Ø¬ {required} Ø¥Ø­Ø§Ù„Ø© Ù„Ù„Ø§Ø³ØªØ¨Ø¯Ø§Ù„. Ù„Ø¯ÙŠÙƒ {total} (Ø¨Ø§Ù‚ÙŠ {remaining}).',
+    '❌ تحتاج {required} إحالة للاستبدال. لديك {total} (باقي {remaining}).',
   'shop.referral.insufficient.card': [
-    'âš ï¸ *Ø±ØµÙŠØ¯ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª ØºÙŠØ± ÙƒØ§ÙÙ*',
+    '⚠️ *رصيد الإحالات غير كافٍ*',
     '',
-    '{prod_referral} *Ø§Ù„Ù…Ø·Ù„ÙˆØ¨:* {required} Ø¥Ø­Ø§Ù„Ø§Øª',
-    '{refer_user} *Ø§Ù„Ù…ØªØ§Ø­:* {available} Ø¥Ø­Ø§Ù„Ø§Øª',
-    '{qty_invalid} *Ø§Ù„Ù…ØªØ¨Ù‚ÙŠ:* {remaining} Ø¥Ø­Ø§Ù„Ø§Øª',
+    '{prod_referral} *المطلوب:* {required} إحالات',
+    '{refer_user} *المتاح:* {available} إحالات',
+    '{qty_invalid} *المتبقي:* {remaining} إحالات',
     '',
-    '{refer_title} Ø§Ø¯Ø¹Ù Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† Ø¨Ø±Ø§Ø¨Ø· Ø§Ù„Ø¥Ø­Ø§Ù„Ø©ØŒ Ø«Ù… Ø­Ø¯Ù‘Ø« Ø§Ù„ØµÙØ­Ø© ÙˆØ§Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª.',
+    '{refer_title} ادعُ مستخدمين برابط الإحالة، ثم حدّث الصفحة وادفع بالإحالات.',
   ].join('\n'),
   'shop.referral.confirm': [
-    '{refer_title} *ØªØ£ÙƒÙŠØ¯ Ø¯ÙØ¹ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª*',
+    '{refer_title} *تأكيد دفع الإحالات*',
     '',
-    '{emoji} *{name}* Ã— *{qty}*',
-    '{prod_referral} *Ø§Ù„Ù…Ø·Ù„ÙˆØ¨:* {required} Ø¥Ø­Ø§Ù„Ø§Øª',
-    '{refer_user} *Ø§Ù„Ù…ØªØ§Ø­:* {available} Ø¥Ø­Ø§Ù„Ø§Øª',
-    '{delivery_check} *Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙØ¹:* {after} Ø¥Ø­Ø§Ù„Ø§Øª',
+    '{emoji} *{name}* × *{qty}*',
+    '{prod_referral} *المطلوب:* {required} إحالات',
+    '{refer_user} *المتاح:* {available} إحالات',
+    '{delivery_check} *بعد الدفع:* {after} إحالات',
     '',
-    '_Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø¥Ø­Ø§Ù„Ø§ØªÙƒ Ø§Ù„Ù†Ø´Ø·Ø© Ù„Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ØŸ_',
+    '_استخدام إحالاتك النشطة لهذا الطلب؟_',
   ].join('\n'),
   'shop.referral.failed':
-    'âŒ ØªØ¹Ø°Ø± Ø¥ÙƒÙ…Ø§Ù„ Ø¯ÙØ¹ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø¢Ù†. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ Ø£Ùˆ ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©.',
+    '❌ تعذر إكمال دفع الإحالات الآن. حاول مرة أخرى أو تواصل مع الإدارة.',
   'shop.referral.confirmed': [
-    '{refer_title} *ØªÙ… Ø§Ù„Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª Ø¨Ù†Ø¬Ø§Ø­!*',
+    '{refer_title} *تم الدفع بالإحالات بنجاح!*',
     '',
-    '*Ø§Ù„Ù…Ù†ØªØ¬:* {name}',
-    '*Ø§Ù„ÙƒÙ…ÙŠØ©:* {qty}',
-    '*Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…Ø©:* {spent}',
+    '*المنتج:* {name}',
+    '*الكمية:* {qty}',
+    '*الإحالات المستخدمة:* {spent}',
     '',
-    '{delivering} _Ø¬Ø§Ø±Ù ØªØ³Ù„ÙŠÙ… Ø·Ù„Ø¨Ùƒâ€¦_',
+    '{delivering} _جارٍ تسليم طلبك…_',
   ].join('\n'),
-  'shop.referral.delivery': 'Ø¯ÙØ¹ Ø¨Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª Ù„Ù„Ù…Ù†ØªØ¬ #{product_id} (Ø§Ù„ÙƒÙ…ÙŠØ©: {qty})',
-  'shop.page.header': 'ðŸ›’ *{category}*\n\n*Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„Ù…ØªØ§Ø­Ø©:*\n_{total} Ù…Ù†ØªØ¬ â€” ØµÙØ­Ø© {page}/{pages}_',
+  'shop.referral.delivery': 'دفع بالإحالات للمنتج #{product_id} (الكمية: {qty})',
+  'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
-  'profile.title': 'âš™ï¸ *Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª*',
-  'profile.notifications.title': '{notify_bell} *Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª*',
+  'profile.title': '⚙️ *الإعدادات*',
+  'profile.notifications.title': '{notify_bell} *الإشعارات*',
   'profile.notifications.body':
-    '{notify_on} _ÙØ¹Ù‘Ù„ ÙÙ‚Ø· Ø§Ù„ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„ØªÙŠ ØªÙ‡Ù…Ù‘Ùƒ_ {notify_bell}\n\n' +
-    '{notify_stock} *ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø®Ø²ÙˆÙ†*\n' +
-    '{notify_info} *ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø¹Ø§Ù…Ø©*\n' +
-    '{notify_wallet} *ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø­ÙØ¸Ø©*\n\n' +
-    '{notify_on} Ù…ÙØ¹Ù„Ø©\n' +
-    '{notify_off} Ù…Ø¹Ø·Ù„Ø©',
-  'profile.user_id': 'Ù…Ø¹Ø±Ù Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…: `{id}`',
-  'profile.username': 'Ø§Ø³Ù… Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…: @{username}',
-  'profile.balance': 'ðŸ‘› Ø§Ù„Ø±ØµÙŠØ¯: *{balance}*',
-  'profile.language': 'ðŸŒ Ø§Ù„Ù„ØºØ©: *{language}*',
-  'profile.joined': 'ðŸ“… Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…: *{joined}*',
-  // Ø´Ø§Ø´Ø© Ø§Ù„Ø¥Ø­Ø§Ù„Ø© ÙˆØ§Ù„ØªØ±Ø¨Ø­.
-  'profile.refer.title': '{refer_title} *Ø¥Ø­Ø§Ù„Ø© ÙˆØªØ±Ø¨Ø­*',
+    '{notify_on} _فعّل فقط التنبيهات التي تهمّك_ {notify_bell}\n\n' +
+    '{notify_stock} *تنبيهات المخزون*\n' +
+    '{notify_info} *تنبيهات عامة*\n' +
+    '{notify_wallet} *تنبيهات المحفظة*\n\n' +
+    '{notify_on} مفعلة\n' +
+    '{notify_off} معطلة',
+  'profile.user_id': 'معرف المستخدم: `{id}`',
+  'profile.username': 'اسم المستخدم: @{username}',
+  'profile.balance': '👛 الرصيد: *{balance}*',
+  'profile.language': '🌐 اللغة: *{language}*',
+  'profile.joined': '📅 الانضمام: *{joined}*',
+  // شاشة الإحالة والتربح.
+  'profile.refer.title': '{refer_title} *إحالة وتربح*',
   'profile.refer.body':
-    '{refer_prize_l} *Ø§Ø¯Ø¹Ù 10 Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† ÙˆØ§Ø±Ø¨Ø­ $0.50* {refer_prize_r}\n\n' +
-    '{refer_clicks} *Ø§Ù„Ù†Ù‚Ø±Ø§Øª:* {clicks}\n' +
-    '{refer_pending} *Ø§Ù„Ù…Ø¹Ù„Ù‚:* {pending}\n' +
-    '{refer_active} *Ø§Ù„Ù†Ø´Ø·:* {active}\n' +
-    '{refer_total} *Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª (Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ):* {refTotal}\n' +
-    '{refer_coin} *Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø£Ø±Ø¨Ø§Ø­:* {earnedTotal} USDT\n' +
-    '{refer_withdrawn} *Ø§Ù„Ù…Ø³Ø­ÙˆØ¨:* {withdrawn} USDT\n\n' +
-    '{prod_referral} *Ø±ØµÙŠØ¯ Ø¯ÙØ¹ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª:* {refAvailable} Ø¥Ø­Ø§Ù„Ø§Øª\n' +
-    '{refer_spent} *Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ù„Ù„Ù…Ø´ØªØ±ÙŠØ§Øª:* {refSpent} Ø¥Ø­Ø§Ù„Ø§Øª\n\n' +
-    '> Ø­ÙˆÙ‘Ù„ Ø§Ù„Ø£Ø±Ø¨Ø§Ø­ Ø¥Ù„Ù‰ Ø§Ù„Ù…Ø­ÙØ¸Ø© ÙÙŠ Ø£ÙŠ ÙˆÙ‚Øª. Ù„Ù„Ø³Ø­Ø¨ Ø§Ù„Ù†Ù‚Ø¯ÙŠ ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¯Ø¹Ù… (Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ 1$).\n\n' +
-    '*Ø±Ø§Ø¨Ø· Ø§Ù„Ø¥Ø­Ø§Ù„Ø© Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ:*\n`{link}`',
+    '{refer_prize_l} *ادعُ 10 مستخدمين واربح $0.50* {refer_prize_r}\n\n' +
+    '{refer_clicks} *النقرات:* {clicks}\n' +
+    '{refer_pending} *المعلق:* {pending}\n' +
+    '{refer_active} *النشط:* {active}\n' +
+    '{refer_total} *الإحالات (الإجمالي):* {refTotal}\n' +
+    '{refer_coin} *إجمالي الأرباح:* {earnedTotal} USDT\n' +
+    '{refer_withdrawn} *المسحوب:* {withdrawn} USDT\n\n' +
+    '{prod_referral} *رصيد دفع الإحالات:* {refAvailable} إحالات\n' +
+    '{refer_spent} *المستخدم للمشتريات:* {refSpent} إحالات\n\n' +
+    '> حوّل الأرباح إلى المحفظة في أي وقت. للسحب النقدي تواصل مع الدعم (الحد الأدنى 1$).\n\n' +
+    '*رابط الإحالة الخاص بك:*\n`{link}`',
   'profile.refer.convert_success':
-    'ðŸ’± ØªÙ… ØªØ­ÙˆÙŠÙ„ *{refs} Ø¥Ø­Ø§Ù„Ø©* Ø¥Ù„Ù‰ *{amount} USDT*.\n\nðŸ’³ Ø±ØµÙŠØ¯ Ø§Ù„Ù…Ø­ÙØ¸Ø©: *{balance} USDT*',
+    '💱 تم تحويل *{refs} إحالة* إلى *{amount} USDT*.\n\n💳 رصيد المحفظة: *{balance} USDT*',
   'profile.refer.convert_low':
-    'âš ï¸ Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø±ØµÙŠØ¯ Ø¥Ø­Ø§Ù„Ø§Øª ÙƒØ§ÙÙ Ù„Ù„ØªØ­ÙˆÙŠÙ„.\n\nØªØ­ØªØ§Ø¬ *20 Ø¥Ø­Ø§Ù„Ø© Ù†Ø´Ø·Ø©* Ù„Ù„ØªØ­ÙˆÙŠÙ„ Ø¥Ù„Ù‰ *1 USDT*.\nØ±ØµÙŠØ¯ Referral Pay Ø§Ù„Ø­Ø§Ù„ÙŠ: *{available} Ø¥Ø­Ø§Ù„Ø©*',
+    '⚠️ لا يوجد رصيد إحالات كافٍ للتحويل.\n\nتحتاج *20 إحالة نشطة* للتحويل إلى *1 USDT*.\nرصيد Referral Pay الحالي: *{available} إحالة*',
   'profile.refer.convert_error':
-    'âš ï¸ ØªØ¹Ø°Ø± ØªØ­ÙˆÙŠÙ„ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø¢Ù†. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.',
-  'btn.copy_link': 'ðŸ“‹ Ù†Ø³Ø® Ø§Ù„Ø±Ø§Ø¨Ø·',
-  'btn.redeem': 'ðŸŽ Ø±Ù…Ø² Ù‡Ø¯ÙŠØ©',
-  'profile.language.title': '{lang_left} *Ø§Ø®ØªØ± Ø§Ù„Ù„ØºØ©* {lang_right}',
-  'profile.email.hub.title': '{email_bracket_l} *Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø¨Ø±ÙŠØ¯* {profile_email}',
+    '⚠️ تعذر تحويل الإحالات الآن. حاول مرة أخرى.',
+  'btn.copy_link': '📋 نسخ الرابط',
+  'btn.redeem': '🎁 رمز هدية',
+  'profile.language.title': '{lang_left} *اختر اللغة* {lang_right}',
+  'profile.email.hub.title': '{email_bracket_l} *إعدادات البريد* {profile_email}',
   'profile.email.hub.body':
-    '{email_invoice} Ù†Ø³ØªØ®Ø¯Ù… Ø¨Ø±ÙŠØ¯Ùƒ Ù„Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„ÙÙˆØ§ØªÙŠØ± ÙˆØ§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø­Ø³Ø§Ø¨ ÙÙ‚Ø· â€” Ù„Ù† Ù†Ø±Ø³Ù„ Ø£ÙŠ Ø±Ø³Ø§Ø¦Ù„ ØªØ³ÙˆÙŠÙ‚ÙŠØ©.\n\n' +
-    '{profile_email} *Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø­Ø§Ù„ÙŠ:* `{current}`',
+    '{email_invoice} نستخدم بريدك لإرسال الفواتير واستعادة الحساب فقط — لن نرسل أي رسائل تسويقية.\n\n' +
+    '{profile_email} *البريد الحالي:* `{current}`',
   'profile.email.set.already_set_popup':
-    'ØªÙ… ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø¨Ø§Ù„ÙØ¹Ù„ ({current}). Ø§Ø³ØªØ®Ø¯Ù… ØªØºÙŠÙŠØ± Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø£Ùˆ Ø­Ø°Ù Ø§Ù„Ø¨Ø±ÙŠØ¯ Ù„ØªØ­Ø¯ÙŠØ«Ù‡.',
-  'profile.email.delete.no_email_popup': 'Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø¨Ø±ÙŠØ¯ Ù…Ø­ÙÙˆØ¸ â€” Ù„Ø§ Ø´ÙŠØ¡ Ù„Ø­Ø°ÙÙ‡.',
-  'profile.email.delete.title': '{email_bracket_l} *Ø­Ø°Ù Ø§Ù„Ø¨Ø±ÙŠØ¯* {email_bracket_l}',
+    'تم تعيين البريد بالفعل ({current}). استخدم تغيير البريد أو حذف البريد لتحديثه.',
+  'profile.email.delete.no_email_popup': 'لا يوجد بريد محفوظ — لا شيء لحذفه.',
+  'profile.email.delete.title': '{email_bracket_l} *حذف البريد* {email_bracket_l}',
   'profile.email.delete.body':
-    '{email_invalid} _ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªØ£ÙƒÙŠØ¯ Ù„Ø­Ø°Ù Ø§Ù„Ø¨Ø±ÙŠØ¯_\n\n' +
-    '{profile_email} *Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø­Ø§Ù„ÙŠ:* `{current}`',
-  'profile.email.delete.success': 'âœ… ØªÙ… Ø­Ø°Ù Ø§Ù„Ø¨Ø±ÙŠØ¯.',
+    '{email_invalid} _يرجى التأكيد لحذف البريد_\n\n' +
+    '{profile_email} *البريد الحالي:* `{current}`',
+  'profile.email.delete.success': '✅ تم حذف البريد.',
   'profile.email.in_use':
-    '{email_in_use} Ù‡Ø°Ø§ Ø§Ù„Ø¨Ø±ÙŠØ¯ *Ù…Ø³ØªØ®Ø¯Ù…* Ø¨Ø§Ù„ÙØ¹Ù„\n\n' +
-    '{email_arrow} *_ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ø¨Ø±ÙŠØ¯ Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ Ø¢Ø®Ø±_*',
-  'btn.email.delete': 'ðŸ—‘ Ø­Ø°Ù Ø§Ù„Ø¨Ø±ÙŠØ¯',
-  'btn.email.delete.confirm': 'ðŸ—‘ ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø­Ø°Ù',
-  'btn.email.delete.cancel': 'â¬…ï¸ Ø¥Ù„ØºØ§Ø¡',
-  // Ø£Ø²Ø±Ø§Ø± "Ø¥Ø±Ø³Ø§Ù„ PDF" ÙÙŠ Ø´Ø§Ø´Ø§Øª Ø§Ù„Ø·Ù„Ø¨Ø§Øª / Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹Ø§Øª / Ø§Ù„Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª.
-  'btn.send_pdf.orders': 'Ø¥Ø±Ø³Ø§Ù„ PDF Ø§Ù„Ø·Ù„Ø¨Ø§Øª Ø¥Ù„Ù‰ Ø§Ù„Ø¨Ø±ÙŠØ¯',
-  'btn.send_pdf.deposits': 'ðŸ“¤ Ø¥Ø±Ø³Ø§Ù„ PDF Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹Ø§Øª Ø¥Ù„Ù‰ Ø§Ù„Ø¨Ø±ÙŠØ¯',
-  'btn.send_pdf.stats': 'ðŸ“¤ Ø¥Ø±Ø³Ø§Ù„ PDF Ø§Ù„Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª Ø¥Ù„Ù‰ Ø§Ù„Ø¨Ø±ÙŠØ¯',
+    '{email_in_use} هذا البريد *مستخدم* بالفعل\n\n' +
+    '{email_arrow} *_يرجى إدخال بريد إلكتروني آخر_*',
+  'btn.email.delete': '🗑 حذف البريد',
+  'btn.email.delete.confirm': '🗑 تأكيد الحذف',
+  'btn.email.delete.cancel': '⬅️ إلغاء',
+  // أزرار "إرسال PDF" في شاشات الطلبات / الإيداعات / الإحصائيات.
+  'btn.send_pdf.orders': 'إرسال PDF الطلبات إلى البريد',
+  'btn.send_pdf.deposits': '📤 إرسال PDF الإيداعات إلى البريد',
+  'btn.send_pdf.stats': '📤 إرسال PDF الإحصائيات إلى البريد',
   'pdf.no_email_popup':
-    'âš ï¸ ÙŠØ±Ø¬Ù‰ Ø¶Ø¨Ø· Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ Ø£ÙˆÙ„Ù‹Ø§. Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª â†’ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø¨Ø±ÙŠØ¯ â†’ Ø¶Ø¨Ø· Ø§Ù„Ø¨Ø±ÙŠØ¯ØŒ Ø«Ù… Ø¹ÙØ¯ ÙˆØ§Ø¶ØºØ· "Ø¥Ø±Ø³Ø§Ù„ PDF".',
-  'pdf.sending_popup': 'â³ Ø¬Ø§Ø±Ù Ø¥Ù†Ø´Ø§Ø¡ PDF ÙˆØ¥Ø±Ø³Ø§Ù„Ù‡ Ø¥Ù„Ù‰ {email}â€¦',
-  'pdf.sent_popup': 'âœ… ØªÙ… Ø¥Ø±Ø³Ø§Ù„ PDF Ø¥Ù„Ù‰ {email}. ØªØ­Ù‚Ù‘Ù‚ Ù…Ù† Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„ÙˆØ§Ø±Ø¯ (ÙˆÙ…Ù„Ù Ø§Ù„Ø±Ø³Ø§Ø¦Ù„ ØºÙŠØ± Ø§Ù„Ù…Ø±ØºÙˆØ¨ ÙÙŠÙ‡Ø§).',
-  // Ø±Ø³Ø§Ù„Ø© Ø¯Ø±Ø¯Ø´Ø© ØªØ¸Ù‡Ø± Ø¹Ù†Ø¯ Ù†Ø¬Ø§Ø­ Ø¥Ø±Ø³Ø§Ù„ PDF.
-  'pdf.sent_message': '{pdf_sent_l} *ØªÙ… Ø¥Ø±Ø³Ø§Ù„ PDF Ø¥Ù„Ù‰ Ø§Ù„Ø¨Ø±ÙŠØ¯* {pdf_sent_r}',
+    '⚠️ يرجى ضبط البريد الإلكتروني أولًا. الإعدادات → إعدادات البريد → ضبط البريد، ثم عُد واضغط "إرسال PDF".',
+  'pdf.sending_popup': '⏳ جارٍ إنشاء PDF وإرساله إلى {email}…',
+  'pdf.sent_popup': '✅ تم إرسال PDF إلى {email}. تحقّق من البريد الوارد (وملف الرسائل غير المرغوب فيها).',
+  // رسالة دردشة تظهر عند نجاح إرسال PDF.
+  'pdf.sent_message': '{pdf_sent_l} *تم إرسال PDF إلى البريد* {pdf_sent_r}',
   'pdf.failed_popup':
-    'âŒ ØªØ¹Ø°Ù‘Ø± Ø¥Ø±Ø³Ø§Ù„ PDF Ø¥Ù„Ù‰ {email}. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ Ø¨Ø¹Ø¯ Ù‚Ù„ÙŠÙ„ â€” ÙˆØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¯Ø¹Ù… Ø¥Ø°Ø§ ØªÙƒØ±Ù‘Ø± Ø§Ù„Ø®Ø·Ø£.',
+    '❌ تعذّر إرسال PDF إلى {email}. حاول مرة أخرى بعد قليل — وتواصل مع الدعم إذا تكرّر الخطأ.',
   'orders.empty':
-    '{orders_title} *Ø·Ù„Ø¨Ø§ØªÙŠ*\n\n' +
-    'ðŸª„ Ù„Ø§ ØªÙˆØ¬Ø¯ Ø·Ù„Ø¨Ø§Øª Ø¨Ø¹Ø¯.\n\n' +
-    'âœ¨ ðŸ›ï¸ ðŸš€ Ø§Ø¨Ø¯Ø£ Ø§Ù„ØªØ³ÙˆÙ‚ ÙˆØ³ØªØ¸Ù‡Ø± Ø·Ù„Ø¨Ø§ØªÙƒ Ù‡Ù†Ø§!',
-  'profile.orders.empty': 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø·Ù„Ø¨Ø§Øª Ø¨Ø¹Ø¯.',
-  'profile.orders.title': 'ðŸ§¾ *Ø·Ù„Ø¨Ø§ØªÙŠ*',
-  'profile.orders.line': '#{id} â€¢ {name} Ã—{qty} â€¢ {total} â€¢ {date}',
-  'profile.notify.stock_on': 'ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø®Ø²ÙˆÙ†: âœ… Ù…ÙØ¹Ù„Ø©',
-  'profile.notify.stock_off': 'ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø®Ø²ÙˆÙ†: â›” Ù…Ø¹Ø·Ù„Ø©',
-  'profile.notify.ann_on': 'ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø¹Ø§Ù…Ø©: âœ… Ù…ÙØ¹Ù„Ø©',
-  'profile.notify.ann_off': 'ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø¹Ø§Ù…Ø©: â›” Ù…Ø¹Ø·Ù„Ø©',
-  'profile.notify.wallet_on': 'ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø­ÙØ¸Ø©: âœ… Ù…ÙØ¹Ù„Ø©',
-  'profile.notify.wallet_off': 'ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ø­ÙØ¸Ø©: â›” Ù…Ø¹Ø·Ù„Ø©',
+    '{orders_title} *طلباتي*\n\n' +
+    '🪄 لا توجد طلبات بعد.\n\n' +
+    '✨ 🛍️ 🚀 ابدأ التسوق وستظهر طلباتك هنا!',
+  'profile.orders.empty': 'لا توجد طلبات بعد.',
+  'profile.orders.title': '🧾 *طلباتي*',
+  'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
+  'profile.notify.stock_on': 'تنبيهات المخزون: ✅ مفعلة',
+  'profile.notify.stock_off': 'تنبيهات المخزون: ⛔ معطلة',
+  'profile.notify.ann_on': 'تنبيهات عامة: ✅ مفعلة',
+  'profile.notify.ann_off': 'تنبيهات عامة: ⛔ معطلة',
+  'profile.notify.wallet_on': 'تنبيهات المحفظة: ✅ مفعلة',
+  'profile.notify.wallet_off': 'تنبيهات المحفظة: ⛔ معطلة',
   'profile.notify.error':
-    'âš ï¸ ØªØ¹Ø°Ø± Ø­ÙØ¸ Ø§Ù„ØªØ¨Ø¯ÙŠÙ„ â€” ÙŠØ¬Ø¨ ØªØ·Ø¨ÙŠÙ‚ `0008_wallet_alert.sql` Ø¹Ù„Ù‰ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.',
-  'profile.deposits.title': 'ðŸ’³ *Ø³Ø¬Ù„ Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹Ø§Øª*',
-  'profile.deposits.empty': 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¥ÙŠØ¯Ø§Ø¹Ø§Øª Ø¨Ø¹Ø¯.',
-  'profile.deposits.line': '#{id} â€¢ {amount} â€¢ {method} â€¢ {status} â€¢ {date}',
+    '⚠️ تعذر حفظ التبديل — يجب تطبيق `0008_wallet_alert.sql` على قاعدة البيانات.',
+  'profile.deposits.title': '💳 *سجل الإيداعات*',
+  'profile.deposits.empty': 'لا توجد إيداعات بعد.',
+  'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',
 
-  'profile.stats.title': 'Ø¥Ø­ØµØ§Ø¦ÙŠØ§ØªÙƒ',
-  'profile.stats.orders': 'Ø§Ù„Ø·Ù„Ø¨Ø§Øª: {count}',
-  'profile.stats.items': 'Ø§Ù„Ø¹Ù†Ø§ØµØ± Ø§Ù„Ù…Ø´ØªØ±Ø§Ø©: {count}',
-  'profile.stats.spent': 'Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¥Ù†ÙØ§Ù‚: {amount} USDT',
-  'profile.stats.last': 'Ø¢Ø®Ø± Ø·Ù„Ø¨: {rel} ({abs})',
-  'profile.stats.last_none': 'Ø¢Ø®Ø± Ø·Ù„Ø¨: â€”',
-  'profile.stats.deposits': 'Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹Ø§Øª: {amount} USDT',
-  'profile.stats.rel.now': 'Ø§Ù„Ø¢Ù†',
-  'profile.stats.rel.minutes': 'Ù…Ù†Ø° {n} Ø¯',
-  'profile.stats.rel.hours': 'Ù…Ù†Ø° {n} Ø³',
-  'profile.stats.rel.days': 'Ù…Ù†Ø° {n} ÙŠ',
+  'profile.stats.title': 'إحصائياتك',
+  'profile.stats.orders': 'الطلبات: {count}',
+  'profile.stats.items': 'العناصر المشتراة: {count}',
+  'profile.stats.spent': 'إجمالي الإنفاق: {amount} USDT',
+  'profile.stats.last': 'آخر طلب: {rel} ({abs})',
+  'profile.stats.last_none': 'آخر طلب: —',
+  'profile.stats.deposits': 'الإيداعات: {amount} USDT',
+  'profile.stats.rel.now': 'الآن',
+  'profile.stats.rel.minutes': 'منذ {n} د',
+  'profile.stats.rel.hours': 'منذ {n} س',
+  'profile.stats.rel.days': 'منذ {n} ي',
 
-  // Ø´Ø±Ø­ Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹ Ù„ÙƒÙ„ Ø·Ø±ÙŠÙ‚Ø© â€” Ù‚Ø§Ø¨Ù„ Ù„Ù„ØªØ¹Ø¯ÙŠÙ„ Ù…Ù† ÙˆØ§Ø¬Ù‡Ø© Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©
-  // ÙˆÙŠÙØ¹Ø±Ø¶ Ù…Ù† Ø´Ø§Ø´Ø§Øª USDT / Binance / LTC. ÙŠØ­Ù…Ù„ Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ø¨Ø·Ø§Ù‚Ø©
-  // Ø§Ø³Ù… Ø§Ù„Ø·Ø±ÙŠÙ‚Ø©ØŒ ÙˆØ§Ù„Ù…Ø­ØªÙˆÙ‰ ÙŠØ£ØªÙŠ Ø­Ø±ÙÙŠÙ‹Ø§ Ù…Ù† Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯
+  // شرح طريقة الدفع لكل طريقة — قابل للتعديل من واجهة الإدارة
+  // ويُعرض من شاشات USDT / Binance / LTC. يحمل عنوان البطاقة
+  // اسم الطريقة، والمحتوى يأتي حرفيًا من الإعداد
   // `pay_tutorial.<method_id>.text`.
-  'pay.tutorial.title': '{tutorial} *Ø£ÙŠÙ† ØªØ¬Ø¯ Ø§Ù„Ù…Ø±Ø¬Ø¹ â€” {method}*',
+  'pay.tutorial.title': '{tutorial} *أين تجد المرجع — {method}*',
   'pay.tutorial.empty':
-    '_Ù„Ù… ÙŠØ¶Ù Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ Ø´Ø±Ø­Ù‹Ø§ Ù„Ù‡Ø°Ù‡ Ø§Ù„Ø·Ø±ÙŠÙ‚Ø© Ø¨Ø¹Ø¯. ØªØ­Ù‚Ù‚ Ù„Ø§Ø­Ù‚Ù‹Ø§._',
+    '_لم يضف المسؤول شرحًا لهذه الطريقة بعد. تحقق لاحقًا._',
   'pay.tutorial.body': '{body}',
 
-  'topup.title': 'ðŸ‘› *Ø´Ø­Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø©*',
-  'topup.choose_method': 'ðŸ‘› *Ø´Ø­Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø©*',
-  'topup.empty_methods': 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø·Ø±Ù‚ Ø¯ÙØ¹ Ù…ÙƒÙˆÙ‘Ù†Ø©. ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¯Ø¹Ù….',
+  'topup.title': '👛 *شحن المحفظة*',
+  'topup.choose_method': '👛 *شحن المحفظة*',
+  'topup.empty_methods': 'لا توجد طرق دفع مكوّنة. يرجى التواصل مع الدعم.',
   'topup.method.body': '*{name}*\n\n{instructions}',
-  'topup.requested': 'âœ… ØªÙ… ØªÙ‚Ø¯ÙŠÙ… Ø·Ù„Ø¨ Ø§Ù„Ø´Ø­Ù† (#{id}).\nØ³ÙŠØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ ÙˆØ¥Ø¶Ø§ÙØ© Ø§Ù„Ø±ØµÙŠØ¯ Ù‚Ø±ÙŠØ¨Ù‹Ø§.',
+  'topup.requested': '✅ تم تقديم طلب الشحن (#{id}).\nسيتم التحقق وإضافة الرصيد قريبًا.',
 
-  'support.title': '{support_title} Ø§Ù„Ø¯Ø¹Ù…',
+  'support.title': '{support_title} الدعم',
   'support.body':
-    '_*Ø¥Ø°Ø§ ØªØ¹Ø°Ù‘Ø± Ø¹Ù„ÙŠÙƒ Ø¥Ø±Ø³Ø§Ù„ Ø±Ø³Ø§Ù„Ø© Ø£Ùˆ ÙˆØ§Ø¬Ù‡ØªÙƒ Ù…Ø´ÙƒÙ„Ø©ØŒ Ø§Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø± Ù„Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ Ù…Ø¨Ø§Ø´Ø±Ø©.*_',
-  'support.btn.contact': 'ðŸ“© ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„',
-  'support.contact_prefill': 'Ù…Ø±Ø­Ø¨Ù‹Ø§ØŒ Ø£Ø­ØªØ§Ø¬ Ù…Ø³Ø§Ø¹Ø¯Ø© Ø¨Ø®ØµÙˆØµ ShopBot SafwanTigerØŒ Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ù„Ù…Ø³Ø§Ø¹Ø¯Ø© Ø¨Ø´Ø£Ù†: ',
-  'support.btn.cancel': 'Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø¯Ø¹Ù…',
-  'support.btn.live': 'ðŸŸ¢ Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø±',
-  'support.btn.end_session': 'ðŸ”´ Ø¥Ù†Ù‡Ø§Ø¡ Ø§Ù„Ø¬Ù„Ø³Ø©',
-  'support.live.busy_popup': 'â³ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ Ù…Ø´ØºÙˆÙ„ Ø­Ø§Ù„ÙŠÙ‹Ø§ Ù…Ø¹ Ù…Ø³ØªØ®Ø¯Ù… Ø¢Ø®Ø±. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ Ø¨Ø¹Ø¯ Ù‚Ù„ÙŠÙ„.',
+    '_*إذا تعذّر عليك إرسال رسالة أو واجهتك مشكلة، استخدم الدعم المباشر للتواصل مع المسؤول مباشرة.*_',
+  'support.btn.contact': '📩 تواصل مع المسؤول',
+  'support.contact_prefill': 'مرحبًا، أحتاج مساعدة بخصوص ShopBot SafwanTiger، الرجاء المساعدة بشأن: ',
+  'support.btn.cancel': 'إلغاء الدعم',
+  'support.btn.live': '🟢 الدعم المباشر',
+  'support.btn.end_session': '🔴 إنهاء الجلسة',
+  'support.live.busy_popup': '⏳ المسؤول مشغول حاليًا مع مستخدم آخر. حاول مرة أخرى بعد قليل.',
   'support.live.user_active':
-    '{support_live_active} Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø±\n\n' +
-    'Ø¬Ù„Ø³Ø© Ø§Ù„Ø¯Ø¹Ù… ÙØ¹Ù‘Ø§Ù„Ø©.\n\n' +
-    'Ø§ÙƒØªØ¨ Ø±Ø³Ø§Ù„ØªÙƒ Ù‡Ù†Ø§ Ù…Ø¨Ø§Ø´Ø±Ø©Ù‹ â€” ÙƒÙ„ Ø±Ø³Ø§Ù„Ø© ØªÙØ±Ø³Ù„ ÙÙˆØ±Ù‹Ø§ Ø¥Ù„Ù‰ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„. Ø§Ø¶ØºØ· *Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø¯Ø¹Ù…* ÙÙŠ Ø£ÙŠ ÙˆÙ‚Øª Ù„Ø¥Ù†Ù‡Ø§Ø¡ Ø§Ù„Ø¬Ù„Ø³Ø©.',
-  'support.live.session_created': 'ðŸŸ¢ *ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø¬Ù„Ø³Ø© Ø¯Ø¹Ù… Ù…Ø¨Ø§Ø´Ø±*',
+    '{support_live_active} الدعم المباشر\n\n' +
+    'جلسة الدعم فعّالة.\n\n' +
+    'اكتب رسالتك هنا مباشرةً — كل رسالة تُرسل فورًا إلى المسؤول. اضغط *إلغاء الدعم* في أي وقت لإنهاء الجلسة.',
+  'support.live.session_created': '🟢 *تم إنشاء جلسة دعم مباشر*',
   'support.live.admin_started':
-    'ðŸŸ¢ *Ø¨Ø¯Ø£ Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø±*\n\n' +
-    'Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…: *{name}* (@{username})\nID: `{id}`\n\nØ±Ø¯Ù‘ Ù‡Ù†Ø§ Ù„Ù„Ø¯Ø±Ø¯Ø´Ø©. Ø£Ø±Ø³Ù„ /end Ù„Ø¥Ù†Ù‡Ø§Ø¡ Ø§Ù„Ø¬Ù„Ø³Ø©.',
+    '🟢 *بدأ الدعم المباشر*\n\n' +
+    'المستخدم: *{name}* (@{username})\nID: `{id}`\n\nردّ هنا للدردشة. أرسل /end لإنهاء الجلسة.',
   'support.live.admin_relay': '*[{name}]:* {text}',
-  'support.live.admin_media_header': '*[{name}]* Ø£Ø±Ø³Ù„ Ù…Ù„ÙÙ‹Ø§:',
+  'support.live.admin_media_header': '*[{name}]* أرسل ملفًا:',
   'support.live.user_ended':
-    '{support_live_closed} ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø±.\n\n' +
-    'Ø§ÙØªØ­ Ø§Ù„Ø¯Ø¹Ù… Ù…Ø±Ù‘Ø© Ø£Ø®Ø±Ù‰ Ù…Ù† Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø¹Ù†Ø¯ Ø­Ø§Ø¬ØªÙƒ Ù„Ù„Ù…Ø³Ø§Ø¹Ø¯Ø©.',
-  'support.live.admin_ended': 'ðŸ”´ *ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø¬Ù„Ø³Ø© Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø±.*',
+    '{support_live_closed} تم إغلاق الدعم المباشر.\n\n' +
+    'افتح الدعم مرّة أخرى من القائمة عند حاجتك للمساعدة.',
+  'support.live.admin_ended': '🔴 *تم إغلاق جلسة الدعم المباشر.*',
   'support.live.unavailable_popup':
-    'âš ï¸ Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø± ØºÙŠØ± Ù…ØªØ§Ø­ Ù…Ø¤Ù‚ØªØ§Ù‹ â€” Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø§Ù„ÙˆØµÙˆÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ Ø§Ù„Ø¢Ù†. Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ø³ØªØ®Ø¯Ø§Ù… Â«Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©Â» Ø£Ùˆ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù„Ø§Ø­Ù‚Ø§Ù‹.',
+    '⚠️ الدعم المباشر غير متاح مؤقتاً — لا يمكن الوصول إلى المسؤول الآن. الرجاء استخدام «التواصل مع الإدارة» أو إعادة المحاولة لاحقاً.',
   'support.live.unavailable_message':
-    'âš ï¸ *Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…Ø¨Ø§Ø´Ø± ØºÙŠØ± Ù…ØªØ§Ø­*\n\n' +
-    'ØªØ¹Ø°Ù‘Ø± Ø§Ù„ÙˆØµÙˆÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ Ø§Ù„Ø¢Ù†. Ø§Ù„Ø³Ø¨Ø¨ Ø§Ù„Ø£ÙƒØ«Ø± Ø´ÙŠÙˆØ¹Ø§Ù‹ Ø£Ù†Ù‘ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ Ù„Ù… ÙŠÙØªØ­ Ù‡Ø°Ø§ Ø§Ù„Ø¨ÙˆØª Ø¨Ø¹Ø¯ ÙˆÙŠØ¶ØºØ· *Start* Ù„Ù…Ø±Ø© ÙˆØ§Ø­Ø¯Ø© Ø­ØªÙ‰ ÙŠØ³Ù…Ø­ ØªÙŠÙ„ÙŠØºØ±Ø§Ù… Ù„Ù„Ø¨ÙˆØª Ø¨Ù…Ø±Ø§Ø³Ù„ØªÙ‡.\n\n' +
-    'Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ø³ØªØ®Ø¯Ø§Ù… *Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©* Ù…Ù† Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¯Ø¹Ù… ÙÙŠ Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø­Ø§Ù„ÙŠ.',
-  'support.btn.email_transcript': 'ðŸ“§ Ø¥Ø±Ø³Ø§Ù„ Ù…Ù„Ù PDF Ù„Ù„Ø¯Ø±Ø¯Ø´Ø© Ø¹Ø¨Ø± Ø§Ù„Ø¨Ø±ÙŠØ¯',
+    '⚠️ *الدعم المباشر غير متاح*\n\n' +
+    'تعذّر الوصول إلى المسؤول الآن. السبب الأكثر شيوعاً أنّ المسؤول لم يفتح هذا البوت بعد ويضغط *Start* لمرة واحدة حتى يسمح تيليغرام للبوت بمراسلته.\n\n' +
+    'الرجاء استخدام *التواصل مع الإدارة* من قائمة الدعم في الوقت الحالي.',
+  'support.btn.email_transcript': '📧 إرسال ملف PDF للدردشة عبر البريد',
   'support.transcript.sent_message':
-    '{pdf_sent_l} *ØªÙ… Ø¥Ø±Ø³Ø§Ù„ PDF Ø¥Ù„Ù‰ Ø§Ù„Ø¨Ø±ÙŠØ¯* {pdf_sent_r}',
+    '{pdf_sent_l} *تم إرسال PDF إلى البريد* {pdf_sent_r}',
   'support.transcript.no_email_popup':
-    'âš ï¸ Ø£Ø¶Ù Ø¨Ø±ÙŠØ¯Ùƒ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ Ø£ÙˆÙ„Ù‹Ø§ Ù…Ù† Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª â†’ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø¨Ø±ÙŠØ¯ â†’ Ø¶Ø¨Ø· Ø§Ù„Ø¨Ø±ÙŠØ¯ØŒ Ø«Ù… Ø¹ÙØ¯ ÙˆØ§Ø¶ØºØ· Ø¹Ù„Ù‰ Ø¥Ø±Ø³Ø§Ù„ PDF.',
-  'support.transcript.sending_popup': 'â³ Ø¬Ø§Ø±Ù Ø¥Ù†Ø´Ø§Ø¡ Ø³Ø¬Ù„ Ø§Ù„Ø¯Ø¹Ù… ÙˆØ¥Ø±Ø³Ø§Ù„Ù‡ Ø¥Ù„Ù‰ {email}â€¦',
+    '⚠️ أضف بريدك الإلكتروني أولًا من الإعدادات → إعدادات البريد → ضبط البريد، ثم عُد واضغط على إرسال PDF.',
+  'support.transcript.sending_popup': '⏳ جارٍ إنشاء سجل الدعم وإرساله إلى {email}…',
   'support.transcript.failed_popup':
-    'âŒ ØªØ¹Ø°Ù‘Ø± Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø¥Ù„Ù‰ {email}. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ â€” ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¯Ø¹Ù… Ø¥Ø°Ø§ ØªÙƒØ±Ù‘Ø± Ø§Ù„Ø®Ø·Ø£.',
+    '❌ تعذّر إرسال السجل إلى {email}. حاول مرة أخرى — تواصل مع الدعم إذا تكرّر الخطأ.',
   'support.transcript.expired_popup':
-    'âŒ› Ù„Ù… ÙŠØ¹Ø¯ Ù‡Ø°Ø§ Ø§Ù„Ø³Ø¬Ù„ Ù…ØªØ§Ø­Ù‹Ø§. Ø§Ø¨Ø¯Ø£ Ø¬Ù„Ø³Ø© Ø¯Ø¹Ù… Ù…Ø¨Ø§Ø´Ø± Ø¬Ø¯ÙŠØ¯Ø© Ø¹Ù†Ø¯ Ø§Ù„Ø­Ø§Ø¬Ø© Ù„Ù„Ù…Ø³Ø§Ø¹Ø¯Ø©.',
+    '⌛ لم يعد هذا السجل متاحًا. ابدأ جلسة دعم مباشر جديدة عند الحاجة للمساعدة.',
   'support.ai.session_open':
     '{kiwi_ai} *Kiwi Ai*\n' +
-    '*Ø£Ù†Ø§ ÙƒÙŠÙˆÙŠØŒ Ù…Ø³Ø§Ø¹Ø¯ Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ø¢Ù„ÙŠ.*\n\n' +
-    'ÙŠÙ…ÙƒÙ†Ùƒ Ø·Ø±Ø­ Ø£ÙŠ Ø³Ø¤Ø§Ù„ Ø¨Ø£ÙŠ Ù„ØºØ© Ø£Ùˆ Ø§Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ Ù…Ø³Ø§Ø¹Ø¯Ø© Ø¨Ø´Ø£Ù† Ø§Ù„Ù…Ù†ØªØ¬Ø§ØªØŒ ' +
-    'Ø§Ù„Ø£Ø³Ø¹Ø§Ø±ØŒ Ø§Ù„Ù…Ø®Ø²ÙˆÙ†ØŒ Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹Ø§ØªØŒ Ø§Ù„ÙƒÙˆØ¨ÙˆÙ†Ø§ØªØŒ Ø§Ù„Ø·Ù„Ø¨Ø§ØªØŒ ÙˆØ§Ù„ØªÙˆØµÙŠÙ„. ' +
-    'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ù†Ø¸Ø§Ù… Ø§Ù„Ø¯Ø§Ø®Ù„ÙŠØ© Ù…Ù…Ù†ÙˆØ¹Ø©.',
+    '*أنا كيوي، مساعد الدعم الآلي.*\n\n' +
+    'يمكنك طرح أي سؤال بأي لغة أو الحصول على مساعدة بشأن المنتجات، ' +
+    'الأسعار، المخزون، الإيداعات، الكوبونات، الطلبات، والتوصيل. ' +
+    'تفاصيل النظام الداخلية ممنوعة.',
   'support.ai.user_ended':
-    '{support_live_closed} ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø¯Ø±Ø¯Ø´Ø© Kiwi Ai.\n\n' +
-    'Ø§ÙØªØ­ Kiwi Ai Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ Ù…Ù† Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø¹Ù†Ø¯ Ø§Ù„Ø­Ø§Ø¬Ø©.',
+    '{support_live_closed} تم إغلاق دردشة Kiwi Ai.\n\n' +
+    'افتح Kiwi Ai مرة أخرى من القائمة عند الحاجة.',
   'support.ai.fallback':
-    'Ù„Ù… Ø£Ø³ØªØ·Ø¹ Ø§Ù„Ø¥Ø¬Ø§Ø¨Ø© ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§. Ø³ÙŠØªÙˆØ§ØµÙ„ Ù…Ø¹Ùƒ Ø£Ø­Ø¯ Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„ÙŠÙ† Ù‚Ø±ÙŠØ¨Ù‹Ø§.',
+    'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',
   'support.ai.pdf_prompt':
-    '{kiwi_ai} *ØªÙ… Ø­ÙØ¸ Ù…Ø­Ø§Ø¯Ø«Ø© Kiwi Ai.*\n' +
-    'Ø§Ø¶ØºØ· Ø£Ø¯Ù†Ø§Ù‡ Ù„Ø¥Ø±Ø³Ø§Ù„ Ø³Ø¬Ù„ Ø§Ù„Ù…Ø­Ø§Ø¯Ø«Ø© Ø¥Ù„Ù‰ Ø¨Ø±ÙŠØ¯Ùƒ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ ÙƒÙ€ PDF.',
+    '{kiwi_ai} *تم حفظ محادثة Kiwi Ai.*\n' +
+    'اضغط أدناه لإرسال سجل المحادثة إلى بريدك الإلكتروني كـ PDF.',
   'support.ai.empty_popup':
-    'ðŸ’¬ Ø£Ø±Ø³Ù„ Ø³Ø¤Ø§Ù„Ø§Ù‹ ÙˆØ§Ø­Ø¯Ø§Ù‹ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„ Ø£ÙˆÙ„Ø§Ù‹ â€” Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø´ÙŠØ¡ Ù„Ø­ÙØ¸Ù‡ Ø¨Ø¹Ø¯.',
+    '💬 أرسل سؤالاً واحداً على الأقل أولاً — لا يوجد شيء لحفظه بعد.',
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
-  'support.ai.prompt': 'Ø§Ø´Ø±Ø­ Ù…Ø´ÙƒÙ„ØªÙƒ ÙˆØ³Ø£Ø¨Ø°Ù„ Ù‚ØµØ§Ø±Ù‰ Ø¬Ù‡Ø¯ÙŠ Ù„Ù„Ù…Ø³Ø§Ø¹Ø¯Ø©.',
-  'channel.not_set': 'ðŸ“¢ Ù„Ù… ÙŠØªÙ… Ø¶Ø¨Ø· Ø±Ø§Ø¨Ø· Ø§Ù„Ù‚Ù†Ø§Ø© Ø¨Ø¹Ø¯.',
-  'channel.subscribe.title': 'ðŸ“¢ *Ø§Ù†Ø¶Ù… Ø¥Ù„Ù‰ Ù‚Ù†Ø§ØªÙ†Ø§* Ù„Ù„Ù…ØªØ§Ø¨Ø¹Ø©',
-  'channel.subscribe.body': 'ÙŠØ±Ø¬Ù‰ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ø£Ø¯Ù†Ø§Ù‡ Ø«Ù… Ø§Ù„Ø¶ØºØ· Ø¹Ù„Ù‰ *Ù„Ù‚Ø¯ Ø§Ù†Ø¶Ù…Ù…Øª*.',
-  'channel.subscribe.joined': 'âœ… Ù„Ù‚Ø¯ Ø§Ù†Ø¶Ù…Ù…Øª',
+  'support.ai.prompt': 'اشرح مشكلتك وسأبذل قصارى جهدي للمساعدة.',
+  'channel.not_set': '📢 لم يتم ضبط رابط القناة بعد.',
+  'channel.subscribe.title': '📢 *انضم إلى قناتنا* للمتابعة',
+  'channel.subscribe.body': 'يرجى الانضمام أدناه ثم الضغط على *لقد انضممت*.',
+  'channel.subscribe.joined': '✅ لقد انضممت',
 
-  'admin.only': 'â›” Ù„Ù„Ù…Ø³Ø¤ÙˆÙ„ ÙÙ‚Ø·.',
-  'admin.help.title': 'ðŸ›  *Ø£ÙˆØ§Ù…Ø± Ø§Ù„Ù…Ø³Ø¤ÙˆÙ„*',
-  'admin.cache.cleared': 'ðŸ§¹ ØªÙ… Ù…Ø³Ø­ Ø§Ù„ÙƒØ§Ø´.',
+  'admin.only': '⛔ للمسؤول فقط.',
+  'admin.help.title': '🛠 *أوامر المسؤول*',
+  'admin.cache.cleared': '🧹 تم مسح الكاش.',
 
-  'admin.text.set': 'âœ… ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù†Øµ `{key}`.',
-  'admin.color.set': 'âœ… ØªÙ… ØªØ¹ÙŠÙŠÙ† Ù„ÙˆÙ† `{key}` Ø¥Ù„Ù‰ *{color}*.',
-  'admin.emoji.set': 'âœ… ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¥ÙŠÙ…ÙˆØ¬ÙŠ `{key}`.',
-  'admin.product.added': 'âœ… ØªÙ…Øª Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ù…Ù†ØªØ¬ *{name}* (id={id}).',
-  'admin.category.added': 'âœ… ØªÙ…Øª Ø¥Ø¶Ø§ÙØ© Ø§Ù„ÙØ¦Ø© *{name}* (id={id}).',
-  'admin.payment.added': 'âœ… ØªÙ…Øª Ø¥Ø¶Ø§ÙØ© Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹ *{name}* (id={id}).',
-  'admin.bad_args': 'âŒ Ù…Ø¹Ø§Ù…Ù„Ø§Øª Ø®Ø§Ø·Ø¦Ø©. Ø§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…: `{usage}`',
+  'admin.text.set': '✅ تم تحديث النص `{key}`.',
+  'admin.color.set': '✅ تم تعيين لون `{key}` إلى *{color}*.',
+  'admin.emoji.set': '✅ تم تحديث الإيموجي `{key}`.',
+  'admin.product.added': '✅ تمت إضافة المنتج *{name}* (id={id}).',
+  'admin.category.added': '✅ تمت إضافة الفئة *{name}* (id={id}).',
+  'admin.payment.added': '✅ تمت إضافة طريقة الدفع *{name}* (id={id}).',
+  'admin.bad_args': '❌ معاملات خاطئة. الاستخدام: `{usage}`',
 
-  'err.generic': 'âš ï¸ Ø­Ø¯Ø« Ø®Ø·Ø£. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.',
-  'err.unknown_action': 'âš ï¸ Ø¥Ø¬Ø±Ø§Ø¡ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ.',
+  'err.generic': '⚠️ حدث خطأ. حاول مرة أخرى.',
+  'err.unknown_action': '⚠️ إجراء غير معروف.',
 };
