@@ -172,8 +172,8 @@ export const en: Record<string, string> = {
     '{emoji} *{name}*\n' +
     '{prod_qty_selected} Qty: *{qty}*\n' +
     '{promo_line}' +
-    '{prod_total_amount} Total: *{total} USDT*\n' +
-    '{prod_wallet} Wallet: *{balance} USDT*\n' +
+    '{prod_total_amount} Total: *{total}*\n' +
+    '{prod_wallet} Wallet: *{balance}*\n' +
     '{referral_line}' +
     'Choose a pay method:',
   'shop.pay.referral_line':
@@ -186,13 +186,13 @@ export const en: Record<string, string> = {
     '{pay_summary} *Order*\n' +
     '{emoji} *{name}* × *{qty}*\n' +
     '{discount_line}' +
-    '{prod_total_amount} *Total:* {total} USDT\n' +
-    '{prod_wallet} *Wallet:* {balance} USDT\n\n' +
-    '_Charge *{total} USDT* from your wallet?_',
+    '{prod_total_amount} *Total:* {total}\n' +
+    '{prod_wallet} *Wallet:* {balance}\n\n' +
+    '_Charge *{total}* from your wallet?_',
   // Optional discount row inside `shop.pay.confirm` — concatenated
   // by the caller when an active promo applies.
   'shop.pay.confirm.discount_line':
-    '{prod_promo} *Discount:* −{discount} USDT\n',
+    '{prod_promo} *Discount:* −{discount}\n',
   // Inline qty-editor screen body. Renders as a "big counter" with
   // the current selected qty in monospace, the product name, and
   // the running total cost.
@@ -200,9 +200,9 @@ export const en: Record<string, string> = {
     '🔢 *Select quantity*\n\n' +
     '*{name}*\n' +
     'In stock: *{stock}*\n' +
-    'Unit price: *{price} USDT*\n\n' +
+    'Unit price: *{price}*\n\n' +
     'Selected: <code>{qty}</code>\n' +
-    'Total: *{total} USDT*',
+    'Total: *{total}*',
   'shop.empty_categories': 'No categories yet. Please check back later.',
   'shop.empty_products': 'No products in this category yet.',
   // Product detail page — premium emojis prefix every label per
@@ -210,7 +210,7 @@ export const en: Record<string, string> = {
   // `<tg-emoji>` tag with the configured custom_emoji_id (animated
   // for premium subs, plain unicode for everyone else).
   'shop.product.line.name': '{emoji} *{name}*',
-  'shop.product.line.price': '{prod_price_base} *Price Base:* {price} USDT',
+  'shop.product.line.price': '{prod_price_base} *Price Base:* {price}',
   // `{stock}` may render as either a number or the ∞ glyph (for
   // products with `unlimited_stock = true`).
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
@@ -222,13 +222,13 @@ export const en: Record<string, string> = {
   'shop.product.line.referral.claimed':
     '{prod_referral} *Referral Pay:* Legacy order already used this balance',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
-  'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
-  'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
+  'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total}',
+  'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance}',
   // Optional bonus line shown above Total Amount when an active
   // promo applies. `label` is either the admin-set promo name or
   // the auto-fallback "qty ≥ N".
   'shop.product.line.promo':
-    '{prod_promo} *Promo:* {label} — −{discount} USDT',
+    '{prod_promo} *Promo:* {label} — −{discount}',
   'shop.product.line.promo.fallback_label': 'qty ≥ {min_qty}',
   // Teaser line under Warranty when a promo exists for this product
   // but the buyer hasn't reached the qty threshold yet. Hidden once
@@ -238,7 +238,7 @@ export const en: Record<string, string> = {
   // Strikethrough Total Amount line shown when an active promo
   // applies — gross (struck) → effective price.
   'shop.product.line.total.discounted':
-    '{prod_total_amount} *Total Amount:* ~~{gross}~~ {total} USDT',
+    '{prod_total_amount} *Total Amount:* ~~{gross}~~ {total}',
   'shop.product.out_of_stock_popup':
     '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
   'shop.note.title': '{note_premium} *Product Note*',
@@ -488,6 +488,7 @@ export const en: Record<string, string> = {
   'profile.row.email': 'Email: `{email}` — Has been Saved! {email_saved_check}',
   'profile.row.email_empty': 'Email: _not set_ — tap *Set Email* below',
   'profile.row.balance': 'Balance: *{balance} USDT*',
+  'profile.row.currency': 'Currency: *{currency}*',
   'profile.row.language': 'Language: *{language}*',
   'profile.row.region': 'Region: *{region}* — local time *{time}*',
   'profile.row.region_empty': 'Region: _not set_ — tap *Set Region*',
@@ -716,6 +717,7 @@ export const en: Record<string, string> = {
     '{refer_clicks} *Clicks:* {clicks}\n' +
     '{refer_pending} *Pending:* {pending}\n' +
     '{refer_active} *Active:* {active}\n' +
+    '{refer_left} *Left:* {left}\n' +
     '{refer_total} *Referred (Total):* {refTotal}\n' +
     '{refer_coin} *Total Earned:* {earnedTotal} USDT\n' +
     '{refer_withdrawn} *Withdrawn:* {withdrawn} USDT\n\n' +
@@ -730,6 +732,18 @@ export const en: Record<string, string> = {
   'profile.refer.convert_error':
     '⚠️ Could not convert refs right now. Please try again.',
   'btn.copy_link': '📋 Copy Link',
+  'btn.live_refers': '🔵 See Your Live Refers',
+  'btn.currency': '💱 Currency',
+  'btn.stats.24h': '24h',
+  'btn.stats.7d': '7d',
+  'btn.stats.30d': '30d',
+  'btn.stats.custom': 'Custom',
+  'profile.currency.title': '💱 *Choose Currency*',
+  'profile.currency.body':
+    'Your product prices will show your selected currency plus USDT. Payments still use USDT.',
+  'profile.currency.saved': '✅ Currency set to {currency}.',
+  'profile.currency.error':
+    '⚠️ Could not save currency yet. Please apply migration `0033_user_currency.sql` first.',
   'profile.orders.empty': 'You have no orders yet.',
   'profile.orders.title': '🧾 *My Orders*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
