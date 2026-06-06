@@ -193,6 +193,7 @@ export const BUTTON_KEYS = {
   qty_keypad_max: 'btn.qty_keypad_max',
   // ---- Buy-now payment-method screen ----------------------------
   pay_wallet: 'btn.pay_wallet',
+  pay_referral: 'btn.pay_referral',
   pay_direct: 'btn.pay_direct',
   pay_topup: 'btn.pay_topup',
   // "Others" + "Back" rows on the shared payment-methods keyboard
@@ -379,6 +380,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 
   // Buy-now payment-method screen.
   pay_wallet: 'green',
+  pay_referral: 'green',
   pay_direct: 'yellow',
   pay_topup: 'blue',
   // Payment-methods keyboard chrome — Others sits below the per-
@@ -857,6 +859,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 
   // Buy-now payment-method screen — wallet on Pay, topup on Top Up.
   pay_wallet: 'prod_wallet',
+  pay_referral: 'refer_title',
   pay_direct: 'prod_total_amount',
   pay_topup: 'deposits_wallet',
   // Wallet-payment confirmation card (page 2): green check icon
