@@ -1,147 +1,147 @@
-/* English (default) â€” edit text here. */
+/* English (default) — edit text here. */
 export const en: Record<string, string> = {
   // ---------- Welcome / menu ----------
   'welcome': 'Welcome to SafwanTiger Shop',
   'welcome.title': 'Welcome to SafwanTiger Shop!',
   'welcome.balance': 'Your balance: *${balance}*',
   'welcome.tap_menu': 'Tap *Main Menu* below to begin.',
-  'menu.title': 'ðŸ¯ *SafwanTiger Shop* â€” Main Menu',
+  'menu.title': '🐯 *SafwanTiger Shop* — Main Menu',
 
   // ---------- Buttons ----------
-  'btn.main_menu': 'â¬…ï¸ Back',
-  'btn.shop': 'ðŸ› Shop',
-  'btn.topup': 'ðŸ‘› Top-up Wallet',
-  'btn.profile': 'âš™ï¸ Settings',
-  'btn.support': 'ðŸ’¬ Support',
-  'btn.ai_support': 'ðŸ¥ Kiwi Ai',
-  'btn.back': 'â¬…ï¸ Back',
-  'btn.next': 'Next â–¶ï¸',
-  'btn.prev': 'â—€ï¸ Prev',
-  'btn.refresh': 'ðŸ”„ Refresh',
-  'btn.buy_now': 'âœ… Buy Now',
-  'btn.redeem_referral': 'ðŸŽ Pay with Referrals',
-  'btn.referral_earn_buy': 'ðŸ”— Earn Referrals & Buy',
-  'btn.convert_refers': 'ðŸ’± Convert Refers to USDT',
-  'btn.topup_wallet': 'ðŸ‘› Top-up Wallet',
-  'btn.view_note': 'ðŸ“ View Note',
-  'btn.qty_plus': 'âž•',
-  'btn.qty_minus': 'âž–',
-  // Custom-quantity keypad â€” opens a numeric keypad in place of
+  'btn.main_menu': '⬅️ Back',
+  'btn.shop': '🛍 Shop',
+  'btn.topup': '👛 Top-up Wallet',
+  'btn.profile': '⚙️ Settings',
+  'btn.support': '💬 Support',
+  'btn.ai_support': '🥝 Kiwi Ai',
+  'btn.back': '⬅️ Back',
+  'btn.next': 'Next ▶️',
+  'btn.prev': '◀️ Prev',
+  'btn.refresh': '🔄 Refresh',
+  'btn.buy_now': '✅ Buy Now',
+  'btn.redeem_referral': '🎁 Pay with Referrals',
+  'btn.referral_earn_buy': '🔗 Earn Referrals & Buy',
+  'btn.convert_refers': '💱 Convert Refers to USDT',
+  'btn.topup_wallet': '👛 Top-up Wallet',
+  'btn.view_note': '📝 View Note',
+  'btn.qty_plus': '➕',
+  'btn.qty_minus': '➖',
+  // Custom-quantity keypad — opens a numeric keypad in place of
   // the legacy +/- adder.
-  'btn.custom_qty': 'ðŸ”¢ Custom Quantity',
-  'btn.qty_keypad_back': 'âŒ«',
-  'btn.qty_keypad_clear': 'ðŸ—‘ Clear',
-  'btn.qty_keypad_confirm': 'âœ… Confirm',
+  'btn.custom_qty': '🔢 Custom Quantity',
+  'btn.qty_keypad_back': '⌫',
+  'btn.qty_keypad_clear': '🗑 Clear',
+  'btn.qty_keypad_confirm': '✅ Confirm',
   // "Max" snaps the quantity buffer to the user's purchasable
   // ceiling (`min(QTY_MAX, available stock)`) in one tap so a buyer
   // who wants the full lot doesn't have to type each digit.
-  'btn.qty_keypad_max': 'ðŸŽ¯ Max',
+  'btn.qty_keypad_max': '🎯 Max',
   // Buy-now payment-method screen.
-  'btn.pay_wallet': 'ðŸ‘› Wallet',
-  'btn.pay_referral': 'ðŸŽ Referral Pay',
-  'btn.pay_direct': 'ðŸ’¸ Pay Direct',
-  'btn.pay_topup': 'ðŸª™ Top-up',
+  'btn.pay_wallet': '👛 Wallet',
+  'btn.pay_referral': '🎁 Referral Pay',
+  'btn.pay_direct': '💸 Pay Direct',
+  'btn.pay_topup': '🪙 Top-up',
   // Wallet-confirm card (page 2 of the buy flow). The Confirm
-  // button shows a green âœ… + premium tick, the Cancel button is
+  // button shows a green ✅ + premium tick, the Cancel button is
   // red with the same back-arrow as the rest of the bot.
-  'btn.confirm_pay': 'âœ… Confirm',
-  'btn.cancel_pay': 'â—€ï¸ Cancel',
+  'btn.confirm_pay': '✅ Confirm',
+  'btn.cancel_pay': '◀️ Cancel',
   // Payment-methods keyboard rows. Premium subscribers see the
   // animated icon defined in EMOJI.paymethod_others / paymethod_back;
   // everyone else gets the unicode prefix below as the natural
   // fallback. The leading emoji is stripped from the label at render
   // time when the icon is applied so the glyph never doubles up.
-  'btn.paymethod_others': 'ðŸ’¡ Others',
-  'btn.paymethod_back': 'â—€ï¸ Back',
-  'btn.qty.max': 'ðŸŽ¯ Max',
-  'btn.qty.reset': 'ðŸ”„ Reset',
-  'btn.qty.confirm': 'âœ… Confirm',
-  'btn.contact_admin': 'ðŸ’¬ Contact Admin',
+  'btn.paymethod_others': '💡 Others',
+  'btn.paymethod_back': '◀️ Back',
+  'btn.qty.max': '🎯 Max',
+  'btn.qty.reset': '🔄 Reset',
+  'btn.qty.confirm': '✅ Confirm',
+  'btn.contact_admin': '💬 Contact Admin',
   // Inline-counter step buttons. Premium emojis are layered on at
-  // render time (per-button icon override) â€” these unicode glyphs
+  // render time (per-button icon override) — these unicode glyphs
   // are the fallback for clients without premium.
-  'btn.qty.dec_1': 'âž– 1',
-  'btn.qty.dec_10': 'âª 10',
-  'btn.qty.dec_100': 'â® 100',
-  'btn.qty.inc_1': 'âž• 1',
-  'btn.qty.inc_10': 'â© 10',
-  'btn.qty.inc_100': 'â­ 100',
-  'btn.qty.display': 'ðŸ“¦ {qty} / {stock}',
+  'btn.qty.dec_1': '➖ 1',
+  'btn.qty.dec_10': '⏪ 10',
+  'btn.qty.dec_100': '⏮ 100',
+  'btn.qty.inc_1': '➕ 1',
+  'btn.qty.inc_10': '⏩ 10',
+  'btn.qty.inc_100': '⏭ 100',
+  'btn.qty.display': '📦 {qty} / {stock}',
   // Product-page extras.
-  'btn.share_product': 'ðŸ”— Copy Link',
+  'btn.share_product': '🔗 Copy Link',
   // `btn.view_note_file` is kept for backwards compat with /settext
   // overrides. `btn.send_note_txt` is now reused for the Order
   // Delivered "Download TXT" button.
-  'btn.view_note_file': 'ðŸ“¥ Save Note as TXT',
-  'btn.send_note_txt': 'ðŸ“¥ Download TXT',
+  'btn.view_note_file': '📥 Save Note as TXT',
+  'btn.send_note_txt': '📥 Download TXT',
   // Out-of-stock products still show a Buy Now button labelled with
-  // a premium âŒ glyph â€” tapping it surfaces the "contact admin to
+  // a premium ❌ glyph — tapping it surfaces the "contact admin to
   // restock" popup (see `shop.product.out_of_stock_popup`).
-  'btn.out_of_stock': 'âŒ Buy Now',
+  'btn.out_of_stock': '❌ Buy Now',
   // Premium-shop overhaul (post-order tutorial CTA + Settings rows).
-  'btn.using_method': 'ðŸ“˜ Using Method',
-  'btn.tutorial_open_link': 'ðŸ”— Open Link',
-  'btn.bot_tutorial': 'ðŸ“˜ Bot Tutorial',
+  'btn.using_method': '📘 Using Method',
+  'btn.tutorial_open_link': '🔗 Open Link',
+  'btn.bot_tutorial': '📘 Bot Tutorial',
   // Per-method tutorial CTAs surfaced under every chain / Binance /
   // LTC instruction screen. Shape mirrors the existing
   // `btn.using_method` (book + concise label) so the entry-point
   // pattern reads the same across the bot.
-  'btn.where_txid': 'ðŸ“˜ Where to find TXID?',
-  'btn.where_order_id': 'ðŸ“˜ Where to find Order ID?',
-  'btn.send_price_list': 'ðŸ“Š Send Price List',
-  'btn.send_price_list.mail': 'ðŸ“¤ Send on Mail',
-  'btn.send_price_list.chat': 'ðŸ“¬ Send in Chat',
-  'btn.notify.email.on': 'ðŸŸ¢ Email Reports: ON',
-  'btn.notify.email.off': 'ðŸ”• Email Reports: OFF',
+  'btn.where_txid': '📘 Where to find TXID?',
+  'btn.where_order_id': '📘 Where to find Order ID?',
+  'btn.send_price_list': '📊 Send Price List',
+  'btn.send_price_list.mail': '📤 Send on Mail',
+  'btn.send_price_list.chat': '📬 Send in Chat',
+  'btn.notify.email.on': '🟢 Email Reports: ON',
+  'btn.notify.email.off': '🔕 Email Reports: OFF',
   // Post-purchase email follow-up CTAs.
-  'btn.set_email_now': 'ðŸ“§ Add Verified Email',
-  'btn.view_invoice': 'ðŸ”— View Invoice',
-  'btn.my_orders': 'ðŸ§¾ My Orders',
-  'btn.refer': 'ðŸŽ Refer',
-  'btn.notifications': 'ðŸ”” Notifications',
-  'btn.toggle_stock': 'ðŸ“¢ Stock Alerts',
-  'btn.toggle_announcements': 'ðŸ’¬ Info Alerts',
-  'btn.toggle_wallet': 'ðŸ’° Wallet Alerts',
-  // Each toggle now sits on its own full-width row â€” we can show
+  'btn.set_email_now': '📧 Add Verified Email',
+  'btn.view_invoice': '🔗 View Invoice',
+  'btn.my_orders': '🧾 My Orders',
+  'btn.refer': '🎁 Refer',
+  'btn.notifications': '🔔 Notifications',
+  'btn.toggle_stock': '📢 Stock Alerts',
+  'btn.toggle_announcements': '💬 Info Alerts',
+  'btn.toggle_wallet': '💰 Wallet Alerts',
+  // Each toggle now sits on its own full-width row — we can show
   // the full alert name and ON/OFF state.
-  'btn.notify.stock.on': 'ðŸŸ¢ Stock Alerts: ON',
-  'btn.notify.stock.off': 'ðŸ”• Stock Alerts: OFF',
-  'btn.notify.ann.on': 'ðŸŸ¢ Info Alerts: ON',
-  'btn.notify.ann.off': 'ðŸ”• Info Alerts: OFF',
-  'btn.notify.wallet.on': 'ðŸŸ¢ Wallet Alerts: ON',
-  'btn.notify.wallet.off': 'ðŸ”• Wallet Alerts: OFF',
-  'btn.back_to_settings': 'â¬…ï¸ Back to Settings',
+  'btn.notify.stock.on': '🟢 Stock Alerts: ON',
+  'btn.notify.stock.off': '🔕 Stock Alerts: OFF',
+  'btn.notify.ann.on': '🟢 Info Alerts: ON',
+  'btn.notify.ann.off': '🔕 Info Alerts: OFF',
+  'btn.notify.wallet.on': '🟢 Wallet Alerts: ON',
+  'btn.notify.wallet.off': '🔕 Wallet Alerts: OFF',
+  'btn.back_to_settings': '⬅️ Back to Settings',
   // Same word in every locale so the inline keyboard layout stays
-  // identical regardless of `lang` â€” the leading globe gets wrapped
+  // identical regardless of `lang` — the leading globe gets wrapped
   // as a premium emoji at render time.
-  'btn.language': 'ðŸŒ Language',
-  'btn.language.english': 'ðŸ‡¬ðŸ‡§ English',
-  'btn.language.arabic': 'ðŸ‡¸ðŸ‡¦ Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©',
-  'btn.language.vietnamese': 'ðŸ‡»ðŸ‡³ Tiáº¿ng Viá»‡t',
-  'btn.region.clear': 'ðŸš« Clear',
-  'btn.deposit_history': 'ðŸ’³ My Deposits',
+  'btn.language': '🌐 Language',
+  'btn.language.english': '🇬🇧 English',
+  'btn.language.arabic': '🇸🇦 العربية',
+  'btn.language.vietnamese': '🇻🇳 Tiếng Việt',
+  'btn.region.clear': '🚫 Clear',
+  'btn.deposit_history': '💳 My Deposits',
   'btn.channel': 'Channel',
-  'btn.stats': 'ðŸ“Š Stats',
-  'btn.stats_refresh': 'ðŸ”„ Refresh',
-  'btn.stats_back': 'â—€ï¸ Back',
-  'btn.set_region': 'ðŸ—º Set Region',
-  'btn.set_email': 'ðŸ“§ Set Email',
+  'btn.stats': '📊 Stats',
+  'btn.stats_refresh': '🔄 Refresh',
+  'btn.stats_back': '◀️ Back',
+  'btn.set_region': '🗺 Set Region',
+  'btn.set_email': '📧 Set Email',
 
   // ---------- Shop ----------
-  // Shop home â€” single all-products list (categories step removed).
+  // Shop home — single all-products list (categories step removed).
   // Header is a single bold line; pagination lives in the keyboard
   // footer (Prev / Refresh / Next / page indicator).
   'shop.home.header': '*Available Products:*',
   // Legacy key, kept for any callsite still on the old categories
   // flow.
   'shop.choose_category': '*Available Products:*',
-  'shop.qty.prompt': 'ðŸ”¢ Type a quantity (1â€“{max}) and send.',
-  'shop.qty.invalid': 'âŒ Invalid number â€” please send a value between 1 and {max}.',
+  'shop.qty.prompt': '🔢 Type a quantity (1–{max}) and send.',
+  'shop.qty.invalid': '❌ Invalid number — please send a value between 1 and {max}.',
 
   // ---- Custom-quantity keypad ---------------------------------
   // Short usage instruction appended below the product-page body
   // when the keypad is open. {current} is the digits the user has
-  // tapped on the keypad so far â€” `â€”` until they've started.
+  // tapped on the keypad so far — `—` until they've started.
   // The `{current}` token is the digit buffer the user has tapped
   // so far. Until they start typing it renders as the literal
   // placeholder text `(Amount)` so the line reads naturally to
@@ -149,9 +149,9 @@ export const en: Record<string, string> = {
   // we used before. Once digits land, the buffer replaces it.
   'shop.qty.keypad.instruction':
     '{qty_prompt_keypad} *How to use:* tap the digits below or send a number, ' +
-    'then tap âœ… Confirm.\n' +
+    'then tap ✅ Confirm.\n' +
     'Current: <code>{current}</code>',
-  // Placeholder shown inside `Current: <code>â€¦</code>` while the
+  // Placeholder shown inside `Current: <code>…</code>` while the
   // digit buffer is empty. Reads as a sentence to first-time users
   // ("Current: (Amount)") instead of the cryptic em-dash we used
   // before. Once digits land, the buffer replaces it.
@@ -163,8 +163,8 @@ export const en: Record<string, string> = {
     '{qty_invalid} *Invalid quantity.*\n\n' +
     'Please send a whole number between *1* and *{max}*.',
 
-  // ---- Buy-now â†’ payment method picker -------------------------
-  // `{promo_line}` is filled in by the caller â€” either an empty
+  // ---- Buy-now → payment method picker -------------------------
+  // `{promo_line}` is filled in by the caller — either an empty
   // string (no active promo) or the localized "Promo:" line WITH
   // its own trailing newline so the layout stays tight.
   'shop.pay.title':
@@ -177,27 +177,27 @@ export const en: Record<string, string> = {
     '{referral_line}' +
     'Choose a pay method:',
   'shop.pay.referral_line':
-    '{prod_referral} Referral Pay:\n*{available} available* â€¢ *{required} required*\n\n',
+    '{prod_referral} Referral Pay:\n*{available} available* • *{required} required*\n\n',
   // Wallet-pay confirmation card (page 2). Short labels with
   // premium emojis on every line. `{discount_line}` is filled in
   // by the caller (empty string when there is no active discount).
   'shop.pay.confirm':
     '{prod_wallet} *Confirm Payment*\n\n' +
     '{pay_summary} *Order*\n' +
-    '{emoji} *{name}* Ã— *{qty}*\n' +
+    '{emoji} *{name}* × *{qty}*\n' +
     '{discount_line}' +
     '{prod_total_amount} *Total:* {total} USDT\n' +
     '{prod_wallet} *Wallet:* {balance} USDT\n\n' +
     '_Charge *{total} USDT* from your wallet?_',
-  // Optional discount row inside `shop.pay.confirm` â€” concatenated
+  // Optional discount row inside `shop.pay.confirm` — concatenated
   // by the caller when an active promo applies.
   'shop.pay.confirm.discount_line':
-    '{prod_promo} *Discount:* âˆ’{discount} USDT\n',
+    '{prod_promo} *Discount:* −{discount} USDT\n',
   // Inline qty-editor screen body. Renders as a "big counter" with
   // the current selected qty in monospace, the product name, and
   // the running total cost.
   'shop.qty.editor.title':
-    'ðŸ”¢ *Select quantity*\n\n' +
+    '🔢 *Select quantity*\n\n' +
     '*{name}*\n' +
     'In stock: *{stock}*\n' +
     'Unit price: *{price} USDT*\n\n' +
@@ -205,20 +205,20 @@ export const en: Record<string, string> = {
     'Total: *{total} USDT*',
   'shop.empty_categories': 'No categories yet. Please check back later.',
   'shop.empty_products': 'No products in this category yet.',
-  // Product detail page â€” premium emojis prefix every label per
+  // Product detail page — premium emojis prefix every label per
   // bot-owner UX request. Each `{prod_*}` token resolves to a
   // `<tg-emoji>` tag with the configured custom_emoji_id (animated
   // for premium subs, plain unicode for everyone else).
   'shop.product.line.name': '{emoji} *{name}*',
   'shop.product.line.price': '{prod_price_base} *Price Base:* {price} USDT',
-  // `{stock}` may render as either a number or the âˆž glyph (for
+  // `{stock}` may render as either a number or the ∞ glyph (for
   // products with `unlimited_stock = true`).
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
   'shop.product.line.referral.progress':
-    '{prod_referral} *Referral Pay:* Required {required} â€¢ Available {total} â€¢ Missing {remaining}',
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Missing {remaining}',
   'shop.product.line.referral.ready':
-    '{prod_referral} *Referral Pay:* Required {required} â€¢ Available {total} â€¢ Ready',
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Ready',
   'shop.product.line.referral.claimed':
     '{prod_referral} *Referral Pay:* Legacy order already used this balance',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
@@ -226,23 +226,23 @@ export const en: Record<string, string> = {
   'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
   // Optional bonus line shown above Total Amount when an active
   // promo applies. `label` is either the admin-set promo name or
-  // the auto-fallback "qty â‰¥ N".
+  // the auto-fallback "qty ≥ N".
   'shop.product.line.promo':
-    '{prod_promo} *Promo:* {label} â€” âˆ’{discount} USDT',
-  'shop.product.line.promo.fallback_label': 'qty â‰¥ {min_qty}',
+    '{prod_promo} *Promo:* {label} — −{discount} USDT',
+  'shop.product.line.promo.fallback_label': 'qty ≥ {min_qty}',
   // Teaser line under Warranty when a promo exists for this product
   // but the buyer hasn't reached the qty threshold yet. Hidden once
   // the threshold is met (the strikethrough Total takes over).
   'shop.product.line.promo.teaser':
-    '{prod_promo} *Promo:* Buy {min_qty}+ âˆ’${discount} Off',
+    '{prod_promo} *Promo:* Buy {min_qty}+ −${discount} Off',
   // Strikethrough Total Amount line shown when an active promo
-  // applies â€” gross (struck) â†’ effective price.
+  // applies — gross (struck) → effective price.
   'shop.product.line.total.discounted':
     '{prod_total_amount} *Total Amount:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
-    'âŒ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
+    '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
   'shop.note.title': '{note_premium} *Product Note*',
-  'shop.note.empty': '_The admin hasnâ€™t added any notes for this product yet._',
+  'shop.note.empty': '_The admin hasn’t added any notes for this product yet._',
   'shop.note.empty_description': '_No description provided._',
   // Premium View Note layout (pic 2 reference). Token names use
   // `note_premium` for the header glyph, `note_desc` for the
@@ -250,10 +250,10 @@ export const en: Record<string, string> = {
   // admin can swap each premium emoji independently via
   // `/setemoji note_premium / note_desc / note_text`. Variables
   // (`description` / `note`) are substituted by `t()` BEFORE
-  // `renderMdHtml` runs the premium-emoji pass â€” so a `{note}`
+  // `renderMdHtml` runs the premium-emoji pass — so a `{note}`
   // variable here would collide with the EMOJI key of the same name.
   'shop.note.full': [
-    '{note_premium} *View Note â€” {name}*',
+    '{note_premium} *View Note — {name}*',
     '',
     '{note_desc} *Description:*',
     '{description}',
@@ -261,12 +261,12 @@ export const en: Record<string, string> = {
     '{note_text} *Note:*',
     '{note}',
   ].join('\n'),
-  // Legacy single-message confirmation â€” still used by /settext
+  // Legacy single-message confirmation — still used by /settext
   // overrides and by the deposit credit reply. The new wallet-pay
   // delivery card uses the two-step `payment_verified` /
   // `order_delivered` keys below.
   'shop.buy.success':
-    'âœ… Purchase successful!\n\nProduct: *{name}*\nQty: *{qty}*\nTotal: *{total}*\n\nDelivery:\n```\n{delivery}\n```',
+    '✅ Purchase successful!\n\nProduct: *{name}*\nQty: *{qty}*\nTotal: *{total}*\n\nDelivery:\n```\n{delivery}\n```',
   // Step 1 of the premium delivery card (pic 3): Payment Verified!
   // Auto-deletes 15 seconds after being sent (handled in shop.ts).
   'shop.buy.payment_verified': [
@@ -274,7 +274,7 @@ export const en: Record<string, string> = {
     '',
     '*Amount:* {total} USDT',
     '',
-    '{delivering} _Delivering your orderâ€¦_',
+    '{delivering} _Delivering your order…_',
   ].join('\n'),
   // Step 2 of the premium delivery card (pic 3): Order Delivered!
   // The `{items}` slot is replaced in `shop.ts` with one `> line` per
@@ -306,7 +306,7 @@ export const en: Record<string, string> = {
   // Confirmation shown immediately after a buyer adds their email via
   // the post-purchase `Add Verified Email` CTA. The other Email
   // Settings entries (typed-email message, "User Profile / Has been
-  // Saved!" card) are auto-deleted from chat first â€” only this single
+  // Saved!" card) are auto-deleted from chat first — only this single
   // bold line remains.
   'shop.buy.email_setup_done':
     '{order_delivered} *Email has been setuped*',
@@ -319,21 +319,21 @@ export const en: Record<string, string> = {
   'wallet.admin_debit':
     '{debit_emoji} admin debited *${amount}* from your wallet.\n{balance_emoji} New balance: *${balance}*',
   'shop.buy.delivery_pending':
-    'Coming soon â€” admin will deliver your items manually within 12h.',
+    'Coming soon — admin will deliver your items manually within 12h.',
   'shop.buy.insufficient':
-    'âŒ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please top up first.',
-  'shop.buy.no_stock': 'âŒ Sorry, this item is out of stock.',
+    '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please top up first.',
+  'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
   // Generic Wallet-Pay failure popup. Shown when something other
   // than INSUFFICIENT_FUNDS goes wrong (DB error, missing migration,
   // network) so the loading spinner is always dismissed.
   'shop.buy.failed':
-    'âŒ Payment could not be completed right now. Please try again in a moment, or contact admin if it keeps happening.',
-  'shop.referral.disabled': 'âŒ Referral Pay is not enabled for this product.',
-  'shop.referral.already_redeemed': 'âœ… Referral Pay was already used on this legacy order.',
+    '❌ Payment could not be completed right now. Please try again in a moment, or contact admin if it keeps happening.',
+  'shop.referral.disabled': '❌ Referral Pay is not enabled for this product.',
+  'shop.referral.already_redeemed': '✅ Referral Pay was already used on this legacy order.',
   'shop.referral.insufficient':
-    'âŒ Not enough referrals. Required: {required}. Available: {total}. Missing: {remaining}.',
+    '❌ Not enough referrals. Required: {required}. Available: {total}. Missing: {remaining}.',
   'shop.referral.insufficient.card': [
-    'âš ï¸ *Referral Balance Is Low*',
+    '⚠️ *Referral Balance Is Low*',
     '',
     '{prod_referral} *Required:* {required} referrals',
     '{refer_user} *Available:* {available} referrals',
@@ -344,7 +344,7 @@ export const en: Record<string, string> = {
   'shop.referral.confirm': [
     '{refer_title} *Confirm Referral Pay*',
     '',
-    '{emoji} *{name}* Ã— *{qty}*',
+    '{emoji} *{name}* × *{qty}*',
     '{prod_referral} *Required:* {required} referrals',
     '{refer_user} *Available:* {available} referrals',
     '{delivery_check} *After Pay:* {after} referrals',
@@ -352,7 +352,7 @@ export const en: Record<string, string> = {
     '_Use your active referrals for this order?_',
   ].join('\n'),
   'shop.referral.failed':
-    'âŒ Referral payment could not be completed right now. Please try again or contact admin.',
+    '❌ Referral payment could not be completed right now. Please try again or contact admin.',
   'shop.referral.confirmed': [
     '{refer_title} *Referral Payment Successful!*',
     '',
@@ -360,73 +360,73 @@ export const en: Record<string, string> = {
     '*Qty:* {qty}',
     '*Referrals Used:* {spent}',
     '',
-    '{delivering} _Delivering your orderâ€¦_',
+    '{delivering} _Delivering your order…_',
   ].join('\n'),
   'shop.referral.delivery': 'Referral Pay for product #{product_id} (qty: {qty})',
   // Kept for backwards compat with any /settext overrides referencing
   // the old key, even though the email gate is no longer enforced.
   'shop.buy.email_required':
-    'Setup email system first â€” we need your email to send the receipt.',
+    'Setup email system first — we need your email to send the receipt.',
 
   // ---------- Post-purchase delivery form ----------
   // Shown after Order Delivered for products where the admin enabled
   // a per-product detail-submission form (e.g. account email +
-  // password, gift-card code, recovery key, â€¦). The buyer first sees
+  // password, gift-card code, recovery key, …). The buyer first sees
   // the admin's free-form `delivery_instruction` text, then a single
   // "submission box" message that walks them through `delivery_fields`
   // one prompt at a time.
   'shop.delivery.instruction.default': [
-    '{delivery_box} *Action Required â€” Please Submit Your Details*',
+    '{delivery_box} *Action Required — Please Submit Your Details*',
     '',
-    '_The seller needs a few details from you to deliver this order. Fill in each field below â€” your answers go straight to our vendor desk and your account is set up within minutes._',
+    '_The seller needs a few details from you to deliver this order. Fill in each field below — your answers go straight to our vendor desk and your account is set up within minutes._',
   ].join('\n'),
   'shop.delivery.box.header': [
-    '{delivery_box} *Submit Your Details â€” {product_name}*',
+    '{delivery_box} *Submit Your Details — {product_name}*',
     '',
     '_Step {current}/{total}_',
   ].join('\n'),
   'shop.delivery.box.prompt': '{delivery_field} Send your *{label}* below {email_arrow}',
   'shop.delivery.box.prompt_optional':
-    '{delivery_field} Send your *{label}* below {email_arrow}\n_(optional â€” type `skip` to leave blank)_',
-  'shop.delivery.box.summary_header': '{delivery_box} *Your Details â€” {product_name}*',
-  'shop.delivery.box.summary_row': 'â€¢ *{label}:* `{value}`',
+    '{delivery_field} Send your *{label}* below {email_arrow}\n_(optional — type `skip` to leave blank)_',
+  'shop.delivery.box.summary_header': '{delivery_box} *Your Details — {product_name}*',
+  'shop.delivery.box.summary_row': '• *{label}:* `{value}`',
   'shop.delivery.box.invalid':
     '{qty_invalid} _That doesn\'t look right. Please send your *{label}* again._',
   'shop.delivery.success.default': [
     '{delivery_check} *Your Details Has been Submitted Successfully* {email_saved_check}',
     '',
-    '_Thank you â€” our team is reviewing your submission and will approve it shortly. If you don\'t hear back soon, tap *Admin Help* below._',
+    '_Thank you — our team is reviewing your submission and will approve it shortly. If you don\'t hear back soon, tap *Admin Help* below._',
   ].join('\n'),
   'shop.delivery.success.resubmitted': [
     '{delivery_resubmit} *Your Details Has been Re submitted as Corrected* {email_saved_check}',
     '',
-    '_Thank you â€” your corrected info has been forwarded to our vendor. They will use this NEW submission instead of the previous one._',
+    '_Thank you — your corrected info has been forwarded to our vendor. They will use this NEW submission instead of the previous one._',
   ].join('\n'),
   // Auto-text pre-filled into the admin DM when the buyer taps the
   // Admin Help button on the success card. Telegram URL-encodes this
-  // when we append it to `?text=â€¦` so newlines + emoji are safe.
+  // when we append it to `?text=…` so newlines + emoji are safe.
   'shop.delivery.admin_help.first': [
-    'Hey admin i need help about {product_name} â€”',
+    'Hey admin i need help about {product_name} —',
     'I have sent {field_summary} but still did not approved, please help me.',
     'Order: {order_tag}',
   ].join('\n'),
   'shop.delivery.admin_help.resubmit': [
     'Hey admin my {field_summary} About {product_name} has been resubmitted,',
-    'please don\'t use the old details â€” this is the correct one. Help me.',
+    'please don\'t use the old details — this is the correct one. Help me.',
     'Order: {order_tag}',
   ].join('\n'),
   // Buttons that appear under the success card.
   'btn.delivery.edit': '{delivery_field} Edit Details',
   'btn.delivery.admin_help': '{delivery_help} Admin Help',
   // Shown when the Edit Details button is tapped but the bot can't
-  // recover the original submission (deleted, product gone, â€¦).
+  // recover the original submission (deleted, product gone, …).
   'shop.delivery.edit_unavailable':
-    'âš ï¸ _We couldn\'t reopen your previous submission. Please tap *Admin Help* on your order so we can fix this manually._',
-  // Vendor DM body â€” sent to `delivery_vendor_chat_id` whenever the
+    '⚠️ _We couldn\'t reopen your previous submission. Please tap *Admin Help* on your order so we can fix this manually._',
+  // Vendor DM body — sent to `delivery_vendor_chat_id` whenever the
   // buyer submits OR resubmits the form. `{header}` switches between
   // the new-order and corrected-order banners.
   'shop.delivery.vendor.new': [
-    '{delivery_vendor} *Hey my dear vendor â€” here is a new order to fulfil.*',
+    '{delivery_vendor} *Hey my dear vendor — here is a new order to fulfil.*',
     '',
     '*Order Tag:* {order_tag}',
     '*Product:* {product_name}',
@@ -436,10 +436,10 @@ export const en: Record<string, string> = {
     '*Submitted Details:*',
     '{details}',
     '',
-    '_Please add this buyer to the workspace as fast as possible. (This message is automated â€” please process this order quickly.)_',
+    '_Please add this buyer to the workspace as fast as possible. (This message is automated — please process this order quickly.)_',
   ].join('\n'),
   'shop.delivery.vendor.resubmit': [
-    '{delivery_resubmit} *Heads up vendor â€” corrected details for an existing order.*',
+    '{delivery_resubmit} *Heads up vendor — corrected details for an existing order.*',
     '',
     '*Order Tag:* {order_tag}',
     '*Product:* {product_name}',
@@ -449,23 +449,23 @@ export const en: Record<string, string> = {
     '*Corrected Details (revision {revision}):*',
     '{details}',
     '',
-    '_Use these NEW details â€” discard the previous submission. (This message is automated â€” please process the correction quickly.)_',
+    '_Use these NEW details — discard the previous submission. (This message is automated — please process the correction quickly.)_',
   ].join('\n'),
 
   // ---------- Using Method tutorial ----------
-  // Per-product tutorial body shown when the buyer taps `ðŸ“˜ Using
+  // Per-product tutorial body shown when the buyer taps `📘 Using
   // Method` under an Order Delivered card.
   'shop.tutorial.body': [
-    '{tutorial} *Using Method â€” {name}*',
+    '{tutorial} *Using Method — {name}*',
     '',
     '{body}',
   ].join('\n'),
   'shop.tutorial.empty': [
-    '{tutorial} *Using Method â€” {name}*',
+    '{tutorial} *Using Method — {name}*',
     '',
-    '_The admin hasnâ€™t added a tutorial for this product yet. Please contact admin if you need help using your purchase._',
+    '_The admin hasn’t added a tutorial for this product yet. Please contact admin if you need help using your purchase._',
   ].join('\n'),
-  'shop.page.header': 'ðŸ›’ *{category}*\n\n*Available Products:*\n_{total} products â€” page {page}/{pages}_',
+  'shop.page.header': '🛒 *{category}*\n\n*Available Products:*\n_{total} products — page {page}/{pages}_',
 
   // ---------- Profile ----------
   'profile.title': '*User Profile*',
@@ -485,12 +485,12 @@ export const en: Record<string, string> = {
   'profile.row.username_empty': 'Username: _not set_',
   'profile.row.link': 'User link: [open]({link})',
   'profile.row.status': 'Status: *{status}*',
-  'profile.row.email': 'Email: `{email}` â€” Has been Saved! {email_saved_check}',
-  'profile.row.email_empty': 'Email: _not set_ â€” tap *Set Email* below',
+  'profile.row.email': 'Email: `{email}` — Has been Saved! {email_saved_check}',
+  'profile.row.email_empty': 'Email: _not set_ — tap *Set Email* below',
   'profile.row.balance': 'Balance: *{balance} USDT*',
   'profile.row.language': 'Language: *{language}*',
-  'profile.row.region': 'Region: *{region}* â€” local time *{time}*',
-  'profile.row.region_empty': 'Region: _not set_ â€” tap *Set Region*',
+  'profile.row.region': 'Region: *{region}* — local time *{time}*',
+  'profile.row.region_empty': 'Region: _not set_ — tap *Set Region*',
   'profile.row.joined': 'Joined: *{joined}*',
   // Legacy keys (kept for any callers referencing them via /settext)
   'profile.user_id': 'ID: `{id}`',
@@ -499,12 +499,12 @@ export const en: Record<string, string> = {
   'profile.language': 'Language: *{language}*',
   'profile.joined': 'Joined: *{joined}*',
   'profile.status.default': 'started bot',
-  // Language picker screen â€” opened from Settings â†’ Language.
+  // Language picker screen — opened from Settings → Language.
   'profile.language.title': '{lang_left} *Select Language* {lang_right}',
-  'profile.region.title': 'ðŸ—º *Set Region*',
+  'profile.region.title': '🗺 *Set Region*',
   'profile.region.body':
-    'Pick your country â€” your local time will then be used in messages and timestamps.',
-  'profile.region.saved': 'âœ… Region set to *{region}*. Local time: *{time}*.',
+    'Pick your country — your local time will then be used in messages and timestamps.',
+  'profile.region.saved': '✅ Region set to *{region}*. Local time: *{time}*.',
   // Set Email screen (no email yet).
   'profile.email.set.title': '{email_bracket_l} *Set Email* {profile_email}',
   'profile.email.set.body':
@@ -516,36 +516,36 @@ export const en: Record<string, string> = {
   // Why Email screen.
   'profile.email.why.title': '{email_bracket_l} *We Need Your Email* {profile_email}',
   'profile.email.why.body':
-    '{email_saved_check} We need your email to send invoices {email_invoice} and to keep our services secure {email_secure} â€” thanks {email_thanks}.',
+    '{email_saved_check} We need your email to send invoices {email_invoice} and to keep our services secure {email_secure} — thanks {email_thanks}.',
   // Misc.
-  'profile.email.saved': 'âœ… Email saved: `{email}`',
+  'profile.email.saved': '✅ Email saved: `{email}`',
   'profile.email.bad': '{email_invalid} *Please Enter A Valid Email*',
   // 12-hour soft-nag reminder for users without a saved email. Sent
   // by `services/emailNag.ts` on the first interaction after every
-  // 12-hour window. Users can mute this from Notifications â†’
+  // 12-hour window. Users can mute this from Notifications →
   // Email Reports.
   'profile.email.nag': [
     '{email_nag} *Please Add Your Verified Email for More Secured Experience*',
     '',
-    '_Tap *Settings â†’ Email Settings â†’ Set Email* to add yours._',
+    '_Tap *Settings → Email Settings → Set Email* to add yours._',
     '',
     '{email_thanks} _Thanks!_',
   ].join('\n'),
   // Popup error shown on the Send-PDF buttons when Email Reports is
-  // OFF â€” gives the user the explicit unblock path.
+  // OFF — gives the user the explicit unblock path.
   'profile.email.reports_off_popup':
-    'Email Reports are turned OFF. Open Notifications â†’ toggle "Email Reports: ON" first, then try again.',
+    'Email Reports are turned OFF. Open Notifications → toggle "Email Reports: ON" first, then try again.',
   // Toast labels for the Email Reports toggle (mirrors the other
   // notification toggles' verbiage).
-  'profile.notify.email_on': 'ðŸŸ¢ Email Reports: ON',
-  'profile.notify.email_off': 'ðŸ”• Email Reports: OFF',
+  'profile.notify.email_on': '🟢 Email Reports: ON',
+  'profile.notify.email_off': '🔕 Email Reports: OFF',
 
   // ---------- Bot Tutorial (Settings) ----------
   // Admin-editable instructions screen (text + optional photo /
   // video / document attachment + optional URL button). Body is
   // reused verbatim from the `bot_tutorial.text` setting; the
   // header / footer wrap it in premium emojis.
-  'profile.bot_tutorial.title': '{bot_tutorial} *Using Method â€” Bot*',
+  'profile.bot_tutorial.title': '{bot_tutorial} *Using Method — Bot*',
   'profile.bot_tutorial.empty':
     '_The admin hasn\u2019t added a bot tutorial yet. Please check back later._',
   'profile.bot_tutorial.body': '{body}',
@@ -555,7 +555,7 @@ export const en: Record<string, string> = {
   // LTC payment screen. `pay.tutorial.title` carries the tutorial
   // book glyph + the method's display name; the body is reused
   // verbatim from the `pay_tutorial.<method_id>.text` setting.
-  'pay.tutorial.title': '{tutorial} *Where to find your reference â€” {method}*',
+  'pay.tutorial.title': '{tutorial} *Where to find your reference — {method}*',
   'pay.tutorial.empty':
     '_The admin hasn\u2019t added a tutorial for this payment method yet. Please check back later._',
   'pay.tutorial.body': '{body}',
@@ -594,7 +594,7 @@ export const en: Record<string, string> = {
   'profile.pricelist.csv.promo_none': '\u2014',
   'profile.pricelist.csv.promo_format': 'Buy {min_qty}+ \u2212{discount} USDT',
   'profile.pricelist.csv.unlimited': '\u221e',
-  // PDF (mail-only) â€” title / section header used by buildPriceListPdf.
+  // PDF (mail-only) — title / section header used by buildPriceListPdf.
   'profile.pricelist.pdf.title': 'SafwanTiger Shop \u2014 Price List',
   'profile.pricelist.pdf.section': 'Catalog',
   // Footer surfaced both in the CSV body and in the email subject /
@@ -605,7 +605,7 @@ export const en: Record<string, string> = {
   // Email Settings hub (the new submenu opened from a single Settings button).
   'profile.email.hub.title': '{email_bracket_l} *Email Settings* {profile_email}',
   'profile.email.hub.body':
-    '{email_invoice} We use your email for purchase receipts and account-recovery only â€” never for marketing.\n\n' +
+    '{email_invoice} We use your email for purchase receipts and account-recovery only — never for marketing.\n\n' +
     '{profile_email} *Current email:* `{current}`',
   // Mobile popup shown when the user taps "Change Email" without one.
   'profile.email.change.no_email_popup': 'Please Set up email first',
@@ -613,47 +613,47 @@ export const en: Record<string, string> = {
   'profile.email.set.already_set_popup':
     'Email has already been set ({current}). Use Change Email or Delete Email to update it.',
   // Mobile popup shown when the user taps "Delete Email" without one.
-  'profile.email.delete.no_email_popup': 'No email is set yet â€” nothing to delete.',
+  'profile.email.delete.no_email_popup': 'No email is set yet — nothing to delete.',
   // Delete Email confirmation screen.
   'profile.email.delete.title': '{email_bracket_l} *Delete Email* {email_bracket_l}',
   'profile.email.delete.body':
     '{email_invalid} _Please confirm to delete email_\n\n' +
     '{profile_email} *Current email:* `{current}`',
   // Toast shown after the email is removed.
-  'profile.email.delete.success': 'âœ… Email removed.',
+  'profile.email.delete.success': '✅ Email removed.',
   // Shown when another user already has this email.
   'profile.email.in_use':
     '{email_in_use} Email already in *use*\n\n' +
     '{email_arrow} *_Please enter a new verified email_*',
   // Buttons used on the Settings screen + email sub-screens.
-  'btn.email.settings': 'ðŸ“§ Email Settings',
-  'btn.email.change': 'âœï¸ Change Email',
-  'btn.email.set': 'ðŸ“§ Set Email',
-  'btn.email.why': 'â” Why Email',
-  'btn.email.delete': 'ðŸ—‘ Delete Email',
-  'btn.email.delete.confirm': 'ðŸ—‘ Confirm Delete',
-  'btn.email.delete.cancel': 'â¬…ï¸ Cancel',
-  'btn.email.know_more': 'ðŸ“„ Know More',
+  'btn.email.settings': '📧 Email Settings',
+  'btn.email.change': '✏️ Change Email',
+  'btn.email.set': '📧 Set Email',
+  'btn.email.why': '❔ Why Email',
+  'btn.email.delete': '🗑 Delete Email',
+  'btn.email.delete.confirm': '🗑 Confirm Delete',
+  'btn.email.delete.cancel': '⬅️ Cancel',
+  'btn.email.know_more': '📄 Know More',
   // Send-PDF buttons (My Orders / My Deposits / My Stats screens).
   'btn.send_pdf.orders': 'Send Orders PDF to Email',
-  'btn.send_pdf.deposits': 'ðŸ“¤ Send Deposits PDF to Email',
-  'btn.send_pdf.stats': 'ðŸ“¤ Send Stats PDF to Email',
+  'btn.send_pdf.deposits': '📤 Send Deposits PDF to Email',
+  'btn.send_pdf.stats': '📤 Send Stats PDF to Email',
   // Pop-ups for the Send-PDF buttons.
   'pdf.no_email_popup':
-    'âš ï¸ Set your email first. Open Settings â†’ Email Settings â†’ Set Email to add one, then come back and tap Send PDF.',
-  'pdf.sending_popup': 'â³ Generating your PDF and sending it to {email}â€¦',
-  'pdf.sent_popup': 'âœ… PDF sent to {email}. Check your inbox (and spam folder).',
+    '⚠️ Set your email first. Open Settings → Email Settings → Set Email to add one, then come back and tap Send PDF.',
+  'pdf.sending_popup': '⏳ Generating your PDF and sending it to {email}…',
+  'pdf.sent_popup': '✅ PDF sent to {email}. Check your inbox (and spam folder).',
   // Chat-message ribbon shown right after a Send-PDF tap succeeds.
-  // Uses the premium ðŸ“¬ emoji so the success lands as a custom-emoji
+  // Uses the premium 📬 emoji so the success lands as a custom-emoji
   // entity rather than a plain toast.
   'pdf.sent_message': '{pdf_sent_l} *Pdf has been sended to mail* {pdf_sent_r}',
   'pdf.failed_popup':
-    'âŒ Could not send PDF to {email}. Please try again in a moment â€” if it keeps failing, contact support.',
+    '❌ Could not send PDF to {email}. Please try again in a moment — if it keeps failing, contact support.',
   // My Deposits button.
-  'btn.my_deposits': 'ðŸ’³ My Deposits',
+  'btn.my_deposits': '💳 My Deposits',
   // Redeem Gift Code button (Settings) + screen.
-  'btn.redeem': 'ðŸŽ Gift Code',
-  'btn.buy_code': 'ðŸ›’ Buy Code',
+  'btn.redeem': '🎁 Gift Code',
+  'btn.buy_code': '🛒 Buy Code',
   // ---------- Redeem Gift Code screen ----------
   'gift.title': '{gift_title} *Redeem Gift Code*',
   'gift.body':
@@ -665,14 +665,14 @@ export const en: Record<string, string> = {
   'gift.already_used': '{gift_expired} You have already redeemed this code.',
   'gift.exhausted': '{gift_expired} This gift code is no longer available.',
   'gift.redeemed':
-    '{gift_redeemed} Gift code has been redeemed successfully â€” *{amount} USDT* has been credited.',
+    '{gift_redeemed} Gift code has been redeemed successfully — *{amount} USDT* has been credited.',
   // ---------- My Orders screen ----------
   'orders.title': '{orders_title} *My Orders*',
   'orders.body': 'Tap any order below to open details, or send the public Order ID shown in your receipt.',
   'orders.empty':
     '{orders_title} *My Orders*\n\n' +
-    'ðŸª„ No orders yet.\n\n' +
-    'âœ¨ ðŸ›ï¸ ðŸš€ Start shopping and your orders will appear here!',
+    '🪄 No orders yet.\n\n' +
+    '✨ 🛍️ 🚀 Start shopping and your orders will appear here!',
   'orders.page': 'Page {page}/{pages}',
   'orders.status.active': 'Active',
   'orders.status.refunded': 'Refunded',
@@ -697,8 +697,8 @@ export const en: Record<string, string> = {
   // Buttons used on the Order detail screen.
   'btn.orders_back_list': 'Back to Orders',
   'btn.orders_open_link': 'Open Link',
-  // Find by Order ID â€” opens a typed-input flow for a public order id.
-  'btn.find_order_by_id': 'ðŸ” Find by Order ID',
+  // Find by Order ID — opens a typed-input flow for a public order id.
+  'btn.find_order_by_id': '🔍 Find by Order ID',
   // Prompt + error responses for the Find by Order ID flow. Custom
   // emoji ids resolve to premium glyphs at render time.
   'orders.lookup.prompt':
@@ -706,9 +706,9 @@ export const en: Record<string, string> = {
   'orders.lookup.invalid':
     '{gift_invalid} That doesn\'t look like a valid Order ID. {order_id_invalid_r}',
   // Legacy keys kept so anything still calling them won't break.
-  'profile.email.title': 'ðŸ“§ *Set Email*',
+  'profile.email.title': '📧 *Set Email*',
   'profile.email.body':
-    'Send your contact email â€” replies and receipts will use this address.\n\nOr `/cancel`.',
+    'Send your contact email — replies and receipts will use this address.\n\nOr `/cancel`.',
   // Refer & Earn screen.
   'profile.refer.title': '{refer_title} *Refer & Earn*',
   'profile.refer.body':
@@ -724,23 +724,23 @@ export const en: Record<string, string> = {
     '> Transfer earnings to wallet anytime. For cash withdrawal, contact support ($1.00 min).\n\n' +
     '*Your Referral Link:*\n`{link}`',
   'profile.refer.convert_success':
-    'ðŸ’± Converted *{refs} refs* into *{amount} USDT*.\n\nðŸ’³ Wallet Balance: *{balance} USDT*',
+    '💱 Converted *{refs} refs* into *{amount} USDT*.\n\n💳 Wallet Balance: *{balance} USDT*',
   'profile.refer.convert_low':
-    'âš ï¸ Not enough refs to convert.\n\nYou need *20 active refs* to convert into *1 USDT*.\nCurrent Referral Pay Balance: *{available} refs*',
+    '⚠️ Not enough refs to convert.\n\nYou need *20 active refs* to convert into *1 USDT*.\nCurrent Referral Pay Balance: *{available} refs*',
   'profile.refer.convert_error':
-    'âš ï¸ Could not convert refs right now. Please try again.',
-  'btn.copy_link': 'ðŸ“‹ Copy Link',
+    '⚠️ Could not convert refs right now. Please try again.',
+  'btn.copy_link': '📋 Copy Link',
   'profile.orders.empty': 'You have no orders yet.',
-  'profile.orders.title': 'ðŸ§¾ *My Orders*',
-  'profile.orders.line': '#{id} â€¢ {name} Ã—{qty} â€¢ {total} â€¢ {date}',
-  'profile.notify.stock_on': 'Stock Alerts: âœ… ON',
-  'profile.notify.stock_off': 'Stock Alerts: â›” OFF',
-  'profile.notify.ann_on': 'Info Alerts: âœ… ON',
-  'profile.notify.ann_off': 'Info Alerts: â›” OFF',
-  'profile.notify.wallet_on': 'Wallet Alerts: âœ… ON',
-  'profile.notify.wallet_off': 'Wallet Alerts: â›” OFF',
+  'profile.orders.title': '🧾 *My Orders*',
+  'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
+  'profile.notify.stock_on': 'Stock Alerts: ✅ ON',
+  'profile.notify.stock_off': 'Stock Alerts: ⛔ OFF',
+  'profile.notify.ann_on': 'Info Alerts: ✅ ON',
+  'profile.notify.ann_off': 'Info Alerts: ⛔ OFF',
+  'profile.notify.wallet_on': 'Wallet Alerts: ✅ ON',
+  'profile.notify.wallet_off': 'Wallet Alerts: ⛔ OFF',
   'profile.notify.error':
-    'âš ï¸ Could not save your toggle â€” apply migration `0008_wallet_alert.sql` on the database.',
+    '⚠️ Could not save your toggle — apply migration `0008_wallet_alert.sql` on the database.',
   // ---------- My Deposits screen (rewritten) ----------
   'profile.deposits.title': '{deposits_title} *My Deposits*',
   'profile.deposits.empty': '{email_bracket_l} No deposits yet. {email_bracket_l}',
@@ -771,7 +771,7 @@ export const en: Record<string, string> = {
   'profile.stats.items': 'Items Bought: {count}',
   'profile.stats.spent': 'Total Spent: {amount} USDT',
   'profile.stats.last': 'Last Order: {rel} ({abs})',
-  'profile.stats.last_none': 'Last Order: â€”',
+  'profile.stats.last_none': 'Last Order: —',
   'profile.stats.deposits': 'Deposits: {amount} USDT',
   'profile.stats.rel.now': 'just now',
   'profile.stats.rel.minutes': '{n}m ago',
@@ -779,45 +779,45 @@ export const en: Record<string, string> = {
   'profile.stats.rel.days': '{n}d ago',
 
   // ---------- Topup ----------
-  'topup.title': 'ðŸ‘› *Top Up Wallet*',
-  'topup.choose_method': 'ðŸ‘› *Top Up Wallet*',
+  'topup.title': '👛 *Top Up Wallet*',
+  'topup.choose_method': '👛 *Top Up Wallet*',
   'topup.empty_methods': 'No payment methods configured. Please contact support.',
   'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested':
-    'âœ… Topup request submitted (#{id}).\nAdmin will verify and credit your wallet shortly.',
+    '✅ Topup request submitted (#{id}).\nAdmin will verify and credit your wallet shortly.',
 
   // ---------- Support ----------
   'support.title': '{support_title} Support',
   'support.body':
     '_*If you\'re unable to send a message or have an issue, use Live Support to connect directly with an admin.*_',
-  'support.btn.contact': 'ðŸ“© Contact Admin',
+  'support.btn.contact': '📩 Contact Admin',
   // Pre-filled into the admin DM's input bar when the user taps
   // Contact Admin (via t.me/<admin>?text=...).
   'support.contact_prefill': 'Hi i need help about ShopBot SafwanTiger Please Help me about : ',
   'support.btn.cancel': 'Cancel Support',
-  'support.btn.live': 'ðŸŸ¢ Live Support',
-  'support.btn.end_session': 'ðŸ”´ End Session',
+  'support.btn.live': '🟢 Live Support',
+  'support.btn.end_session': '🔴 End Session',
   // Live-Support relay copy.
   'support.live.busy_popup':
-    'â³ The admin is currently helping another user. Please try again in a moment.',
+    '⏳ The admin is currently helping another user. Please try again in a moment.',
   'support.live.user_active':
     '{support_live_active} Live Support\n\n' +
     'Support session active.\n\n' +
-    'Just type your message right here in this chat â€” every message is delivered straight to the admin. Tap *Cancel Support* anytime to end the session.',
+    'Just type your message right here in this chat — every message is delivered straight to the admin. Tap *Cancel Support* anytime to end the session.',
   // Small status line edited into the original Support screen so chat
   // history shows when each session was opened.
-  'support.live.session_created': 'ðŸŸ¢ *Live Support session created*',
+  'support.live.session_created': '🟢 *Live Support session created*',
   'support.live.admin_started':
-    'ðŸŸ¢ *Live Support started*\n\n' +
+    '🟢 *Live Support started*\n\n' +
     'User: *{name}* (@{username})\nID: `{id}`\n\nReply here to chat with them. Send /end to close.',
-  // No [Admin] tag on the user-facing side â€” the relay just forwards
+  // No [Admin] tag on the user-facing side — the relay just forwards
   // the admin's raw text or media so it reads like a normal chat.
   'support.live.admin_relay': '*[{name}]:* {text}',
   'support.live.admin_media_header': '*[{name}]* sent media:',
   'support.live.user_ended':
     '{support_live_closed} Live Support closed.\n\n' +
     'Open Support again from the menu whenever you need help.',
-  'support.live.admin_ended': 'ðŸ”´ *Live Support session closed.*',
+  'support.live.admin_ended': '🔴 *Live Support session closed.*',
   // Surfaced to the user when the bot can't deliver the session-start
   // message to the admin chat (most common cause: the new admin
   // account has never tapped Start on this bot, so Telegram refuses
@@ -825,26 +825,26 @@ export const en: Record<string, string> = {
   // silent-fail behaviour where the user saw a working Live Support
   // panel but the admin received nothing.
   'support.live.unavailable_popup':
-    'âš ï¸ Live Support is temporarily unavailable â€” the admin chat is unreachable right now. Please use Contact Admin from the Support menu, or try Live Support again in a moment.',
+    '⚠️ Live Support is temporarily unavailable — the admin chat is unreachable right now. Please use Contact Admin from the Support menu, or try Live Support again in a moment.',
   'support.live.unavailable_message':
-    'âš ï¸ *Live Support unavailable*\n\n' +
+    '⚠️ *Live Support unavailable*\n\n' +
     "Couldn't reach the admin right now. This usually means the admin needs to open this bot and tap *Start* once so Telegram lets the bot DM them.\n\n" +
     'Please use *Contact Admin* from the Support menu for now.',
   // "Send chat PDF to email" follow-up under the closure message.
-  'support.btn.email_transcript': 'ðŸ“§ Send chat PDF to email',
+  'support.btn.email_transcript': '📧 Send chat PDF to email',
   // Reuses pdf_sent_l / pdf_sent_r so the success copy renders the
   // same animated frame the user sees after Send-PDF on My Orders.
   'support.transcript.sent_message':
     '{pdf_sent_l} *Pdf has been sended to mail* {pdf_sent_r}',
   'support.transcript.no_email_popup':
-    'âš ï¸ Set your email first. Open Settings â†’ Email Settings â†’ Set Email to add one, then come back and tap Send chat PDF to email.',
+    '⚠️ Set your email first. Open Settings → Email Settings → Set Email to add one, then come back and tap Send chat PDF to email.',
   'support.transcript.sending_popup':
-    'â³ Generating your support transcript and sending it to {email}â€¦',
+    '⏳ Generating your support transcript and sending it to {email}…',
   'support.transcript.failed_popup':
-    'âŒ Could not send the transcript to {email}. Please try again â€” if it keeps failing, contact support.',
+    '❌ Could not send the transcript to {email}. Please try again — if it keeps failing, contact support.',
   'support.transcript.expired_popup':
-    'âŒ› This transcript is no longer available. Start a new Live Support session whenever you need help.',
-  // Kiwi AI â€” premium-formatted greeting. The kiwi avatar (`kiwi_ai`)
+    '⌛ This transcript is no longer available. Start a new Live Support session whenever you need help.',
+  // Kiwi AI — premium-formatted greeting. The kiwi avatar (`kiwi_ai`)
   // prefixes the headline so premium viewers see the animated kiwi
   // glyph and everyone else gets the unicode kiwi fallback. The
   // greeting is multi-turn: tap any number of questions, then
@@ -863,37 +863,37 @@ export const en: Record<string, string> = {
   'support.ai.fallback':
     'I couldn\'t answer that automatically. A human will reach out shortly.',
   // Tiny prompt sent right after the AI chat is wiped on Cancel,
-  // attached to the â€œðŸ“§ Send chat PDF to emailâ€ button so the user
+  // attached to the “📧 Send chat PDF to email” button so the user
   // can still save the conversation if they want to.
   'support.ai.pdf_prompt':
     '{kiwi_ai} *Kiwi Ai chat saved.*\n' +
     'Tap below to email the transcript as a PDF.',
   'support.ai.empty_popup':
-    'ðŸ’¬ Send at least one question first â€” there\'s nothing to save yet.',
+    '💬 Send at least one question first — there\'s nothing to save yet.',
   // Legacy keys kept for any code path still referencing them.
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
   'support.ai.prompt': 'Describe your issue and I\'ll do my best to help.',
 
   // ---------- Channel ----------
-  'channel.not_set': 'ðŸ“¢ The channel link hasn\'t been set yet. Ask the admin to configure it.',
-  'channel.subscribe.title': 'ðŸ“¢ *Join our channel* to continue',
+  'channel.not_set': '📢 The channel link hasn\'t been set yet. Ask the admin to configure it.',
+  'channel.subscribe.title': '📢 *Join our channel* to continue',
   'channel.subscribe.body': 'Please join the channel below, then tap *I joined*.',
-  'channel.subscribe.joined': 'âœ… I joined',
+  'channel.subscribe.joined': '✅ I joined',
 
   // ---------- Admin ----------
-  'admin.only': 'â›” Admin only.',
-  'admin.help.title': 'ðŸ›  *Admin Commands*',
-  'admin.cache.cleared': 'ðŸ§¹ Cache cleared.',
+  'admin.only': '⛔ Admin only.',
+  'admin.help.title': '🛠 *Admin Commands*',
+  'admin.cache.cleared': '🧹 Cache cleared.',
 
-  'admin.text.set': 'âœ… Text `{key}` updated.',
-  'admin.color.set': 'âœ… Color for `{key}` set to *{color}*.',
-  'admin.emoji.set': 'âœ… Emoji `{key}` updated.',
-  'admin.product.added': 'âœ… Product *{name}* added (id={id}).',
-  'admin.category.added': 'âœ… Category *{name}* added (id={id}).',
-  'admin.payment.added': 'âœ… Payment method *{name}* added (id={id}).',
-  'admin.bad_args': 'âŒ Bad arguments. Usage: `{usage}`',
+  'admin.text.set': '✅ Text `{key}` updated.',
+  'admin.color.set': '✅ Color for `{key}` set to *{color}*.',
+  'admin.emoji.set': '✅ Emoji `{key}` updated.',
+  'admin.product.added': '✅ Product *{name}* added (id={id}).',
+  'admin.category.added': '✅ Category *{name}* added (id={id}).',
+  'admin.payment.added': '✅ Payment method *{name}* added (id={id}).',
+  'admin.bad_args': '❌ Bad arguments. Usage: `{usage}`',
 
   // ---------- Errors ----------
-  'err.generic': 'âš ï¸ Something went wrong. Please try again.',
-  'err.unknown_action': 'âš ï¸ Unknown action.',
+  'err.generic': '⚠️ Something went wrong. Please try again.',
+  'err.unknown_action': '⚠️ Unknown action.',
 };
