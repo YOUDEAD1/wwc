@@ -6,6 +6,7 @@ export type DBUser = {
   first_name: string | null;
   last_name: string | null;
   language: Lang;
+  currency: string | null;
   balance: number;
   stock_alert: boolean;
   announcements: boolean;
