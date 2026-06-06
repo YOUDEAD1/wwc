@@ -291,10 +291,6 @@ export function paymentMethodKeyboard(
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'pay_wallet', `pay:wallet:${product.id}`);
   kb.row();
-  if (options?.showReferralPay) {
-    inlineBtn(kb, lang, 'pay_referral', `pay:referral:${product.id}`);
-    kb.row();
-  }
   inlineBtn(kb, lang, 'pay_direct', `pay:direct:${product.id}`);
   kb.row();
   // Top-up Wallet from the buy flow carries the originating product
@@ -303,6 +299,10 @@ export function paymentMethodKeyboard(
   // them on the main menu.
   inlineBtn(kb, lang, 'pay_topup', `topup:open:from:buy:${product.id}`);
   kb.row();
+  if (options?.showReferralPay) {
+    inlineBtn(kb, lang, 'pay_referral', `pay:referral:${product.id}`);
+    kb.row();
+  }
   inlineBtn(kb, lang, 'back', `prod:${product.id}`);
   return kb;
 }

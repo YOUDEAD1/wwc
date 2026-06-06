@@ -21,6 +21,7 @@ export const en: Record<string, string> = {
   'btn.buy_now': '✅ Buy Now',
   'btn.redeem_referral': '🎁 Pay with Referrals',
   'btn.referral_earn_buy': '🔗 Earn Referrals & Buy',
+  'btn.convert_refers': '💱 Convert Refers to USDT',
   'btn.topup_wallet': '👛 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
@@ -173,10 +174,10 @@ export const en: Record<string, string> = {
     '{promo_line}' +
     '{prod_total_amount} Total: *{total} USDT*\n' +
     '{prod_wallet} Wallet: *{balance} USDT*\n' +
-    '{referral_line}\n' +
+    '{referral_line}' +
     'Choose a pay method:',
   'shop.pay.referral_line':
-    '{prod_referral} Referral Pay: *{available} available* • *{required} required*',
+    '{prod_referral} Referral Pay:\n\n*{available} available* • *{required} required*\n\n',
   // Wallet-pay confirmation card (page 2). Short labels with
   // premium emojis on every line. `{discount_line}` is filled in
   // by the caller (empty string when there is no active discount).
@@ -711,18 +712,20 @@ export const en: Record<string, string> = {
   // Refer & Earn screen.
   'profile.refer.title': '{refer_title} *Refer & Earn*',
   'profile.refer.body':
-    '{refer_user} *Referred (24h):* {ref24h}\n' +
-    '{refer_user} *Referred (7d):* {ref7d}\n' +
-    '{refer_user} *Referred (Total):* {refTotal}\n\n' +
-    '{prod_referral} *Referral Pay Balance:* {refAvailable} refs\n' +
-    '{delivery_check} *Used for Purchases:* {refSpent} refs\n\n' +
+    '{refer_prize_l} *Refer 10 users and win $0.50* {refer_prize_r}\n\n' +
+    '{refer_clicks} *Clicks:* {clicks}\n' +
+    '{refer_pending} *Pending:* {pending}\n' +
+    '{refer_active} *Active:* {active}\n' +
+    '{refer_left} *Left:* {left}\n' +
+    '{refer_total} *Referred (Total):* {refTotal}\n' +
     '{refer_coin} *Total Earned:* {earnedTotal} USDT\n' +
-    '{refer_coin} *Available:* {available} USDT\n' +
-    '{refer_transferred} *Transferred:* {transferred} USDT\n' +
     '{refer_withdrawn} *Withdrawn:* {withdrawn} USDT\n\n' +
-    '> *Refer 10 users and win $0.50!*\n' +
-    '> Transfer earnings to wallet anytime. For cash withdrawal, contact support ($1.00 min).\n\n' +
+    '{prod_referral} *Referral Pay Balance:* {refAvailable} refs\n' +
+    '{refer_spent} *Used for Purchases:* {refSpent} refs\n\n' +
+    'Transfer earnings to wallet anytime. For cash withdrawal, contact support ($1.00 min).\n\n' +
     '*Your Referral Link:*\n`{link}`',
+  'profile.refer.convert_soon':
+    '💱 Convert Refers to USDT is coming soon. For now, contact support for manual cash withdrawal.',
   'btn.copy_link': '📋 Copy Link',
   'profile.orders.empty': 'You have no orders yet.',
   'profile.orders.title': '🧾 *My Orders*',

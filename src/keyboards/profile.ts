@@ -216,6 +216,8 @@ export function referKeyboard(
   const kb = new InlineKeyboard();
   inlineCopyText(kb, lang, 'copy_link', link);
   kb.row();
+  inlineBtn(kb, lang, 'convert_refers', 'profile:refer:convert');
+  kb.row();
   inlineBtn(kb, lang, 'refresh', options.refreshCallback ?? 'profile:refer');
   kb.row();
   inlineBtn(kb, lang, 'back', options.backCallback ?? 'main:open');

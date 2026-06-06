@@ -299,19 +299,24 @@ async function showLowReferralBalance(
   inlineBtn(kb, ctx.lang, 'refresh', `pay:referral:${product.id}`);
   kb.row();
   inlineBtn(kb, ctx.lang, 'back', `buy:${product.id}`);
-  await ctx.reply(
-    renderMdHtml(
-      ctx.t('shop.referral.insufficient.card', {
-        required: state.requiredTotal,
-        available: state.availableReferrals,
-        remaining: state.remaining,
-      }),
-    ),
-    {
+  const html = renderMdHtml(
+    ctx.t('shop.referral.insufficient.card', {
+      required: state.requiredTotal,
+      available: state.availableReferrals,
+      remaining: state.remaining,
+    }),
+  );
+  if (ctx.callbackQuery?.message) {
+    await ctx.editMessageText(html, {
       parse_mode: 'HTML',
       reply_markup: kb,
-    },
-  );
+    });
+    return;
+  }
+  await ctx.reply(html, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
 }
 
 async function finalizeOrderDelivery(args: {
@@ -1334,7 +1339,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         ? `${ctx.t('shop.pay.referral_line', {
             required: referral.requiredTotal,
             available: referral.availableReferrals,
-          })}\n`
+          })}`
         : '',
     });
     await ctx.answerCallbackQuery();
