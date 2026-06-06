@@ -129,11 +129,22 @@ export async function setUserLanguage(telegram_id: number, language: Lang): Prom
   await supabase.from('users').update({ language }).eq('telegram_id', telegram_id);
 }
 
+export async function setUserCurrency(telegram_id: number, currency: string): Promise<void> {
+  const { error } = await supabase
+    .from('users')
+    .update({ currency })
+    .eq('telegram_id', telegram_id);
+  if (error) {
+    logger.error({ err: error, telegram_id, currency }, 'setUserCurrency failed');
+    throw error;
+  }
+}
+
 /**
  * Set the user's region + IANA timezone in one call. Either field
  * may be cleared by passing `null`.
  *
- * Throws (with a logged error) when the UPDATE fails â€” typically the
+ * Throws (with a logged error) when the UPDATE fails — typically the
  * `region`/`timezone` columns are missing because migration 0005 was
  * never applied.
  */
@@ -155,7 +166,7 @@ export async function setUserRegion(
 /**
  * Set the user's contact email (`null` clears it).
  *
- * Throws on UPDATE failure â€” typically the `email` column is missing
+ * Throws on UPDATE failure — typically the `email` column is missing
  * because migration 0005 was never applied. We surface the error so
  * the caller can show the user a useful message instead of silently
  * "succeeding" while the value is dropped.
@@ -216,7 +227,7 @@ export async function adjustBalance(telegram_id: number, delta: number): Promise
 
 /**
  * Toggle the "Email Reports" preference. Stored as the inverse of
- * `email_nag_disabled` so the existing `false â†’ on, true â†’ off`
+ * `email_nag_disabled` so the existing `false → on, true → off`
  * semantics on the rest of the notify columns still hold for the UI
  * label generator. Returns the new state (true = email reports ON).
  */
@@ -469,7 +480,7 @@ export async function getReferralEarnings(
     .eq('telegram_id', telegram_id)
     .maybeSingle();
   if (error) {
-    // Most likely cause: migration 0009 not applied yet â€” columns
+    // Most likely cause: migration 0009 not applied yet — columns
     // missing. Show zeroes so the screen still renders instead of
     // throwing the user back to a generic error.
     logger.warn(
@@ -658,14 +669,14 @@ export const OUT_OF_STOCK_SORT_ORDER = 1_000_000_000;
 /**
  * Detect and apply an out-of-stock / restock transition for a
  * product. Callers pass the stock value *before* their write and
- * *after* their write â€” the helper only fires when those cross
+ * *after* their write — the helper only fires when those cross
  * zero in either direction. This keeps the side-effect bound to
  * real state transitions and prevents a re-fire when the admin
- * manually repositioned an out-of-stock row (no stock change â†’ no
- * transition â†’ no auto-move-to-end).
+ * manually repositioned an out-of-stock row (no stock change → no
+ * transition → no auto-move-to-end).
  *
  * No-op when the product is marked `unlimited_stock` (catalog renders
- * âˆž, never goes OOS).
+ * ∞, never goes OOS).
  */
 export async function applyStockTransition(
   product_id: number,
@@ -689,7 +700,7 @@ export async function applyStockTransition(
   if (p.unlimited_stock === true) return;
   // OOS transition: stash the current admin-placed sort_order and
   // sink the row to the bottom of the catalog. The `stashed_sort_order
-  // is null` guard makes the operation idempotent â€” re-runs on an
+  // is null` guard makes the operation idempotent — re-runs on an
   // already-stashed row are no-ops.
   if (!isInStock && p.stashed_sort_order === null) {
     const { error } = await supabase
@@ -784,7 +795,7 @@ export async function setProductPinned(
  * `sort_order` to one less than the current minimum, ignoring rows
  * currently auto-OOS-stashed at `OUT_OF_STOCK_SORT_ORDER` so the new
  * top isn't out-paced by an OOS row's sentinel value. Clears the
- * stash for the moved row â€” the admin took an explicit position
+ * stash for the moved row — the admin took an explicit position
  * decision; we don't want a later restock to overwrite that.
  */
 export async function moveProductToTop(id: number): Promise<void> {
@@ -807,7 +818,7 @@ export async function moveProductToTop(id: number): Promise<void> {
  * Move a product to the end of the *in-stock* portion of the
  * catalog (i.e. after every non-OOS-stashed row but ahead of any
  * rows sitting at the OOS sentinel). Clears the stash for the same
- * reason as `moveProductToTop` â€” the admin's manual placement wins.
+ * reason as `moveProductToTop` — the admin's manual placement wins.
  */
 export async function moveProductToBottom(id: number): Promise<void> {
   const { data } = await supabase
@@ -827,9 +838,9 @@ export async function moveProductToBottom(id: number): Promise<void> {
 
 /**
  * Restore a previously auto-OOS-stashed row's `sort_order` so the
- * admin's manual â†‘ / â†“ swap operates on a real catalog position
+ * admin's manual ↑ / ↓ swap operates on a real catalog position
  * rather than the OOS sentinel. No-op when there's no stash. Used
- * by the admin reorder callback to make â†‘ / â†“ behave intuitively
+ * by the admin reorder callback to make ↑ / ↓ behave intuitively
  * for OOS rows without requiring a pin or a Top/Bottom detour.
  */
 export async function unstashSortOrder(id: number): Promise<void> {
@@ -1025,7 +1036,7 @@ export async function countAvailableProductItems(product_id: number): Promise<nu
 }
 
 /**
- * List unconsumed items in the pool â€” used by the admin Stock
+ * List unconsumed items in the pool — used by the admin Stock
  * Inspection screen so the operator can audit remaining accounts /
  * links / codes for a product. Returned in claim order (oldest
  * first) so the next purchase will pull from the top of this list.
@@ -1105,7 +1116,7 @@ export async function deleteProductItem(item_id: number): Promise<number | null>
 /**
  * Bring `products.stock` back in line with the live count of
  * unconsumed items in the pool. No-op when the product is marked
- * `unlimited_stock` (the catalog renders âˆž and we don't track a
+ * `unlimited_stock` (the catalog renders ∞ and we don't track a
  * count for those rows). Skips silently on legacy schemas missing
  * the `unlimited_stock` column.
  */
@@ -1205,9 +1216,9 @@ export async function decrementProductStock(id: number, qty: number): Promise<vo
 // ---------- Per-user price overrides ----------
 
 /**
- * Look up the price override (if any) for a single user Ã— product
+ * Look up the price override (if any) for a single user × product
  * pair. Returns the override price as a `number`, or `null` when no
- * override is set â€” callers must fall back to the product's default
+ * override is set — callers must fall back to the product's default
  * `products.price`.
  */
 export async function getUserProductPrice(
@@ -1227,7 +1238,7 @@ export async function getUserProductPrice(
 /**
  * Bulk lookup of overrides for one user across many products.
  * Returns a `Map<product_id, price>` containing only entries that
- * actually have an override â€” callers iterate the requested product
+ * actually have an override — callers iterate the requested product
  * ids and `map.get(id) ?? product.price`.
  *
  * Used by the shop list view so we don't have to issue one query
@@ -1252,7 +1263,7 @@ export async function getUserProductPriceMap(
 
 /**
  * List every override for a single user, joined with the underlying
- * product so the admin UI can show "Product Name â€” default $X â†’
+ * product so the admin UI can show "Product Name — default $X →
  * override $Y" lines.
  */
 export async function listUserPriceOverrides(
@@ -1319,14 +1330,14 @@ export async function clearUserProductPrice(
 }
 
 /**
- * Admin overview â€” every override across every user, joined with
+ * Admin overview — every override across every user, joined with
  * the user row (for username / first_name) and the product row (for
  * the human-readable name + default price). Sorted by `telegram_id`
  * then `product_id` so callers can group by user with a single
  * pass.
  *
  * `users` is LEFT-joined because overrides can be pre-set for users
- * who haven't `/start`-ed the bot yet â€” those rows still need to
+ * who haven't `/start`-ed the bot yet — those rows still need to
  * appear in the report, just without a username.
  */
 export async function listAllPriceOverrides(): Promise<
@@ -1343,7 +1354,7 @@ export async function listAllPriceOverrides(): Promise<
     product_default_price: number;
   }>
 > {
-  // Two separate selects â€” Supabase's PostgREST can't auto-join via
+  // Two separate selects — Supabase's PostgREST can't auto-join via
   // a non-FK relation (telegram_id is intentionally NOT a FK), so we
   // hydrate the user row in JS using a Map.
   const { data: rows } = await supabase
@@ -1486,7 +1497,7 @@ function filterExcluded(rows: DBPromo[], telegram_id: number): DBPromo[] {
 
 /**
  * Same scope filter as `findApplicablePromos` but without the
- * qty threshold â€” used to render the *upcoming* promo teaser on
+ * qty threshold — used to render the *upcoming* promo teaser on
  * the product page when the buyer hasn't reached `min_qty` yet.
  */
 export async function findScopedActivePromos(
@@ -1507,7 +1518,7 @@ export async function findScopedActivePromos(
 }
 
 /**
- * Add a telegram_id to a promo's exclusion list. Idempotent â€” re-
+ * Add a telegram_id to a promo's exclusion list. Idempotent — re-
  * adding an already-excluded user is a no-op (Postgres `array_append`
  * would create duplicates, so we use `array(select distinct ...)`
  * via a small JS read-modify-write instead).
@@ -1543,7 +1554,7 @@ export async function addPromoExclusion(
 }
 
 /**
- * Remove a telegram_id from a promo's exclusion list. Idempotent â€”
+ * Remove a telegram_id from a promo's exclusion list. Idempotent —
  * removing a user who isn't on the list is a no-op. Returns the
  * resulting exclusion list.
  */
@@ -1692,7 +1703,7 @@ export async function deletePromo(id: number): Promise<void> {
  * `/start`-ed the bot yet.
  *
  * Sorted by (specificity tier desc, created_at desc) so the most
- * specific rows surface first in the report â€” same ordering the
+ * specific rows surface first in the report — same ordering the
  * runtime resolver uses to break ties.
  */
 export async function listAllPromos(): Promise<
@@ -1772,7 +1783,7 @@ export async function listAllPromos(): Promise<
 /**
  * Aggregate impact for a single promo: how many paid orders matched
  * it (via `orders.promo_id`) and the total USDT discounted. Only
- * `paid` orders count â€” refunded/cancelled rows shouldn't inflate
+ * `paid` orders count — refunded/cancelled rows shouldn't inflate
  * the "this promo gave away" headline.
  */
 export async function getPromoImpact(promo_id: number): Promise<{
@@ -1817,7 +1828,7 @@ export async function createOrder(o: {
 }): Promise<DBOrder> {
   // Only include `delivered_items` in the insert payload when the
   // caller actually supplied a value. Older deployments may not have
-  // applied migration 0015 yet â€” sending the column to a table that
+  // applied migration 0015 yet — sending the column to a table that
   // doesn't have it causes Supabase to reject the entire insert,
   // which is what made Wallet Pay hang for the bot owner. Routing
   // delivered_items through `setOrderDeliveredItems` after insert
@@ -1918,7 +1929,7 @@ export async function listAllOrders(
 }
 
 /**
- * Paginated orders list scoped to a single product â€” used by the
+ * Paginated orders list scoped to a single product — used by the
  * admin "View Buyers" panel on the product editor so the bot owner
  * can see exactly who bought a given SKU. Newest orders come first.
  */
@@ -2212,9 +2223,9 @@ export async function getStats(): Promise<Stats> {
 }
 
 /**
- * Per-product sales aggregate, used by `/admin â†’ ðŸ“Š Stats` to
+ * Per-product sales aggregate, used by `/admin → 📊 Stats` to
  * surface what's actually moving (revenue, units, last sale,
- * remaining stock). Only counts orders in `paid` status â€” refunded
+ * remaining stock). Only counts orders in `paid` status — refunded
  * and cancelled rows are excluded so the totals match the wallet
  * ledger.
  *
@@ -2289,9 +2300,115 @@ export async function getProductSales(limit = 50): Promise<ProductSalesRow[]> {
   return list.slice(0, limit);
 }
 
+export type RangeStats = {
+  days: number;
+  orders: number;
+  units: number;
+  revenue: number;
+  unique_buyers: number;
+  approved_deposits: number;
+  deposit_amount: number;
+  new_users: number;
+};
+
+export async function getRangeStats(days: number): Promise<RangeStats> {
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+  const since = new Date(Date.now() - safeDays * 86_400_000).toISOString();
+  const [ordersR, depositsR, usersR] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('user_id,qty,total,status,created_at')
+      .eq('status', 'paid')
+      .gte('created_at', since),
+    supabase
+      .from('deposits')
+      .select('amount,status,created_at')
+      .eq('status', 'approved')
+      .gte('created_at', since),
+    supabase
+      .from('users')
+      .select('telegram_id', { count: 'exact', head: true })
+      .gte('joined_at', since),
+  ]);
+  const orders = (ordersR.data ?? []) as Array<{
+    user_id: number;
+    qty: number | string;
+    total: number | string;
+  }>;
+  const deposits = (depositsR.data ?? []) as Array<{ amount: number | string }>;
+  const revenue = orders.reduce((sum, row) => sum + Number(row.total ?? 0), 0);
+  const units = orders.reduce((sum, row) => sum + Number(row.qty ?? 0), 0);
+  const depositAmount = deposits.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  return {
+    days: safeDays,
+    orders: orders.length,
+    units,
+    revenue: Number(revenue.toFixed(2)),
+    unique_buyers: new Set(orders.map((row) => row.user_id)).size,
+    approved_deposits: deposits.length,
+    deposit_amount: Number(depositAmount.toFixed(2)),
+    new_users: usersR.count ?? 0,
+  };
+}
+
+export async function getProductSalesSince(days: number, limit = 50): Promise<ProductSalesRow[]> {
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+  const since = new Date(Date.now() - safeDays * 86_400_000).toISOString();
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('product_id, product_name, qty, total, created_at, status')
+    .eq('status', 'paid')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false });
+  type OrderRow = Pick<
+    DBOrder,
+    'product_id' | 'product_name' | 'qty' | 'total' | 'created_at' | 'status'
+  >;
+  const rows = (orders ?? []) as OrderRow[];
+  const byKey = new Map<string, ProductSalesRow>();
+  for (const o of rows) {
+    const key =
+      o.product_id !== null ? `id:${o.product_id}` : `name:${o.product_name}`;
+    let row = byKey.get(key);
+    if (!row) {
+      row = {
+        product_id: o.product_id,
+        product_name: o.product_name,
+        units_sold: 0,
+        revenue: 0,
+        stock_left: null,
+        last_sold_at: o.created_at,
+      };
+      byKey.set(key, row);
+    }
+    row.units_sold += Number(o.qty);
+    row.revenue += Number(o.total);
+    if ((row.last_sold_at ?? '') < o.created_at) row.last_sold_at = o.created_at;
+  }
+  const productIds = Array.from(byKey.values())
+    .map((r) => r.product_id)
+    .filter((x): x is number => x !== null);
+  if (productIds.length > 0) {
+    const { data: prods } = await supabase
+      .from('products')
+      .select('id, stock')
+      .in('id', productIds);
+    const stockMap = new Map<number, number>();
+    for (const p of (prods ?? []) as Array<{ id: number; stock: number }>) {
+      stockMap.set(p.id, p.stock);
+    }
+    for (const row of byKey.values()) {
+      if (row.product_id !== null) row.stock_left = stockMap.get(row.product_id) ?? null;
+    }
+  }
+  const list = Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
+  for (const r of list) r.revenue = Number(r.revenue.toFixed(2));
+  return list.slice(0, limit);
+}
+
 /**
  * Daily revenue trend for the last `days` days (default 7), ordered
- * from oldest â†’ newest. Days with no paid orders are returned with
+ * from oldest → newest. Days with no paid orders are returned with
  * `revenue: 0, orders: 0` so the caller can render a complete row
  * per day without gaps.
  */
@@ -2344,7 +2461,7 @@ export async function listAllProducts(
  * sort order. Returns `null` when the product is already at the
  * boundary (top of page 0 going up, or last row of the last page
  * going down). Used by the admin reorder buttons to figure out
- * which neighbour to swap with â€” works across page boundaries.
+ * which neighbour to swap with — works across page boundaries.
  */
 export async function findAdjacentProduct(
   productId: number,
@@ -2412,7 +2529,7 @@ export async function swapProductOrder(
   b: { id: number; sort_order: number },
 ): Promise<void> {
   if (a.sort_order === b.sort_order) {
-    // Tie-break on id â€” the row with the *lower* id appears first
+    // Tie-break on id — the row with the *lower* id appears first
     // under the (sort_order, id) ordering, so to swap we bump
     // whichever row should now appear later to `sort_order + 1`.
     const earlier = a.id < b.id ? a : b;
@@ -2491,7 +2608,7 @@ export async function listPendingDeposits(): Promise<DBDeposit[]> {
 
 /**
  * Same as `listPendingDeposits` but without the 20-row cap, used by
- * the admin "ðŸ§¹ Reject ALL Pending" bulk action so a queue with more
+ * the admin "🧹 Reject ALL Pending" bulk action so a queue with more
  * pending deposits than the dashboard window can be cleared in one
  * tap. Sorted ascending by id so older / older-test rows are
  * processed first; the bulk handler still iterates row-by-row to
@@ -2561,8 +2678,8 @@ export async function findUserByUsername(username: string): Promise<DBUser | nul
   // Escape SQL LIKE wildcards so a literal `_` (e.g. `lais_one`) is
   // matched as itself, not as the single-char wildcard. Without this,
   // an admin lookup for `@lais_one` would match `lais1one`, `laisXone`,
-  // etc. and either return the wrong row or â€” when several rows
-  // matched â€” surface as a thrown PostgREST `maybeSingle` error that
+  // etc. and either return the wrong row or — when several rows
+  // matched — surface as a thrown PostgREST `maybeSingle` error that
   // the admin saw as the generic "Something went wrong. Cancelled.".
   const escaped = clean.replace(/\\/g, '\\\\').replace(/[_%]/g, '\\$&');
   const { data, error } = await supabase
@@ -2610,7 +2727,7 @@ export async function unbanUser(telegram_id: number): Promise<void> {
 /**
  * Lightweight ban-check used by the global middleware on every
  * incoming update. Returns true only if a row exists AND its
- * `is_banned` flag is set â€” banning a Telegram ID that hasn't
+ * `is_banned` flag is set — banning a Telegram ID that hasn't
  * `/start`-ed the bot yet is intentionally a no-op (their first
  * /start will create the user as unbanned, which the admin can
  * then ban from the user card).
@@ -2637,7 +2754,7 @@ export async function demoteAdmin(telegram_id: number): Promise<void> {
 }
 
 /**
- * Aggregate stats for one user â€” used by the Settings â†’ Stats screen.
+ * Aggregate stats for one user — used by the Settings → Stats screen.
  * Returns counts/sums across all of their paid orders and approved
  * deposits, plus the timestamp of the most recent order.
  */
@@ -2709,7 +2826,7 @@ export async function getUserOrderSummary(
 /**
  * Append a wallet-balance change to the ledger. `amount` is a signed
  * USDT delta (negative for debits, positive for credits). Failures
- * are logged but never thrown â€” ledger writes must NEVER block the
+ * are logged but never thrown — ledger writes must NEVER block the
  * upstream balance change.
  */
 export async function recordLedger(
