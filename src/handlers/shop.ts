@@ -9,14 +9,14 @@ import {
 } from '../../config/index.js';
 import {
   createOrder,
-  countReferrals,
   decrementProductStock,
   getProduct,
   getOrder,
-  hasReferralRedemption,
+  getReferralBalance,
+  InsufficientReferralBalanceError,
   listActiveProducts,
   claimProductItems,
-  recordReferralRedemption,
+  spendReferralBalance,
   setOrderDeliveredItems,
 } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
@@ -114,7 +114,6 @@ function productPageText(
   qty: number,
   promo: PromoMatch | null = null,
   teaser: DBPromo | null = null,
-  referral: ReferralRewardState | null = null,
 ) {
   const { gross, discount, total } = priceBreakdown(p.price, qty, promo);
   const eligible = !!promo && discount > 0;
@@ -131,26 +130,6 @@ function productPageText(
     ctx.t('shop.product.line.stock', { stock: stockLabel }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
-  if (referral) {
-    if (referral.redeemed) {
-      lines.push(ctx.t('shop.product.line.referral.claimed'));
-    } else if (referral.remaining <= 0) {
-      lines.push(
-        ctx.t('shop.product.line.referral.ready', {
-          total: referral.totalReferrals,
-          required: referral.requiredTotal,
-        }),
-      );
-    } else {
-      lines.push(
-        ctx.t('shop.product.line.referral.progress', {
-          total: referral.totalReferrals,
-          required: referral.requiredTotal,
-          remaining: referral.remaining,
-        }),
-      );
-    }
-  }
   // Teaser line under Warranty.
   //   - Always shows when there is no active promo yet but an
   //     upcoming threshold exists (the original "Buy 10+ −$5 Off"
@@ -256,44 +235,83 @@ function renderPromoLine(
   );
 }
 
-type ReferralRewardState = {
+type ReferralPaymentState = {
   requiredPerUnit: number;
   requiredTotal: number;
   totalReferrals: number;
+  spentReferrals: number;
+  availableReferrals: number;
   remaining: number;
-  redeemed: boolean;
   eligible: boolean;
 };
 
-async function getReferralRewardState(
+async function getReferralPaymentState(
   ctx: AppCtx,
   product: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
   qty: number,
-): Promise<ReferralRewardState | null> {
+): Promise<ReferralPaymentState | null> {
   if (!product.referral_required_count || product.referral_required_count <= 0) return null;
+  const requiredPerUnit = product.referral_required_count;
+  const requiredTotal = requiredPerUnit * qty;
   try {
-    const [totalReferrals, redeemed] = await Promise.all([
-      countReferrals(ctx.user.telegram_id),
-      hasReferralRedemption(ctx.user.telegram_id, product.id),
-    ]);
-    const requiredPerUnit = product.referral_required_count;
-    const requiredTotal = requiredPerUnit * qty;
-    const remaining = Math.max(0, requiredTotal - totalReferrals);
+    const balance = await getReferralBalance(ctx.user.telegram_id);
+    const remaining = Math.max(0, requiredTotal - balance.available);
     return {
       requiredPerUnit,
       requiredTotal,
-      totalReferrals,
+      totalReferrals: balance.total,
+      spentReferrals: balance.spent,
+      availableReferrals: balance.available,
       remaining,
-      redeemed,
-      eligible: !redeemed && remaining <= 0,
+      eligible: remaining <= 0,
     };
   } catch (err) {
     logger.warn(
       { err, product_id: product.id, user: ctx.user.telegram_id },
-      'getReferralRewardState failed',
+      'getReferralPaymentState failed',
     );
-    return null;
+    return {
+      requiredPerUnit,
+      requiredTotal,
+      totalReferrals: 0,
+      spentReferrals: 0,
+      availableReferrals: 0,
+      remaining: requiredTotal,
+      eligible: false,
+    };
   }
+}
+
+async function showLowReferralBalance(
+  ctx: AppCtx,
+  product: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
+  state: ReferralPaymentState,
+): Promise<void> {
+  try {
+    await ctx.answerCallbackQuery();
+  } catch {
+    // The callback may already have been acknowledged after a
+    // server-side balance recheck.
+  }
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, ctx.lang, 'referral_earn_buy', `profile:refer:buy:${product.id}`);
+  kb.row();
+  inlineBtn(kb, ctx.lang, 'refresh', `pay:referral:${product.id}`);
+  kb.row();
+  inlineBtn(kb, ctx.lang, 'back', `buy:${product.id}`);
+  await ctx.reply(
+    renderMdHtml(
+      ctx.t('shop.referral.insufficient.card', {
+        required: state.requiredTotal,
+        available: state.availableReferrals,
+        remaining: state.remaining,
+      }),
+    ),
+    {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    },
+  );
 }
 
 async function finalizeOrderDelivery(args: {
@@ -557,13 +575,10 @@ async function showProduct(ctx: AppCtx, productId: number) {
     qty,
     promo?.discount ?? 0,
   );
-  const referral = await getReferralRewardState(ctx, p, qty);
   const shareUrl = buildProductShareUrl(p.id);
-  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)), {
+  await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser)), {
     parse_mode: 'HTML',
-    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
-      showReferralPay: !!referral,
-    }),
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
   });
 }
 
@@ -588,15 +603,12 @@ export async function sendProductPage(
     qty,
     promo?.discount ?? 0,
   );
-  const referral = await getReferralRewardState(ctx, p, qty);
   const shareUrl = buildProductShareUrl(p.id);
   await ctx.reply(
-    renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)),
+    renderMdHtml(productPageText(ctx, p, qty, promo, teaser)),
     {
       parse_mode: 'HTML',
-      reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
-        showReferralPay: !!referral,
-      }),
+      reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
     },
   );
 }
@@ -639,8 +651,7 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
     previewQty,
     promo?.discount ?? 0,
   );
-  const referral = await getReferralRewardState(ctx, p, previewQty);
-  const body = productPageText(ctx, p, previewQty, promo, teaser, referral);
+  const body = productPageText(ctx, p, previewQty, promo, teaser);
   // The placeholder text is rendered when the digit buffer is
   // empty so the line reads as a sentence to first-time users
   // ("Current: (Amount)") instead of the cryptic em-dash we used
@@ -907,14 +918,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
       next_,
       promo?.discount ?? 0,
     );
-    const referral = await getReferralRewardState(ctx, p, next_);
     await ctx.reply(
-      renderMdHtml(productPageText(ctx, p, next_, promo, teaser, referral)),
+      renderMdHtml(productPageText(ctx, p, next_, promo, teaser)),
       {
         parse_mode: 'HTML',
-        reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl, {
-          showReferralPay: !!referral,
-        }),
+        reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl),
       },
     );
   });
@@ -1147,7 +1155,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
   // it edits the message into a payment-method picker that lets the
   // user choose between paying with their wallet balance and topping
   // up first. The actual charge happens on `pay:wallet:<id>`.
-  bot.callbackQuery(/^redeem:ref:(\d+)$/, async (ctx) => {
+  bot.callbackQuery(/^pay:referral:(\d+)$/, async (ctx) => {
     const productId = Number(ctx.match[1]);
     const raw = await getProduct(productId);
     if (!raw) {
@@ -1167,7 +1175,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const qty = ctx.session.qty[productId] ?? QTY_MIN;
-    const referral = await getReferralRewardState(ctx, p, qty);
+    const referral = await getReferralPaymentState(ctx, p, qty);
     if (!referral) {
       await ctx.answerCallbackQuery({
         text: ctx.t('shop.referral.disabled'),
@@ -1175,29 +1183,62 @@ export function registerShop(bot: Composer<AppCtx>): void {
       });
       return;
     }
-    if (referral.redeemed) {
+    if (!referral.eligible) {
+      await showLowReferralBalance(ctx, p, referral);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const text = ctx.t('shop.referral.confirm', {
+      name: p.name,
+      qty,
+      required: referral.requiredTotal,
+      available: referral.availableReferrals,
+      after: referral.availableReferrals - referral.requiredTotal,
+      emoji: p.emoji ?? '',
+    });
+    const kb = new InlineKeyboard();
+    inlineBtn(kb, ctx.lang, 'confirm_pay', `pay:referral:do:${productId}`);
+    kb.row();
+    inlineBtn(kb, ctx.lang, 'cancel_pay', `buy:${productId}`);
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  });
+
+  bot.callbackQuery(/^pay:referral:do:(\d+)$/, async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    const raw = await getProduct(productId);
+    if (!raw) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    if (!p.referral_required_count || p.referral_required_count <= 0) {
       await ctx.answerCallbackQuery({
-        text: ctx.t('shop.referral.already_redeemed'),
+        text: ctx.t('shop.referral.disabled'),
+        show_alert: true,
+      });
+      return;
+    }
+    if (!p.unlimited_stock && p.stock <= 0) {
+      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
+      return;
+    }
+    const qty = ctx.session.qty[productId] ?? QTY_MIN;
+    const referral = await getReferralPaymentState(ctx, p, qty);
+    if (!referral) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.disabled'),
         show_alert: true,
       });
       return;
     }
     if (!referral.eligible) {
-      await ctx.answerCallbackQuery();
-      const kb = new InlineKeyboard();
-      inlineBtn(kb, ctx.lang, 'referral_earn_buy', 'profile:refer');
-      kb.row();
-      inlineBtn(kb, ctx.lang, 'back', `prod:${productId}`);
-      await ctx.editMessageText(renderMdHtml(ctx.t('shop.referral.insufficient.card', {
-        required: referral.requiredTotal,
-        total: referral.totalReferrals,
-        remaining: referral.remaining,
-      })), {
-        parse_mode: 'HTML',
-        reply_markup: kb,
-      });
+      await showLowReferralBalance(ctx, p, referral);
       return;
     }
+    await ctx.answerCallbackQuery();
     try {
       const total = 0;
       const discount = p.price * qty;
@@ -1213,23 +1254,31 @@ export function registerShop(bot: Composer<AppCtx>): void {
         delivery: ctx.t('shop.referral.delivery', { product_id: p.id, qty }),
       });
       try {
-        await recordReferralRedemption({
+        await spendReferralBalance({
           user_id: ctx.user.telegram_id,
           product_id: p.id,
           order_id: order.id,
+          referral_cost: referral.requiredTotal,
         });
-      } catch (redemptionErr) {
-        // Rollback: delete the order we just created since redemption failed
+      } catch (spendErr) {
         logger.warn(
-          { err: redemptionErr, order_id: order.id, product_id: p.id, user: ctx.user.telegram_id },
-          'referral redemption failed — rolling back order',
+          { err: spendErr, order_id: order.id, product_id: p.id, user: ctx.user.telegram_id },
+          'referral payment failed - rolling back order',
         );
         await supabase.from('orders').delete().eq('id', order.id);
-        throw redemptionErr;
+        if (spendErr instanceof InsufficientReferralBalanceError) {
+          const latest = await getReferralPaymentState(ctx, p, qty);
+          if (latest) {
+            await showLowReferralBalance(ctx, p, latest);
+            return;
+          }
+        }
+        throw spendErr;
       }
       const confirmationText = ctx.t('shop.referral.confirmed', {
         name: p.name,
         qty,
+        spent: referral.requiredTotal,
       });
       await finalizeOrderDelivery({
         ctx,
@@ -1238,20 +1287,17 @@ export function registerShop(bot: Composer<AppCtx>): void {
         total,
         discount,
         order,
-        paidVia: 'Referral reward',
+        paidVia: 'Referral Pay',
         balanceAfter: ctx.user.balance,
         confirmationText,
       });
     } catch (err) {
       logger.error(
         { err, product_id: productId, user: ctx.user.telegram_id },
-        'redeem:ref failed',
+        'pay:referral failed',
       );
       try {
-        await ctx.answerCallbackQuery({
-          text: ctx.t('shop.referral.failed'),
-          show_alert: true,
-        });
+        await ctx.reply(renderMdHtml(ctx.t('shop.referral.failed')), { parse_mode: 'HTML' });
       } catch {
         // noop
       }
@@ -1273,6 +1319,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
     const { discount, total } = priceBreakdown(p.price, qty, promo);
+    const referral = await getReferralPaymentState(ctx, p, qty);
     const text = ctx.t('shop.pay.title', {
       name: p.name,
       qty,
@@ -1283,11 +1330,19 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // animated `<tg-emoji>` if a `custom_emoji_id` is configured.
       emoji: p.emoji ?? '',
       promo_line: renderPromoLine(ctx, promo, discount),
+      referral_line: referral
+        ? `${ctx.t('shop.pay.referral_line', {
+            required: referral.requiredTotal,
+            available: referral.availableReferrals,
+          })}\n`
+        : '',
     });
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: paymentMethodKeyboard(ctx.lang, p),
+      reply_markup: paymentMethodKeyboard(ctx.lang, p, {
+        showReferralPay: !!referral,
+      }),
     });
   });
 
