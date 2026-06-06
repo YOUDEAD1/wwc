@@ -1,414 +1,417 @@
-/* Tiếng Việt — keep keys in sync with en.ts */
+/* Tiáº¿ng Viá»‡t â€” keep keys in sync with en.ts */
 export const vi: Record<string, string> = {
-  'welcome': 'Chào mừng đến với SafwanTiger Shop',
-  'welcome.title': 'Chào mừng đến với SafwanTiger Shop!',
-  'welcome.balance': 'Số dư của bạn: *${balance}*',
-  'welcome.tap_menu': 'Nhấn *Menu Chính* bên dưới để bắt đầu.',
-  'menu.title': '🐯 *SafwanTiger Shop* — Menu Chính',
+  'welcome': 'ChÃ o má»«ng Ä‘áº¿n vá»›i SafwanTiger Shop',
+  'welcome.title': 'ChÃ o má»«ng Ä‘áº¿n vá»›i SafwanTiger Shop!',
+  'welcome.balance': 'Sá»‘ dÆ° cá»§a báº¡n: *${balance}*',
+  'welcome.tap_menu': 'Nháº¥n *Menu ChÃ­nh* bÃªn dÆ°á»›i Ä‘á»ƒ báº¯t Ä‘áº§u.',
+  'menu.title': 'ðŸ¯ *SafwanTiger Shop* â€” Menu ChÃ­nh',
 
-  'btn.main_menu': '⬅️ Quay lại',
-  'btn.shop': '🛍 Cửa hàng',
-  'btn.topup': '👛 Nạp ví',
-  'btn.profile': '⚙️ Cài đặt',
-  'btn.support': '💬 Hỗ trợ',
-  'btn.ai_support': '🥝 Kiwi Ai',
-  'btn.back': '⬅️ Quay lại',
-  'btn.next': 'Tiếp ▶️',
-  'btn.prev': '◀️ Trước',
-  'btn.refresh': '🔄 Làm mới',
-  'btn.buy_now': '✅ Mua ngay',
-  'btn.redeem_referral': '🎁 Thanh toán bằng giới thiệu',
-  'btn.referral_earn_buy': '🔗 Kiếm lượt giới thiệu & Mua',
-  'btn.convert_refers': '💱 Đổi Refers sang USDT',
-  'btn.topup_wallet': '👛 Nạp ví',
-  'btn.view_note': '📝 Xem ghi chú',
-  'btn.qty_plus': '➕',
-  'btn.qty_minus': '➖',
-  'btn.custom_qty': '🔢 Số lượng tùy chỉnh',
-  'btn.qty_keypad_back': '⌫',
-  'btn.qty_keypad_clear': '🗑 Xóa',
-  'btn.qty_keypad_confirm': '✅ Xác nhận',
-  // Nút "Tối đa" gán số lượng vào mức tối đa có thể mua
-  // (`min(QTY_MAX, tồn kho)`) chỉ với một lần nhấn — tiện cho người mua
-  // sỉ muốn lấy hết lô mà không cần nhập từng chữ số.
-  'btn.qty_keypad_max': '🎯 Tối đa',
-  'btn.pay_wallet': '👛 Ví',
-  'btn.pay_referral': '🎁 Referral Pay',
-  'btn.pay_direct': '💸 Trực tiếp',
-  'btn.pay_topup': '🪙 Nạp',
-  'btn.confirm_pay': '✅ Xác nhận',
-  'btn.cancel_pay': '◀️ Hủy',
-  // Hàng "Khác" và "Quay lại" trên bàn phím phương thức thanh toán.
-  // Người dùng Premium thấy biểu tượng động được khai báo ở
-  // EMOJI.paymethod_others / paymethod_back; người khác xem ký tự
-  // unicode bên dưới làm dự phòng.
-  'btn.paymethod_others': '💡 Khác',
-  'btn.paymethod_back': '◀️ Quay lại',
-  'btn.qty.max': '🎯 Tối đa',
-  'btn.qty.reset': '🔄 Đặt lại',
-  'btn.qty.confirm': '✅ Xác nhận',
-  'btn.contact_admin': '💬 Liên hệ Admin',
-  'btn.qty.dec_1': '➖ 1',
-  'btn.qty.dec_10': '⏪ 10',
-  'btn.qty.dec_100': '⏮ 100',
-  'btn.qty.inc_1': '➕ 1',
-  'btn.qty.inc_10': '⏩ 10',
-  'btn.qty.inc_100': '⏭ 100',
-  'btn.qty.display': '📦 {qty} / {stock}',
-  'btn.share_product': '🔗 Sao chép liên kết',
-  'btn.view_note_file': '📥 Lưu ghi chú dạng TXT',
-  'btn.send_note_txt': '📥 Tải TXT',
-  'btn.out_of_stock': '❌ Hết hàng',
-  'btn.my_orders': '🧾 Đơn hàng của tôi',
-  'btn.refer': '🎁 Giới thiệu',
-  'btn.notifications': '🔔 Thông báo',
-  'btn.toggle_stock': '📢 Thông báo tồn kho',
-  'btn.toggle_announcements': '💬 Thông báo tin tức',
-  'btn.toggle_wallet': '💰 Thông báo ví',
-  // Mỗi nút trên hàng riêng nay có đủ chỗ cho tên đầy đủ và trạng thái.
-  'btn.notify.stock.on': '🟢 Thông báo Tồn kho: BẬT',
-  'btn.notify.stock.off': '🔕 Thông báo Tồn kho: TẮT',
-  'btn.notify.ann.on': '🟢 Thông báo Tin tức: BẬT',
-  'btn.notify.ann.off': '🔕 Thông báo Tin tức: TẮT',
-  'btn.notify.wallet.on': '🟢 Thông báo Ví: BẬT',
-  'btn.notify.wallet.off': '🔕 Thông báo Ví: TẮT',
-  'btn.back_to_settings': '⬅️ Quay lại Cài đặt',
-  'btn.language': '🌐 Ngôn ngữ',
-  'btn.language.english': '🇬🇧 English',
-  'btn.language.arabic': '🇸🇦 العربية',
-  'btn.language.vietnamese': '🇻🇳 Tiếng Việt',
-  'btn.region.clear': '🚫 Xóa',
-  'btn.deposit_history': '💳 Lịch sử nạp',
-  'btn.channel': 'Kênh',
-  'btn.stats': '📊 Thống kê',
-  'btn.stats_refresh': '🔄 Làm mới',
-  'btn.stats_back': '◀️ Quay lại',
-  // Hướng dẫn theo từng phương thức — hiển thị dưới mỗi màn hình
-  // chuỗi / Binance / LTC. Quản trị viên chỉnh nội dung từ trang /admin.
-  'btn.where_txid': '📘 Tìm TXID ở đâu?',
-  'btn.where_order_id': '📘 Tìm Mã đơn ở đâu?',
-  // Hướng dẫn bot + cách dùng (trang Cài đặt).
-  'btn.using_method': '📘 Cách dùng',
-  'btn.tutorial_open_link': '🔗 Mở liên kết',
-  'btn.bot_tutorial': '📘 Hướng dẫn Bot',
+  'btn.main_menu': 'â¬…ï¸ Quay láº¡i',
+  'btn.shop': 'ðŸ› Cá»­a hÃ ng',
+  'btn.topup': 'ðŸ‘› Náº¡p vÃ­',
+  'btn.profile': 'âš™ï¸ CÃ i Ä‘áº·t',
+  'btn.support': 'ðŸ’¬ Há»— trá»£',
+  'btn.ai_support': 'ðŸ¥ Kiwi Ai',
+  'btn.back': 'â¬…ï¸ Quay láº¡i',
+  'btn.next': 'Tiáº¿p â–¶ï¸',
+  'btn.prev': 'â—€ï¸ TrÆ°á»›c',
+  'btn.refresh': 'ðŸ”„ LÃ m má»›i',
+  'btn.buy_now': 'âœ… Mua ngay',
+  'btn.redeem_referral': 'ðŸŽ Thanh toÃ¡n báº±ng giá»›i thiá»‡u',
+  'btn.referral_earn_buy': 'ðŸ”— Kiáº¿m lÆ°á»£t giá»›i thiá»‡u & Mua',
+  'btn.convert_refers': 'ðŸ’± Äá»•i Refers sang USDT',
+  'btn.topup_wallet': 'ðŸ‘› Náº¡p vÃ­',
+  'btn.view_note': 'ðŸ“ Xem ghi chÃº',
+  'btn.qty_plus': 'âž•',
+  'btn.qty_minus': 'âž–',
+  'btn.custom_qty': 'ðŸ”¢ Sá»‘ lÆ°á»£ng tÃ¹y chá»‰nh',
+  'btn.qty_keypad_back': 'âŒ«',
+  'btn.qty_keypad_clear': 'ðŸ—‘ XÃ³a',
+  'btn.qty_keypad_confirm': 'âœ… XÃ¡c nháº­n',
+  // NÃºt "Tá»‘i Ä‘a" gÃ¡n sá»‘ lÆ°á»£ng vÃ o má»©c tá»‘i Ä‘a cÃ³ thá»ƒ mua
+  // (`min(QTY_MAX, tá»“n kho)`) chá»‰ vá»›i má»™t láº§n nháº¥n â€” tiá»‡n cho ngÆ°á»i mua
+  // sá»‰ muá»‘n láº¥y háº¿t lÃ´ mÃ  khÃ´ng cáº§n nháº­p tá»«ng chá»¯ sá»‘.
+  'btn.qty_keypad_max': 'ðŸŽ¯ Tá»‘i Ä‘a',
+  'btn.pay_wallet': 'ðŸ‘› VÃ­',
+  'btn.pay_referral': 'ðŸŽ Referral Pay',
+  'btn.pay_direct': 'ðŸ’¸ Trá»±c tiáº¿p',
+  'btn.pay_topup': 'ðŸª™ Náº¡p',
+  'btn.confirm_pay': 'âœ… XÃ¡c nháº­n',
+  'btn.cancel_pay': 'â—€ï¸ Há»§y',
+  // HÃ ng "KhÃ¡c" vÃ  "Quay láº¡i" trÃªn bÃ n phÃ­m phÆ°Æ¡ng thá»©c thanh toÃ¡n.
+  // NgÆ°á»i dÃ¹ng Premium tháº¥y biá»ƒu tÆ°á»£ng Ä‘á»™ng Ä‘Æ°á»£c khai bÃ¡o á»Ÿ
+  // EMOJI.paymethod_others / paymethod_back; ngÆ°á»i khÃ¡c xem kÃ½ tá»±
+  // unicode bÃªn dÆ°á»›i lÃ m dá»± phÃ²ng.
+  'btn.paymethod_others': 'ðŸ’¡ KhÃ¡c',
+  'btn.paymethod_back': 'â—€ï¸ Quay láº¡i',
+  'btn.qty.max': 'ðŸŽ¯ Tá»‘i Ä‘a',
+  'btn.qty.reset': 'ðŸ”„ Äáº·t láº¡i',
+  'btn.qty.confirm': 'âœ… XÃ¡c nháº­n',
+  'btn.contact_admin': 'ðŸ’¬ LiÃªn há»‡ Admin',
+  'btn.qty.dec_1': 'âž– 1',
+  'btn.qty.dec_10': 'âª 10',
+  'btn.qty.dec_100': 'â® 100',
+  'btn.qty.inc_1': 'âž• 1',
+  'btn.qty.inc_10': 'â© 10',
+  'btn.qty.inc_100': 'â­ 100',
+  'btn.qty.display': 'ðŸ“¦ {qty} / {stock}',
+  'btn.share_product': 'ðŸ”— Sao chÃ©p liÃªn káº¿t',
+  'btn.view_note_file': 'ðŸ“¥ LÆ°u ghi chÃº dáº¡ng TXT',
+  'btn.send_note_txt': 'ðŸ“¥ Táº£i TXT',
+  'btn.out_of_stock': 'âŒ Háº¿t hÃ ng',
+  'btn.my_orders': 'ðŸ§¾ ÄÆ¡n hÃ ng cá»§a tÃ´i',
+  'btn.refer': 'ðŸŽ Giá»›i thiá»‡u',
+  'btn.notifications': 'ðŸ”” ThÃ´ng bÃ¡o',
+  'btn.toggle_stock': 'ðŸ“¢ ThÃ´ng bÃ¡o tá»“n kho',
+  'btn.toggle_announcements': 'ðŸ’¬ ThÃ´ng bÃ¡o tin tá»©c',
+  'btn.toggle_wallet': 'ðŸ’° ThÃ´ng bÃ¡o vÃ­',
+  // Má»—i nÃºt trÃªn hÃ ng riÃªng nay cÃ³ Ä‘á»§ chá»— cho tÃªn Ä‘áº§y Ä‘á»§ vÃ  tráº¡ng thÃ¡i.
+  'btn.notify.stock.on': 'ðŸŸ¢ ThÃ´ng bÃ¡o Tá»“n kho: Báº¬T',
+  'btn.notify.stock.off': 'ðŸ”• ThÃ´ng bÃ¡o Tá»“n kho: Táº®T',
+  'btn.notify.ann.on': 'ðŸŸ¢ ThÃ´ng bÃ¡o Tin tá»©c: Báº¬T',
+  'btn.notify.ann.off': 'ðŸ”• ThÃ´ng bÃ¡o Tin tá»©c: Táº®T',
+  'btn.notify.wallet.on': 'ðŸŸ¢ ThÃ´ng bÃ¡o VÃ­: Báº¬T',
+  'btn.notify.wallet.off': 'ðŸ”• ThÃ´ng bÃ¡o VÃ­: Táº®T',
+  'btn.back_to_settings': 'â¬…ï¸ Quay láº¡i CÃ i Ä‘áº·t',
+  'btn.language': 'ðŸŒ NgÃ´n ngá»¯',
+  'btn.language.english': 'ðŸ‡¬ðŸ‡§ English',
+  'btn.language.arabic': 'ðŸ‡¸ðŸ‡¦ Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©',
+  'btn.language.vietnamese': 'ðŸ‡»ðŸ‡³ Tiáº¿ng Viá»‡t',
+  'btn.region.clear': 'ðŸš« XÃ³a',
+  'btn.deposit_history': 'ðŸ’³ Lá»‹ch sá»­ náº¡p',
+  'btn.channel': 'KÃªnh',
+  'btn.stats': 'ðŸ“Š Thá»‘ng kÃª',
+  'btn.stats_refresh': 'ðŸ”„ LÃ m má»›i',
+  'btn.stats_back': 'â—€ï¸ Quay láº¡i',
+  // HÆ°á»›ng dáº«n theo tá»«ng phÆ°Æ¡ng thá»©c â€” hiá»ƒn thá»‹ dÆ°á»›i má»—i mÃ n hÃ¬nh
+  // chuá»—i / Binance / LTC. Quáº£n trá»‹ viÃªn chá»‰nh ná»™i dung tá»« trang /admin.
+  'btn.where_txid': 'ðŸ“˜ TÃ¬m TXID á»Ÿ Ä‘Ã¢u?',
+  'btn.where_order_id': 'ðŸ“˜ TÃ¬m MÃ£ Ä‘Æ¡n á»Ÿ Ä‘Ã¢u?',
+  // HÆ°á»›ng dáº«n bot + cÃ¡ch dÃ¹ng (trang CÃ i Ä‘áº·t).
+  'btn.using_method': 'ðŸ“˜ CÃ¡ch dÃ¹ng',
+  'btn.tutorial_open_link': 'ðŸ”— Má»Ÿ liÃªn káº¿t',
+  'btn.bot_tutorial': 'ðŸ“˜ HÆ°á»›ng dáº«n Bot',
 
-  'shop.home.header': '*Sản phẩm có sẵn:*',
-  'shop.choose_category': '*Sản phẩm có sẵn:*',
-  'shop.qty.prompt': '🔢 Nhập số lượng (1–{max}) và gửi.',
-  'shop.qty.invalid': '❌ Số không hợp lệ — vui lòng gửi giá trị từ 1 đến {max}.',
-  // Token `{current}` là bộ đệm số người dùng đã nhập đến
-  // giờ. Trước khi nhận phím đầu tiên, nó hiển thị dưới dạng
-  // văn bản hướng dẫn `(Số lượng)` thay cho dấu gạch ngắn
-  // trần trụi «mâu» đã dùng trước đây.
+  'shop.home.header': '*Sáº£n pháº©m cÃ³ sáºµn:*',
+  'shop.choose_category': '*Sáº£n pháº©m cÃ³ sáºµn:*',
+  'shop.qty.prompt': 'ðŸ”¢ Nháº­p sá»‘ lÆ°á»£ng (1â€“{max}) vÃ  gá»­i.',
+  'shop.qty.invalid': 'âŒ Sá»‘ khÃ´ng há»£p lá»‡ â€” vui lÃ²ng gá»­i giÃ¡ trá»‹ tá»« 1 Ä‘áº¿n {max}.',
+  // Token `{current}` lÃ  bá»™ Ä‘á»‡m sá»‘ ngÆ°á»i dÃ¹ng Ä‘Ã£ nháº­p Ä‘áº¿n
+  // giá». TrÆ°á»›c khi nháº­n phÃ­m Ä‘áº§u tiÃªn, nÃ³ hiá»ƒn thá»‹ dÆ°á»›i dáº¡ng
+  // vÄƒn báº£n hÆ°á»›ng dáº«n `(Sá»‘ lÆ°á»£ng)` thay cho dáº¥u gáº¡ch ngáº¯n
+  // tráº§n trá»¥i Â«mÃ¢uÂ» Ä‘Ã£ dÃ¹ng trÆ°á»›c Ä‘Ã¢y.
   'shop.qty.keypad.instruction':
-    '{qty_prompt_keypad} *Cách dùng:* nhấn các chữ số bên dưới hoặc gửi số, ' +
-    'sau đó nhấn ✅ Xác nhận.\n' +
-    'Hiện tại: <code>{current}</code>',
-  // Placeholder hiển thị trong `Hiện tại: <code>…</code>` khi bộ
-  // đệm còn rỗng — đọc tự nhiên hơn ("Hiện tại: (Số lượng)") so
-  // với dấu gạch ngắn trần trụi trước đây.
-  'shop.qty.keypad.placeholder': '(Số lượng)',
+    '{qty_prompt_keypad} *CÃ¡ch dÃ¹ng:* nháº¥n cÃ¡c chá»¯ sá»‘ bÃªn dÆ°á»›i hoáº·c gá»­i sá»‘, ' +
+    'sau Ä‘Ã³ nháº¥n âœ… XÃ¡c nháº­n.\n' +
+    'Hiá»‡n táº¡i: <code>{current}</code>',
+  // Placeholder hiá»ƒn thá»‹ trong `Hiá»‡n táº¡i: <code>â€¦</code>` khi bá»™
+  // Ä‘á»‡m cÃ²n rá»—ng â€” Ä‘á»c tá»± nhiÃªn hÆ¡n ("Hiá»‡n táº¡i: (Sá»‘ lÆ°á»£ng)") so
+  // vá»›i dáº¥u gáº¡ch ngáº¯n tráº§n trá»¥i trÆ°á»›c Ä‘Ã¢y.
+  'shop.qty.keypad.placeholder': '(Sá»‘ lÆ°á»£ng)',
   'shop.qty.keypad.invalid':
-    '{qty_invalid} *Số lượng không hợp lệ.*\n\n' +
-    'Vui lòng gửi số nguyên từ *1* đến *{max}*.',
+    '{qty_invalid} *Sá»‘ lÆ°á»£ng khÃ´ng há»£p lá»‡.*\n\n' +
+    'Vui lÃ²ng gá»­i sá»‘ nguyÃªn tá»« *1* Ä‘áº¿n *{max}*.',
   'shop.pay.title':
-    '{pay_summary} *Tóm tắt đơn hàng*\n\n' +
+    '{pay_summary} *TÃ³m táº¯t Ä‘Æ¡n hÃ ng*\n\n' +
     '{emoji} *{name}*\n' +
-    '{prod_qty_selected} Số lượng: *{qty}*\n' +
+    '{prod_qty_selected} Sá»‘ lÆ°á»£ng: *{qty}*\n' +
     '{promo_line}' +
-    '{prod_total_amount} Tổng: *{total} USDT*\n' +
-    '{prod_wallet} Ví: *{balance} USDT*\n' +
+    '{prod_total_amount} Tá»•ng: *{total} USDT*\n' +
+    '{prod_wallet} VÃ­: *{balance} USDT*\n' +
     '{referral_line}' +
-    'Chọn cách thanh toán:',
+    'Chá»n cÃ¡ch thanh toÃ¡n:',
   'shop.pay.referral_line':
-    '{prod_referral} Referral Pay:\n\n*{available} có sẵn* • *{required} cần*\n\n',
-  // Thẻ xác nhận thanh toán bằng ví (trang 2).
+    '{prod_referral} Referral Pay:\n*{available} cÃ³ sáºµn* â€¢ *{required} cáº§n*\n\n',
+  // Tháº» xÃ¡c nháº­n thanh toÃ¡n báº±ng vÃ­ (trang 2).
   'shop.pay.confirm':
-    '{prod_wallet} *Xác nhận Thanh toán*\n\n' +
-    '{pay_summary} *Đơn hàng*\n' +
-    '{emoji} *{name}* × *{qty}*\n' +
+    '{prod_wallet} *XÃ¡c nháº­n Thanh toÃ¡n*\n\n' +
+    '{pay_summary} *ÄÆ¡n hÃ ng*\n' +
+    '{emoji} *{name}* Ã— *{qty}*\n' +
     '{discount_line}' +
-    '{prod_total_amount} *Tổng:* {total} USDT\n' +
-    '{prod_wallet} *Ví:* {balance} USDT\n\n' +
-    '_Trừ *{total} USDT* từ ví của bạn?_',
+    '{prod_total_amount} *Tá»•ng:* {total} USDT\n' +
+    '{prod_wallet} *VÃ­:* {balance} USDT\n\n' +
+    '_Trá»« *{total} USDT* tá»« vÃ­ cá»§a báº¡n?_',
   'shop.pay.confirm.discount_line':
-    '{prod_promo} *Giảm giá:* −{discount} USDT\n',
+    '{prod_promo} *Giáº£m giÃ¡:* âˆ’{discount} USDT\n',
   'shop.qty.editor.title':
-    '🔢 *Chọn số lượng*\n\n' +
+    'ðŸ”¢ *Chá»n sá»‘ lÆ°á»£ng*\n\n' +
     '*{name}*\n' +
-    'Tồn kho: *{stock}*\n' +
-    'Đơn giá: *{price} USDT*\n\n' +
-    'Đã chọn: <code>{qty}</code>\n' +
-    'Tổng: *{total} USDT*',
-  'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
-  'shop.empty_products': 'Chưa có sản phẩm trong danh mục này.',
+    'Tá»“n kho: *{stock}*\n' +
+    'ÄÆ¡n giÃ¡: *{price} USDT*\n\n' +
+    'ÄÃ£ chá»n: <code>{qty}</code>\n' +
+    'Tá»•ng: *{total} USDT*',
+  'shop.empty_categories': 'ChÆ°a cÃ³ danh má»¥c. Vui lÃ²ng quay láº¡i sau.',
+  'shop.empty_products': 'ChÆ°a cÃ³ sáº£n pháº©m trong danh má»¥c nÃ y.',
   'shop.product.line.name': '{emoji} *{name}*',
-  'shop.product.line.price': '{prod_price_base} *Giá gốc:* {price} USDT',
-  'shop.product.line.stock': '{prod_stock} *Còn lại:* {stock}',
-  'shop.product.line.warranty': '{prod_warranty} *Bảo hành:* {warranty}',
+  'shop.product.line.price': '{prod_price_base} *GiÃ¡ gá»‘c:* {price} USDT',
+  'shop.product.line.stock': '{prod_stock} *CÃ²n láº¡i:* {stock}',
+  'shop.product.line.warranty': '{prod_warranty} *Báº£o hÃ nh:* {warranty}',
   'shop.product.line.referral.progress':
-    '{prod_referral} *Thanh toán giới thiệu:* Cần {required} • Có {total} • Thiếu {remaining}',
+    '{prod_referral} *Thanh toÃ¡n giá»›i thiá»‡u:* Cáº§n {required} â€¢ CÃ³ {total} â€¢ Thiáº¿u {remaining}',
   'shop.product.line.referral.ready':
-    '{prod_referral} *Thanh toán giới thiệu:* Cần {required} • Có {total} • Sẵn sàng',
+    '{prod_referral} *Thanh toÃ¡n giá»›i thiá»‡u:* Cáº§n {required} â€¢ CÃ³ {total} â€¢ Sáºµn sÃ ng',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *Thanh toán giới thiệu:* Số dư đã dùng ở đơn cũ',
-  'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
-  'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
-  'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
+    '{prod_referral} *Thanh toÃ¡n giá»›i thiá»‡u:* Sá»‘ dÆ° Ä‘Ã£ dÃ¹ng á»Ÿ Ä‘Æ¡n cÅ©',
+  'shop.product.line.qty': '{prod_qty_selected} *Sá»‘ lÆ°á»£ng Ä‘Ã£ chá»n:* {qty}',
+  'shop.product.line.total': '{prod_total_amount} *Tá»•ng tiá»n:* {total} USDT',
+  'shop.product.line.balance': '{prod_wallet} *VÃ­:* {balance} USDT',
   'shop.product.line.promo':
-    '{prod_promo} *Khuyến mãi:* {label} — −{discount} USDT',
-  'shop.product.line.promo.fallback_label': 'số lượng ≥ {min_qty}',
+    '{prod_promo} *Khuyáº¿n mÃ£i:* {label} â€” âˆ’{discount} USDT',
+  'shop.product.line.promo.fallback_label': 'sá»‘ lÆ°á»£ng â‰¥ {min_qty}',
   'shop.product.line.promo.teaser':
-    '{prod_promo} *Khuyến mãi:* Mua {min_qty}+ giảm −${discount}',
+    '{prod_promo} *Khuyáº¿n mÃ£i:* Mua {min_qty}+ giáº£m âˆ’${discount}',
   'shop.product.line.total.discounted':
-    '{prod_total_amount} *Tổng tiền:* ~~{gross}~~ {total} USDT',
+    '{prod_total_amount} *Tá»•ng tiá»n:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
-    '❌ Sản phẩm này hiện đã hết hàng. Vui lòng liên hệ quản trị viên để bổ sung kho hoặc chọn sản phẩm tương tự.',
-  'shop.note.title': '📝 *Ghi chú sản phẩm*',
-  'shop.note.empty': 'Sản phẩm này không có ghi chú.',
+    'âŒ Sáº£n pháº©m nÃ y hiá»‡n Ä‘Ã£ háº¿t hÃ ng. Vui lÃ²ng liÃªn há»‡ quáº£n trá»‹ viÃªn Ä‘á»ƒ bá»• sung kho hoáº·c chá»n sáº£n pháº©m tÆ°Æ¡ng tá»±.',
+  'shop.note.title': 'ðŸ“ *Ghi chÃº sáº£n pháº©m*',
+  'shop.note.empty': 'Sáº£n pháº©m nÃ y khÃ´ng cÃ³ ghi chÃº.',
   'shop.note.full': [
-    '*📝 Ghi chú sản phẩm — {name}*',
+    '*ðŸ“ Ghi chÃº sáº£n pháº©m â€” {name}*',
     '',
-    '*Giá:* `{price} USDT`',
+    '*GiÃ¡:* `{price} USDT`',
     '*Kho:* `{stock}`',
-    '*Bảo hành:* `{warranty}`',
+    '*Báº£o hÃ nh:* `{warranty}`',
     '',
-    '*Mô tả:*',
+    '*MÃ´ táº£:*',
     '{description}',
     '',
-    '*Ghi chú:*',
+    '*Ghi chÃº:*',
     '{note}',
   ].join('\n'),
   'shop.buy.success':
-    '✅ Mua thành công!\n\nSản phẩm: *{name}*\nSố lượng: *{qty}*\nTổng: *{total}*\n\nGiao hàng:\n```\n{delivery}\n```',
+    'âœ… Mua thÃ nh cÃ´ng!\n\nSáº£n pháº©m: *{name}*\nSá»‘ lÆ°á»£ng: *{qty}*\nTá»•ng: *{total}*\n\nGiao hÃ ng:\n```\n{delivery}\n```',
   'shop.buy.insufficient':
-    '❌ Số dư ví không đủ. Cần *{need}* nhưng chỉ có *{have}*. Vui lòng nạp tiền trước.',
-  'shop.buy.no_stock': '❌ Xin lỗi, sản phẩm đã hết hàng.',
-  'shop.referral.disabled': '❌ Referral Pay chưa được bật cho sản phẩm này.',
-  'shop.referral.already_redeemed': '✅ Referral Pay đã được dùng cho một đơn cũ.',
+    'âŒ Sá»‘ dÆ° vÃ­ khÃ´ng Ä‘á»§. Cáº§n *{need}* nhÆ°ng chá»‰ cÃ³ *{have}*. Vui lÃ²ng náº¡p tiá»n trÆ°á»›c.',
+  'shop.buy.no_stock': 'âŒ Xin lá»—i, sáº£n pháº©m Ä‘Ã£ háº¿t hÃ ng.',
+  'shop.referral.disabled': 'âŒ Referral Pay chÆ°a Ä‘Æ°á»£c báº­t cho sáº£n pháº©m nÃ y.',
+  'shop.referral.already_redeemed': 'âœ… Referral Pay Ä‘Ã£ Ä‘Æ°á»£c dÃ¹ng cho má»™t Ä‘Æ¡n cÅ©.',
   'shop.referral.insufficient':
-    '❌ Cần {required} lượt giới thiệu để đổi. Bạn có {total} (còn {remaining}).',
+    'âŒ Cáº§n {required} lÆ°á»£t giá»›i thiá»‡u Ä‘á»ƒ Ä‘á»•i. Báº¡n cÃ³ {total} (cÃ²n {remaining}).',
   'shop.referral.insufficient.card': [
-    '⚠️ *Số dư Referral Pay thấp*',
+    'âš ï¸ *Sá»‘ dÆ° Referral Pay tháº¥p*',
     '',
-    '{prod_referral} *Cần:* {required} lượt',
-    '{refer_user} *Hiện có:* {available} lượt',
-    '{qty_invalid} *Còn thiếu:* {remaining} lượt',
+    '{prod_referral} *Cáº§n:* {required} lÆ°á»£t',
+    '{refer_user} *Hiá»‡n cÃ³:* {available} lÆ°á»£t',
+    '{qty_invalid} *CÃ²n thiáº¿u:* {remaining} lÆ°á»£t',
     '',
-    '{refer_title} Mời thêm người bằng link giới thiệu, bấm làm mới, rồi thanh toán bằng Referral Pay.',
+    '{refer_title} Má»i thÃªm ngÆ°á»i báº±ng link giá»›i thiá»‡u, báº¥m lÃ m má»›i, rá»“i thanh toÃ¡n báº±ng Referral Pay.',
   ].join('\n'),
   'shop.referral.confirm': [
-    '{refer_title} *Xác nhận Referral Pay*',
+    '{refer_title} *XÃ¡c nháº­n Referral Pay*',
     '',
-    '{emoji} *{name}* × *{qty}*',
-    '{prod_referral} *Cần:* {required} lượt',
-    '{refer_user} *Hiện có:* {available} lượt',
-    '{delivery_check} *Sau khi trả:* {after} lượt',
+    '{emoji} *{name}* Ã— *{qty}*',
+    '{prod_referral} *Cáº§n:* {required} lÆ°á»£t',
+    '{refer_user} *Hiá»‡n cÃ³:* {available} lÆ°á»£t',
+    '{delivery_check} *Sau khi tráº£:* {after} lÆ°á»£t',
     '',
-    '_Dùng lượt giới thiệu đang có cho đơn này?_',
+    '_DÃ¹ng lÆ°á»£t giá»›i thiá»‡u Ä‘ang cÃ³ cho Ä‘Æ¡n nÃ y?_',
   ].join('\n'),
   'shop.referral.failed':
-    '❌ Không thể thanh toán bằng Referral Pay lúc này. Vui lòng thử lại hoặc liên hệ admin.',
+    'âŒ KhÃ´ng thá»ƒ thanh toÃ¡n báº±ng Referral Pay lÃºc nÃ y. Vui lÃ²ng thá»­ láº¡i hoáº·c liÃªn há»‡ admin.',
   'shop.referral.confirmed': [
-    '{refer_title} *Thanh toán Referral Pay thành công!*',
+    '{refer_title} *Thanh toÃ¡n Referral Pay thÃ nh cÃ´ng!*',
     '',
-    '*Sản phẩm:* {name}',
-    '*Số lượng:* {qty}',
-    '*Đã dùng:* {spent} lượt',
+    '*Sáº£n pháº©m:* {name}',
+    '*Sá»‘ lÆ°á»£ng:* {qty}',
+    '*ÄÃ£ dÃ¹ng:* {spent} lÆ°á»£t',
     '',
-    '{delivering} _Đang giao đơn hàng…_',
+    '{delivering} _Äang giao Ä‘Æ¡n hÃ ngâ€¦_',
   ].join('\n'),
-  'shop.referral.delivery': 'Referral Pay cho sản phẩm #{product_id} (SL: {qty})',
-  'shop.page.header': '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
+  'shop.referral.delivery': 'Referral Pay cho sáº£n pháº©m #{product_id} (SL: {qty})',
+  'shop.page.header': 'ðŸ›’ *{category}*\n\n*Sáº£n pháº©m cÃ³ sáºµn:*\n_{total} sáº£n pháº©m â€” trang {page}/{pages}_',
 
-  'profile.title': '⚙️ *Cài đặt*',
-  'profile.notifications.title': '{notify_bell} *Thông báo*',
+  'profile.title': 'âš™ï¸ *CÃ i Ä‘áº·t*',
+  'profile.notifications.title': '{notify_bell} *ThÃ´ng bÃ¡o*',
   'profile.notifications.body':
-    '{notify_on} _Chỉ bật những thông báo bạn thích_ {notify_bell}\n\n' +
-    '{notify_stock} *Thông báo tồn kho*\n' +
-    '{notify_info} *Thông báo tin tức*\n' +
-    '{notify_wallet} *Thông báo ví*\n\n' +
-    '{notify_on} BẬT\n' +
-    '{notify_off} TẮT',
-  'profile.user_id': 'ID người dùng: `{id}`',
-  'profile.username': 'Tên người dùng: @{username}',
-  'profile.balance': '👛 Số dư: *{balance}*',
-  'profile.language': '🌐 Ngôn ngữ: *{language}*',
-  'profile.joined': '📅 Tham gia: *{joined}*',
-  // Màn hình Giới thiệu & Kiếm.
-  'profile.refer.title': '{refer_title} *Giới thiệu & Kiếm*',
+    '{notify_on} _Chá»‰ báº­t nhá»¯ng thÃ´ng bÃ¡o báº¡n thÃ­ch_ {notify_bell}\n\n' +
+    '{notify_stock} *ThÃ´ng bÃ¡o tá»“n kho*\n' +
+    '{notify_info} *ThÃ´ng bÃ¡o tin tá»©c*\n' +
+    '{notify_wallet} *ThÃ´ng bÃ¡o vÃ­*\n\n' +
+    '{notify_on} Báº¬T\n' +
+    '{notify_off} Táº®T',
+  'profile.user_id': 'ID ngÆ°á»i dÃ¹ng: `{id}`',
+  'profile.username': 'TÃªn ngÆ°á»i dÃ¹ng: @{username}',
+  'profile.balance': 'ðŸ‘› Sá»‘ dÆ°: *{balance}*',
+  'profile.language': 'ðŸŒ NgÃ´n ngá»¯: *{language}*',
+  'profile.joined': 'ðŸ“… Tham gia: *{joined}*',
+  // MÃ n hÃ¬nh Giá»›i thiá»‡u & Kiáº¿m.
+  'profile.refer.title': '{refer_title} *Giá»›i thiá»‡u & Kiáº¿m*',
   'profile.refer.body':
-    '{refer_prize_l} *Giới thiệu 10 người và thắng $0.50* {refer_prize_r}\n\n' +
+    '{refer_prize_l} *Giá»›i thiá»‡u 10 ngÆ°á»i vÃ  tháº¯ng $0.50* {refer_prize_r}\n\n' +
     '{refer_clicks} *Clicks:* {clicks}\n' +
     '{refer_pending} *Pending:* {pending}\n' +
     '{refer_active} *Active:* {active}\n' +
-    '{refer_left} *Left:* {left}\n' +
-    '{refer_total} *Giới thiệu (Tổng):* {refTotal}\n' +
-    '{refer_coin} *Tổng đã kiếm:* {earnedTotal} USDT\n' +
-    '{refer_withdrawn} *Đã rút:* {withdrawn} USDT\n\n' +
-    '{prod_referral} *Số dư Referral Pay:* {refAvailable} lượt\n' +
-    '{refer_spent} *Đã dùng mua hàng:* {refSpent} lượt\n\n' +
-    'Chuyển lợi nhuận vào ví bất kỳ lúc nào. Rút tiền mặt liên hệ hỗ trợ (tối thiểu $1.00).\n\n' +
-    '*Liên kết giới thiệu của bạn:*\n`{link}`',
-  'profile.refer.convert_soon':
-    '💱 Đổi Refers sang USDT sắp có. Hiện tại hãy liên hệ hỗ trợ để rút thủ công.',
-  'btn.copy_link': '📋 Sao chép',
-  'btn.redeem': '🎁 Mã quà tặng',
-  'profile.language.title': '{lang_left} *Chọn ngôn ngữ* {lang_right}',
-  'profile.email.hub.title': '{email_bracket_l} *Cài đặt Email* {profile_email}',
+    '{refer_total} *Giá»›i thiá»‡u (Tá»•ng):* {refTotal}\n' +
+    '{refer_coin} *Tá»•ng Ä‘Ã£ kiáº¿m:* {earnedTotal} USDT\n' +
+    '{refer_withdrawn} *ÄÃ£ rÃºt:* {withdrawn} USDT\n\n' +
+    '{prod_referral} *Sá»‘ dÆ° Referral Pay:* {refAvailable} lÆ°á»£t\n' +
+    '{refer_spent} *ÄÃ£ dÃ¹ng mua hÃ ng:* {refSpent} lÆ°á»£t\n\n' +
+    '> Chuyá»ƒn lá»£i nhuáº­n vÃ o vÃ­ báº¥t ká»³ lÃºc nÃ o. RÃºt tiá»n máº·t liÃªn há»‡ há»— trá»£ (tá»‘i thiá»ƒu $1.00).\n\n' +
+    '*LiÃªn káº¿t giá»›i thiá»‡u cá»§a báº¡n:*\n`{link}`',
+  'profile.refer.convert_success':
+    'ðŸ’± ÄÃ£ Ä‘á»•i *{refs} refs* thÃ nh *{amount} USDT*.\n\nðŸ’³ Sá»‘ dÆ° vÃ­: *{balance} USDT*',
+  'profile.refer.convert_low':
+    'âš ï¸ KhÃ´ng Ä‘á»§ refs Ä‘á»ƒ Ä‘á»•i.\n\nBáº¡n cáº§n *20 refs hoáº¡t Ä‘á»™ng* Ä‘á»ƒ Ä‘á»•i thÃ nh *1 USDT*.\nSá»‘ dÆ° Referral Pay hiá»‡n táº¡i: *{available} refs*',
+  'profile.refer.convert_error':
+    'âš ï¸ KhÃ´ng thá»ƒ Ä‘á»•i refs lÃºc nÃ y. Vui lÃ²ng thá»­ láº¡i.',
+  'btn.copy_link': 'ðŸ“‹ Sao chÃ©p',
+  'btn.redeem': 'ðŸŽ MÃ£ quÃ  táº·ng',
+  'profile.language.title': '{lang_left} *Chá»n ngÃ´n ngá»¯* {lang_right}',
+  'profile.email.hub.title': '{email_bracket_l} *CÃ i Ä‘áº·t Email* {profile_email}',
   'profile.email.hub.body':
-    '{email_invoice} Chúng tôi chỉ dùng email cho biên lai mua hàng và khôi phục tài khoản — không quảng cáo.\n\n' +
-    '{profile_email} *Email hiện tại:* `{current}`',
+    '{email_invoice} ChÃºng tÃ´i chá»‰ dÃ¹ng email cho biÃªn lai mua hÃ ng vÃ  khÃ´i phá»¥c tÃ i khoáº£n â€” khÃ´ng quáº£ng cÃ¡o.\n\n' +
+    '{profile_email} *Email hiá»‡n táº¡i:* `{current}`',
   'profile.email.set.already_set_popup':
-    'Email đã được thiết lập ({current}). Vui lòng dùng Đổi Email hoặc Xóa Email để cập nhật.',
-  'profile.email.delete.no_email_popup': 'Chưa có email — không có gì để xóa.',
-  'profile.email.delete.title': '{email_bracket_l} *Xóa Email* {email_bracket_l}',
+    'Email Ä‘Ã£ Ä‘Æ°á»£c thiáº¿t láº­p ({current}). Vui lÃ²ng dÃ¹ng Äá»•i Email hoáº·c XÃ³a Email Ä‘á»ƒ cáº­p nháº­t.',
+  'profile.email.delete.no_email_popup': 'ChÆ°a cÃ³ email â€” khÃ´ng cÃ³ gÃ¬ Ä‘á»ƒ xÃ³a.',
+  'profile.email.delete.title': '{email_bracket_l} *XÃ³a Email* {email_bracket_l}',
   'profile.email.delete.body':
-    '{email_invalid} _Vui lòng xác nhận xóa email_\n\n' +
-    '{profile_email} *Email hiện tại:* `{current}`',
-  'profile.email.delete.success': '✅ Đã xóa email.',
+    '{email_invalid} _Vui lÃ²ng xÃ¡c nháº­n xÃ³a email_\n\n' +
+    '{profile_email} *Email hiá»‡n táº¡i:* `{current}`',
+  'profile.email.delete.success': 'âœ… ÄÃ£ xÃ³a email.',
   'profile.email.in_use':
-    '{email_in_use} Email đã được *sử dụng*\n\n' +
-    '{email_arrow} *_Vui lòng nhập một email khác_*',
-  'btn.email.delete': '🗑 Xóa Email',
-  'btn.email.delete.confirm': '🗑 Xác nhận xóa',
-  'btn.email.delete.cancel': '⬅️ Hủy',
-  // Nút "Gửi PDF" cho màn hình Đơn hàng / Nạp tiền / Thống kê.
-  'btn.send_pdf.orders': 'Gửi PDF đơn hàng đến email',
-  'btn.send_pdf.deposits': '📤 Gửi PDF nạp tiền đến email',
-  'btn.send_pdf.stats': '📤 Gửi PDF thống kê đến email',
+    '{email_in_use} Email Ä‘Ã£ Ä‘Æ°á»£c *sá»­ dá»¥ng*\n\n' +
+    '{email_arrow} *_Vui lÃ²ng nháº­p má»™t email khÃ¡c_*',
+  'btn.email.delete': 'ðŸ—‘ XÃ³a Email',
+  'btn.email.delete.confirm': 'ðŸ—‘ XÃ¡c nháº­n xÃ³a',
+  'btn.email.delete.cancel': 'â¬…ï¸ Há»§y',
+  // NÃºt "Gá»­i PDF" cho mÃ n hÃ¬nh ÄÆ¡n hÃ ng / Náº¡p tiá»n / Thá»‘ng kÃª.
+  'btn.send_pdf.orders': 'Gá»­i PDF Ä‘Æ¡n hÃ ng Ä‘áº¿n email',
+  'btn.send_pdf.deposits': 'ðŸ“¤ Gá»­i PDF náº¡p tiá»n Ä‘áº¿n email',
+  'btn.send_pdf.stats': 'ðŸ“¤ Gá»­i PDF thá»‘ng kÃª Ä‘áº¿n email',
   'pdf.no_email_popup':
-    '⚠️ Vui lòng đặt email trước. Cài đặt → Cài đặt email → Đặt email, sau đó quay lại và nhấn Gửi PDF.',
-  'pdf.sending_popup': '⏳ Đang tạo PDF và gửi đến {email}…',
-  'pdf.sent_popup': '✅ Đã gửi PDF đến {email}. Vui lòng kiểm tra hộp thư (và mục Spam).',
-  // Tin nhắn xác nhận khi gửi PDF thành công.
-  'pdf.sent_message': '{pdf_sent_l} *PDF đã được gửi tới email* {pdf_sent_r}',
+    'âš ï¸ Vui lÃ²ng Ä‘áº·t email trÆ°á»›c. CÃ i Ä‘áº·t â†’ CÃ i Ä‘áº·t email â†’ Äáº·t email, sau Ä‘Ã³ quay láº¡i vÃ  nháº¥n Gá»­i PDF.',
+  'pdf.sending_popup': 'â³ Äang táº¡o PDF vÃ  gá»­i Ä‘áº¿n {email}â€¦',
+  'pdf.sent_popup': 'âœ… ÄÃ£ gá»­i PDF Ä‘áº¿n {email}. Vui lÃ²ng kiá»ƒm tra há»™p thÆ° (vÃ  má»¥c Spam).',
+  // Tin nháº¯n xÃ¡c nháº­n khi gá»­i PDF thÃ nh cÃ´ng.
+  'pdf.sent_message': '{pdf_sent_l} *PDF Ä‘Ã£ Ä‘Æ°á»£c gá»­i tá»›i email* {pdf_sent_r}',
   'pdf.failed_popup':
-    '❌ Không gửi được PDF đến {email}. Vui lòng thử lại sau ít phút — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
+    'âŒ KhÃ´ng gá»­i Ä‘Æ°á»£c PDF Ä‘áº¿n {email}. Vui lÃ²ng thá»­ láº¡i sau Ã­t phÃºt â€” náº¿u lá»—i tiáº¿p tá»¥c, hÃ£y liÃªn há»‡ há»— trá»£.',
   'orders.empty':
-    '{orders_title} *Đơn hàng của tôi*\n\n' +
-    '🪄 Chưa có đơn hàng nào.\n\n' +
-    '✨ 🛍️ 🚀 Bắt đầu mua sắm và đơn hàng sẽ xuất hiện ở đây!',
-  'profile.orders.empty': 'Bạn chưa có đơn hàng nào.',
-  'profile.orders.title': '🧾 *Đơn hàng của tôi*',
-  'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
-  'profile.notify.stock_on': 'Thông báo tồn kho: ✅ BẬT',
-  'profile.notify.stock_off': 'Thông báo tồn kho: ⛔ TẮT',
-  'profile.notify.ann_on': 'Thông báo tin tức: ✅ BẬT',
-  'profile.notify.ann_off': 'Thông báo tin tức: ⛔ TẮT',
-  'profile.notify.wallet_on': 'Thông báo ví: ✅ BẬT',
-  'profile.notify.wallet_off': 'Thông báo ví: ⛔ TẮT',
+    '{orders_title} *ÄÆ¡n hÃ ng cá»§a tÃ´i*\n\n' +
+    'ðŸª„ ChÆ°a cÃ³ Ä‘Æ¡n hÃ ng nÃ o.\n\n' +
+    'âœ¨ ðŸ›ï¸ ðŸš€ Báº¯t Ä‘áº§u mua sáº¯m vÃ  Ä‘Æ¡n hÃ ng sáº½ xuáº¥t hiá»‡n á»Ÿ Ä‘Ã¢y!',
+  'profile.orders.empty': 'Báº¡n chÆ°a cÃ³ Ä‘Æ¡n hÃ ng nÃ o.',
+  'profile.orders.title': 'ðŸ§¾ *ÄÆ¡n hÃ ng cá»§a tÃ´i*',
+  'profile.orders.line': '#{id} â€¢ {name} Ã—{qty} â€¢ {total} â€¢ {date}',
+  'profile.notify.stock_on': 'ThÃ´ng bÃ¡o tá»“n kho: âœ… Báº¬T',
+  'profile.notify.stock_off': 'ThÃ´ng bÃ¡o tá»“n kho: â›” Táº®T',
+  'profile.notify.ann_on': 'ThÃ´ng bÃ¡o tin tá»©c: âœ… Báº¬T',
+  'profile.notify.ann_off': 'ThÃ´ng bÃ¡o tin tá»©c: â›” Táº®T',
+  'profile.notify.wallet_on': 'ThÃ´ng bÃ¡o vÃ­: âœ… Báº¬T',
+  'profile.notify.wallet_off': 'ThÃ´ng bÃ¡o vÃ­: â›” Táº®T',
   'profile.notify.error':
-    '⚠️ Không thể lưu trạng thái — cần áp dụng `0008_wallet_alert.sql` vào cơ sở dữ liệu.',
-  'profile.deposits.title': '💳 *Lịch sử nạp*',
-  'profile.deposits.empty': 'Chưa có giao dịch nạp.',
-  'profile.deposits.line': '#{id} • {amount} • {method} • {status} • {date}',
+    'âš ï¸ KhÃ´ng thá»ƒ lÆ°u tráº¡ng thÃ¡i â€” cáº§n Ã¡p dá»¥ng `0008_wallet_alert.sql` vÃ o cÆ¡ sá»Ÿ dá»¯ liá»‡u.',
+  'profile.deposits.title': 'ðŸ’³ *Lá»‹ch sá»­ náº¡p*',
+  'profile.deposits.empty': 'ChÆ°a cÃ³ giao dá»‹ch náº¡p.',
+  'profile.deposits.line': '#{id} â€¢ {amount} â€¢ {method} â€¢ {status} â€¢ {date}',
 
-  'profile.stats.title': 'Thống kê của bạn',
-  'profile.stats.orders': 'Đơn hàng: {count}',
-  'profile.stats.items': 'Mặt hàng đã mua: {count}',
-  'profile.stats.spent': 'Tổng đã chi: {amount} USDT',
-  'profile.stats.last': 'Đơn cuối: {rel} ({abs})',
-  'profile.stats.last_none': 'Đơn cuối: —',
-  'profile.stats.deposits': 'Nạp tiền: {amount} USDT',
-  'profile.stats.rel.now': 'vừa xong',
-  'profile.stats.rel.minutes': '{n} phút trước',
-  'profile.stats.rel.hours': '{n} giờ trước',
-  'profile.stats.rel.days': '{n} ngày trước',
+  'profile.stats.title': 'Thá»‘ng kÃª cá»§a báº¡n',
+  'profile.stats.orders': 'ÄÆ¡n hÃ ng: {count}',
+  'profile.stats.items': 'Máº·t hÃ ng Ä‘Ã£ mua: {count}',
+  'profile.stats.spent': 'Tá»•ng Ä‘Ã£ chi: {amount} USDT',
+  'profile.stats.last': 'ÄÆ¡n cuá»‘i: {rel} ({abs})',
+  'profile.stats.last_none': 'ÄÆ¡n cuá»‘i: â€”',
+  'profile.stats.deposits': 'Náº¡p tiá»n: {amount} USDT',
+  'profile.stats.rel.now': 'vá»«a xong',
+  'profile.stats.rel.minutes': '{n} phÃºt trÆ°á»›c',
+  'profile.stats.rel.hours': '{n} giá» trÆ°á»›c',
+  'profile.stats.rel.days': '{n} ngÃ y trÆ°á»›c',
 
-  // Hướng dẫn theo phương thức — quản trị chỉnh từ /admin và xuất
-  // hiện dưới các màn hình USDT / Binance / LTC. Tiêu đề mang biểu
-  // tượng sách + tên phương thức, nội dung lấy từ
+  // HÆ°á»›ng dáº«n theo phÆ°Æ¡ng thá»©c â€” quáº£n trá»‹ chá»‰nh tá»« /admin vÃ  xuáº¥t
+  // hiá»‡n dÆ°á»›i cÃ¡c mÃ n hÃ¬nh USDT / Binance / LTC. TiÃªu Ä‘á» mang biá»ƒu
+  // tÆ°á»£ng sÃ¡ch + tÃªn phÆ°Æ¡ng thá»©c, ná»™i dung láº¥y tá»«
   // `pay_tutorial.<method_id>.text`.
-  'pay.tutorial.title': '{tutorial} *Tìm tham chiếu ở đâu — {method}*',
+  'pay.tutorial.title': '{tutorial} *TÃ¬m tham chiáº¿u á»Ÿ Ä‘Ã¢u â€” {method}*',
   'pay.tutorial.empty':
-    '_Quản trị viên chưa thêm hướng dẫn cho phương thức này. Vui lòng quay lại sau._',
+    '_Quáº£n trá»‹ viÃªn chÆ°a thÃªm hÆ°á»›ng dáº«n cho phÆ°Æ¡ng thá»©c nÃ y. Vui lÃ²ng quay láº¡i sau._',
   'pay.tutorial.body': '{body}',
 
-  'topup.title': '👛 *Nạp ví*',
-  'topup.choose_method': '👛 *Nạp ví*',
-  'topup.empty_methods': 'Chưa cấu hình phương thức thanh toán. Vui lòng liên hệ hỗ trợ.',
+  'topup.title': 'ðŸ‘› *Náº¡p vÃ­*',
+  'topup.choose_method': 'ðŸ‘› *Náº¡p vÃ­*',
+  'topup.empty_methods': 'ChÆ°a cáº¥u hÃ¬nh phÆ°Æ¡ng thá»©c thanh toÃ¡n. Vui lÃ²ng liÃªn há»‡ há»— trá»£.',
   'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested':
-    '✅ Yêu cầu nạp đã gửi (#{id}).\nQuản trị viên sẽ xác nhận và cộng tiền sớm.',
+    'âœ… YÃªu cáº§u náº¡p Ä‘Ã£ gá»­i (#{id}).\nQuáº£n trá»‹ viÃªn sáº½ xÃ¡c nháº­n vÃ  cá»™ng tiá»n sá»›m.',
 
-  'support.title': '{support_title} Hỗ trợ',
+  'support.title': '{support_title} Há»— trá»£',
   'support.body':
-    '_*Nếu bạn không thể gửi tin nhắn hoặc gặp sự cố, hãy sử dụng Hỗ trợ trực tiếp để kết nối ngay với quản trị viên.*_',
-  'support.btn.contact': '📩 Liên hệ quản trị',
-  'support.contact_prefill': 'Chào, tôi cần trợ giúp về ShopBot SafwanTiger. Vui lòng giúp tôi về: ',
-  'support.btn.cancel': 'Hủy hỗ trợ',
-  'support.btn.live': '🟢 Hỗ trợ trực tiếp',
-  'support.btn.end_session': '🔴 Kết thúc phiên',
+    '_*Náº¿u báº¡n khÃ´ng thá»ƒ gá»­i tin nháº¯n hoáº·c gáº·p sá»± cá»‘, hÃ£y sá»­ dá»¥ng Há»— trá»£ trá»±c tiáº¿p Ä‘á»ƒ káº¿t ná»‘i ngay vá»›i quáº£n trá»‹ viÃªn.*_',
+  'support.btn.contact': 'ðŸ“© LiÃªn há»‡ quáº£n trá»‹',
+  'support.contact_prefill': 'ChÃ o, tÃ´i cáº§n trá»£ giÃºp vá» ShopBot SafwanTiger. Vui lÃ²ng giÃºp tÃ´i vá»: ',
+  'support.btn.cancel': 'Há»§y há»— trá»£',
+  'support.btn.live': 'ðŸŸ¢ Há»— trá»£ trá»±c tiáº¿p',
+  'support.btn.end_session': 'ðŸ”´ Káº¿t thÃºc phiÃªn',
   'support.live.busy_popup':
-    '⏳ Quản trị viên đang hỗ trợ người khác. Vui lòng thử lại sau ít phút.',
+    'â³ Quáº£n trá»‹ viÃªn Ä‘ang há»— trá»£ ngÆ°á»i khÃ¡c. Vui lÃ²ng thá»­ láº¡i sau Ã­t phÃºt.',
   'support.live.user_active':
-    '{support_live_active} Hỗ trợ trực tiếp\n\n' +
-    'Phiên hỗ trợ đang hoạt động.\n\n' +
-    'Hãy nhắn tin trực tiếp tại đây — mọi tin nhắn sẽ được chuyển ngay đến quản trị viên. Bấm *Hủy hỗ trợ* bất cứ lúc nào để kết thúc phiên.',
-  'support.live.session_created': '🟢 *Đã tạo phiên Hỗ trợ trực tiếp*',
+    '{support_live_active} Há»— trá»£ trá»±c tiáº¿p\n\n' +
+    'PhiÃªn há»— trá»£ Ä‘ang hoáº¡t Ä‘á»™ng.\n\n' +
+    'HÃ£y nháº¯n tin trá»±c tiáº¿p táº¡i Ä‘Ã¢y â€” má»i tin nháº¯n sáº½ Ä‘Æ°á»£c chuyá»ƒn ngay Ä‘áº¿n quáº£n trá»‹ viÃªn. Báº¥m *Há»§y há»— trá»£* báº¥t cá»© lÃºc nÃ o Ä‘á»ƒ káº¿t thÃºc phiÃªn.',
+  'support.live.session_created': 'ðŸŸ¢ *ÄÃ£ táº¡o phiÃªn Há»— trá»£ trá»±c tiáº¿p*',
   'support.live.admin_started':
-    '🟢 *Bắt đầu Hỗ trợ trực tiếp*\n\n' +
-    'Người dùng: *{name}* (@{username})\nID: `{id}`\n\nTrả lời tại đây để chat. Gửi /end để đóng phiên.',
+    'ðŸŸ¢ *Báº¯t Ä‘áº§u Há»— trá»£ trá»±c tiáº¿p*\n\n' +
+    'NgÆ°á»i dÃ¹ng: *{name}* (@{username})\nID: `{id}`\n\nTráº£ lá»i táº¡i Ä‘Ã¢y Ä‘á»ƒ chat. Gá»­i /end Ä‘á»ƒ Ä‘Ã³ng phiÃªn.',
   'support.live.admin_relay': '*[{name}]:* {text}',
-  'support.live.admin_media_header': '*[{name}]* đã gửi tệp:',
+  'support.live.admin_media_header': '*[{name}]* Ä‘Ã£ gá»­i tá»‡p:',
   'support.live.user_ended':
-    '{support_live_closed} Đã đóng Hỗ trợ trực tiếp.\n\n' +
-    'Mở lại Hỗ trợ từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
-  'support.live.admin_ended': '🔴 *Phiên Hỗ trợ trực tiếp đã đóng.*',
+    '{support_live_closed} ÄÃ£ Ä‘Ã³ng Há»— trá»£ trá»±c tiáº¿p.\n\n' +
+    'Má»Ÿ láº¡i Há»— trá»£ tá»« menu báº¥t ká»³ lÃºc nÃ o báº¡n cáº§n giÃºp Ä‘á»¡.',
+  'support.live.admin_ended': 'ðŸ”´ *PhiÃªn Há»— trá»£ trá»±c tiáº¿p Ä‘Ã£ Ä‘Ã³ng.*',
   'support.live.unavailable_popup':
-    '⚠️ Hỗ trợ trực tiếp tạm thời không khả dụng — không thể liên lạc với quản trị viên ngay bây giờ. Vui lòng dùng Liên hệ Admin hoặc thử lại sau.',
+    'âš ï¸ Há»— trá»£ trá»±c tiáº¿p táº¡m thá»i khÃ´ng kháº£ dá»¥ng â€” khÃ´ng thá»ƒ liÃªn láº¡c vá»›i quáº£n trá»‹ viÃªn ngay bÃ¢y giá». Vui lÃ²ng dÃ¹ng LiÃªn há»‡ Admin hoáº·c thá»­ láº¡i sau.',
   'support.live.unavailable_message':
-    '⚠️ *Hỗ trợ trực tiếp không khả dụng*\n\n' +
-    'Hiện không thể liên lạc với quản trị viên. Thường là do quản trị viên chưa từng mở bot này và bấm *Start* — Telegram chỉ cho phép bot nhắn cho người đã chủ động bắt đầu trò chuyện.\n\n' +
-    'Vui lòng dùng *Liên hệ Admin* trong menu Hỗ trợ.',
-  'support.btn.email_transcript': '📧 Gửi PDF chat tới email',
+    'âš ï¸ *Há»— trá»£ trá»±c tiáº¿p khÃ´ng kháº£ dá»¥ng*\n\n' +
+    'Hiá»‡n khÃ´ng thá»ƒ liÃªn láº¡c vá»›i quáº£n trá»‹ viÃªn. ThÆ°á»ng lÃ  do quáº£n trá»‹ viÃªn chÆ°a tá»«ng má»Ÿ bot nÃ y vÃ  báº¥m *Start* â€” Telegram chá»‰ cho phÃ©p bot nháº¯n cho ngÆ°á»i Ä‘Ã£ chá»§ Ä‘á»™ng báº¯t Ä‘áº§u trÃ² chuyá»‡n.\n\n' +
+    'Vui lÃ²ng dÃ¹ng *LiÃªn há»‡ Admin* trong menu Há»— trá»£.',
+  'support.btn.email_transcript': 'ðŸ“§ Gá»­i PDF chat tá»›i email',
   'support.transcript.sent_message':
-    '{pdf_sent_l} *PDF đã được gửi tới email* {pdf_sent_r}',
+    '{pdf_sent_l} *PDF Ä‘Ã£ Ä‘Æ°á»£c gá»­i tá»›i email* {pdf_sent_r}',
   'support.transcript.no_email_popup':
-    '⚠️ Hãy đặt email trước. Cài đặt → Cài đặt email → Đặt email, sau đó quay lại và nhấn nút gửi PDF chat.',
+    'âš ï¸ HÃ£y Ä‘áº·t email trÆ°á»›c. CÃ i Ä‘áº·t â†’ CÃ i Ä‘áº·t email â†’ Äáº·t email, sau Ä‘Ã³ quay láº¡i vÃ  nháº¥n nÃºt gá»­i PDF chat.',
   'support.transcript.sending_popup':
-    '⏳ Đang tạo bản ghi hỗ trợ và gửi đến {email}…',
+    'â³ Äang táº¡o báº£n ghi há»— trá»£ vÃ  gá»­i Ä‘áº¿n {email}â€¦',
   'support.transcript.failed_popup':
-    '❌ Không gửi được bản ghi đến {email}. Vui lòng thử lại — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
+    'âŒ KhÃ´ng gá»­i Ä‘Æ°á»£c báº£n ghi Ä‘áº¿n {email}. Vui lÃ²ng thá»­ láº¡i â€” náº¿u lá»—i tiáº¿p tá»¥c, hÃ£y liÃªn há»‡ há»— trá»£.',
   'support.transcript.expired_popup':
-    '⌛ Bản ghi này không còn khả dụng. Bắt đầu phiên Hỗ trợ trực tiếp mới khi bạn cần giúp đỡ.',
+    'âŒ› Báº£n ghi nÃ y khÃ´ng cÃ²n kháº£ dá»¥ng. Báº¯t Ä‘áº§u phiÃªn Há»— trá»£ trá»±c tiáº¿p má»›i khi báº¡n cáº§n giÃºp Ä‘á»¡.',
   'support.ai.session_open':
     '{kiwi_ai} *Kiwi Ai*\n' +
-    '*Tôi là Kiwi, trợ lý hỗ trợ tự động.*\n\n' +
-    'Bạn có thể hỏi bất kỳ câu hỏi nào bằng bất kỳ ngôn ngữ nào ' +
-    'hoặc được hỗ trợ về sản phẩm, giá, kho hàng, nạp tiền, mã ' +
-    'giảm giá, đơn hàng và giao hàng. Thông tin nội bộ hệ thống ' +
-    'không được tiết lộ.',
+    '*TÃ´i lÃ  Kiwi, trá»£ lÃ½ há»— trá»£ tá»± Ä‘á»™ng.*\n\n' +
+    'Báº¡n cÃ³ thá»ƒ há»i báº¥t ká»³ cÃ¢u há»i nÃ o báº±ng báº¥t ká»³ ngÃ´n ngá»¯ nÃ o ' +
+    'hoáº·c Ä‘Æ°á»£c há»— trá»£ vá» sáº£n pháº©m, giÃ¡, kho hÃ ng, náº¡p tiá»n, mÃ£ ' +
+    'giáº£m giÃ¡, Ä‘Æ¡n hÃ ng vÃ  giao hÃ ng. ThÃ´ng tin ná»™i bá»™ há»‡ thá»‘ng ' +
+    'khÃ´ng Ä‘Æ°á»£c tiáº¿t lá»™.',
   'support.ai.user_ended':
-    '{support_live_closed} Đã đóng Kiwi Ai.\n\n' +
-    'Mở lại Kiwi Ai từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
+    '{support_live_closed} ÄÃ£ Ä‘Ã³ng Kiwi Ai.\n\n' +
+    'Má»Ÿ láº¡i Kiwi Ai tá»« menu báº¥t ká»³ lÃºc nÃ o báº¡n cáº§n giÃºp Ä‘á»¡.',
   'support.ai.fallback':
-    'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
+    'TÃ´i khÃ´ng thá»ƒ tráº£ lá»i tá»± Ä‘á»™ng. Má»™t nhÃ¢n viÃªn sáº½ liÃªn há»‡ sá»›m.',
   'support.ai.pdf_prompt':
-    '{kiwi_ai} *Đã lưu hội thoại Kiwi Ai.*\n' +
-    'Nhấn bên dưới để gửi bản ghi về email của bạn dưới dạng PDF.',
+    '{kiwi_ai} *ÄÃ£ lÆ°u há»™i thoáº¡i Kiwi Ai.*\n' +
+    'Nháº¥n bÃªn dÆ°á»›i Ä‘á»ƒ gá»­i báº£n ghi vá» email cá»§a báº¡n dÆ°á»›i dáº¡ng PDF.',
   'support.ai.empty_popup':
-    '💬 Hãy gửi ít nhất một câu hỏi trước — chưa có gì để lưu.',
+    'ðŸ’¬ HÃ£y gá»­i Ã­t nháº¥t má»™t cÃ¢u há»i trÆ°á»›c â€” chÆ°a cÃ³ gÃ¬ Ä‘á»ƒ lÆ°u.',
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
-  'support.ai.prompt': 'Mô tả vấn đề và tôi sẽ cố gắng hỗ trợ.',
-  'channel.not_set': '📢 Liên kết kênh chưa được cài đặt.',
-  'channel.subscribe.title': '📢 *Tham gia kênh* để tiếp tục',
-  'channel.subscribe.body': 'Vui lòng tham gia kênh bên dưới rồi nhấn *Tôi đã tham gia*.',
-  'channel.subscribe.joined': '✅ Tôi đã tham gia',
+  'support.ai.prompt': 'MÃ´ táº£ váº¥n Ä‘á» vÃ  tÃ´i sáº½ cá»‘ gáº¯ng há»— trá»£.',
+  'channel.not_set': 'ðŸ“¢ LiÃªn káº¿t kÃªnh chÆ°a Ä‘Æ°á»£c cÃ i Ä‘áº·t.',
+  'channel.subscribe.title': 'ðŸ“¢ *Tham gia kÃªnh* Ä‘á»ƒ tiáº¿p tá»¥c',
+  'channel.subscribe.body': 'Vui lÃ²ng tham gia kÃªnh bÃªn dÆ°á»›i rá»“i nháº¥n *TÃ´i Ä‘Ã£ tham gia*.',
+  'channel.subscribe.joined': 'âœ… TÃ´i Ä‘Ã£ tham gia',
 
-  'admin.only': '⛔ Chỉ dành cho quản trị viên.',
-  'admin.help.title': '🛠 *Lệnh quản trị*',
-  'admin.cache.cleared': '🧹 Đã xóa cache.',
+  'admin.only': 'â›” Chá»‰ dÃ nh cho quáº£n trá»‹ viÃªn.',
+  'admin.help.title': 'ðŸ›  *Lá»‡nh quáº£n trá»‹*',
+  'admin.cache.cleared': 'ðŸ§¹ ÄÃ£ xÃ³a cache.',
 
-  'admin.text.set': '✅ Đã cập nhật text `{key}`.',
-  'admin.color.set': '✅ Màu `{key}` đặt thành *{color}*.',
-  'admin.emoji.set': '✅ Đã cập nhật emoji `{key}`.',
-  'admin.product.added': '✅ Đã thêm sản phẩm *{name}* (id={id}).',
-  'admin.category.added': '✅ Đã thêm danh mục *{name}* (id={id}).',
-  'admin.payment.added': '✅ Đã thêm phương thức thanh toán *{name}* (id={id}).',
-  'admin.bad_args': '❌ Tham số sai. Cách dùng: `{usage}`',
+  'admin.text.set': 'âœ… ÄÃ£ cáº­p nháº­t text `{key}`.',
+  'admin.color.set': 'âœ… MÃ u `{key}` Ä‘áº·t thÃ nh *{color}*.',
+  'admin.emoji.set': 'âœ… ÄÃ£ cáº­p nháº­t emoji `{key}`.',
+  'admin.product.added': 'âœ… ÄÃ£ thÃªm sáº£n pháº©m *{name}* (id={id}).',
+  'admin.category.added': 'âœ… ÄÃ£ thÃªm danh má»¥c *{name}* (id={id}).',
+  'admin.payment.added': 'âœ… ÄÃ£ thÃªm phÆ°Æ¡ng thá»©c thanh toÃ¡n *{name}* (id={id}).',
+  'admin.bad_args': 'âŒ Tham sá»‘ sai. CÃ¡ch dÃ¹ng: `{usage}`',
 
-  'err.generic': '⚠️ Đã xảy ra lỗi. Vui lòng thử lại.',
-  'err.unknown_action': '⚠️ Hành động không xác định.',
+  'err.generic': 'âš ï¸ ÄÃ£ xáº£y ra lá»—i. Vui lÃ²ng thá»­ láº¡i.',
+  'err.unknown_action': 'âš ï¸ HÃ nh Ä‘á»™ng khÃ´ng xÃ¡c Ä‘á»‹nh.',
 };

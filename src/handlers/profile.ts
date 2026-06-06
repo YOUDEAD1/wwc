@@ -3,11 +3,13 @@ import { type Lang } from '../../config/index.js';
 import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/regions.js';
 import {
   adjustBalance,
+  convertReferralBalance,
   countReferralsSince,
   countGiftCodeRedemptions,
   countGiftCodeRedemptionsByUser,
   findUserByEmail,
   getGiftCode,
+  InsufficientReferralBalanceError,
   getOrder,
   getReferralBalance,
   getReferralEarnings,
@@ -129,7 +131,7 @@ function formatShortDate(iso: string, timezone: string | null): string {
 
 /**
  * Schedule deletion of a chat message after `EMAIL_AUTODELETE_MS`
- * has elapsed. Used for "✅ Sent to your email" / mail-sent
+ * has elapsed. Used for "âœ… Sent to your email" / mail-sent
  * confirmations the bot owner asked us to auto-clean from chat
  * history. Deletion errors are swallowed because Telegram throws
  * "message can't be deleted" for messages older than 48h or already
@@ -139,7 +141,7 @@ const EMAIL_AUTODELETE_MS = 5_000;
 function autoDeleteMessage(ctx: AppCtx, message_id: number): void {
   setTimeout(() => {
     void ctx.api.deleteMessage(ctx.chat!.id, message_id).catch(() => {
-      // Silent — user may have closed the chat or the message is gone
+      // Silent â€” user may have closed the chat or the message is gone
     });
   }, EMAIL_AUTODELETE_MS);
 }
@@ -203,7 +205,7 @@ async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
   // emoji whose key has a configured premium custom_emoji_id.
   const html = renderMdHtml(profileText(ctx));
   const reply_markup = profileKeyboard(ctx.lang);
-  // `forceReply` is used after saving an email — we want to send a
+  // `forceReply` is used after saving an email â€” we want to send a
   // FRESH settings message (not edit the pre-edit prompt) so the user
   // immediately sees the saved value.
   if (ctx.callbackQuery && !opts.forceReply) {
@@ -326,7 +328,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * the callback query twice: once with a "sending..." toast (so the
  * user sees feedback while we render the PDF + hit Resend) and once
  * with the final success / failure popup. The screen the user
- * triggered the action from is never edited — they remain on the
+ * triggered the action from is never edited â€” they remain on the
  * same orders / deposits / stats list.
  */
 async function sendReportPdfFromCallback(
@@ -406,7 +408,7 @@ async function sendReportPdfFromCallback(
         destinationEmail: email,
         rowCount,
       });
-      // Surface success as a real chat message so the premium 📬
+      // Surface success as a real chat message so the premium ðŸ“¬
       // custom emoji renders as a `<tg-emoji>` entity rather than a
       // plain toast (Telegram strips custom_emoji from popup text).
       // Auto-deleted 5 s later so the chat doesn't fill up with
@@ -443,7 +445,7 @@ async function sendReportPdfFromCallback(
  * once the user finishes typing their address.
  *
  * Failure modes (order missing, product gone, transport down, bad
- * address) are logged at `info` level and swallowed — the buyer
+ * address) are logged at `info` level and swallowed â€” the buyer
  * already has the delivery card with the items in chat, and the
  * confirmation message ("Email has been setuped") is what they're
  * expecting to see; surfacing a transport error here would confuse
@@ -531,8 +533,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       getReferralEarnings(ctx.user.telegram_id),
     ]);
     const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
-    const referralCycleLeft =
-      refBalance.total > 0 && refBalance.total % 10 === 0 ? 0 : Math.max(0, 10 - (refBalance.total % 10));
     const body = ctx.t('profile.refer.body', {
       link,
       ref24h,
@@ -543,7 +543,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       clicks: 0,
       pending: 0,
       active: refBalance.available,
-      left: referralCycleLeft,
       earnedTotal: fmt(earnings.total),
       available: fmt(earnings.available),
       transferred: fmt(earnings.transferred),
@@ -572,7 +571,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   bot.callbackQuery('profile:stats:refresh', async (ctx) => {
-    await ctx.answerCallbackQuery({ text: '🔄' });
+    await ctx.answerCallbackQuery({ text: 'ðŸ”„' });
     await showStats(ctx);
   });
 
@@ -628,7 +627,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await showOrdersPage(ctx, Number(ctx.match[1]));
   });
 
-  // Find by Order ID — surface the typed-input flow that was
+  // Find by Order ID â€” surface the typed-input flow that was
   // previously only documented inline. Tapping the button arms the
   // `orders_lookup` flow and posts a prompt so the next plain text
   // message the user sends is parsed as a public Order ID.
@@ -644,7 +643,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   async function renderOrderDetail(ctx: AppCtx, orderId: number, asReply = false): Promise<void> {
     const order = await getOrder(orderId);
     if (!order || order.user_id !== ctx.user.telegram_id) {
-      const msg = '⚠️ Order not found.';
+      const msg = 'âš ï¸ Order not found.';
       if (asReply) await ctx.reply(msg);
       else await ctx.editMessageText(msg, { reply_markup: backToSettingsKeyboard(ctx.lang) });
       return;
@@ -729,7 +728,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       // order instead of a broken edit.
       logger.warn(
         { err, orderId, htmlLen: html.length },
-        'profile: order detail render failed — falling back to plain reply',
+        'profile: order detail render failed â€” falling back to plain reply',
       );
       try {
         await ctx.reply(htmlToPlain(html), {
@@ -750,7 +749,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
             Buffer.from(itemsRender.attach.contents, 'utf8'),
             itemsRender.attach.filename,
           ),
-          { caption: `📎 Order #${pubId} — full items list` },
+          { caption: `ðŸ“Ž Order #${pubId} â€” full items list` },
         );
       } catch (err) {
         logger.warn(
@@ -847,7 +846,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         return;
       }
     }
-    // All checks passed — credit the wallet, log the ledger entry,
+    // All checks passed â€” credit the wallet, log the ledger entry,
     // record the redemption row.
     const amount = Number(gift.amount);
     const newBalance = await adjustBalance(ctx.user.telegram_id, amount);
@@ -893,7 +892,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
 
   bot.callbackQuery(/^profile:refer:buy:(\d+)$/, async (ctx) => {
     const productId = Number(ctx.match[1]);
-    await ctx.answerCallbackQuery({ text: '🔄' });
+    await ctx.answerCallbackQuery({ text: 'ðŸ”„' });
     await showReferScreen(ctx, {
       refreshCallback: `profile:refer:buy:${productId}`,
       backCallback: `buy:${productId}`,
@@ -901,10 +900,41 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   bot.callbackQuery('profile:refer:convert', async (ctx) => {
-    await ctx.answerCallbackQuery({
-      text: ctx.t('profile.refer.convert_soon'),
-      show_alert: true,
-    });
+    const REF_COST = 20;
+    const USDT_AMOUNT = 1;
+    try {
+      const result = await convertReferralBalance({
+        user_id: ctx.user.telegram_id,
+        referral_cost: REF_COST,
+        amount: USDT_AMOUNT,
+      });
+      ctx.user.balance = result.newBalance;
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.refer.convert_success', {
+          refs: REF_COST,
+          amount: USDT_AMOUNT.toFixed(2),
+          balance: result.newBalance.toFixed(2),
+        }),
+        show_alert: true,
+      });
+      await showReferScreen(ctx);
+    } catch (err) {
+      if (err instanceof InsufficientReferralBalanceError) {
+        const balance = await getReferralBalance(ctx.user.telegram_id).catch(() => null);
+        await ctx.answerCallbackQuery({
+          text: ctx.t('profile.refer.convert_low', {
+            available: balance?.available ?? 0,
+          }),
+          show_alert: true,
+        });
+        return;
+      }
+      logger.error({ err, user: ctx.user.telegram_id }, 'profile refer convert failed');
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.refer.convert_error'),
+        show_alert: true,
+      });
+    }
   });
 
   // ---- Notifications submenu ----
@@ -1023,7 +1053,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   // ---------------------------------------------------------------
-  //  Bot Tutorial (Settings → Bot Tutorial)
+  //  Bot Tutorial (Settings â†’ Bot Tutorial)
   //  Renders the admin-editable tutorial page (text + optional
   //  photo / video / document attachment + optional URL button).
   // ---------------------------------------------------------------
@@ -1056,10 +1086,10 @@ export function registerProfile(bot: Composer<AppCtx>): void {
           rejectedUrl: tut.url && !safeUrl ? tut.url : null,
           htmlLen: safeHtml.length,
         },
-        'profile:tutorial — rendering Bot Tutorial',
+        'profile:tutorial â€” rendering Bot Tutorial',
       );
       // Bot-owner spec: the tutorial should NOT arrive as a fresh
-      // message below Settings — it should *replace* the Settings
+      // message below Settings â€” it should *replace* the Settings
       // page in-place, so tapping Bot Tutorial converts the open
       // Settings card into the tutorial card without cluttering
       // the chat. The Back button on the tutorial keyboard already
@@ -1070,7 +1100,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       // Telegram doesn't let us turn a text-only message into a
       // media one, so when the admin has uploaded a tutorial
       // photo / video / document we still send the *file* as a
-      // follow-up — but the actual instruction card is edited in
+      // follow-up â€” but the actual instruction card is edited in
       // place, removing the duplicate text page the bot owner
       // flagged.
       stage = 'edit_html';
@@ -1096,7 +1126,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
           // old, or the previous Settings render was actually a
           // media message that can't accept `editMessageText`).
           // Fall back to sending a fresh card so the user still
-          // gets the tutorial — a one-off duplicate is always
+          // gets the tutorial â€” a one-off duplicate is always
           // better than a broken button.
           logger.warn(
             { err: plainErr },
@@ -1125,14 +1155,14 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         }
       }
     } catch (err) {
-      logger.error({ err, stage }, 'profile:tutorial — failed to render');
+      logger.error({ err, stage }, 'profile:tutorial â€” failed to render');
       const reason = (err as Error)?.message ?? String(err);
       try {
         await ctx.reply(
-          `⚠️ <b>Couldn't load the Bot Tutorial.</b>\n\n` +
+          `âš ï¸ <b>Couldn't load the Bot Tutorial.</b>\n\n` +
             `Stage: <code>${escapeAttr(stage)}</code>\n` +
             `Reason: <code>${escapeAttr(reason).slice(0, 200)}</code>\n\n` +
-            `Admin: open <code>/admin</code> → <i>Bot Tutorial → Set Text / Set File / Set URL</i> and double-check the URL (must start with <code>https://</code> and contain no spaces or newlines).`,
+            `Admin: open <code>/admin</code> â†’ <i>Bot Tutorial â†’ Set Text / Set File / Set URL</i> and double-check the URL (must start with <code>https://</code> and contain no spaces or newlines).`,
           { parse_mode: 'HTML' },
         );
       } catch {
@@ -1142,7 +1172,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   // ---------------------------------------------------------------
-  //  Send Price List (Settings → Send Price List)
+  //  Send Price List (Settings â†’ Send Price List)
   //  Two delivery options: mail or chat.
   // ---------------------------------------------------------------
   bot.callbackQuery('profile:pricelist', async (ctx) => {
@@ -1340,7 +1370,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     } catch (err) {
       console.error('setUserRegion failed', err);
       await ctx.answerCallbackQuery({
-        text: 'Could not save region — admin must apply migration 0005.',
+        text: 'Could not save region â€” admin must apply migration 0005.',
         show_alert: true,
       });
       return;
@@ -1370,14 +1400,14 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     } catch (err) {
       console.error('setUserRegion(null) failed', err);
       await ctx.answerCallbackQuery({
-        text: 'Could not clear region — admin must apply migration 0005.',
+        text: 'Could not clear region â€” admin must apply migration 0005.',
         show_alert: true,
       });
       return;
     }
     ctx.user.region = null;
     ctx.user.timezone = null;
-    await ctx.answerCallbackQuery({ text: '🚫 Cleared' });
+    await ctx.answerCallbackQuery({ text: 'ðŸš« Cleared' });
     await showProfile(ctx);
     void adminLog.logRegion(ctx.api, {
       user: {
@@ -1402,7 +1432,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   // Set Email screen.
   bot.callbackQuery('profile:email:set', async (ctx) => {
     // If the user already has an email on file, "Set Email" doesn't
-    // make sense — bounce them with a mobile popup pointing at
+    // make sense â€” bounce them with a mobile popup pointing at
     // Change / Delete instead so we never silently overwrite a saved
     // address.
     if (ctx.user.email) {
@@ -1425,7 +1455,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  // Post-purchase variant of Set Email — fired from the `Add Verified
+  // Post-purchase variant of Set Email â€” fired from the `Add Verified
   // Email` CTA shown under Order Delivered when the buyer has no
   // email on file. Carries the originating order id in the callback
   // (`profile:email:set:post:<orderId>`) so the message handler can:
@@ -1433,7 +1463,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   //      address lands;
   //   2. auto-delete the typed-email message + the saved-confirmation
   //      card and replace them with a single bold "Email has been
-  //      setuped" line — matching the bot owner's spec.
+  //      setuped" line â€” matching the bot owner's spec.
   bot.callbackQuery(/^profile:email:set:post:(\d+)$/, async (ctx) => {
     if (ctx.user.email) {
       await ctx.answerCallbackQuery({
@@ -1467,7 +1497,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  // Change Email screen — always shown in the hub, but if the user
+  // Change Email screen â€” always shown in the hub, but if the user
   // doesn't have an email yet we abort with a mobile popup instead
   // of opening the screen.
   bot.callbackQuery('profile:email:change', async (ctx) => {
@@ -1491,7 +1521,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  // Delete Email confirmation screen — only reachable when an email
+  // Delete Email confirmation screen â€” only reachable when an email
   // is on file. Hitting Confirm Delete clears the row; Cancel
   // bounces back to the Email Settings hub.
   bot.callbackQuery('profile:email:delete', async (ctx) => {
@@ -1515,7 +1545,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  // Confirmed delete — null out the column, refresh the in-memory
+  // Confirmed delete â€” null out the column, refresh the in-memory
   // user, and drop the user back on the Email Settings hub so they
   // immediately see "Current email: _not set_".
   bot.callbackQuery('profile:email:delete:confirm', async (ctx) => {
@@ -1541,7 +1571,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     ctx.user.email = null;
     // Fire-and-forget the deletion confirmation email to the address
     // we just removed so the (human) owner sees evidence of the
-    // change — important for the "I never deleted this" recovery
+    // change â€” important for the "I never deleted this" recovery
     // path. No PDF attachment for this mode.
     void sendWelcomeEmail({
       email: oldEmail,
@@ -1567,7 +1597,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  // Why Email — explanatory screen with a "Know More" PDF button.
+  // Why Email â€” explanatory screen with a "Know More" PDF button.
   bot.callbackQuery('profile:email:why', async (ctx) => {
     await ctx.answerCallbackQuery();
     // Drop any in-flight email flow so a stray text after reading
@@ -1587,7 +1617,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   // Fallback: send the bundled PDF as a chat document (no caption,
-  // per user request — "don't add texts under file"). Only fires when
+  // per user request â€” "don't add texts under file"). Only fires when
   // `email.pdf_url` setting is unset and the keyboard renders this as
   // a callback button instead of a URL button.
   bot.callbackQuery('profile:email:why:more', async (ctx) => {
@@ -1614,7 +1644,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       return;
     }
     // Reject any email already saved against a *different* telegram
-    // user. A user re-saving their own address still passes — that
+    // user. A user re-saving their own address still passes â€” that
     // path is exercised by `mode='change'` and idempotent re-saves.
     const existingOwner = await findUserByEmail(text);
     if (existingOwner && existingOwner !== ctx.user.telegram_id) {
@@ -1629,11 +1659,11 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       console.error('setUserEmail failed', err);
       // Most common causes:
       //   1. Migration 0005 was never applied (`email` column missing).
-      //   2. Migration ran, but PostgREST's schema cache is stale — it
+      //   2. Migration ran, but PostgREST's schema cache is stale â€” it
       //      will return PGRST204 ("Could not find the 'email' column
-      //      … in the schema cache") until the API is reloaded:
+      //      â€¦ in the schema cache") until the API is reloaded:
       //        select pg_notify('pgrst', 'reload schema');
-      //      or Supabase Dashboard → Project Settings → API → Restart.
+      //      or Supabase Dashboard â†’ Project Settings â†’ API â†’ Restart.
       const e = err as { code?: string; message?: string } | undefined;
       const escape = (s: string): string =>
         s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
@@ -1641,10 +1671,10 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         ? ` <i>(${escape(e.code ?? 'err')}: ${escape(e.message)})</i>`
         : '';
       await ctx.reply(
-        '⚠️ Could not save your email — the bot operator must apply ' +
+        'âš ï¸ Could not save your email â€” the bot operator must apply ' +
           'migration <code>0005_user_profile_fields.sql</code>. If it is ' +
           'already applied, reload the API schema in Supabase ' +
-          '(Project Settings → API → Restart server, or run ' +
+          '(Project Settings â†’ API â†’ Restart server, or run ' +
           "<code>select pg_notify('pgrst', 'reload schema');</code> once)." +
           detail,
         { parse_mode: 'HTML' },
@@ -1667,7 +1697,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     ctx.session.userFlow = undefined;
     // Fire-and-forget: send the user a polished welcome / confirmation
     // email with the "Why we need your email" PDF attached. We
-    // deliberately do NOT await this — saving the address must always
+    // deliberately do NOT await this â€” saving the address must always
     // feel instant even if the SMTP relay is slow or unreachable.
     void sendWelcomeEmail({
       email: text,
@@ -1677,7 +1707,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       mode,
     });
     // Notify admin (deep-detail) so they have a record of the new
-    // contact email — old + new both included for set/change.
+    // contact email â€” old + new both included for set/change.
     void adminLog.logEmail(ctx.api, {
       user: {
         telegram_id: ctx.user.telegram_id,
@@ -1726,7 +1756,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         renderMdHtml(ctx.t('shop.buy.email_setup_done')),
         { parse_mode: 'HTML' },
       );
-      // Retroactive invoice — fire one email for the order that
+      // Retroactive invoice â€” fire one email for the order that
       // triggered this whole flow. We deliberately don't iterate
       // every prior order without an invoice flag (no schema
       // support) so the implementation stays bounded; the buyer's
@@ -1789,7 +1819,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
             when: formatRelative(ctx, d.created_at),
           }),
         ].filter(Boolean);
-        // Markdown-style blockquote — one '>' per line, blank '>' between blocks.
+        // Markdown-style blockquote â€” one '>' per line, blank '>' between blocks.
         lines.push(...block.map((l) => `> ${l}`));
         if (i < deposits.length - 1) lines.push('>');
       });
