@@ -291,6 +291,7 @@ export type DBReferralRedemption = {
   user_id: number;
   product_id: number;
   order_id: number | null;
+  referral_cost: number;
   redeemed_at: string;
 };
 

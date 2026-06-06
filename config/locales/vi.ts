@@ -32,6 +32,7 @@ export const vi: Record<string, string> = {
   // sỉ muốn lấy hết lô mà không cần nhập từng chữ số.
   'btn.qty_keypad_max': '🎯 Tối đa',
   'btn.pay_wallet': '👛 Ví',
+  'btn.pay_referral': '🎁 Referral Pay',
   'btn.pay_direct': '💸 Trực tiếp',
   'btn.pay_topup': '🪙 Nạp',
   'btn.confirm_pay': '✅ Xác nhận',
@@ -115,8 +116,11 @@ export const vi: Record<string, string> = {
     '{prod_qty_selected} Số lượng: *{qty}*\n' +
     '{promo_line}' +
     '{prod_total_amount} Tổng: *{total} USDT*\n' +
-    '{prod_wallet} Ví: *{balance} USDT*\n\n' +
+    '{prod_wallet} Ví: *{balance} USDT*\n' +
+    '{referral_line}\n' +
     'Chọn cách thanh toán:',
+  'shop.pay.referral_line':
+    '{prod_referral} Referral Pay: *{available} có sẵn* • *{required} cần*',
   // Thẻ xác nhận thanh toán bằng ví (trang 2).
   'shop.pay.confirm':
     '{prod_wallet} *Xác nhận Thanh toán*\n\n' +
@@ -146,7 +150,7 @@ export const vi: Record<string, string> = {
   'shop.product.line.referral.ready':
     '{prod_referral} *Thanh toán giới thiệu:* Cần {required} • Có {total} • Sẵn sàng',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *Thanh toán giới thiệu:* Đã dùng cho sản phẩm này',
+    '{prod_referral} *Thanh toán giới thiệu:* Số dư đã dùng ở đơn cũ',
   'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
@@ -179,30 +183,41 @@ export const vi: Record<string, string> = {
   'shop.buy.insufficient':
     '❌ Số dư ví không đủ. Cần *{need}* nhưng chỉ có *{have}*. Vui lòng nạp tiền trước.',
   'shop.buy.no_stock': '❌ Xin lỗi, sản phẩm đã hết hàng.',
-  'shop.referral.disabled': '❌ Sản phẩm này không có thưởng giới thiệu.',
-  'shop.referral.already_redeemed': '✅ Bạn đã đổi thưởng giới thiệu này rồi.',
+  'shop.referral.disabled': '❌ Referral Pay chưa được bật cho sản phẩm này.',
+  'shop.referral.already_redeemed': '✅ Referral Pay đã được dùng cho một đơn cũ.',
   'shop.referral.insufficient':
     '❌ Cần {required} lượt giới thiệu để đổi. Bạn có {total} (còn {remaining}).',
   'shop.referral.insufficient.card': [
-    '⚠️ *Không đủ lượt giới thiệu*',
+    '⚠️ *Số dư Referral Pay thấp*',
     '',
-    '🎯 *Cần:* {required}',
-    '👥 *Hiện có:* {total}',
-    '➕ *Còn thiếu:* {remaining}',
+    '{prod_referral} *Cần:* {required} lượt',
+    '{refer_user} *Hiện có:* {available} lượt',
+    '{qty_invalid} *Còn thiếu:* {remaining} lượt',
     '',
-    'Hãy kiếm thêm lượt giới thiệu rồi quay lại thanh toán sản phẩm này.',
+    '{refer_title} Mời thêm người bằng link giới thiệu, bấm làm mới, rồi thanh toán bằng Referral Pay.',
+  ].join('\n'),
+  'shop.referral.confirm': [
+    '{refer_title} *Xác nhận Referral Pay*',
+    '',
+    '{emoji} *{name}* × *{qty}*',
+    '{prod_referral} *Cần:* {required} lượt',
+    '{refer_user} *Hiện có:* {available} lượt',
+    '{delivery_check} *Sau khi trả:* {after} lượt',
+    '',
+    '_Dùng lượt giới thiệu đang có cho đơn này?_',
   ].join('\n'),
   'shop.referral.failed':
-    '❌ Đổi thưởng giới thiệu thất bại. Vui lòng thử lại hoặc liên hệ admin.',
+    '❌ Không thể thanh toán bằng Referral Pay lúc này. Vui lòng thử lại hoặc liên hệ admin.',
   'shop.referral.confirmed': [
-    '{refer_title} *Đã mở thưởng giới thiệu!*',
+    '{refer_title} *Thanh toán Referral Pay thành công!*',
     '',
     '*Sản phẩm:* {name}',
     '*Số lượng:* {qty}',
+    '*Đã dùng:* {spent} lượt',
     '',
     '{delivering} _Đang giao đơn hàng…_',
   ].join('\n'),
-  'shop.referral.delivery': 'Thưởng giới thiệu cho sản phẩm #{product_id} (SL: {qty})',
+  'shop.referral.delivery': 'Referral Pay cho sản phẩm #{product_id} (SL: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
 
   'profile.title': '⚙️ *Cài đặt*',
@@ -225,6 +240,8 @@ export const vi: Record<string, string> = {
     '{refer_user} *Giới thiệu (24h):* {ref24h}\n' +
     '{refer_user} *Giới thiệu (7n):* {ref7d}\n' +
     '{refer_user} *Giới thiệu (Tổng):* {refTotal}\n\n' +
+    '{prod_referral} *Số dư Referral Pay:* {refAvailable} lượt\n' +
+    '{delivery_check} *Đã dùng mua hàng:* {refSpent} lượt\n\n' +
     '{refer_coin} *Tổng đã kiếm:* {earnedTotal} USDT\n' +
     '{refer_coin} *Khả dụng:* {available} USDT\n' +
     '{refer_transferred} *Đã chuyển:* {transferred} USDT\n' +

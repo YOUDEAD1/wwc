@@ -32,6 +32,7 @@ export const ar: Record<string, string> = {
   // الذي يرغب في شراء الكمية الكاملة دون إدخال الأرقام.
   'btn.qty_keypad_max': '🎯 الحد الأقصى',
   'btn.pay_wallet': '👛 المحفظة',
+  'btn.pay_referral': '🎁 دفع بالإحالات',
   'btn.pay_direct': '💸 دفع مباشر',
   'btn.pay_topup': '🪙 شحن',
   'btn.confirm_pay': '✅ تأكيد',
@@ -113,8 +114,11 @@ export const ar: Record<string, string> = {
     '{prod_qty_selected} الكمية: *{qty}*\n' +
     '{promo_line}' +
     '{prod_total_amount} الإجمالي: *{total} USDT*\n' +
-    '{prod_wallet} المحفظة: *{balance} USDT*\n\n' +
+    '{prod_wallet} المحفظة: *{balance} USDT*\n' +
+    '{referral_line}\n' +
     'اختر طريقة الدفع:',
+  'shop.pay.referral_line':
+    '{prod_referral} دفع الإحالات: *{available} متاح* • *{required} مطلوب*',
   // بطاقة تأكيد الدفع من المحفظة (الصفحة 2).
   'shop.pay.confirm':
     '{prod_wallet} *تأكيد الدفع*\n\n' +
@@ -144,7 +148,7 @@ export const ar: Record<string, string> = {
   'shop.product.line.referral.ready':
     '{prod_referral} *الدفع بالإحالات:* المطلوب {required} • المتاح {total} • جاهز',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *الدفع بالإحالات:* استُخدم لهذا المنتج مسبقاً',
+    '{prod_referral} *الدفع بالإحالات:* تم استخدام الرصيد في طلب قديم',
   'shop.product.line.qty': '{prod_qty_selected} *الكمية المختارة:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance} USDT',
@@ -176,30 +180,41 @@ export const ar: Record<string, string> = {
     '✅ تمت عملية الشراء!\n\nالمنتج: *{name}*\nالكمية: *{qty}*\nالإجمالي: *{total}*\n\nالتسليم:\n```\n{delivery}\n```',
   'shop.buy.insufficient': '❌ رصيد غير كافٍ. تحتاج *{need}* ولديك *{have}* فقط. يرجى الشحن أولاً.',
   'shop.buy.no_stock': '❌ عذرًا، هذا المنتج غير متوفر.',
-  'shop.referral.disabled': '❌ هذا المنتج لا يحتوي على مكافأة إحالة.',
-  'shop.referral.already_redeemed': '✅ لقد استبدلت مكافأة الإحالة مسبقاً.',
+  'shop.referral.disabled': '❌ دفع الإحالات غير مفعّل لهذا المنتج.',
+  'shop.referral.already_redeemed': '✅ تم استخدام دفع الإحالات على طلب قديم.',
   'shop.referral.insufficient':
     '❌ تحتاج {required} إحالة للاستبدال. لديك {total} (باقي {remaining}).',
   'shop.referral.insufficient.card': [
     '⚠️ *رصيد الإحالات غير كافٍ*',
     '',
-    '🎯 *المطلوب:* {required}',
-    '👥 *المتاح:* {total}',
-    '➕ *المتبقي:* {remaining}',
+    '{prod_referral} *المطلوب:* {required} إحالات',
+    '{refer_user} *المتاح:* {available} إحالات',
+    '{qty_invalid} *المتبقي:* {remaining} إحالات',
     '',
-    'اكسب المزيد من الإحالات ثم عد للدفع مقابل هذا المنتج.',
+    '{refer_title} ادعُ مستخدمين برابط الإحالة، ثم حدّث الصفحة وادفع بالإحالات.',
+  ].join('\n'),
+  'shop.referral.confirm': [
+    '{refer_title} *تأكيد دفع الإحالات*',
+    '',
+    '{emoji} *{name}* × *{qty}*',
+    '{prod_referral} *المطلوب:* {required} إحالات',
+    '{refer_user} *المتاح:* {available} إحالات',
+    '{delivery_check} *بعد الدفع:* {after} إحالات',
+    '',
+    '_استخدام إحالاتك النشطة لهذا الطلب؟_',
   ].join('\n'),
   'shop.referral.failed':
-    '❌ فشل استبدال الإحالة. حاول لاحقاً أو تواصل مع الإدارة.',
+    '❌ تعذر إكمال دفع الإحالات الآن. حاول مرة أخرى أو تواصل مع الإدارة.',
   'shop.referral.confirmed': [
-    '{refer_title} *تم فتح مكافأة الإحالة!*',
+    '{refer_title} *تم الدفع بالإحالات بنجاح!*',
     '',
     '*المنتج:* {name}',
     '*الكمية:* {qty}',
+    '*الإحالات المستخدمة:* {spent}',
     '',
     '{delivering} _جارٍ تسليم طلبك…_',
   ].join('\n'),
-  'shop.referral.delivery': 'مكافأة إحالة للمنتج #{product_id} (الكمية: {qty})',
+  'shop.referral.delivery': 'دفع بالإحالات للمنتج #{product_id} (الكمية: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
   'profile.title': '⚙️ *الإعدادات*',
@@ -222,6 +237,8 @@ export const ar: Record<string, string> = {
     '{refer_user} *الإحالات (24س):* {ref24h}\n' +
     '{refer_user} *الإحالات (7أ):* {ref7d}\n' +
     '{refer_user} *الإحالات (الإجمالي):* {refTotal}\n\n' +
+    '{prod_referral} *رصيد دفع الإحالات:* {refAvailable} إحالات\n' +
+    '{delivery_check} *المستخدم للمشتريات:* {refSpent} إحالات\n\n' +
     '{refer_coin} *إجمالي الأرباح:* {earnedTotal} USDT\n' +
     '{refer_coin} *المتاح:* {available} USDT\n' +
     '{refer_transferred} *المحول:* {transferred} USDT\n' +

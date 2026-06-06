@@ -3,13 +3,13 @@ import { type Lang } from '../../config/index.js';
 import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/regions.js';
 import {
   adjustBalance,
-  countReferrals,
   countReferralsSince,
   countGiftCodeRedemptions,
   countGiftCodeRedemptionsByUser,
   findUserByEmail,
   getGiftCode,
   getOrder,
+  getReferralBalance,
   getReferralEarnings,
   getUserStats,
   listAllProducts,
@@ -517,6 +517,40 @@ async function sendRetroactiveInvoiceForOrder(args: {
 }
 
 export function registerProfile(bot: Composer<AppCtx>): void {
+  async function showReferScreen(
+    ctx: AppCtx,
+    options: { refreshCallback?: string; backCallback?: string } = {},
+  ): Promise<void> {
+    const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
+    const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
+    const DAY = 24 * 60 * 60 * 1000;
+    const [refBalance, ref24h, ref7d, earnings] = await Promise.all([
+      getReferralBalance(ctx.user.telegram_id),
+      countReferralsSince(ctx.user.telegram_id, DAY),
+      countReferralsSince(ctx.user.telegram_id, 7 * DAY),
+      getReferralEarnings(ctx.user.telegram_id),
+    ]);
+    const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
+    const body = ctx.t('profile.refer.body', {
+      link,
+      ref24h,
+      ref7d,
+      refTotal: refBalance.total,
+      refSpent: refBalance.spent,
+      refAvailable: refBalance.available,
+      earnedTotal: fmt(earnings.total),
+      available: fmt(earnings.available),
+      transferred: fmt(earnings.transferred),
+      withdrawn: fmt(earnings.withdrawn),
+    });
+    const referText = `${ctx.t('profile.refer.title')}\n\n${body}`;
+    await ctx.editMessageText(renderMdHtml(referText), {
+      parse_mode: 'HTML',
+      reply_markup: referKeyboard(ctx.lang, link, options),
+      link_preview_options: { is_disabled: true },
+    });
+  }
+
   bot.callbackQuery('profile:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     // Drop any in-flight user flow (e.g. set_email) so subsequent
@@ -848,31 +882,15 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   // blockquote, and a Copy Link button + Back row.
   bot.callbackQuery('profile:refer', async (ctx) => {
     await ctx.answerCallbackQuery();
-    const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
-    const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
-    const DAY = 24 * 60 * 60 * 1000;
-    const [refTotal, ref24h, ref7d, earnings] = await Promise.all([
-      countReferrals(ctx.user.telegram_id),
-      countReferralsSince(ctx.user.telegram_id, DAY),
-      countReferralsSince(ctx.user.telegram_id, 7 * DAY),
-      getReferralEarnings(ctx.user.telegram_id),
-    ]);
-    const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
-    const body = ctx.t('profile.refer.body', {
-      link,
-      ref24h,
-      ref7d,
-      refTotal,
-      earnedTotal: fmt(earnings.total),
-      available: fmt(earnings.available),
-      transferred: fmt(earnings.transferred),
-      withdrawn: fmt(earnings.withdrawn),
-    });
-    const referText = `${ctx.t('profile.refer.title')}\n\n${body}`;
-    await ctx.editMessageText(renderMdHtml(referText), {
-      parse_mode: 'HTML',
-      reply_markup: referKeyboard(ctx.lang, link),
-      link_preview_options: { is_disabled: true },
+    await showReferScreen(ctx);
+  });
+
+  bot.callbackQuery(/^profile:refer:buy:(\d+)$/, async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    await ctx.answerCallbackQuery({ text: '🔄' });
+    await showReferScreen(ctx, {
+      refreshCallback: `profile:refer:buy:${productId}`,
+      backCallback: `buy:${productId}`,
     });
   });
 
