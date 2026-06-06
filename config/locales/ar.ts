@@ -1,6 +1,6 @@
 /* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
-  welcome: 'مرحبًا بك في متجر SafwanTiger',
+  'welcome': 'مرحبًا بك في متجر SafwanTiger',
   'welcome.title': 'مرحبًا بك في متجر SafwanTiger!',
   'welcome.balance': 'رصيدك: *${balance}*',
   'welcome.tap_menu': 'اضغط *القائمة الرئيسية* بالأسفل للبدء.',
@@ -105,7 +105,8 @@ export const ar: Record<string, string> = {
   // بدلاً من الشرطة الغامضة السابقة («—»).
   'shop.qty.keypad.placeholder': '(الكمية)',
   'shop.qty.keypad.invalid':
-    '{qty_invalid} *كمية غير صالحة.*\n\n' + 'أرسل عدداً صحيحاً بين *1* و *{max}*.',
+    '{qty_invalid} *كمية غير صالحة.*\n\n' +
+    'أرسل عدداً صحيحاً بين *1* و *{max}*.',
   'shop.pay.title':
     '{pay_summary} *ملخص الطلب*\n\n' +
     '{emoji} *{name}*\n' +
@@ -123,7 +124,8 @@ export const ar: Record<string, string> = {
     '{prod_total_amount} *الإجمالي:* {total} USDT\n' +
     '{prod_wallet} *المحفظة:* {balance} USDT\n\n' +
     '_خصم *{total} USDT* من محفظتك؟_',
-  'shop.pay.confirm.discount_line': '{prod_promo} *خصم:* −{discount} USDT\n',
+  'shop.pay.confirm.discount_line':
+    '{prod_promo} *خصم:* −{discount} USDT\n',
   'shop.qty.editor.title':
     '🔢 *اختر الكمية*\n\n' +
     '*{name}*\n' +
@@ -146,10 +148,13 @@ export const ar: Record<string, string> = {
   'shop.product.line.qty': '{prod_qty_selected} *الكمية المختارة:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance} USDT',
-  'shop.product.line.promo': '{prod_promo} *عرض ترويجي:* {label} — −{discount} USDT',
+  'shop.product.line.promo':
+    '{prod_promo} *عرض ترويجي:* {label} — −{discount} USDT',
   'shop.product.line.promo.fallback_label': 'الكمية ≥ {min_qty}',
-  'shop.product.line.promo.teaser': '{prod_promo} *عرض ترويجي:* اشترِ {min_qty}+ بخصم −${discount}',
-  'shop.product.line.total.discounted': '{prod_total_amount} *الإجمالي:* ~~{gross}~~ {total} USDT',
+  'shop.product.line.promo.teaser':
+    '{prod_promo} *عرض ترويجي:* اشترِ {min_qty}+ بخصم −${discount}',
+  'shop.product.line.total.discounted':
+    '{prod_total_amount} *الإجمالي:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
     '❌ هذا المنتج غير متوفر حاليًا. الرجاء التواصل مع الإدارة لإعادة تجديد المخزون أو اختيار منتج مشابه.',
   'shop.note.title': '📝 *ملاحظة المنتج*',
@@ -184,7 +189,8 @@ export const ar: Record<string, string> = {
     '',
     'اكسب المزيد من الإحالات ثم عد للدفع مقابل هذا المنتج.',
   ].join('\n'),
-  'shop.referral.failed': '❌ فشل استبدال الإحالة. حاول لاحقاً أو تواصل مع الإدارة.',
+  'shop.referral.failed':
+    '❌ فشل استبدال الإحالة. حاول لاحقاً أو تواصل مع الإدارة.',
   'shop.referral.confirmed': [
     '{refer_title} *تم فتح مكافأة الإحالة!*',
     '',
@@ -194,8 +200,7 @@ export const ar: Record<string, string> = {
     '{delivering} _جارٍ تسليم طلبك…_',
   ].join('\n'),
   'shop.referral.delivery': 'مكافأة إحالة للمنتج #{product_id} (الكمية: {qty})',
-  'shop.page.header':
-    '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
+  'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
   'profile.title': '⚙️ *الإعدادات*',
   'profile.notifications.title': '{notify_bell} *الإشعارات*',
@@ -253,8 +258,7 @@ export const ar: Record<string, string> = {
   'pdf.no_email_popup':
     '⚠️ يرجى ضبط البريد الإلكتروني أولًا. الإعدادات → إعدادات البريد → ضبط البريد، ثم عُد واضغط "إرسال PDF".',
   'pdf.sending_popup': '⏳ جارٍ إنشاء PDF وإرساله إلى {email}…',
-  'pdf.sent_popup':
-    '✅ تم إرسال PDF إلى {email}. تحقّق من البريد الوارد (وملف الرسائل غير المرغوب فيها).',
+  'pdf.sent_popup': '✅ تم إرسال PDF إلى {email}. تحقّق من البريد الوارد (وملف الرسائل غير المرغوب فيها).',
   // رسالة دردشة تظهر عند نجاح إرسال PDF.
   'pdf.sent_message': '{pdf_sent_l} *تم إرسال PDF إلى البريد* {pdf_sent_r}',
   'pdf.failed_popup':
@@ -295,7 +299,8 @@ export const ar: Record<string, string> = {
   // اسم الطريقة، والمحتوى يأتي حرفيًا من الإعداد
   // `pay_tutorial.<method_id>.text`.
   'pay.tutorial.title': '{tutorial} *أين تجد المرجع — {method}*',
-  'pay.tutorial.empty': '_لم يضف المسؤول شرحًا لهذه الطريقة بعد. تحقق لاحقًا._',
+  'pay.tutorial.empty':
+    '_لم يضف المسؤول شرحًا لهذه الطريقة بعد. تحقق لاحقًا._',
   'pay.tutorial.body': '{body}',
 
   'topup.title': '👛 *شحن المحفظة*',
@@ -308,8 +313,7 @@ export const ar: Record<string, string> = {
   'support.body':
     '_*إذا تعذّر عليك إرسال رسالة أو واجهتك مشكلة، استخدم الدعم المباشر للتواصل مع المسؤول مباشرة.*_',
   'support.btn.contact': '📩 تواصل مع المسؤول',
-  'support.contact_prefill':
-    'مرحبًا، أحتاج مساعدة بخصوص ShopBot SafwanTiger، الرجاء المساعدة بشأن: ',
+  'support.contact_prefill': 'مرحبًا، أحتاج مساعدة بخصوص ShopBot SafwanTiger، الرجاء المساعدة بشأن: ',
   'support.btn.cancel': 'إلغاء الدعم',
   'support.btn.live': '🟢 الدعم المباشر',
   'support.btn.end_session': '🔴 إنهاء الجلسة',
@@ -335,7 +339,8 @@ export const ar: Record<string, string> = {
     'تعذّر الوصول إلى المسؤول الآن. السبب الأكثر شيوعاً أنّ المسؤول لم يفتح هذا البوت بعد ويضغط *Start* لمرة واحدة حتى يسمح تيليغرام للبوت بمراسلته.\n\n' +
     'الرجاء استخدام *التواصل مع الإدارة* من قائمة الدعم في الوقت الحالي.',
   'support.btn.email_transcript': '📧 إرسال ملف PDF للدردشة عبر البريد',
-  'support.transcript.sent_message': '{pdf_sent_l} *تم إرسال PDF إلى البريد* {pdf_sent_r}',
+  'support.transcript.sent_message':
+    '{pdf_sent_l} *تم إرسال PDF إلى البريد* {pdf_sent_r}',
   'support.transcript.no_email_popup':
     '⚠️ أضف بريدك الإلكتروني أولًا من الإعدادات → إعدادات البريد → ضبط البريد، ثم عُد واضغط على إرسال PDF.',
   'support.transcript.sending_popup': '⏳ جارٍ إنشاء سجل الدعم وإرساله إلى {email}…',
@@ -352,11 +357,13 @@ export const ar: Record<string, string> = {
   'support.ai.user_ended':
     '{support_live_closed} تم إغلاق دردشة Kiwi Ai.\n\n' +
     'افتح Kiwi Ai مرة أخرى من القائمة عند الحاجة.',
-  'support.ai.fallback': 'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',
+  'support.ai.fallback':
+    'لم أستطع الإجابة تلقائيًا. سيتواصل معك أحد المسؤولين قريبًا.',
   'support.ai.pdf_prompt':
     '{kiwi_ai} *تم حفظ محادثة Kiwi Ai.*\n' +
     'اضغط أدناه لإرسال سجل المحادثة إلى بريدك الإلكتروني كـ PDF.',
-  'support.ai.empty_popup': '💬 أرسل سؤالاً واحداً على الأقل أولاً — لا يوجد شيء لحفظه بعد.',
+  'support.ai.empty_popup':
+    '💬 أرسل سؤالاً واحداً على الأقل أولاً — لا يوجد شيء لحفظه بعد.',
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
   'support.ai.prompt': 'اشرح مشكلتك وسأبذل قصارى جهدي للمساعدة.',
   'channel.not_set': '📢 لم يتم ضبط رابط القناة بعد.',

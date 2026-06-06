@@ -54,7 +54,10 @@ function buildWelcomeHtml(ctx: AppCtx): string {
   });
 }
 
-export async function showMainMenu(ctx: AppCtx, opts: { fresh?: boolean } = {}): Promise<void> {
+export async function showMainMenu(
+  ctx: AppCtx,
+  opts: { fresh?: boolean } = {},
+): Promise<void> {
   const html = buildWelcomeHtml(ctx);
   const reply_markup = mainMenuKeyboard(ctx.lang);
 

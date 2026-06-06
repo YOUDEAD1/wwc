@@ -48,12 +48,14 @@ export function shopProductsKeyboard(
     // product premium icon is configured — the icon renders to the
     // left of the label so we don't want a duplicate glyph.
     const hasPremiumIcon = Boolean(p.emoji_id);
-    const namePrefix = hasPremiumIcon ? '' : p.emoji ? `${p.emoji} ` : '';
+    const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
     const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
     // Out-of-stock products still navigate to the product page so
     // the user sees details + a popup-armed Buy Now button.
     kb.text(label, `prod:${p.id}`);
-    const iconId = inStock ? (p.emoji_id ?? defaultInStockIcon) : (p.emoji_id ?? oosIcon);
+    const iconId = inStock
+      ? p.emoji_id ?? defaultInStockIcon
+      : p.emoji_id ?? oosIcon;
     if (iconId) kb.icon(iconId);
     // Colour resolution:
     //   • Out-of-stock → state colour wins (red by default — the
@@ -237,7 +239,10 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
  */
 export const QTY_KEYPAD_PRESETS = [25, 50, 100] as const;
 
-export function qtyKeypadKeyboard(lang: Lang, product: DBProduct): InlineKeyboard {
+export function qtyKeypadKeyboard(
+  lang: Lang,
+  product: DBProduct,
+): InlineKeyboard {
   const kb = new InlineKeyboard();
   const id = product.id;
   const digitRows: ReadonlyArray<ReadonlyArray<string>> = [
@@ -283,7 +288,10 @@ export function qtyKeypadKeyboard(lang: Lang, product: DBProduct): InlineKeyboar
  * touching the wallet), and 🪙 *Top Up* (deep-links into the top-up
  * flow at `topup:open`).
  */
-export function paymentMethodKeyboard(lang: Lang, product: DBProduct): InlineKeyboard {
+export function paymentMethodKeyboard(
+  lang: Lang,
+  product: DBProduct,
+): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'pay_wallet', `pay:wallet:${product.id}`);
   kb.row();

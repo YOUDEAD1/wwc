@@ -1,6 +1,6 @@
 /* Tiếng Việt — keep keys in sync with en.ts */
 export const vi: Record<string, string> = {
-  welcome: 'Chào mừng đến với SafwanTiger Shop',
+  'welcome': 'Chào mừng đến với SafwanTiger Shop',
   'welcome.title': 'Chào mừng đến với SafwanTiger Shop!',
   'welcome.balance': 'Số dư của bạn: *${balance}*',
   'welcome.tap_menu': 'Nhấn *Menu Chính* bên dưới để bắt đầu.',
@@ -107,7 +107,8 @@ export const vi: Record<string, string> = {
   // với dấu gạch ngắn trần trụi trước đây.
   'shop.qty.keypad.placeholder': '(Số lượng)',
   'shop.qty.keypad.invalid':
-    '{qty_invalid} *Số lượng không hợp lệ.*\n\n' + 'Vui lòng gửi số nguyên từ *1* đến *{max}*.',
+    '{qty_invalid} *Số lượng không hợp lệ.*\n\n' +
+    'Vui lòng gửi số nguyên từ *1* đến *{max}*.',
   'shop.pay.title':
     '{pay_summary} *Tóm tắt đơn hàng*\n\n' +
     '{emoji} *{name}*\n' +
@@ -125,7 +126,8 @@ export const vi: Record<string, string> = {
     '{prod_total_amount} *Tổng:* {total} USDT\n' +
     '{prod_wallet} *Ví:* {balance} USDT\n\n' +
     '_Trừ *{total} USDT* từ ví của bạn?_',
-  'shop.pay.confirm.discount_line': '{prod_promo} *Giảm giá:* −{discount} USDT\n',
+  'shop.pay.confirm.discount_line':
+    '{prod_promo} *Giảm giá:* −{discount} USDT\n',
   'shop.qty.editor.title':
     '🔢 *Chọn số lượng*\n\n' +
     '*{name}*\n' +
@@ -148,10 +150,13 @@ export const vi: Record<string, string> = {
   'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
-  'shop.product.line.promo': '{prod_promo} *Khuyến mãi:* {label} — −{discount} USDT',
+  'shop.product.line.promo':
+    '{prod_promo} *Khuyến mãi:* {label} — −{discount} USDT',
   'shop.product.line.promo.fallback_label': 'số lượng ≥ {min_qty}',
-  'shop.product.line.promo.teaser': '{prod_promo} *Khuyến mãi:* Mua {min_qty}+ giảm −${discount}',
-  'shop.product.line.total.discounted': '{prod_total_amount} *Tổng tiền:* ~~{gross}~~ {total} USDT',
+  'shop.product.line.promo.teaser':
+    '{prod_promo} *Khuyến mãi:* Mua {min_qty}+ giảm −${discount}',
+  'shop.product.line.total.discounted':
+    '{prod_total_amount} *Tổng tiền:* ~~{gross}~~ {total} USDT',
   'shop.product.out_of_stock_popup':
     '❌ Sản phẩm này hiện đã hết hàng. Vui lòng liên hệ quản trị viên để bổ sung kho hoặc chọn sản phẩm tương tự.',
   'shop.note.title': '📝 *Ghi chú sản phẩm*',
@@ -187,7 +192,8 @@ export const vi: Record<string, string> = {
     '',
     'Hãy kiếm thêm lượt giới thiệu rồi quay lại thanh toán sản phẩm này.',
   ].join('\n'),
-  'shop.referral.failed': '❌ Đổi thưởng giới thiệu thất bại. Vui lòng thử lại hoặc liên hệ admin.',
+  'shop.referral.failed':
+    '❌ Đổi thưởng giới thiệu thất bại. Vui lòng thử lại hoặc liên hệ admin.',
   'shop.referral.confirmed': [
     '{refer_title} *Đã mở thưởng giới thiệu!*',
     '',
@@ -197,8 +203,7 @@ export const vi: Record<string, string> = {
     '{delivering} _Đang giao đơn hàng…_',
   ].join('\n'),
   'shop.referral.delivery': 'Thưởng giới thiệu cho sản phẩm #{product_id} (SL: {qty})',
-  'shop.page.header':
-    '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
+  'shop.page.header': '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
 
   'profile.title': '⚙️ *Cài đặt*',
   'profile.notifications.title': '{notify_bell} *Thông báo*',
@@ -244,7 +249,8 @@ export const vi: Record<string, string> = {
     '{profile_email} *Email hiện tại:* `{current}`',
   'profile.email.delete.success': '✅ Đã xóa email.',
   'profile.email.in_use':
-    '{email_in_use} Email đã được *sử dụng*\n\n' + '{email_arrow} *_Vui lòng nhập một email khác_*',
+    '{email_in_use} Email đã được *sử dụng*\n\n' +
+    '{email_arrow} *_Vui lòng nhập một email khác_*',
   'btn.email.delete': '🗑 Xóa Email',
   'btn.email.delete.confirm': '🗑 Xác nhận xóa',
   'btn.email.delete.cancel': '⬅️ Hủy',
@@ -304,14 +310,14 @@ export const vi: Record<string, string> = {
   'topup.choose_method': '👛 *Nạp ví*',
   'topup.empty_methods': 'Chưa cấu hình phương thức thanh toán. Vui lòng liên hệ hỗ trợ.',
   'topup.method.body': '*{name}*\n\n{instructions}',
-  'topup.requested': '✅ Yêu cầu nạp đã gửi (#{id}).\nQuản trị viên sẽ xác nhận và cộng tiền sớm.',
+  'topup.requested':
+    '✅ Yêu cầu nạp đã gửi (#{id}).\nQuản trị viên sẽ xác nhận và cộng tiền sớm.',
 
   'support.title': '{support_title} Hỗ trợ',
   'support.body':
     '_*Nếu bạn không thể gửi tin nhắn hoặc gặp sự cố, hãy sử dụng Hỗ trợ trực tiếp để kết nối ngay với quản trị viên.*_',
   'support.btn.contact': '📩 Liên hệ quản trị',
-  'support.contact_prefill':
-    'Chào, tôi cần trợ giúp về ShopBot SafwanTiger. Vui lòng giúp tôi về: ',
+  'support.contact_prefill': 'Chào, tôi cần trợ giúp về ShopBot SafwanTiger. Vui lòng giúp tôi về: ',
   'support.btn.cancel': 'Hủy hỗ trợ',
   'support.btn.live': '🟢 Hỗ trợ trực tiếp',
   'support.btn.end_session': '🔴 Kết thúc phiên',
@@ -338,10 +344,12 @@ export const vi: Record<string, string> = {
     'Hiện không thể liên lạc với quản trị viên. Thường là do quản trị viên chưa từng mở bot này và bấm *Start* — Telegram chỉ cho phép bot nhắn cho người đã chủ động bắt đầu trò chuyện.\n\n' +
     'Vui lòng dùng *Liên hệ Admin* trong menu Hỗ trợ.',
   'support.btn.email_transcript': '📧 Gửi PDF chat tới email',
-  'support.transcript.sent_message': '{pdf_sent_l} *PDF đã được gửi tới email* {pdf_sent_r}',
+  'support.transcript.sent_message':
+    '{pdf_sent_l} *PDF đã được gửi tới email* {pdf_sent_r}',
   'support.transcript.no_email_popup':
     '⚠️ Hãy đặt email trước. Cài đặt → Cài đặt email → Đặt email, sau đó quay lại và nhấn nút gửi PDF chat.',
-  'support.transcript.sending_popup': '⏳ Đang tạo bản ghi hỗ trợ và gửi đến {email}…',
+  'support.transcript.sending_popup':
+    '⏳ Đang tạo bản ghi hỗ trợ và gửi đến {email}…',
   'support.transcript.failed_popup':
     '❌ Không gửi được bản ghi đến {email}. Vui lòng thử lại — nếu lỗi tiếp tục, hãy liên hệ hỗ trợ.',
   'support.transcript.expired_popup':
@@ -356,11 +364,13 @@ export const vi: Record<string, string> = {
   'support.ai.user_ended':
     '{support_live_closed} Đã đóng Kiwi Ai.\n\n' +
     'Mở lại Kiwi Ai từ menu bất kỳ lúc nào bạn cần giúp đỡ.',
-  'support.ai.fallback': 'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
+  'support.ai.fallback':
+    'Tôi không thể trả lời tự động. Một nhân viên sẽ liên hệ sớm.',
   'support.ai.pdf_prompt':
     '{kiwi_ai} *Đã lưu hội thoại Kiwi Ai.*\n' +
     'Nhấn bên dưới để gửi bản ghi về email của bạn dưới dạng PDF.',
-  'support.ai.empty_popup': '💬 Hãy gửi ít nhất một câu hỏi trước — chưa có gì để lưu.',
+  'support.ai.empty_popup':
+    '💬 Hãy gửi ít nhất một câu hỏi trước — chưa có gì để lưu.',
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
   'support.ai.prompt': 'Mô tả vấn đề và tôi sẽ cố gắng hỗ trợ.',
   'channel.not_set': '📢 Liên kết kênh chưa được cài đặt.',
