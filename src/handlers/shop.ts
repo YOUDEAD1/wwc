@@ -527,22 +527,16 @@ async function finalizeOrderDelivery(args: {
       invoiceLink,
     });
   }
-  // ---- Step 4: revert the original Order summary message --
-  // The callback was triggered from the Order summary message
-  // (the one that contained Wallet Pay / Top Up / Back). After
-  // the new delivery + email cards are sent we edit THAT same
-  // message back to the product's quantity page so the user
-  // can immediately buy more or browse — instead of leaving a
-  // stale "Choose a payment method" card pinned in the chat.
+  // ---- Step 4: remove the old product/payment card -----------
+  // The callback was triggered from the product/payment message.
+  // Once the order is delivered, delete that old card so the chat
+  // doesn't keep a stale product section above the delivered items.
   try {
-    await showProduct(ctx, p.id);
+    await ctx.deleteMessage();
   } catch (err) {
-    // The original message could be gone (manual delete, 48h
-    // expiry, no longer the latest update) — that's fine; the
-    // delivery cards above are what the user actually needs.
     logger.debug(
       { err, productId: p.id, orderId: order.id },
-      'post-delivery revert to product page failed (likely message gone)',
+      'post-delivery old product/payment card delete failed (likely already gone)',
     );
   }
   // Notify admin with the deep-detail order block.
