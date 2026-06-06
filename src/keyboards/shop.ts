@@ -140,7 +140,7 @@ export function productKeyboard(
   product: DBProduct,
   qty: number,
   shareUrl: string,
-  options?: { canRedeem?: boolean },
+  options?: { showReferralPay?: boolean },
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const inStock = product.unlimited_stock || product.stock > 0;
@@ -159,7 +159,7 @@ export function productKeyboard(
     kb.text(String(qty), 'noop:qty');
     inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
     kb.row();
-    if (options?.canRedeem) {
+    if (options?.showReferralPay) {
       inlineBtn(kb, lang, 'redeem_referral', `redeem:ref:${product.id}`);
       kb.row();
     }

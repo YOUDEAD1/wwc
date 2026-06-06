@@ -19,7 +19,8 @@ export const en: Record<string, string> = {
   'btn.prev': '◀️ Prev',
   'btn.refresh': '🔄 Refresh',
   'btn.buy_now': '✅ Buy Now',
-  'btn.redeem_referral': '🎁 Redeem Free',
+  'btn.redeem_referral': '🎁 Pay with Referrals',
+  'btn.referral_earn_buy': '🔗 Earn Referrals & Buy',
   'btn.topup_wallet': '👛 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
@@ -210,11 +211,11 @@ export const en: Record<string, string> = {
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
   'shop.product.line.referral.progress':
-    '{prod_referral} *Referral Reward:* {total}/{required} referrals (need {remaining} more)',
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Missing {remaining}',
   'shop.product.line.referral.ready':
-    '{prod_referral} *Referral Reward:* Unlocked — tap *Redeem Free*',
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Ready',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *Referral Reward:* Already redeemed',
+    '{prod_referral} *Referral Pay:* Already used for this product',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
@@ -325,7 +326,16 @@ export const en: Record<string, string> = {
   'shop.referral.disabled': '❌ This product has no referral reward.',
   'shop.referral.already_redeemed': '✅ You already redeemed this referral reward.',
   'shop.referral.insufficient':
-    '❌ You need {required} referrals to redeem. You have {total} (need {remaining} more).',
+    '❌ Not enough referrals. Required: {required}. Available: {total}. Missing: {remaining}.',
+  'shop.referral.insufficient.card': [
+    '⚠️ *Not Enough Referral Balance*',
+    '',
+    '🎯 *Required:* {required}',
+    '👥 *Available:* {total}',
+    '➕ *Still Needed:* {remaining}',
+    '',
+    'Earn more referrals, then return and pay for this product with referrals.',
+  ].join('\n'),
   'shop.referral.failed':
     '❌ Referral redemption failed. Please try again later or contact admin.',
   'shop.referral.confirmed': [

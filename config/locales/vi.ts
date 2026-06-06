@@ -17,7 +17,8 @@ export const vi: Record<string, string> = {
   'btn.prev': '◀️ Trước',
   'btn.refresh': '🔄 Làm mới',
   'btn.buy_now': '✅ Mua ngay',
-  'btn.redeem_referral': '🎁 Đổi miễn phí',
+  'btn.redeem_referral': '🎁 Thanh toán bằng giới thiệu',
+  'btn.referral_earn_buy': '🔗 Kiếm lượt giới thiệu & Mua',
   'btn.topup_wallet': '👛 Nạp ví',
   'btn.view_note': '📝 Xem ghi chú',
   'btn.qty_plus': '➕',
@@ -141,11 +142,11 @@ export const vi: Record<string, string> = {
   'shop.product.line.stock': '{prod_stock} *Còn lại:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Bảo hành:* {warranty}',
   'shop.product.line.referral.progress':
-    '{prod_referral} *Thưởng giới thiệu:* {total}/{required} lượt (còn {remaining})',
+    '{prod_referral} *Thanh toán giới thiệu:* Cần {required} • Có {total} • Thiếu {remaining}',
   'shop.product.line.referral.ready':
-    '{prod_referral} *Thưởng giới thiệu:* Đã mở — nhấn *Đổi miễn phí*',
+    '{prod_referral} *Thanh toán giới thiệu:* Cần {required} • Có {total} • Sẵn sàng',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *Thưởng giới thiệu:* Đã đổi trước đó',
+    '{prod_referral} *Thanh toán giới thiệu:* Đã dùng cho sản phẩm này',
   'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
@@ -182,6 +183,15 @@ export const vi: Record<string, string> = {
   'shop.referral.already_redeemed': '✅ Bạn đã đổi thưởng giới thiệu này rồi.',
   'shop.referral.insufficient':
     '❌ Cần {required} lượt giới thiệu để đổi. Bạn có {total} (còn {remaining}).',
+  'shop.referral.insufficient.card': [
+    '⚠️ *Không đủ lượt giới thiệu*',
+    '',
+    '🎯 *Cần:* {required}',
+    '👥 *Hiện có:* {total}',
+    '➕ *Còn thiếu:* {remaining}',
+    '',
+    'Hãy kiếm thêm lượt giới thiệu rồi quay lại thanh toán sản phẩm này.',
+  ].join('\n'),
   'shop.referral.failed':
     '❌ Đổi thưởng giới thiệu thất bại. Vui lòng thử lại hoặc liên hệ admin.',
   'shop.referral.confirmed': [

@@ -137,6 +137,7 @@ function productPageText(
     } else if (referral.remaining <= 0) {
       lines.push(
         ctx.t('shop.product.line.referral.ready', {
+          total: referral.totalReferrals,
           required: referral.requiredTotal,
         }),
       );
@@ -1182,13 +1183,18 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     if (!referral.eligible) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('shop.referral.insufficient', {
-          required: referral.requiredTotal,
-          total: referral.totalReferrals,
-          remaining: referral.remaining,
-        }),
-        show_alert: true,
+      await ctx.answerCallbackQuery();
+      const kb = new InlineKeyboard();
+      inlineBtn(kb, ctx.lang, 'referral_earn_buy', 'profile:refer');
+      kb.row();
+      inlineBtn(kb, ctx.lang, 'back', `prod:${productId}`);
+      await ctx.editMessageText(renderMdHtml(ctx.t('shop.referral.insufficient.card', {
+        required: referral.requiredTotal,
+        total: referral.totalReferrals,
+        remaining: referral.remaining,
+      })), {
+        parse_mode: 'HTML',
+        reply_markup: kb,
       });
       return;
     }

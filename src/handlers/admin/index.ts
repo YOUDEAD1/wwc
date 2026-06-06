@@ -1201,8 +1201,8 @@ async function showProductEditor(
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
     .row();
-  kb.text('🎁 Referral Reward', `adm:prod:ref:set:${p.id}:${page}`)
-    .text('🧹 Clear Referral', `adm:prod:ref:clr:${p.id}:${page}`)
+  kb.text('🎁 Referral Pay', `adm:prod:ref:set:${p.id}:${page}`)
+    .text('🧹 Disable Referral Pay', `adm:prod:ref:clr:${p.id}:${page}`)
     .row();
   // One-click wipe of every user's custom-price override for this
   // product so they all fall back to the default Price above. Hidden
@@ -1329,7 +1329,7 @@ adminBot.callbackQuery(/^adm:prod:ref:set:(\d+):(\d+)$/, async (ctx) => {
     data: { product_id, page },
   };
   await ctx.reply(
-    '🎁 Send the number of referrals required to unlock this product for free (0 to disable). Send `/cancel` to abort.',
+    '🎁 Send the referrals required to buy this product with Referral Pay (0 = disabled). Send `/cancel` to abort.',
     { parse_mode: 'Markdown' },
   );
 });
@@ -5606,7 +5606,7 @@ adminBot.on('message:text', async (ctx, next) => {
       await updateProduct(flow.data.product_id, { referral_required_count: count });
       ctx.session.adminFlow = undefined;
       await ctx.reply(
-        count > 0 ? `✅ Referral reward set: ${count} referrals.` : '✅ Referral reward disabled.',
+        count > 0 ? `✅ Referral Pay set: ${count} referrals required.` : '✅ Referral Pay disabled.',
       );
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
