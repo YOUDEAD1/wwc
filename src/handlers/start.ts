@@ -13,6 +13,7 @@ import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
 import { inlineBtn } from '../keyboards/helpers.js';
+import { logger } from '../logger.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -57,20 +58,44 @@ export async function showMainMenu(
   ctx: AppCtx,
   opts: { fresh?: boolean } = {},
 ): Promise<void> {
-  const html = buildWelcomeHtml(ctx);
-  const reply_markup = mainMenuKeyboard(ctx.lang);
+  let html: string;
+  let reply_markup: InlineKeyboard;
+  try {
+    html = buildWelcomeHtml(ctx);
+    reply_markup = mainMenuKeyboard(ctx.lang);
+  } catch (err) {
+    logger.error({ err, user: ctx.from?.id }, 'main menu render failed');
+    html = 'ðŸ  Main Menu';
+    reply_markup = fallbackMainMenuKeyboard();
+  }
 
-  // If we got here via callback (e.g. "⬅️ Main Menu" button) edit in place.
+  // If we got here via callback (e.g. "â¬…ï¸ Main Menu" button) edit in place.
   if (!opts.fresh && ctx.callbackQuery) {
     try {
       await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup });
       return;
     } catch {
-      // editing failed (e.g. message too old) → fall through to send
+      // editing failed (e.g. message too old) â†’ fall through to send
     }
   }
 
-  await ctx.reply(html, { parse_mode: 'HTML', reply_markup });
+  try {
+    await ctx.reply(html, { parse_mode: 'HTML', reply_markup });
+  } catch (err) {
+    logger.error({ err, user: ctx.from?.id }, 'main menu send failed');
+    await ctx.reply('ðŸ  Main Menu', { reply_markup: fallbackMainMenuKeyboard() });
+  }
+}
+
+function fallbackMainMenuKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('ðŸ›’ Shop', 'shop:home')
+    .text('ðŸ’° Top-Up', 'topup:open')
+    .row()
+    .text('ðŸ‘¤ Profile', 'profile:open')
+    .text('ðŸŽ Refer', 'profile:refer')
+    .row()
+    .text('ðŸ§¾ Orders', 'profile:orders');
 }
 
 /**
@@ -96,16 +121,16 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
     p.description ? p.description : '',
     ctx.t('shop.product.line.price', { price: p.price }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
-    ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
+    ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? 'â€”' }),
     ctx.t('shop.product.line.qty', { qty }),
     ctx.t('shop.product.line.total', { total }),
     ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
   ]
     .filter(Boolean)
     .join('\n');
-  // Plain deep-link URL — fed straight into the keyboard's
+  // Plain deep-link URL â€” fed straight into the keyboard's
   // `copy_text` button so a tap copies it to the user's clipboard
-  // (no share-to-chat dialog, no automatic forward — see PR #57).
+  // (no share-to-chat dialog, no automatic forward â€” see PR #57).
   const shareUrl = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
   await ctx.reply(renderMdHtml(body), {
     parse_mode: 'HTML',
@@ -115,13 +140,13 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
 }
 
 /**
- * Handle `/start ord_<publicId>` deep links — these are emitted by
+ * Handle `/start ord_<publicId>` deep links â€” these are emitted by
  * the post-purchase invoice email "Re-open in Telegram" button and
  * by the in-chat "View Invoice" buttons under the Order Delivered
  * card. We resolve the public id back to a DB row, double-check
  * ownership, and render a compact order summary so the buyer lands
- * directly on their invoice instead of bouncing through Settings →
- * My Orders → Find by ID.
+ * directly on their invoice instead of bouncing through Settings â†’
+ * My Orders â†’ Find by ID.
  */
 async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
   const text = ctx.message?.text ?? '';
@@ -172,10 +197,12 @@ async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
+    ctx.session.userFlow = undefined;
+    ctx.session.adminFlow = undefined;
     // Reset AI Support state so a stale session doesn't intercept
     // later text messages after the user navigates away from it.
     clearAiSession(ctx.from?.id);
-    // First-start admin log — fires only on the very first /start so
+    // First-start admin log â€” fires only on the very first /start so
     // the admin sees a clean "new user joined" entry. The sentinel
     // is set by getOrCreateUser when the row was just inserted.
     const flagged = ctx.user as typeof ctx.user & { __just_created?: boolean };
@@ -202,7 +229,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
     await showMainMenu(ctx, { fresh: true });
   });
 
-  // "⬅️ Main Menu" inline button used across screens.
+  // "â¬…ï¸ Main Menu" inline button used across screens.
   bot.callbackQuery('main:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     // Reset any in-flight user flow when returning to the main menu so
