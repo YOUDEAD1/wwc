@@ -15,17 +15,17 @@ function premiumIconId(key: string): string | undefined {
 }
 
 /**
- * Top-level Shop home — paginated all-products list. The categories
+ * Top-level Shop home â€” paginated all-products list. The categories
  * step has been removed; tapping the Shop button drops the user
  * straight onto this screen.
  *
- * Each row renders as `{name} - {price} USDT (Stock: {N or ∞})` to
+ * Each row renders as `{name} - {price} USDT (Stock: {N or âˆž})` to
  * match the bot-owner reference UX (pic 1). The row icon is the
  * per-product premium emoji_id when set, falling back to the
- * default 📦 (in-stock) / red ❌ (out-of-stock) glyphs.
+ * default ðŸ“¦ (in-stock) / red âŒ (out-of-stock) glyphs.
  *
- * Out-of-stock items remain tappable — tapping opens the product
- * page where the green Buy Now turns into a red ❌ Buy Now that
+ * Out-of-stock items remain tappable â€” tapping opens the product
+ * page where the green Buy Now turns into a red âŒ Buy Now that
  * pops up the "contact admin to restock" alert.
  */
 export function shopProductsKeyboard(
@@ -41,11 +41,11 @@ export function shopProductsKeyboard(
 
   products.forEach((p) => {
     const inStock = p.unlimited_stock || p.stock > 0;
-    // Stock label format matches pic 1: `(Stock: ∞)` for unlimited
+    // Stock label format matches pic 1: `(Stock: âˆž)` for unlimited
     // products, otherwise `(Stock: N)` with the actual count.
-    const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
+    const stockLabel = p.unlimited_stock ? 'âˆž' : String(p.stock);
     // Drop the leading unicode emoji from the label when a per-
-    // product premium icon is configured — the icon renders to the
+    // product premium icon is configured â€” the icon renders to the
     // left of the label so we don't want a duplicate glyph.
     const hasPremiumIcon = Boolean(p.emoji_id);
     const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
@@ -58,12 +58,12 @@ export function shopProductsKeyboard(
       : p.emoji_id ?? oosIcon;
     if (iconId) kb.icon(iconId);
     // Colour resolution:
-    //   • Out-of-stock → state colour wins (red by default — the
+    //   â€¢ Out-of-stock â†’ state colour wins (red by default â€” the
     //     red rail is a hard signal the buyer shouldn't tap).
-    //   • In-stock → category colour set by the admin via
-    //     /admin → Customize → 🎨 Set Color → 📂 Product Categories
+    //   â€¢ In-stock â†’ category colour set by the admin via
+    //     /admin â†’ Customize â†’ ðŸŽ¨ Set Color â†’ ðŸ“‚ Product Categories
     //     wins, falling back to the in-stock state colour (blue
-    //     by default) when the category is on `'none'`.
+    //     by default) when that category has no override.
     let mode = getStateColor(inStock ? 'in_stock' : 'out_of_stock');
     if (inStock && p.category_id != null) {
       const catMode = getCategoryColor(p.category_id);
@@ -80,13 +80,13 @@ export function shopProductsKeyboard(
   // lives in the middle, the page-nav arrow takes its natural side
   // (Prev on the left, Next on the right), and Refresh fills the
   // opposite end of the nav row. Back is back to its classic full-
-  // width row at the very bottom — the biggest, easiest tap target.
+  // width row at the very bottom â€” the biggest, easiest tap target.
   //
-  //  • First page  →  [Refresh]    [1/N]   [Next]
-  //  • Last  page  →  [Prev]       [N/N]   [Refresh]
-  //  • Middle page →  [Prev]       [k/N]   [Next]   (nav row)
+  //  â€¢ First page  â†’  [Refresh]    [1/N]   [Next]
+  //  â€¢ Last  page  â†’  [Prev]       [N/N]   [Refresh]
+  //  â€¢ Middle page â†’  [Prev]       [k/N]   [Next]   (nav row)
   //                   [Refresh]                     (dedicated row)
-  //  • Single page →  [Refresh]    [1/1]
+  //  â€¢ Single page â†’  [Refresh]    [1/1]
   //
   //  Bottom row, every case: [Back] (full width).
   const hasPrev = page > 0;
@@ -114,7 +114,7 @@ export function shopProductsKeyboard(
     inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
     kb.row();
   } else {
-    // Single-page list — no nav arrows to render.
+    // Single-page list â€” no nav arrows to render.
     inlineBtn(kb, lang, 'refresh', `shop:p:${page}`);
     kb.text(indicator, 'noop:page');
     kb.row();
@@ -125,11 +125,11 @@ export function shopProductsKeyboard(
 }
 
 /**
- * The product-detail page keyboard. The 🔢 *Custom Quantity* button
- * opens a numeric keypad (digits accumulate — tapping `1` then `1`
- * sets qty to `11`); the inline `➖ N ➕` adder lets the user nudge
+ * The product-detail page keyboard. The ðŸ”¢ *Custom Quantity* button
+ * opens a numeric keypad (digits accumulate â€” tapping `1` then `1`
+ * sets qty to `11`); the inline `âž– N âž•` adder lets the user nudge
  * the qty one step at a time without leaving the product page; and
- * the 🔄 *Refresh* button re-renders the page so the user sees the
+ * the ðŸ”„ *Refresh* button re-renders the page so the user sees the
  * latest stock / wallet balance.
  *
  * Back returns to the Shop home (page 0) since the categories step
@@ -150,8 +150,8 @@ export function productKeyboard(
     inlineBtn(kb, lang, 'out_of_stock', 'noop:oos');
     kb.row();
   } else {
-    // Inline qty stepper first: ➖ on the left, the live qty in the
-    // middle (tap is a no-op — it's a label), ➕ on the right.
+    // Inline qty stepper first: âž– on the left, the live qty in the
+    // middle (tap is a no-op â€” it's a label), âž• on the right.
     // Clamping to `[1, min(QTY_MAX, stock)]` happens in the
     // callback handler so the keyboard stays presentation-only.
     inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:dec`);
@@ -159,7 +159,7 @@ export function productKeyboard(
     inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
     kb.row();
     // Buy Now sits directly under the stepper so the user's tap
-    // path is "set qty → buy".
+    // path is "set qty â†’ buy".
     inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
     kb.row();
     // 1) Refresh re-fetches and re-renders the product page so any
@@ -171,7 +171,7 @@ export function productKeyboard(
   }
   // Topup Wallet removed; replaced with a 1-tap *copy* link to
   // this product. Tapping copies the deep-link URL to the user's
-  // clipboard with a "Copied" toast — no share-to-chat dialog, no
+  // clipboard with a "Copied" toast â€” no share-to-chat dialog, no
   // auto-forward. The receiver lands on this product page when they
   // paste the link anywhere.
   inlineCopyText(kb, lang, 'share_product', shareUrl);
@@ -187,42 +187,42 @@ export function shopHomeBackKeyboard(lang: Lang): InlineKeyboard {
 
 /**
  * Numeric keypad for the *Custom Quantity* prompt. Tapping a digit
- * appends to a session buffer (string concat, not arithmetic — so
- * `1` then `1` becomes `11`); ⌫ pops the last digit; 🗑 Clear empties
- * the buffer; ✅ Confirm validates against `[1, min(QTY_MAX, stock)]`
+ * appends to a session buffer (string concat, not arithmetic â€” so
+ * `1` then `1` becomes `11`); âŒ« pops the last digit; ðŸ—‘ Clear empties
+ * the buffer; âœ… Confirm validates against `[1, min(QTY_MAX, stock)]`
  * and either applies the qty (and returns to the product page) or
  * surfaces the premium-emoji invalid-quantity warning.
  *
- * The user can also send a number directly via the chat input — the
+ * The user can also send a number directly via the chat input â€” the
  * text-message handler short-circuits for any active keypad session
  * and reuses the same validation path.
  *
  * Layout:
- *   ┌─────┬─────┬─────┐
- *   │  1  │  2  │  3  │
- *   ├─────┼─────┼─────┤
- *   │  4  │  5  │  6  │
- *   ├─────┼─────┼─────┤
- *   │  7  │  8  │  9  │
- *   ├─────┼─────┼─────┤
- *   │  ⌫  │  0  │ 🗑  │
- *   ├─────┼─────┼─────┤
- *   │ 25  │ 50  │ 100 │
- *   ├─────┴─────┴─────┤
- *   │ 🎯 Max │ ✅ Confirm│
- *   ├─────────────────┤
- *   │      Back        │
- *   └─────────────────┘
+ *   â”Œâ”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”
+ *   â”‚  1  â”‚  2  â”‚  3  â”‚
+ *   â”œâ”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¤
+ *   â”‚  4  â”‚  5  â”‚  6  â”‚
+ *   â”œâ”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¤
+ *   â”‚  7  â”‚  8  â”‚  9  â”‚
+ *   â”œâ”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¤
+ *   â”‚  âŒ«  â”‚  0  â”‚ ðŸ—‘  â”‚
+ *   â”œâ”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”¤
+ *   â”‚ 25  â”‚ 50  â”‚ 100 â”‚
+ *   â”œâ”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”¤
+ *   â”‚ ðŸŽ¯ Max â”‚ âœ… Confirmâ”‚
+ *   â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+ *   â”‚      Back        â”‚
+ *   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
  *
  * Callbacks:
- *   qkp:<id>:d:<digit>   — push the digit onto the buffer
- *   qkp:<id>:back        — pop the last digit
- *   qkp:<id>:clear       — wipe the buffer
- *   qkp:<id>:p:<value>   — snap buffer to a preset (25 / 50 / 100),
+ *   qkp:<id>:d:<digit>   â€” push the digit onto the buffer
+ *   qkp:<id>:back        â€” pop the last digit
+ *   qkp:<id>:clear       â€” wipe the buffer
+ *   qkp:<id>:p:<value>   â€” snap buffer to a preset (25 / 50 / 100),
  *                          clamped down to min(QTY_MAX, stock)
- *   qkp:<id>:max         — fill buffer with min(QTY_MAX, stock)
- *   qkp:<id>:confirm     — validate + apply
- *   prod:<id>            — Back / cancel (no apply)
+ *   qkp:<id>:max         â€” fill buffer with min(QTY_MAX, stock)
+ *   qkp:<id>:confirm     â€” validate + apply
+ *   prod:<id>            â€” Back / cancel (no apply)
  */
 
 /**
@@ -254,7 +254,7 @@ export function qtyKeypadKeyboard(
   kb.text('0', `qkp:${id}:d:0`);
   inlineBtn(kb, lang, 'qty_keypad_clear', `qkp:${id}:clear`);
   kb.row();
-  // Quick-pick preset row — saves the bulk-buy user from tapping
+  // Quick-pick preset row â€” saves the bulk-buy user from tapping
   // each digit individually. Snapping happens in the keypad action
   // handler in `src/handlers/shop.ts` (clamps down to the user's
   // purchasable ceiling).
@@ -262,7 +262,7 @@ export function qtyKeypadKeyboard(
     kb.text(String(preset), `qkp:${id}:p:${preset}`);
   }
   kb.row();
-  // Max + Confirm share a row so the bulk-buy gesture (Max → Confirm)
+  // Max + Confirm share a row so the bulk-buy gesture (Max â†’ Confirm)
   // is two adjacent taps. The action handler in
   // `src/handlers/shop.ts` snaps the buffer to
   // `min(QTY_MAX, stock)` (or `QTY_MAX` for unlimited-stock items)
@@ -277,10 +277,10 @@ export function qtyKeypadKeyboard(
 /**
  * Payment-method picker shown after the user taps *Buy Now* on the
  * product page. Renders the order summary above three buttons:
- * 👛 *Wallet Pay* (charges the user's wallet via the existing
- * `pay:wallet:<id>` flow), 💸 *Pay Directly* (Phase B per-order
+ * ðŸ‘› *Wallet Pay* (charges the user's wallet via the existing
+ * `pay:wallet:<id>` flow), ðŸ’¸ *Pay Directly* (Phase B per-order
  * crypto direct-pay, fulfils the order on tx confirmation without
- * touching the wallet), and 🪙 *Top Up* (deep-links into the top-up
+ * touching the wallet), and ðŸª™ *Top Up* (deep-links into the top-up
  * flow at `topup:open`).
  */
 export function paymentMethodKeyboard(
