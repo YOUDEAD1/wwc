@@ -37,6 +37,7 @@ export const en: Record<string, string> = {
   'btn.qty_keypad_max': '🎯 Max',
   // Buy-now payment-method screen.
   'btn.pay_wallet': '👛 Wallet',
+  'btn.pay_referral': '🎁 Referral Pay',
   'btn.pay_direct': '💸 Pay Direct',
   'btn.pay_topup': '🪙 Top-up',
   // Wallet-confirm card (page 2 of the buy flow). The Confirm
@@ -171,8 +172,11 @@ export const en: Record<string, string> = {
     '{prod_qty_selected} Qty: *{qty}*\n' +
     '{promo_line}' +
     '{prod_total_amount} Total: *{total} USDT*\n' +
-    '{prod_wallet} Wallet: *{balance} USDT*\n\n' +
+    '{prod_wallet} Wallet: *{balance} USDT*\n' +
+    '{referral_line}\n' +
     'Choose a pay method:',
+  'shop.pay.referral_line':
+    '{prod_referral} Referral Pay: *{available} available* • *{required} required*',
   // Wallet-pay confirmation card (page 2). Short labels with
   // premium emojis on every line. `{discount_line}` is filled in
   // by the caller (empty string when there is no active discount).
@@ -215,7 +219,7 @@ export const en: Record<string, string> = {
   'shop.product.line.referral.ready':
     '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Ready',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *Referral Pay:* Already used for this product',
+    '{prod_referral} *Referral Pay:* Legacy order already used this balance',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
@@ -323,30 +327,41 @@ export const en: Record<string, string> = {
   // network) so the loading spinner is always dismissed.
   'shop.buy.failed':
     '❌ Payment could not be completed right now. Please try again in a moment, or contact admin if it keeps happening.',
-  'shop.referral.disabled': '❌ This product has no referral reward.',
-  'shop.referral.already_redeemed': '✅ You already redeemed this referral reward.',
+  'shop.referral.disabled': '❌ Referral Pay is not enabled for this product.',
+  'shop.referral.already_redeemed': '✅ Referral Pay was already used on this legacy order.',
   'shop.referral.insufficient':
     '❌ Not enough referrals. Required: {required}. Available: {total}. Missing: {remaining}.',
   'shop.referral.insufficient.card': [
-    '⚠️ *Not Enough Referral Balance*',
+    '⚠️ *Referral Balance Is Low*',
     '',
-    '🎯 *Required:* {required}',
-    '👥 *Available:* {total}',
-    '➕ *Still Needed:* {remaining}',
+    '{prod_referral} *Required:* {required} referrals',
+    '{refer_user} *Available:* {available} referrals',
+    '{qty_invalid} *Still Needed:* {remaining} referrals',
     '',
-    'Earn more referrals, then return and pay for this product with referrals.',
+    '{refer_title} Invite users with your referral link, refresh this page, then pay with Referral Pay.',
+  ].join('\n'),
+  'shop.referral.confirm': [
+    '{refer_title} *Confirm Referral Pay*',
+    '',
+    '{emoji} *{name}* × *{qty}*',
+    '{prod_referral} *Required:* {required} referrals',
+    '{refer_user} *Available:* {available} referrals',
+    '{delivery_check} *After Pay:* {after} referrals',
+    '',
+    '_Use your active referrals for this order?_',
   ].join('\n'),
   'shop.referral.failed':
-    '❌ Referral redemption failed. Please try again later or contact admin.',
+    '❌ Referral payment could not be completed right now. Please try again or contact admin.',
   'shop.referral.confirmed': [
-    '{refer_title} *Referral Reward Unlocked!*',
+    '{refer_title} *Referral Payment Successful!*',
     '',
     '*Product:* {name}',
     '*Qty:* {qty}',
+    '*Referrals Used:* {spent}',
     '',
     '{delivering} _Delivering your order…_',
   ].join('\n'),
-  'shop.referral.delivery': 'Referral reward for product #{product_id} (qty: {qty})',
+  'shop.referral.delivery': 'Referral Pay for product #{product_id} (qty: {qty})',
   // Kept for backwards compat with any /settext overrides referencing
   // the old key, even though the email gate is no longer enforced.
   'shop.buy.email_required':
@@ -699,6 +714,8 @@ export const en: Record<string, string> = {
     '{refer_user} *Referred (24h):* {ref24h}\n' +
     '{refer_user} *Referred (7d):* {ref7d}\n' +
     '{refer_user} *Referred (Total):* {refTotal}\n\n' +
+    '{prod_referral} *Referral Pay Balance:* {refAvailable} refs\n' +
+    '{delivery_check} *Used for Purchases:* {refSpent} refs\n\n' +
     '{refer_coin} *Total Earned:* {earnedTotal} USDT\n' +
     '{refer_coin} *Available:* {available} USDT\n' +
     '{refer_transferred} *Transferred:* {transferred} USDT\n' +
