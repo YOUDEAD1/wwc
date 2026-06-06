@@ -3,7 +3,7 @@ import { InlineKeyboard } from 'grammy';
 import type { AppCtx } from '../middleware/user.js';
 import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderMdHtml } from '../services/premium.js';
-import { countReferrals, getOrder, getProduct, hasReferralRedemption } from '../db/queries.js';
+import { getOrder, getProduct } from '../db/queries.js';
 import { applyUserPriceToProduct } from '../services/pricing.js';
 import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
@@ -13,7 +13,6 @@ import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
 import { inlineBtn } from '../keyboards/helpers.js';
-import { logger } from '../logger.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -92,43 +91,12 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[p.id] ?? QTY_MIN;
   const total = (p.price * qty).toFixed(2);
-  let referralLine = '';
-  if (p.referral_required_count > 0) {
-    try {
-      const [totalReferrals, redeemed] = await Promise.all([
-        countReferrals(ctx.user.telegram_id),
-        hasReferralRedemption(ctx.user.telegram_id, p.id),
-      ]);
-      const requiredTotal = p.referral_required_count * qty;
-      const remaining = Math.max(0, requiredTotal - totalReferrals);
-      if (redeemed) {
-        referralLine = ctx.t('shop.product.line.referral.claimed');
-      } else if (remaining <= 0) {
-        referralLine = ctx.t('shop.product.line.referral.ready', {
-          total: totalReferrals,
-          required: requiredTotal,
-        });
-      } else {
-        referralLine = ctx.t('shop.product.line.referral.progress', {
-          total: totalReferrals,
-          required: requiredTotal,
-          remaining,
-        });
-      }
-    } catch (err) {
-      logger.warn(
-        { err, product_id: p.id, user: ctx.user.telegram_id },
-        'start: referral state failed',
-      );
-    }
-  }
   const body = [
     ctx.t('shop.product.line.name', { name: p.name }),
     p.description ? p.description : '',
     ctx.t('shop.product.line.price', { price: p.price }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
-    referralLine,
     ctx.t('shop.product.line.qty', { qty }),
     ctx.t('shop.product.line.total', { total }),
     ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
@@ -141,9 +109,7 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const shareUrl = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
   await ctx.reply(renderMdHtml(body), {
     parse_mode: 'HTML',
-    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
-      showReferralPay: p.referral_required_count > 0,
-    }),
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
   });
   return true;
 }
