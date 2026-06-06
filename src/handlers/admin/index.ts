@@ -1141,7 +1141,7 @@ async function showProductEditor(
     `*Name:* ${p.name}`,
     `*Price:* ${Number(p.price).toFixed(2)} USDT`,
     `*Stock:* ${stockCell}`,
-    `*Referral reward:* ${referralLabel}`,
+    `*Referral Pay:* ${referralLabel}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
     `*Description:* ${p.description ? '`set`' : '_unset_'}`,
     `*Note Text:* ${p.note ? '`set`' : '_unset_'}`,
@@ -1318,7 +1318,7 @@ adminBot.callbackQuery(/^adm:prod:desc:clr:(\d+):(\d+)$/, async (ctx) => {
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
 
-// --- Referral reward ---
+// --- Referral Pay ---
 adminBot.callbackQuery(/^adm:prod:ref:set:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const product_id = Number(ctx.match[1]);
