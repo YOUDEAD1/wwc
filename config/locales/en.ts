@@ -1,7 +1,7 @@
 /* English (default) — edit text here. */
 export const en: Record<string, string> = {
   // ---------- Welcome / menu ----------
-  'welcome': 'Welcome to SafwanTiger Shop',
+  welcome: 'Welcome to SafwanTiger Shop',
   'welcome.title': 'Welcome to SafwanTiger Shop!',
   'welcome.balance': 'Your balance: *${balance}*',
   'welcome.tap_menu': 'Tap *Main Menu* below to begin.',
@@ -19,7 +19,8 @@ export const en: Record<string, string> = {
   'btn.prev': '◀️ Prev',
   'btn.refresh': '🔄 Refresh',
   'btn.buy_now': '✅ Buy Now',
-  'btn.redeem_referral': '🎁 Redeem Free',
+  'btn.redeem_referral': '🎁 Pay with Referrals',
+  'btn.referral_earn_buy': '🔗 Earn Referrals & Buy',
   'btn.topup_wallet': '👛 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
@@ -157,8 +158,7 @@ export const en: Record<string, string> = {
   // or non-numeric quantity. Auto-deletes a few seconds later so
   // it doesn't clutter the chat.
   'shop.qty.keypad.invalid':
-    '{qty_invalid} *Invalid quantity.*\n\n' +
-    'Please send a whole number between *1* and *{max}*.',
+    '{qty_invalid} *Invalid quantity.*\n\n' + 'Please send a whole number between *1* and *{max}*.',
 
   // ---- Buy-now → payment method picker -------------------------
   // `{promo_line}` is filled in by the caller — either an empty
@@ -185,8 +185,7 @@ export const en: Record<string, string> = {
     '_Charge *{total} USDT* from your wallet?_',
   // Optional discount row inside `shop.pay.confirm` — concatenated
   // by the caller when an active promo applies.
-  'shop.pay.confirm.discount_line':
-    '{prod_promo} *Discount:* −{discount} USDT\n',
+  'shop.pay.confirm.discount_line': '{prod_promo} *Discount:* −{discount} USDT\n',
   // Inline qty-editor screen body. Renders as a "big counter" with
   // the current selected qty in monospace, the product name, and
   // the running total cost.
@@ -210,25 +209,23 @@ export const en: Record<string, string> = {
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
   'shop.product.line.referral.progress':
-    '{prod_referral} *Referral Reward:* {total}/{required} referrals (need {remaining} more)',
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Missing {remaining}',
   'shop.product.line.referral.ready':
-    '{prod_referral} *Referral Reward:* Unlocked — tap *Redeem Free*',
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Ready',
   'shop.product.line.referral.claimed':
-    '{prod_referral} *Referral Reward:* Already redeemed',
+    '{prod_referral} *Referral Pay:* Already used for this product',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
   'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
   'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
   // Optional bonus line shown above Total Amount when an active
   // promo applies. `label` is either the admin-set promo name or
   // the auto-fallback "qty ≥ N".
-  'shop.product.line.promo':
-    '{prod_promo} *Promo:* {label} — −{discount} USDT',
+  'shop.product.line.promo': '{prod_promo} *Promo:* {label} — −{discount} USDT',
   'shop.product.line.promo.fallback_label': 'qty ≥ {min_qty}',
   // Teaser line under Warranty when a promo exists for this product
   // but the buyer hasn't reached the qty threshold yet. Hidden once
   // the threshold is met (the strikethrough Total takes over).
-  'shop.product.line.promo.teaser':
-    '{prod_promo} *Promo:* Buy {min_qty}+ −${discount} Off',
+  'shop.product.line.promo.teaser': '{prod_promo} *Promo:* Buy {min_qty}+ −${discount} Off',
   // Strikethrough Total Amount line shown when an active promo
   // applies — gross (struck) → effective price.
   'shop.product.line.total.discounted':
@@ -302,8 +299,7 @@ export const en: Record<string, string> = {
   // Settings entries (typed-email message, "User Profile / Has been
   // Saved!" card) are auto-deleted from chat first — only this single
   // bold line remains.
-  'shop.buy.email_setup_done':
-    '{order_delivered} *Email has been setuped*',
+  'shop.buy.email_setup_done': '{order_delivered} *Email has been setuped*',
   // Notification shown when an admin tops up a user's wallet via the
   // `/credit` flow. `{credit_emoji}` slots a premium credit-card glyph
   // and `{balance_emoji}` slots a premium wallet glyph so admins can
@@ -312,8 +308,7 @@ export const en: Record<string, string> = {
     '{credit_emoji} admin credited *${amount}* to your wallet.\n{balance_emoji} New balance: *${balance}*',
   'wallet.admin_debit':
     '{debit_emoji} admin debited *${amount}* from your wallet.\n{balance_emoji} New balance: *${balance}*',
-  'shop.buy.delivery_pending':
-    'Coming soon — admin will deliver your items manually within 12h.',
+  'shop.buy.delivery_pending': 'Coming soon — admin will deliver your items manually within 12h.',
   'shop.buy.insufficient':
     '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please top up first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
@@ -325,9 +320,17 @@ export const en: Record<string, string> = {
   'shop.referral.disabled': '❌ This product has no referral reward.',
   'shop.referral.already_redeemed': '✅ You already redeemed this referral reward.',
   'shop.referral.insufficient':
-    '❌ You need {required} referrals to redeem. You have {total} (need {remaining} more).',
-  'shop.referral.failed':
-    '❌ Referral redemption failed. Please try again later or contact admin.',
+    '❌ Not enough referrals. Required: {required}. Available: {total}. Missing: {remaining}.',
+  'shop.referral.insufficient.card': [
+    '⚠️ *Not Enough Referral Balance*',
+    '',
+    '🎯 *Required:* {required}',
+    '👥 *Available:* {total}',
+    '➕ *Still Needed:* {remaining}',
+    '',
+    'Earn more referrals, then return and pay for this product with referrals.',
+  ].join('\n'),
+  'shop.referral.failed': '❌ Referral redemption failed. Please try again later or contact admin.',
   'shop.referral.confirmed': [
     '{refer_title} *Referral Reward Unlocked!*',
     '',
@@ -339,8 +342,7 @@ export const en: Record<string, string> = {
   'shop.referral.delivery': 'Referral reward for product #{product_id} (qty: {qty})',
   // Kept for backwards compat with any /settext overrides referencing
   // the old key, even though the email gate is no longer enforced.
-  'shop.buy.email_required':
-    'Setup email system first — we need your email to send the receipt.',
+  'shop.buy.email_required': 'Setup email system first — we need your email to send the receipt.',
 
   // ---------- Post-purchase delivery form ----------
   // Shown after Order Delivered for products where the admin enabled
@@ -365,11 +367,11 @@ export const en: Record<string, string> = {
   'shop.delivery.box.summary_header': '{delivery_box} *Your Details — {product_name}*',
   'shop.delivery.box.summary_row': '• *{label}:* `{value}`',
   'shop.delivery.box.invalid':
-    '{qty_invalid} _That doesn\'t look right. Please send your *{label}* again._',
+    "{qty_invalid} _That doesn't look right. Please send your *{label}* again._",
   'shop.delivery.success.default': [
     '{delivery_check} *Your Details Has been Submitted Successfully* {email_saved_check}',
     '',
-    '_Thank you — our team is reviewing your submission and will approve it shortly. If you don\'t hear back soon, tap *Admin Help* below._',
+    "_Thank you — our team is reviewing your submission and will approve it shortly. If you don't hear back soon, tap *Admin Help* below._",
   ].join('\n'),
   'shop.delivery.success.resubmitted': [
     '{delivery_resubmit} *Your Details Has been Re submitted as Corrected* {email_saved_check}',
@@ -386,7 +388,7 @@ export const en: Record<string, string> = {
   ].join('\n'),
   'shop.delivery.admin_help.resubmit': [
     'Hey admin my {field_summary} About {product_name} has been resubmitted,',
-    'please don\'t use the old details — this is the correct one. Help me.',
+    "please don't use the old details — this is the correct one. Help me.",
     'Order: {order_tag}',
   ].join('\n'),
   // Buttons that appear under the success card.
@@ -395,7 +397,7 @@ export const en: Record<string, string> = {
   // Shown when the Edit Details button is tapped but the bot can't
   // recover the original submission (deleted, product gone, …).
   'shop.delivery.edit_unavailable':
-    '⚠️ _We couldn\'t reopen your previous submission. Please tap *Admin Help* on your order so we can fix this manually._',
+    "⚠️ _We couldn't reopen your previous submission. Please tap *Admin Help* on your order so we can fix this manually._",
   // Vendor DM body — sent to `delivery_vendor_chat_id` whenever the
   // buyer submits OR resubmits the form. `{header}` switches between
   // the new-order and corrected-order banners.
@@ -429,17 +431,14 @@ export const en: Record<string, string> = {
   // ---------- Using Method tutorial ----------
   // Per-product tutorial body shown when the buyer taps `📘 Using
   // Method` under an Order Delivered card.
-  'shop.tutorial.body': [
-    '{tutorial} *Using Method — {name}*',
-    '',
-    '{body}',
-  ].join('\n'),
+  'shop.tutorial.body': ['{tutorial} *Using Method — {name}*', '', '{body}'].join('\n'),
   'shop.tutorial.empty': [
     '{tutorial} *Using Method — {name}*',
     '',
     '_The admin hasn’t added a tutorial for this product yet. Please contact admin if you need help using your purchase._',
   ].join('\n'),
-  'shop.page.header': '🛒 *{category}*\n\n*Available Products:*\n_{total} products — page {page}/{pages}_',
+  'shop.page.header':
+    '🛒 *{category}*\n\n*Available Products:*\n_{total} products — page {page}/{pages}_',
 
   // ---------- Profile ----------
   'profile.title': '*User Profile*',
@@ -546,16 +545,11 @@ export const en: Record<string, string> = {
     '\u2022 *Send in Chat* \u2014 we\u2019ll attach it here as a downloadable file.',
   'profile.pricelist.no_email_popup':
     'Set your email first \u2014 open Settings \u2192 Email Settings \u2192 Set Email.',
-  'profile.pricelist.empty':
-    'No products in the catalog yet \u2014 ask the admin to add some.',
-  'profile.pricelist.sending':
-    '\u23f3 Building your price list\u2026',
-  'profile.pricelist.mail_sent':
-    '{pdf_sent_l} *Price list mailed!* Check your inbox at `{email}`.',
-  'profile.pricelist.mail_failed':
-    '\u274c Failed to email the price list. Please try again later.',
-  'profile.pricelist.chat_sent':
-    '{pdf_sent_r} *Price list ready \u2014 see the CSV above.*',
+  'profile.pricelist.empty': 'No products in the catalog yet \u2014 ask the admin to add some.',
+  'profile.pricelist.sending': '\u23f3 Building your price list\u2026',
+  'profile.pricelist.mail_sent': '{pdf_sent_l} *Price list mailed!* Check your inbox at `{email}`.',
+  'profile.pricelist.mail_failed': '\u274c Failed to email the price list. Please try again later.',
+  'profile.pricelist.chat_sent': '{pdf_sent_r} *Price list ready \u2014 see the CSV above.*',
   // CSV header rows + status labels used by `services/csvReport.ts`.
   'profile.pricelist.csv.col.name': 'Product',
   'profile.pricelist.csv.col.price': 'Price (USDT)',
@@ -642,7 +636,8 @@ export const en: Record<string, string> = {
     '{gift_redeemed} Gift code has been redeemed successfully — *{amount} USDT* has been credited.',
   // ---------- My Orders screen ----------
   'orders.title': '{orders_title} *My Orders*',
-  'orders.body': 'Tap any order below to open details, or send the public Order ID shown in your receipt.',
+  'orders.body':
+    'Tap any order below to open details, or send the public Order ID shown in your receipt.',
   'orders.empty':
     '{orders_title} *My Orders*\n\n' +
     '🪄 No orders yet.\n\n' +
@@ -675,10 +670,9 @@ export const en: Record<string, string> = {
   'btn.find_order_by_id': '🔍 Find by Order ID',
   // Prompt + error responses for the Find by Order ID flow. Custom
   // emoji ids resolve to premium glyphs at render time.
-  'orders.lookup.prompt':
-    '{order_id_find_l} *Send Your Order ID to find.* {order_id_find_r}',
+  'orders.lookup.prompt': '{order_id_find_l} *Send Your Order ID to find.* {order_id_find_r}',
   'orders.lookup.invalid':
-    '{gift_invalid} That doesn\'t look like a valid Order ID. {order_id_invalid_r}',
+    "{gift_invalid} That doesn't look like a valid Order ID. {order_id_invalid_r}",
   // Legacy keys kept so anything still calling them won't break.
   'profile.email.title': '📧 *Set Email*',
   'profile.email.body':
@@ -756,7 +750,7 @@ export const en: Record<string, string> = {
   // ---------- Support ----------
   'support.title': '{support_title} Support',
   'support.body':
-    '_*If you\'re unable to send a message or have an issue, use Live Support to connect directly with an admin.*_',
+    "_*If you're unable to send a message or have an issue, use Live Support to connect directly with an admin.*_",
   'support.btn.contact': '📩 Contact Admin',
   // Pre-filled into the admin DM's input bar when the user taps
   // Contact Admin (via t.me/<admin>?text=...).
@@ -801,8 +795,7 @@ export const en: Record<string, string> = {
   'support.btn.email_transcript': '📧 Send chat PDF to email',
   // Reuses pdf_sent_l / pdf_sent_r so the success copy renders the
   // same animated frame the user sees after Send-PDF on My Orders.
-  'support.transcript.sent_message':
-    '{pdf_sent_l} *Pdf has been sended to mail* {pdf_sent_r}',
+  'support.transcript.sent_message': '{pdf_sent_l} *Pdf has been sended to mail* {pdf_sent_r}',
   'support.transcript.no_email_popup':
     '⚠️ Set your email first. Open Settings → Email Settings → Set Email to add one, then come back and tap Send chat PDF to email.',
   'support.transcript.sending_popup':
@@ -827,22 +820,19 @@ export const en: Record<string, string> = {
   'support.ai.user_ended':
     '{support_live_closed} Kiwi Ai chat closed.\n\n' +
     'Open Kiwi Ai again from the menu whenever you need help.',
-  'support.ai.fallback':
-    'I couldn\'t answer that automatically. A human will reach out shortly.',
+  'support.ai.fallback': "I couldn't answer that automatically. A human will reach out shortly.",
   // Tiny prompt sent right after the AI chat is wiped on Cancel,
   // attached to the “📧 Send chat PDF to email” button so the user
   // can still save the conversation if they want to.
   'support.ai.pdf_prompt':
-    '{kiwi_ai} *Kiwi Ai chat saved.*\n' +
-    'Tap below to email the transcript as a PDF.',
-  'support.ai.empty_popup':
-    '💬 Send at least one question first — there\'s nothing to save yet.',
+    '{kiwi_ai} *Kiwi Ai chat saved.*\n' + 'Tap below to email the transcript as a PDF.',
+  'support.ai.empty_popup': "💬 Send at least one question first — there's nothing to save yet.",
   // Legacy keys kept for any code path still referencing them.
   'support.ai.title': '{kiwi_ai} *Kiwi Ai*',
-  'support.ai.prompt': 'Describe your issue and I\'ll do my best to help.',
+  'support.ai.prompt': "Describe your issue and I'll do my best to help.",
 
   // ---------- Channel ----------
-  'channel.not_set': '📢 The channel link hasn\'t been set yet. Ask the admin to configure it.',
+  'channel.not_set': "📢 The channel link hasn't been set yet. Ask the admin to configure it.",
   'channel.subscribe.title': '📢 *Join our channel* to continue',
   'channel.subscribe.body': 'Please join the channel below, then tap *I joined*.',
   'channel.subscribe.joined': '✅ I joined',

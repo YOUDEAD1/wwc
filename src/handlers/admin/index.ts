@@ -155,7 +155,17 @@ const requireAdmin: MiddlewareFn<AppCtx> = async (ctx, next) => {
 // Apply requireAdmin only to admin entry points.
 adminBot.callbackQuery(/^adm:/, requireAdmin, async (_ctx, next) => next());
 adminBot.command(
-  ['admin', 'settext', 'setcolor', 'setemoji', 'clearcache', 'reload', 'mailerstatus', 'testemail', 'promo'],
+  [
+    'admin',
+    'settext',
+    'setcolor',
+    'setemoji',
+    'clearcache',
+    'reload',
+    'mailerstatus',
+    'testemail',
+    'promo',
+  ],
   requireAdmin,
   async (_ctx, next) => next(),
 );
@@ -384,10 +394,10 @@ adminBot.callbackQuery('adm:ai:key', async (ctx) => {
 adminBot.callbackQuery('adm:ai:prompt', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'ai.system_prompt' } };
-  await ctx.editMessageText(
-    '💬 *Set AI Prompt*\n\nSend the system prompt (or `-` to clear).',
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-  );
+  await ctx.editMessageText('💬 *Set AI Prompt*\n\nSend the system prompt (or `-` to clear).', {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
 });
 
 // ---------- Gift Codes ----------
@@ -434,9 +444,7 @@ async function showGiftCodeList(ctx: AppCtx): Promise<void> {
   for (const c of codes) {
     const used = await countGiftCodeRedemptions(c.code);
     const cap = c.max_redemptions != null ? `/${c.max_redemptions}` : '';
-    const exp = c.expires_at
-      ? ` · exp ${new Date(c.expires_at).toISOString().slice(0, 10)}`
-      : '';
+    const exp = c.expires_at ? ` · exp ${new Date(c.expires_at).toISOString().slice(0, 10)}` : '';
     lines.push(`\`${c.code}\` · ${c.amount} USDT · used ${used}${cap}${exp}`);
     kb.text(`🗑 ${c.code}`.slice(0, 60), `adm:gift:del:${c.code}`).row();
   }
@@ -474,10 +482,7 @@ function escapeMd(s: string): string {
 
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
-  const [s, productSales] = await Promise.all([
-    getStats(),
-    getProductSales(50),
-  ]);
+  const [s, productSales] = await Promise.all([getStats(), getProductSales(50)]);
   const lines: string[] = [];
   lines.push('📊 *Stats*');
   lines.push('');
@@ -508,11 +513,8 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
     lines.push('📈 *All Products — Sales Breakdown*');
     const cap = 30;
     visibleProductSales.slice(0, cap).forEach((r) => {
-      const stockStr =
-        r.stock_left !== null ? `stock *${r.stock_left}*` : '_deleted_';
-      const lastStr = r.last_sold_at
-        ? ` · last *${r.last_sold_at.slice(0, 10)}*`
-        : '';
+      const stockStr = r.stock_left !== null ? `stock *${r.stock_left}*` : '_deleted_';
+      const lastStr = r.last_sold_at ? ` · last *${r.last_sold_at.slice(0, 10)}*` : '';
       lines.push(
         `• ${escapeMd(r.product_name)}: *${r.units_sold}*u · *$${r.revenue.toFixed(
           2,
@@ -520,9 +522,7 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
       );
     });
     if (visibleProductSales.length > cap) {
-      lines.push(
-        `_…and ${visibleProductSales.length - cap} more (download PDF for full list)_`,
-      );
+      lines.push(`_…and ${visibleProductSales.length - cap} more (download PDF for full list)_`);
     }
   }
 
@@ -635,17 +635,13 @@ async function showOrdersList(
     const safeName = escapeHtml(o.product_name);
     const safeHandle = escapeHtml(handle);
     const date = o.created_at.slice(0, 10);
-    const statusEmoji =
-      o.status === 'paid' ? '✅' : o.status === 'refunded' ? '↩️' : '✖️';
+    const statusEmoji = o.status === 'paid' ? '✅' : o.status === 'refunded' ? '↩️' : '✖️';
     lines.push(
       `${statusEmoji} <code>#${o.id}</code> ${safeName} × ${o.qty} — ` +
         `<b>$${Number(o.total).toFixed(2)}</b> · ${safeHandle} · ${date}`,
     );
     // Compact one-tap row: jump straight into the order detail.
-    kb.text(
-      `🔎 #${o.id} ${o.product_name} × ${o.qty}`.slice(0, 60),
-      `adm:ord:v:${o.id}`,
-    ).row();
+    kb.text(`🔎 #${o.id} ${o.product_name} × ${o.qty}`.slice(0, 60), `adm:ord:v:${o.id}`).row();
   }
   if (page > 0) kb.text('◀️ Prev', `${pagePrefix}:${page - 1}`);
   if (page + 1 < totalPages) kb.text('Next ▶️', `${pagePrefix}:${page + 1}`);
@@ -702,8 +698,8 @@ adminBot.callbackQuery(/^adm:ord:v:(\d+)$/, async (ctx) => {
     order.status === 'paid'
       ? '✅ Paid'
       : order.status === 'refunded'
-      ? '↩️ Refunded'
-      : '✖️ Cancelled';
+        ? '↩️ Refunded'
+        : '✖️ Cancelled';
   const lines = [
     `🧾 <b>Order #${order.id}</b>`,
     '',
@@ -775,10 +771,10 @@ adminBot.callbackQuery('adm:cat', async (ctx) => {
 adminBot.callbackQuery('adm:cat:add', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = { type: 'add_category', step: 'name', data: {} };
-  await ctx.editMessageText(
-    '🗂 *Add Category*\n\nSend the category *name* (or `/cancel`).',
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-  );
+  await ctx.editMessageText('🗂 *Add Category*\n\nSend the category *name* (or `/cancel`).', {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
 });
 
 adminBot.callbackQuery('adm:cat:list', async (ctx) => {
@@ -889,9 +885,7 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
     const flag = p.active ? '🟢' : '⚪️';
     const pinTag = p.is_pinned ? ' 📌' : '';
     const oosTag = p.stashed_sort_order !== null ? ' 💤' : '';
-    lines.push(
-      `${flag} #${p.id}${pinTag}${oosTag}  ${p.name} — $${p.price}  (stock ${p.stock})`,
-    );
+    lines.push(`${flag} #${p.id}${pinTag}${oosTag}  ${p.name} — $${p.price}  (stock ${p.stock})`);
     kb.text(`↑ #${p.id}`, `adm:prod:up:${p.id}:${page}`)
       .text(`↓ #${p.id}`, `adm:prod:dn:${p.id}:${page}`)
       .text(`✏️ Edit #${p.id}`, `adm:prod:edit:${p.id}:${page}`)
@@ -903,10 +897,7 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
     // affects ordering at a glance.
     kb.text(`⏫ Top #${p.id}`, `adm:prod:top:${p.id}:${page}`)
       .text(`⏬ Bottom #${p.id}`, `adm:prod:bot:${p.id}:${page}`)
-      .text(
-        p.is_pinned ? `📌 Pinned #${p.id}` : `📌 Pin #${p.id}`,
-        `adm:prod:pin:${p.id}:${page}`,
-      )
+      .text(p.is_pinned ? `📌 Pinned #${p.id}` : `📌 Pin #${p.id}`, `adm:prod:pin:${p.id}:${page}`)
       .row();
     kb.text(p.active ? `👁 Hide #${p.id}` : `👁 Show #${p.id}`, `adm:prod:tog:${p.id}:${page}`)
       .text(`🗑 #${p.id}`, `adm:prod:del:${p.id}:${page}`)
@@ -963,9 +954,7 @@ adminBot.callbackQuery(/^adm:prod:(up|dn):(\d+):(\d+)$/, async (ctx) => {
   await unstashSortOrder(id).catch((err) => {
     logger.warn({ err, id }, 'unstashSortOrder before reorder swap failed');
   });
-  const cur = await listAllProducts(0, 1000).then(({ rows }) =>
-    rows.find((r) => r.id === id),
-  );
+  const cur = await listAllProducts(0, 1000).then(({ rows }) => rows.find((r) => r.id === id));
   if (!cur) {
     await ctx.answerCallbackQuery({ text: 'Product no longer exists' });
     await showProductList(ctx, page);
@@ -1051,8 +1040,7 @@ adminBot.callbackQuery(/^adm:prod:pin:(\d+):(\d+)$/, async (ctx) => {
   } catch (err) {
     logger.error({ err, id }, 'setProductPinned failed');
     await ctx.answerCallbackQuery({
-      text:
-        'Pin toggle failed. If the error mentions a missing column, apply Supabase migration 0025.',
+      text: 'Pin toggle failed. If the error mentions a missing column, apply Supabase migration 0025.',
       show_alert: true,
     });
   }
@@ -1070,11 +1058,7 @@ adminBot.callbackQuery(/^adm:prod:pin:(\d+):(\d+)$/, async (ctx) => {
 // arms a one-shot adminFlow that captures the next message and
 // applies the patch — e.g. tap "Set Premium Emoji", send a 🎬 premium
 // emoji message in chat, the bot reads `custom_emoji_id` and saves it.
-async function showProductEditor(
-  ctx: AppCtx,
-  product_id: number,
-  page: number,
-): Promise<void> {
+async function showProductEditor(ctx: AppCtx, product_id: number, page: number): Promise<void> {
   // Re-align `products.stock` with the live pool count before reading
   // the product so the editor card always reflects reality.
   // `addProductItems()` already calls `syncProductStockToPool` after a
@@ -1087,10 +1071,7 @@ async function showProductEditor(
   // and guarantees the admin-facing card and the buyer-facing stock
   // gate stay consistent after every bulk-add Confirm.
   await syncProductStockToPool(product_id).catch((err) => {
-    logger.error(
-      { err, product_id },
-      'showProductEditor: syncProductStockToPool failed',
-    );
+    logger.error({ err, product_id }, 'showProductEditor: syncProductStockToPool failed');
   });
   const p = await getProduct(product_id);
   if (!p) {
@@ -1115,9 +1096,7 @@ async function showProductEditor(
   // admin can tell at a glance whether THIS product asks the buyer
   // for extra details after payment, without expanding into the
   // sub-editor.
-  const deliveryFieldsCount = Array.isArray(p.delivery_fields)
-    ? p.delivery_fields.length
-    : 0;
+  const deliveryFieldsCount = Array.isArray(p.delivery_fields) ? p.delivery_fields.length : 0;
   // When the form is ON but no fields are configured the buyer flow
   // now falls back to a single default `Details` prompt — surface
   // that here so the admin understands what their toggle is actually
@@ -1184,25 +1163,19 @@ async function showProductEditor(
   // accounts / links / codes per product. Disabled when the pool is
   // empty so the admin doesn't tap into a dead end (we still ack the
   // tap with a popup explaining the empty state).
-  kb.text(
-    `🔎 View Stock Items (${itemsCount})`,
-    `adm:prod:items:view:${p.id}:${page}:0`,
-  ).row();
+  kb.text(`🔎 View Stock Items (${itemsCount})`, `adm:prod:items:view:${p.id}:${page}:0`).row();
   kb.text(
     p.unlimited_stock ? '♾ Unlimited: ON' : '♾ Unlimited: OFF',
     `adm:prod:unl:tog:${p.id}:${page}`,
   )
-    .text(
-      p.is_pinned ? '📌 Pinned: ON' : '📌 Pinned: OFF',
-      `adm:prod:pin:${p.id}:${page}`,
-    )
+    .text(p.is_pinned ? '📌 Pinned: ON' : '📌 Pinned: OFF', `adm:prod:pin:${p.id}:${page}`)
     .row();
   kb.text('💰 Edit Price', `adm:prod:price:set:${p.id}:${page}`)
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
     .row();
-  kb.text('🎁 Referral Reward', `adm:prod:ref:set:${p.id}:${page}`)
-    .text('🧹 Clear Referral', `adm:prod:ref:clr:${p.id}:${page}`)
+  kb.text('🎁 Referral Pay', `adm:prod:ref:set:${p.id}:${page}`)
+    .text('🧹 Disable Referral Pay', `adm:prod:ref:clr:${p.id}:${page}`)
     .row();
   // One-click wipe of every user's custom-price override for this
   // product so they all fall back to the default Price above. Hidden
@@ -1305,10 +1278,9 @@ adminBot.callbackQuery(/^adm:prod:desc:set:(\d+):(\d+)$/, async (ctx) => {
     step: 'text',
     data: { product_id, page },
   };
-  await ctx.reply(
-    '📄 Send the new *description* text now. Send `/cancel` to abort.',
-    { parse_mode: 'Markdown' },
-  );
+  await ctx.reply('📄 Send the new *description* text now. Send `/cancel` to abort.', {
+    parse_mode: 'Markdown',
+  });
 });
 
 adminBot.callbackQuery(/^adm:prod:desc:clr:(\d+):(\d+)$/, async (ctx) => {
@@ -1329,7 +1301,7 @@ adminBot.callbackQuery(/^adm:prod:ref:set:(\d+):(\d+)$/, async (ctx) => {
     data: { product_id, page },
   };
   await ctx.reply(
-    '🎁 Send the number of referrals required to unlock this product for free (0 to disable). Send `/cancel` to abort.',
+    '🎁 Send the referrals required to buy this product with Referral Pay (0 = disabled). Send `/cancel` to abort.',
     { parse_mode: 'Markdown' },
   );
 });
@@ -1442,9 +1414,10 @@ adminBot.callbackQuery(/^adm:prod:del:tog:(\d+):(\d+)$/, async (ctx) => {
   } catch (err) {
     logger.error({ err, id }, 'adm:prod:del:tog failed');
     const msg = (err as Error)?.message ?? 'unknown error';
-    const looksLikeMissingColumn = /column .* does not exist|delivery_form_enabled|delivery_fields|delivery_instruction/i.test(
-      msg,
-    );
+    const looksLikeMissingColumn =
+      /column .* does not exist|delivery_form_enabled|delivery_fields|delivery_instruction/i.test(
+        msg,
+      );
     await ctx.reply(
       [
         '⚠️ Failed to toggle the Delivery Form.',
@@ -1566,7 +1539,7 @@ adminBot.callbackQuery(/^adm:prod:del:vlabel:(\d+):(\d+)$/, async (ctx) => {
     [
       '🏷 *Send the vendor display label.*',
       '',
-      'Optional short string shown in the admin-facing summary (e.g. `@john_vendor` or `Workspace A`). Buyer never sees this — it\'s just to help you tell vendors apart in the editor.',
+      "Optional short string shown in the admin-facing summary (e.g. `@john_vendor` or `Workspace A`). Buyer never sees this — it's just to help you tell vendors apart in the editor.",
       '',
       'Send `clear` to remove the label, or `/cancel` to abort.',
     ].join('\n'),
@@ -1676,12 +1649,10 @@ async function renderItemsStagingCard(
   // with a 400 — fall back to a fresh post in that case.
   if (flow.data.promptChatId && flow.data.promptMessageId) {
     try {
-      await ctx.api.editMessageText(
-        flow.data.promptChatId,
-        flow.data.promptMessageId,
-        body,
-        { parse_mode: 'Markdown', reply_markup: kb },
-      );
+      await ctx.api.editMessageText(flow.data.promptChatId, flow.data.promptMessageId, body, {
+        parse_mode: 'Markdown',
+        reply_markup: kb,
+      });
       return;
     } catch (err) {
       logger.debug({ err }, 'items staging card edit failed; reposting');
@@ -1697,10 +1668,7 @@ async function renderItemsStagingCard(
  * Returns the raw bytes as a UTF-8 string. Used to ingest `.txt`
  * vendor dumps in the bulk-add flow.
  */
-async function downloadTelegramDocumentAsText(
-  ctx: AppCtx,
-  file_id: string,
-): Promise<string> {
+async function downloadTelegramDocumentAsText(ctx: AppCtx, file_id: string): Promise<string> {
   const file = await ctx.api.getFile(file_id);
   if (!file.file_path) {
     throw new Error('Telegram returned no file_path for the upload.');
@@ -1817,10 +1785,7 @@ adminBot.callbackQuery(/^adm:prod:cpclr:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const id = Number(ctx.match[1]);
   const page = Number(ctx.match[2]);
-  const [p, overrideCount] = await Promise.all([
-    getProduct(id),
-    countProductPriceOverrides(id),
-  ]);
+  const [p, overrideCount] = await Promise.all([getProduct(id), countProductPriceOverrides(id)]);
   if (!p) {
     await ctx.editMessageText('⚠️ Product not found.', {
       reply_markup: new InlineKeyboard().text('⬅️ Back', `adm:prod:list:${page}`),
@@ -1905,10 +1870,7 @@ async function showStockInspectionPage(
     // Truncate very long payloads (e.g. wall-of-text proxy creds) so
     // the admin's screen never explodes; the full payload remains in
     // the DB and is delivered to buyers as-is.
-    const trimmed =
-      row.payload.length > 100
-        ? `${row.payload.slice(0, 100)}…`
-        : row.payload;
+    const trimmed = row.payload.length > 100 ? `${row.payload.slice(0, 100)}…` : row.payload;
     // Backtick-escape any backticks inside the payload so it stays
     // inside a Markdown inline-code span.
     const safe = trimmed.replace(/`/g, "'");
@@ -1927,17 +1889,11 @@ async function showStockInspectionPage(
   if (slice.length % 4 !== 0) kb.row();
   if (pageCount > 1) {
     if (safePage > 0) {
-      kb.text(
-        '⬅️ Prev',
-        `adm:prod:items:view:${product_id}:${productPage}:${safePage - 1}`,
-      );
+      kb.text('⬅️ Prev', `adm:prod:items:view:${product_id}:${productPage}:${safePage - 1}`);
     }
     kb.text('🔄', `adm:prod:items:view:${product_id}:${productPage}:${safePage}`);
     if (safePage < pageCount - 1) {
-      kb.text(
-        'Next ➡️',
-        `adm:prod:items:view:${product_id}:${productPage}:${safePage + 1}`,
-      );
+      kb.text('Next ➡️', `adm:prod:items:view:${product_id}:${productPage}:${safePage + 1}`);
     }
     kb.row();
   }
@@ -1948,50 +1904,44 @@ async function showStockInspectionPage(
   });
 }
 
-adminBot.callbackQuery(
-  /^adm:prod:items:view:(\d+):(\d+):(\d+)$/,
-  async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await showStockInspectionPage(
-      ctx,
-      Number(ctx.match[1]),
-      Number(ctx.match[2]),
-      Number(ctx.match[3]),
-    );
-  },
-);
+adminBot.callbackQuery(/^adm:prod:items:view:(\d+):(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showStockInspectionPage(
+    ctx,
+    Number(ctx.match[1]),
+    Number(ctx.match[2]),
+    Number(ctx.match[3]),
+  );
+});
 
 // Per-item delete from the Stock Inspection screen. After the row is
 // removed from the pool, `deleteProductItem` re-syncs `products.stock`
 // to the new pool size (skipped for unlimited products). The screen
 // is then re-rendered so the admin sees the updated count.
-adminBot.callbackQuery(
-  /^adm:prod:items:del:(\d+):(\d+):(\d+):(\d+)$/,
-  async (ctx) => {
-    const product_id = Number(ctx.match[1]);
-    const productPage = Number(ctx.match[2]);
-    const itemsPage = Number(ctx.match[3]);
-    const item_id = Number(ctx.match[4]);
-    try {
-      await deleteProductItem(item_id);
-      await ctx.answerCallbackQuery({ text: 'Item removed.' });
-    } catch (err) {
-      logger.error({ err, item_id }, 'admin delete product item failed');
-      await ctx.answerCallbackQuery({
-        text: 'Could not delete that item. Try again.',
-        show_alert: true,
-      });
-      return;
-    }
-    // Re-render. If the page is now empty, fall back to the editor.
-    const remaining = await countAvailableProductItems(product_id);
-    if (remaining === 0) {
-      await showProductEditor(ctx, product_id, productPage);
-      return;
-    }
-    await showStockInspectionPage(ctx, product_id, productPage, itemsPage);
-  },
-);
+adminBot.callbackQuery(/^adm:prod:items:del:(\d+):(\d+):(\d+):(\d+)$/, async (ctx) => {
+  const product_id = Number(ctx.match[1]);
+  const productPage = Number(ctx.match[2]);
+  const itemsPage = Number(ctx.match[3]);
+  const item_id = Number(ctx.match[4]);
+  try {
+    await deleteProductItem(item_id);
+    await ctx.answerCallbackQuery({ text: 'Item removed.' });
+  } catch (err) {
+    logger.error({ err, item_id }, 'admin delete product item failed');
+    await ctx.answerCallbackQuery({
+      text: 'Could not delete that item. Try again.',
+      show_alert: true,
+    });
+    return;
+  }
+  // Re-render. If the page is now empty, fall back to the editor.
+  const remaining = await countAvailableProductItems(product_id);
+  if (remaining === 0) {
+    await showProductEditor(ctx, product_id, productPage);
+    return;
+  }
+  await showStockInspectionPage(ctx, product_id, productPage, itemsPage);
+});
 
 // --- Unlimited toggle ---
 adminBot.callbackQuery(/^adm:prod:unl:tog:(\d+):(\d+)$/, async (ctx) => {
@@ -2072,7 +2022,7 @@ adminBot.callbackQuery(/^adm:prod:share:(\d+):(\d+)$/, async (ctx) => {
   await ctx.reply(
     `🔗 *Share link for ${escapeMd(p.name)}*\n\n` +
       `\`${shareUrl}\`\n\n` +
-      '_Copy this link and share it in any group or channel. When someone taps it they\'ll land on the product page inside the bot._',
+      "_Copy this link and share it in any group or channel. When someone taps it they'll land on the product page inside the bot._",
     { parse_mode: 'Markdown' },
   );
 });
@@ -2099,7 +2049,7 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
       '',
       '*Manual* — name, instructions, min amount. Users submit a deposit request you approve from the *Deposits* tab.',
       '',
-      '*Auto-verify* — pick a provider, set the wallet address, and the bot verifies the user\'s on-chain tx hash and credits the wallet automatically.',
+      "*Auto-verify* — pick a provider, set the wallet address, and the bot verifies the user's on-chain tx hash and credits the wallet automatically.",
     ].join('\n'),
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -2145,33 +2095,26 @@ const CHAIN_WIZARD_INFO: Record<
   },
 };
 
-adminBot.callbackQuery(
-  /^adm:pay:add:(usdt_trc20|usdt_bep20|usdt_ton|ltc)$/,
-  async (ctx) => {
-    const provider = ctx.match[1] as
-      | 'usdt_trc20'
-      | 'usdt_bep20'
-      | 'usdt_ton'
-      | 'ltc';
-    await ctx.answerCallbackQuery();
-    ctx.session.adminFlow = {
-      type: 'add_chain_payment',
-      step: 'name',
-      data: { provider },
-    };
-    const info = CHAIN_WIZARD_INFO[provider];
-    await ctx.editMessageText(
-      [
-        info.title,
-        '',
-        `Send the *display name* shown in the user-facing top-up menu (e.g. \`${info.namePlaceholder}\`).`,
-        '',
-        'Or `/cancel` to abort.',
-      ].join('\n'),
-      { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-    );
-  },
-);
+adminBot.callbackQuery(/^adm:pay:add:(usdt_trc20|usdt_bep20|usdt_ton|ltc)$/, async (ctx) => {
+  const provider = ctx.match[1] as 'usdt_trc20' | 'usdt_bep20' | 'usdt_ton' | 'ltc';
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'add_chain_payment',
+    step: 'name',
+    data: { provider },
+  };
+  const info = CHAIN_WIZARD_INFO[provider];
+  await ctx.editMessageText(
+    [
+      info.title,
+      '',
+      `Send the *display name* shown in the user-facing top-up menu (e.g. \`${info.namePlaceholder}\`).`,
+      '',
+      'Or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
 
 adminBot.callbackQuery('adm:pay:add:binance_pay', async (ctx) => {
   await ctx.answerCallbackQuery();
@@ -2235,13 +2178,9 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
     // wipe the row.
     const colorTag = m.color_mode && m.color_mode !== 'none' ? m.color_mode : 'default';
     const iconTag = m.emoji_id ? '⭐' : (m.emoji_unicode ?? 'default');
-    kb.text(
-      `🎨 #${m.id} ${colorTag}`,
-      `adm:pay:color:${m.id}`,
-    ).text(
-      `🌟 #${m.id} ${iconTag}`,
-      `adm:pay:icon:${m.id}`,
-    ).row();
+    kb.text(`🎨 #${m.id} ${colorTag}`, `adm:pay:color:${m.id}`)
+      .text(`🌟 #${m.id} ${iconTag}`, `adm:pay:icon:${m.id}`)
+      .row();
     // "Where TXID? / Where Order ID?" tutorial editor — same shape
     // as the global Bot Tutorial editor but scoped to this method.
     // Marked `set` if any of text / file / url is configured.
@@ -2270,10 +2209,7 @@ adminBot.callbackQuery(/^adm:pay:del:(\d+)$/, async (ctx) => {
 // methods screen. The text/file/url buttons each arm a `adminFlow`
 // of the matching kind so the next admin message captures into the
 // `pay_tutorial.<method_id>.*` settings.
-async function showPaymentTutorialEditor(
-  ctx: AppCtx,
-  methodId: number,
-): Promise<void> {
+async function showPaymentTutorialEditor(ctx: AppCtx, methodId: number): Promise<void> {
   const methods = await listPaymentMethods();
   const m = methods.find((x) => x.id === methodId);
   if (!m) {
@@ -2324,10 +2260,7 @@ adminBot.callbackQuery(/^adm:pay:tut:settxt:(\d+)$/, async (ctx) => {
     step: 'text',
     data: { method_id: id },
   };
-  await ctx.reply(
-    `📝 Send the *Tutorial* text for method #${id} now.`,
-    { parse_mode: 'Markdown' },
-  );
+  await ctx.reply(`📝 Send the *Tutorial* text for method #${id} now.`, { parse_mode: 'Markdown' });
 });
 
 adminBot.callbackQuery(/^adm:pay:tut:setfile:(\d+)$/, async (ctx) => {
@@ -2338,10 +2271,9 @@ adminBot.callbackQuery(/^adm:pay:tut:setfile:(\d+)$/, async (ctx) => {
     step: 'file',
     data: { method_id: id },
   };
-  await ctx.reply(
-    `🎞 Send a photo, video, or document for method #${id}.`,
-    { parse_mode: 'Markdown' },
-  );
+  await ctx.reply(`🎞 Send a photo, video, or document for method #${id}.`, {
+    parse_mode: 'Markdown',
+  });
 });
 
 adminBot.callbackQuery(/^adm:pay:tut:seturl:(\d+)$/, async (ctx) => {
@@ -2352,10 +2284,9 @@ adminBot.callbackQuery(/^adm:pay:tut:seturl:(\d+)$/, async (ctx) => {
     step: 'url',
     data: { method_id: id },
   };
-  await ctx.reply(
-    `🔗 Send the tutorial *URL* (\`http://\` or \`https://\`) for method #${id}.`,
-    { parse_mode: 'Markdown' },
-  );
+  await ctx.reply(`🔗 Send the tutorial *URL* (\`http://\` or \`https://\`) for method #${id}.`, {
+    parse_mode: 'Markdown',
+  });
 });
 
 adminBot.callbackQuery(/^adm:pay:tut:clrtxt:(\d+)$/, async (ctx) => {
@@ -2446,18 +2377,12 @@ async function showDepositList(ctx: AppCtx): Promise<void> {
   const lines = ['💰 *Pending Deposits*', ''];
   const kb = new InlineKeyboard();
   for (const d of deps) {
-    const amountStr =
-      Number(d.amount) <= 0.01
-        ? `_(amount not set)_`
-        : `$${d.amount}`;
+    const amountStr = Number(d.amount) <= 0.01 ? `_(amount not set)_` : `$${d.amount}`;
     const refLine = d.reference ? `\n     ref: \`${d.reference}\`` : '';
     const txLine = d.tx_hash && d.tx_hash !== d.reference ? `\n     tx: \`${d.tx_hash}\`` : '';
     const noteLine = d.note ? `\n     ${d.note}` : '';
     lines.push(
-      `#${d.id}  user \`${d.user_id}\`  ${d.method}  ${amountStr}` +
-        refLine +
-        txLine +
-        noteLine,
+      `#${d.id}  user \`${d.user_id}\`  ${d.method}  ${amountStr}` + refLine + txLine + noteLine,
     );
     kb.text(`💲 Set Amount #${d.id}`, `adm:dep:amt:${d.id}`).row();
     kb.text(`✅ Approve #${d.id}`, `adm:dep:ok:${d.id}`)
@@ -2711,7 +2636,10 @@ adminBot.callbackQuery(/^adm:dep:rv:(\d+)$/, async (ctx) => {
     });
   } catch (err) {
     logger.error({ err, depId: id }, 're-verify threw');
-    result = { ok: false as const, reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}` };
+    result = {
+      ok: false as const,
+      reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}`,
+    };
   }
   if (result.ok) {
     try {
@@ -3090,7 +3018,10 @@ async function showColorGlyphPicker(ctx: AppCtx): Promise<void> {
     const display = glyph.length > 0 ? glyph : '_(none)_';
     lines.push(`*${m}*: ${display}`);
   }
-  lines.push('', '_Tap a mode to change its glyph. Send any text (single emoji, brand symbol, etc.) or `/clear` to drop the override._');
+  lines.push(
+    '',
+    '_Tap a mode to change its glyph. Send any text (single emoji, brand symbol, etc.) or `/clear` to drop the override._',
+  );
   const kb = new InlineKeyboard();
   for (const m of modes) {
     kb.text(`${m} → ${getColorPrefix(m) || '·'}`, `adm:colorglyph:edit:${m}`).row();
@@ -3209,7 +3140,7 @@ adminBot.callbackQuery(/^adm:btnicon:pick:(.+)$/, async (ctx) => {
       '`custom_emoji_id` and uses it as the icon for this button.\n\n' +
       'The emoji must be one your bot owner has access to (any premium ' +
       'emoji visible to the owner). Plain unicode emojis without a ' +
-      'premium id can\'t be used as button icons.\n\n' +
+      "premium id can't be used as button icons.\n\n" +
       'Or `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -3275,9 +3206,7 @@ function announceBroadcastKeyboard(buy?: AnnounceBuy): InlineKeyboard | undefine
 }
 
 function announceConfirmKeyboard(recipients: number, buy?: AnnounceBuy): InlineKeyboard {
-  const kb = new InlineKeyboard()
-    .text(`📣 Send to ${recipients}`, 'adm:ann:send')
-    .row();
+  const kb = new InlineKeyboard().text(`📣 Send to ${recipients}`, 'adm:ann:send').row();
   if (buy) {
     kb.text('🛒 Edit Buy Button', 'adm:ann:buy:edit')
       .text('🗑 Remove Button', 'adm:ann:buy:remove')
@@ -3307,9 +3236,7 @@ async function showAnnounceConfirm(ctx: AppCtx): Promise<void> {
   };
   const recipients = await listUsersForAnnouncement();
   const previewHtml =
-    flow.data.format === 'html'
-      ? renderHtmlTemplate(flow.data.text)
-      : renderMdHtml(flow.data.text);
+    flow.data.format === 'html' ? renderHtmlTemplate(flow.data.text) : renderMdHtml(flow.data.text);
   const buyLine = buy
     ? `\n\n🛒 <b>Buy button:</b> <code>${escapeHtml(buy.label)}</code>` +
       `\n   • Product: <code>${escapeHtml(buy.product_name)}</code> (id=${buy.product_id})` +
@@ -3343,7 +3270,7 @@ async function showAnnounceBuyProductPicker(ctx: AppCtx, page: number): Promise<
   kb.text('⬅️ Back', 'adm:ann:buy:cancel');
   await ctx.editMessageText(
     '🛒 *Pick the product the Buy button should open*\n\n' +
-      'The button will deep-link straight to the product\'s quantity ' +
+      "The button will deep-link straight to the product's quantity " +
       'page in the bot — exactly what the user sees after tapping a ' +
       'product in the Shop.',
     { parse_mode: 'Markdown', reply_markup: kb },
@@ -3388,7 +3315,9 @@ async function showAnnounceBuyEdit(ctx: AppCtx): Promise<void> {
     `• Label: \`${buy.label}\`\n` +
     `• Color: \`${buy.color}\`\n` +
     `• Icon: ${
-      buy.icon_unicode ? `${buy.icon_unicode} (premium id \`${buy.icon_custom_emoji_id}\`)` : '_(none)_'
+      buy.icon_unicode
+        ? `${buy.icon_unicode} (premium id \`${buy.icon_custom_emoji_id}\`)`
+        : '_(none)_'
     }`;
   if (ctx.callbackQuery) {
     await ctx.editMessageText(previewText, { parse_mode: 'Markdown', reply_markup: previewKb });
@@ -3415,7 +3344,7 @@ adminBot.callbackQuery('adm:ann', async (ctx) => {
   await ctx.editMessageText(
     '📣 *Announce*\n\nSend the announcement text.\n\n' +
       'Tip: use `{tiger}` `{fire}` `{rocket}` etc. to insert mapped emojis (premium-aware).' +
-      '\n\nAfter the text you can attach an optional *Buy Button* that deep-links to a product\'s quantity page.' +
+      "\n\nAfter the text you can attach an optional *Buy Button* that deep-links to a product's quantity page." +
       '\n\nOr `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
@@ -3544,7 +3473,7 @@ adminBot.callbackQuery('adm:ann:buy:label', async (ctx) => {
   await ctx.editMessageText(
     `📝 *Edit Buy button label*\n\nCurrent: \`${buy.label}\`\n\n` +
       'Send the new label as a text message (max 64 chars). ' +
-      'Premium custom emojis are supported — they\'ll render inline ' +
+      "Premium custom emojis are supported — they'll render inline " +
       'on premium clients and as their unicode fallback elsewhere.\n\n' +
       'Type `/cancel` to keep the current label.',
     {
@@ -3619,7 +3548,7 @@ adminBot.callbackQuery('adm:ann:buy:icon', async (ctx) => {
     '✨ *Set Buy button icon*\n\n' +
       'Send a *premium* emoji message — the bot will read its ' +
       '`custom_emoji_id` automatically. Bot API 9.4 only renders ' +
-      'icons for premium-emoji ids; plain unicode emojis aren\'t ' +
+      "icons for premium-emoji ids; plain unicode emojis aren't " +
       'supported in the icon slot (use the label for those).\n\n' +
       'Type `clear` to remove the icon, or `/cancel` to keep the ' +
       'current one.',
@@ -3663,10 +3592,10 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
     }
   }
   ctx.session.adminFlow = undefined;
-  await ctx.editMessageText(
-    `✅ Done. Delivered: *${ok}*, failed: *${fail}*.`,
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
-  );
+  await ctx.editMessageText(`✅ Done. Delivered: *${ok}*, failed: *${fail}*.`, {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
 });
 
 // ---------- Users ----------
@@ -3687,17 +3616,12 @@ async function showUserList(ctx: AppCtx, page: number): Promise<void> {
   // `editMessageText` threw, and the 👥 Users button stayed stuck on
   // the loading spinner. HTML side-steps that — every user-supplied
   // string just goes through `escapeHtml`.
-  const lines = [
-    `👥 <b>Users</b> — page ${page + 1}/${totalPages}  (total ${total})`,
-    '',
-  ];
+  const lines = [`👥 <b>Users</b> — page ${page + 1}/${totalPages}  (total ${total})`, ''];
   const kb = new InlineKeyboard();
   for (const u of rows) {
     const handle = u.username ? `@${u.username}` : (u.first_name ?? `id ${u.telegram_id}`);
     const safeHandle = escapeHtml(handle);
-    lines.push(
-      `<code>${u.telegram_id}</code> ${safeHandle}  •  $${Number(u.balance).toFixed(2)}`,
-    );
+    lines.push(`<code>${u.telegram_id}</code> ${safeHandle}  •  $${Number(u.balance).toFixed(2)}`);
     // Button labels are not parsed as HTML / Markdown by Telegram
     // so we keep the raw `handle` here (truncated to 24 chars).
     kb.text(handle.slice(0, 24), `adm:usr:v:${u.telegram_id}`).row();
@@ -3712,7 +3636,7 @@ adminBot.callbackQuery('adm:usr:find', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = { type: 'find_user', step: 'query', data: {} };
   await ctx.editMessageText(
-    '🔍 *Find User*\n\nSend the user\'s Telegram numeric ID or `@username` (or `/cancel`).',
+    "🔍 *Find User*\n\nSend the user's Telegram numeric ID or `@username` (or `/cancel`).",
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
 });
@@ -3747,9 +3671,7 @@ async function showUserCard(ctx: AppCtx, user: DBUser): Promise<void> {
     `Admin: ${isAdminUser ? '✅' : '❌'}`,
     user.is_banned
       ? `Banned: <b>YES</b>${
-          user.banned_at
-            ? ` (since ${new Date(user.banned_at).toLocaleDateString('en-GB')})`
-            : ''
+          user.banned_at ? ` (since ${new Date(user.banned_at).toLocaleDateString('en-GB')})` : ''
         }${safeReason ? `\nReason: <i>${safeReason}</i>` : ''}`
       : 'Banned: ❌',
   ];
@@ -3896,9 +3818,9 @@ async function showCustomPriceUserPick(ctx: AppCtx): Promise<void> {
   };
   const body =
     '💎 *Custom Prices*\n\n' +
-    'Per-user, per-product price overrides. Send the user\'s ' +
+    "Per-user, per-product price overrides. Send the user's " +
     'Telegram numeric ID or `@username` to start editing.\n\n' +
-    'Tip: you can pre-set prices for users who haven\'t `/start`-ed ' +
+    "Tip: you can pre-set prices for users who haven't `/start`-ed " +
     'the bot yet — paste their numeric Telegram ID.\n\n' +
     'Or `/cancel`.';
   // Two top-level shortcuts that don't require typing a user first:
@@ -3925,10 +3847,7 @@ async function showCustomPriceUserPick(ctx: AppCtx): Promise<void> {
   }
 }
 
-async function showCustomPriceUserCard(
-  ctx: AppCtx,
-  telegram_id: number,
-): Promise<void> {
+async function showCustomPriceUserCard(ctx: AppCtx, telegram_id: number): Promise<void> {
   ctx.session.adminFlow = undefined;
   const overrides = await listUserPriceOverrides(telegram_id);
   const targetUser = await findUserById(telegram_id);
@@ -3942,8 +3861,7 @@ async function showCustomPriceUserCard(
   // surface as the generic "Something went wrong. Cancelled."
   // toast and the Custom Prices screen never opened.
   const lines: string[] = [
-    `💎 <b>Custom Prices for</b> <code>${telegram_id}</code> ` +
-      `<i>(${escapeHtml(handle)})</i>`,
+    `💎 <b>Custom Prices for</b> <code>${telegram_id}</code> ` + `<i>(${escapeHtml(handle)})</i>`,
     '',
   ];
   if (overrides.length === 0) {
@@ -4038,11 +3956,7 @@ adminBot.callbackQuery(/^adm:price:u:(\d+)$/, async (ctx) => {
 
 adminBot.callbackQuery(/^adm:price:add:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
-  await showCustomPriceProductPicker(
-    ctx,
-    Number(ctx.match[1]),
-    Number(ctx.match[2]),
-  );
+  await showCustomPriceProductPicker(ctx, Number(ctx.match[1]), Number(ctx.match[2]));
 });
 
 adminBot.callbackQuery(/^adm:price:set:(\d+):(\d+)$/, async (ctx) => {
@@ -4176,10 +4090,7 @@ adminBot.callbackQuery(/^adm:price:report:(\d+)$/, async (ctx) => {
     g.rows.push(o);
   }
   const groupArr = Array.from(groups.values());
-  const totalPages = Math.max(
-    1,
-    Math.ceil(groupArr.length / PRICE_REPORT_USERS_PER_PAGE),
-  );
+  const totalPages = Math.max(1, Math.ceil(groupArr.length / PRICE_REPORT_USERS_PER_PAGE));
   const safePage = Math.min(page, totalPages - 1);
   const start = safePage * PRICE_REPORT_USERS_PER_PAGE;
   const end = Math.min(start + PRICE_REPORT_USERS_PER_PAGE, groupArr.length);
@@ -4197,10 +4108,7 @@ adminBot.callbackQuery(/^adm:price:report:(\d+)$/, async (ctx) => {
     const g = groupArr[i];
     if (!g) continue;
     const handle = g.username ? `@${g.username}` : (g.first_name ?? '_no name_');
-    const swing = g.rows.reduce(
-      (acc, r) => acc + (r.price - r.product_default_price),
-      0,
-    );
+    const swing = g.rows.reduce((acc, r) => acc + (r.price - r.product_default_price), 0);
     const swingTxt =
       swing === 0
         ? '±$0.00'
@@ -4258,9 +4166,7 @@ adminBot.callbackQuery('adm:price:csv', async (ctx) => {
   await ctx.answerCallbackQuery({ text: 'Building CSV…' });
   const all = await listAllPriceOverrides();
   if (all.length === 0) {
-    await ctx.reply(
-      '📥 No overrides to export — set at least one before downloading.',
-    );
+    await ctx.reply('📥 No overrides to export — set at least one before downloading.');
     return;
   }
   const header = [
@@ -4280,9 +4186,7 @@ adminBot.callbackQuery('adm:price:csv', async (ctx) => {
   for (const r of all) {
     const delta = r.price - r.product_default_price;
     const pct =
-      r.product_default_price > 0
-        ? ((delta / r.product_default_price) * 100).toFixed(2)
-        : '';
+      r.product_default_price > 0 ? ((delta / r.product_default_price) * 100).toFixed(2) : '';
     lines.push(
       [
         r.telegram_id,
@@ -4344,12 +4248,15 @@ adminBot.callbackQuery('adm:price:csv', async (ctx) => {
 const PROMO_PAGE_SIZE = 8;
 
 /** Human-readable scope label for the list / detail views. */
-function promoScopeLabel(p: Pick<DBPromo, 'product_id' | 'telegram_id'> & { product_name?: string | null }): string {
+function promoScopeLabel(
+  p: Pick<DBPromo, 'product_id' | 'telegram_id'> & { product_name?: string | null },
+): string {
   if (p.telegram_id !== null && p.product_id !== null) {
     return `User \`${p.telegram_id}\` · Product ${p.product_name ? `*${p.product_name}*` : `#${p.product_id}`}`;
   }
   if (p.telegram_id !== null) return `User \`${p.telegram_id}\` · _any product_`;
-  if (p.product_id !== null) return `_any user_ · Product ${p.product_name ? `*${p.product_name}*` : `#${p.product_id}`}`;
+  if (p.product_id !== null)
+    return `_any user_ · Product ${p.product_name ? `*${p.product_name}*` : `#${p.product_id}`}`;
   return '_default — every user, every product_';
 }
 
@@ -4383,13 +4290,14 @@ async function showPromoList(ctx: AppCtx, page: number): Promise<void> {
     .text('📊 Full overview', 'adm:promo:report:0')
     .row();
   for (const p of rows) {
-    const scope = p.telegram_id && p.product_id
-      ? 'U+P'
-      : p.telegram_id
-        ? 'User'
-        : p.product_id
-          ? 'Prod'
-          : 'Def';
+    const scope =
+      p.telegram_id && p.product_id
+        ? 'U+P'
+        : p.telegram_id
+          ? 'User'
+          : p.product_id
+            ? 'Prod'
+            : 'Def';
     kb.text(
       `#${p.id} ${scope} q≥${p.min_qty} −$${Number(p.discount_amount).toFixed(2)}`,
       `adm:promo:v:${p.id}`,
@@ -4463,10 +4371,10 @@ adminBot.command('promo', async (ctx) => {
     const kb = new InlineKeyboard()
       .text('🗑 Yes, delete', `adm:promo:delok:${id}`)
       .text('❌ Cancel', `adm:promo:v:${id}`);
-    await ctx.reply(
-      `🗑 *Delete promo #${id}?*\n\nThis cannot be undone.`,
-      { parse_mode: 'Markdown', reply_markup: kb },
-    );
+    await ctx.reply(`🗑 *Delete promo #${id}?*\n\nThis cannot be undone.`, {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
     return;
   }
   await ctx.reply(
@@ -4492,11 +4400,7 @@ adminBot.callbackQuery(/^adm:promo:list:(\d+)$/, async (ctx) => {
  * edit), by replying with a fresh message. Used by every admin
  * helper that can be reached both ways.
  */
-async function sendOrEdit(
-  ctx: AppCtx,
-  text: string,
-  reply_markup: InlineKeyboard,
-): Promise<void> {
+async function sendOrEdit(ctx: AppCtx, text: string, reply_markup: InlineKeyboard): Promise<void> {
   const opts = { parse_mode: 'Markdown' as const, reply_markup };
   // Answer callback immediately before editing to stop loading spinner
   if (ctx.callbackQuery) {
@@ -4523,21 +4427,14 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
   ctx.session.adminFlow = undefined;
   const p = await getPromo(promo_id);
   if (!p) {
-    await sendOrEdit(
-      ctx,
-      '❓ Promo not found.',
-      new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
-    );
+    await sendOrEdit(ctx, '❓ Promo not found.', new InlineKeyboard().text('⬅️ Back', 'adm:promo'));
     return;
   }
   // Hydrate side-tables in parallel — none of them block on each
   // other and only the first three are guaranteed to fire.
   // Use timeout wrapper to prevent hangs if a query stalls.
   const withTimeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
-    Promise.race([
-      promise,
-      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
-    ]);
+    Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
   const [product, targetUser, actorUser, impact] = await Promise.all([
     withTimeout(
@@ -4584,8 +4481,7 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
     const grossAtMin = price * p.min_qty;
     const discountAtMin = Math.min(Number(p.discount_amount), grossAtMin);
     const totalAtMin = grossAtMin - discountAtMin;
-    const pct =
-      grossAtMin > 0 ? `${((discountAtMin / grossAtMin) * 100).toFixed(1)}%` : 'n/a';
+    const pct = grossAtMin > 0 ? `${((discountAtMin / grossAtMin) * 100).toFixed(1)}%` : 'n/a';
     lines.push(
       `   • At qty *${p.min_qty}*: gross *$${grossAtMin.toFixed(2)}*` +
         ` → pay *$${totalAtMin.toFixed(2)}* (saves $${discountAtMin.toFixed(2)} / ${pct})`,
@@ -4605,11 +4501,7 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
     );
   } else if (p.telegram_id !== null) {
     // User-scoped promo set for a tg id that hasn't /start-ed yet.
-    lines.push(
-      '',
-      `👤 *Target user*`,
-      `   • \`${p.telegram_id}\` _(hasn't started the bot)_`,
-    );
+    lines.push('', `👤 *Target user*`, `   • \`${p.telegram_id}\` _(hasn't started the bot)_`);
   }
 
   // Excluded users — opt-out list, applied on top of the scope
@@ -4619,13 +4511,12 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
     ? p.excluded_telegram_ids.map(Number)
     : [];
   if (excluded.length > 0) {
-    const preview = excluded.slice(0, 5).map((id) => `\`${id}\``).join(', ');
+    const preview = excluded
+      .slice(0, 5)
+      .map((id) => `\`${id}\``)
+      .join(', ');
     const more = excluded.length > 5 ? `, +${excluded.length - 5} more` : '';
-    lines.push(
-      '',
-      `🚫 *Excluded users (${excluded.length})*`,
-      `   ${preview}${more}`,
-    );
+    lines.push('', `🚫 *Excluded users (${excluded.length})*`, `   ${preview}${more}`);
   } else {
     lines.push('', `🚫 *Excluded users:* _none_`);
   }
@@ -4664,9 +4555,7 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
     .row()
     .text('🏷 Name', `adm:promo:editn:${p.id}`)
     .text(
-      excluded.length > 0
-        ? `🚫 Excluded (${excluded.length})`
-        : '🚫 Exclude users',
+      excluded.length > 0 ? `🚫 Excluded (${excluded.length})` : '🚫 Exclude users',
       `adm:promo:ex:${p.id}`,
     )
     .row()
@@ -4686,7 +4575,9 @@ adminBot.callbackQuery(/^adm:promo:v:(\d+)$/, async (ctx) => {
     logger.error({ err, promo_id: id }, 'adm:promo:v failed');
     try {
       await ctx.answerCallbackQuery({ text: 'Failed to load promo', show_alert: true });
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   }
 });
 
@@ -4708,10 +4599,10 @@ adminBot.callbackQuery(/^adm:promo:del:(\d+)$/, async (ctx) => {
   const kb = new InlineKeyboard()
     .text('🗑 Yes, delete', `adm:promo:delok:${id}`)
     .text('❌ Cancel', `adm:promo:v:${id}`);
-  await ctx.editMessageText(
-    `🗑 *Delete promo #${id}?*\n\nThis cannot be undone.`,
-    { parse_mode: 'Markdown', reply_markup: kb },
-  );
+  await ctx.editMessageText(`🗑 *Delete promo #${id}?*\n\nThis cannot be undone.`, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
 });
 
 adminBot.callbackQuery(/^adm:promo:delok:(\d+)$/, async (ctx) => {
@@ -4737,11 +4628,7 @@ async function showPromoExclusions(ctx: AppCtx, promo_id: number): Promise<void>
   ctx.session.adminFlow = undefined;
   const p = await getPromo(promo_id);
   if (!p) {
-    await sendOrEdit(
-      ctx,
-      '❓ Promo not found.',
-      new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
-    );
+    await sendOrEdit(ctx, '❓ Promo not found.', new InlineKeyboard().text('⬅️ Back', 'adm:promo'));
     return;
   }
   const excluded = Array.isArray(p.excluded_telegram_ids)
@@ -4753,9 +4640,7 @@ async function showPromoExclusions(ctx: AppCtx, promo_id: number): Promise<void>
   const handles = await Promise.all(
     excluded.map(async (id) => {
       const u = await findUserById(id);
-      const label = u?.username
-        ? `@${u.username}`
-        : (u?.first_name ?? '_no name_');
+      const label = u?.username ? `@${u.username}` : (u?.first_name ?? '_no name_');
       return { id, label };
     }),
   );
@@ -4783,9 +4668,7 @@ async function showPromoExclusions(ctx: AppCtx, promo_id: number): Promise<void>
     }
   }
 
-  const kb = new InlineKeyboard()
-    .text('➕ Exclude a user', `adm:promo:exadd:${p.id}`)
-    .row();
+  const kb = new InlineKeyboard().text('➕ Exclude a user', `adm:promo:exadd:${p.id}`).row();
   for (const h of handles) {
     kb.text(`🗑 Remove ${h.id}`, `adm:promo:exdel:${p.id}:${h.id}`).row();
   }
@@ -4942,13 +4825,15 @@ adminBot.callbackQuery(/^adm:promo:report:(\d+)$/, async (ctx) => {
       const userPart =
         r.telegram_id !== null
           ? ` user \`${r.telegram_id}\`${
-              r.username ? ` (@${r.username})` : r.first_name ? ` (${escapeHtml(r.first_name)})` : ''
+              r.username
+                ? ` (@${r.username})`
+                : r.first_name
+                  ? ` (${escapeHtml(r.first_name)})`
+                  : ''
             }`
           : '';
       const productPart =
-        r.product_id !== null
-          ? ` · *${escapeHtml(r.product_name ?? `#${r.product_id}`)}*`
-          : '';
+        r.product_id !== null ? ` · *${escapeHtml(r.product_name ?? `#${r.product_id}`)}*` : '';
       const im = impactMap.get(r.id)!;
       lines.push(
         `   • ${status} \`#${r.id}\` qty ≥ *${r.min_qty}* → −*$${Number(r.discount_amount).toFixed(2)}*${name}` +
@@ -5081,16 +4966,12 @@ adminBot.callbackQuery('adm:promo:new', async (ctx) => {
   );
 });
 
-async function showPromoNewProductPicker(
-  ctx: AppCtx,
-  page: number,
-): Promise<void> {
+async function showPromoNewProductPicker(ctx: AppCtx, page: number): Promise<void> {
   const flow = ctx.session.adminFlow;
   if (flow?.type !== 'promo_add' || flow.step !== 'pick_product') {
-    await ctx.editMessageText(
-      '❓ Lost the promo flow — start over.',
-      { reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo') },
-    );
+    await ctx.editMessageText('❓ Lost the promo flow — start over.', {
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+    });
     return;
   }
   const { rows, total } = await listAllProducts(page, PROMO_PAGE_SIZE);
@@ -5166,7 +5047,7 @@ adminBot.callbackQuery(/^adm:promo:scope:(default|product|user|user_product)$/, 
     [
       '➕ *New promo — Step 2: Pick user*',
       '',
-      'Send the user\'s numeric Telegram ID or `@username`.',
+      "Send the user's numeric Telegram ID or `@username`.",
       '',
       '`@username` only works for users who have already started the bot at least once.',
       'Numeric IDs work for anyone.',
@@ -5280,13 +5161,10 @@ adminBot.callbackQuery('adm:promo:nameSkip', async (ctx) => {
       e?.code === '42P01'
         ? 'The `promos` table is missing — apply migrations 0013 / 0014.'
         : (e?.message ?? String(err)).slice(0, 500);
-    await ctx.editMessageText(
-      `⚠️ *Could not save promo*\n\n\`${escapeHtml(detail)}\``,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
-      },
-    );
+    await ctx.editMessageText(`⚠️ *Could not save promo*\n\n\`${escapeHtml(detail)}\``, {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('⬅️ Back', 'adm:promo'),
+    });
     return;
   }
   ctx.session.adminFlow = undefined;
@@ -5330,10 +5208,7 @@ adminBot.on('message:text', async (ctx, next) => {
   // Numeric / URL / address flows are unaffected because real
   // numeric / URL inputs from the admin keyboard never carry
   // `custom_emoji` entities, so the helper is a no-op for them.
-  const text = injectCustomEmojiMarkers(
-    ctx.message.text,
-    ctx.message.entities,
-  ).trim();
+  const text = injectCustomEmojiMarkers(ctx.message.text, ctx.message.entities).trim();
 
   if (text === '/cancel') {
     ctx.session.adminFlow = undefined;
@@ -5364,10 +5239,10 @@ adminBot.on('message:text', async (ctx, next) => {
         const cat = await addCategory(flow.data.name, text);
         ctx.session.adminFlow = undefined;
         cache.del('cats');
-        await ctx.reply(
-          `✅ Category *${cat.name}* added (id=${cat.id}).`,
-          { parse_mode: 'Markdown', reply_markup: rootMenu() },
-        );
+        await ctx.reply(`✅ Category *${cat.name}* added (id=${cat.id}).`, {
+          parse_mode: 'Markdown',
+          reply_markup: rootMenu(),
+        });
       }
       return;
     }
@@ -5450,10 +5325,10 @@ adminBot.on('message:text', async (ctx, next) => {
           data: { ...flow.data, description: text },
         };
         const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:note');
-        await ctx.reply(
-          'Send the *View Note* text shown when buyer taps 📝 View Note (or Skip).',
-          { parse_mode: 'Markdown', reply_markup: kb },
-        );
+        await ctx.reply('Send the *View Note* text shown when buyer taps 📝 View Note (or Skip).', {
+          parse_mode: 'Markdown',
+          reply_markup: kb,
+        });
       } else if (flow.step === 'note') {
         ctx.session.adminFlow = {
           type: 'add_product',
@@ -5497,7 +5372,7 @@ adminBot.on('message:text', async (ctx, next) => {
       ) as { custom_emoji_id: string } | undefined;
       if (!ent) {
         await ctx.reply(
-          '❌ I didn\'t see a premium emoji in that message. Try again with a single premium emoji.',
+          "❌ I didn't see a premium emoji in that message. Try again with a single premium emoji.",
         );
         return;
       }
@@ -5606,7 +5481,9 @@ adminBot.on('message:text', async (ctx, next) => {
       await updateProduct(flow.data.product_id, { referral_required_count: count });
       ctx.session.adminFlow = undefined;
       await ctx.reply(
-        count > 0 ? `✅ Referral reward set: ${count} referrals.` : '✅ Referral reward disabled.',
+        count > 0
+          ? `✅ Referral Pay set: ${count} referrals required.`
+          : '✅ Referral Pay disabled.',
       );
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
@@ -5619,7 +5496,10 @@ adminBot.on('message:text', async (ctx, next) => {
       }
       const existing = await getProduct(newId);
       if (existing) {
-        await ctx.reply(`❌ Product with ID ${newId} already exists (*${escapeMd(existing.name)}*). Choose a different ID.`, { parse_mode: 'Markdown' });
+        await ctx.reply(
+          `❌ Product with ID ${newId} already exists (*${escapeMd(existing.name)}*). Choose a different ID.`,
+          { parse_mode: 'Markdown' },
+        );
         return;
       }
       await changeProductId(flow.data.product_id, newId);
@@ -5680,9 +5560,7 @@ adminBot.on('message:text', async (ctx, next) => {
           continue;
         }
         const required =
-          parts[2] === undefined
-            ? true
-            : !/^(optional|opt|false|no)$/i.test(parts[2]);
+          parts[2] === undefined ? true : !/^(optional|opt|false|no)$/i.test(parts[2]);
         if (seenKeys.has(key)) {
           // last-write-wins
           const idx = fields.findIndex((f) => f.key === key);
@@ -5699,15 +5577,16 @@ adminBot.on('message:text', async (ctx, next) => {
         return;
       }
       if (fields.length === 0) {
-        await ctx.reply('❌ No valid fields found. Send `clear` to wipe the spec or `/cancel` to abort.');
+        await ctx.reply(
+          '❌ No valid fields found. Send `clear` to wipe the spec or `/cancel` to abort.',
+        );
         return;
       }
       await updateProduct(flow.data.product_id, { delivery_fields: fields });
       ctx.session.adminFlow = undefined;
-      await ctx.reply(
-        `✅ Saved \`${fields.length}\` field${fields.length === 1 ? '' : 's'}.`,
-        { parse_mode: 'Markdown' },
-      );
+      await ctx.reply(`✅ Saved \`${fields.length}\` field${fields.length === 1 ? '' : 's'}.`, {
+        parse_mode: 'Markdown',
+      });
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
@@ -5759,16 +5638,9 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
     if (flow.type === 'edit_payment_tutorial_text') {
-      await setPaymentMethodTutorialField(
-        flow.data.method_id,
-        'text',
-        text,
-        ctx.from!.id,
-      );
+      await setPaymentMethodTutorialField(flow.data.method_id, 'text', text, ctx.from!.id);
       ctx.session.adminFlow = undefined;
-      await ctx.reply(
-        `✅ Tutorial text for method #${flow.data.method_id} saved.`,
-      );
+      await ctx.reply(`✅ Tutorial text for method #${flow.data.method_id} saved.`);
       return;
     }
     if (flow.type === 'edit_payment_tutorial_url') {
@@ -5776,16 +5648,9 @@ adminBot.on('message:text', async (ctx, next) => {
         await ctx.reply('❌ URL must start with `http://` or `https://`.');
         return;
       }
-      await setPaymentMethodTutorialField(
-        flow.data.method_id,
-        'url',
-        text,
-        ctx.from!.id,
-      );
+      await setPaymentMethodTutorialField(flow.data.method_id, 'url', text, ctx.from!.id);
       ctx.session.adminFlow = undefined;
-      await ctx.reply(
-        `✅ Tutorial URL for method #${flow.data.method_id} saved.`,
-      );
+      await ctx.reply(`✅ Tutorial URL for method #${flow.data.method_id} saved.`);
       return;
     }
 
@@ -5830,7 +5695,7 @@ adminBot.on('message:text', async (ctx, next) => {
           [
             'Send the *Binance Pay ID* — your 10-digit numeric ID (e.g. `1101801594`). The verifier rejects orders sent to any other Pay ID.',
             '',
-            'You can find it in the Binance app → *Pay* → *Receive* → it\'s the long number above your QR code.',
+            "You can find it in the Binance app → *Pay* → *Receive* → it's the long number above your QR code.",
           ].join('\n'),
           { parse_mode: 'Markdown' },
         );
@@ -5839,9 +5704,7 @@ adminBot.on('message:text', async (ctx, next) => {
       if (flow.step === 'pay_id') {
         const cleaned = text.replace(/\s+/g, '');
         if (!/^\d{6,15}$/.test(cleaned)) {
-          await ctx.reply(
-            '❌ Pay ID should be 6–15 digits, no spaces. Try again or `/cancel`.',
-          );
+          await ctx.reply('❌ Pay ID should be 6–15 digits, no spaces. Try again or `/cancel`.');
           return;
         }
         ctx.session.adminFlow = {
@@ -5850,7 +5713,7 @@ adminBot.on('message:text', async (ctx, next) => {
           data: { name: flow.data.name, pay_id: cleaned },
         };
         await ctx.reply(
-          'Send the *Binance Pay Name* — the display string shown next to your Pay ID (e.g. `urweebboii`). Users see this on the deposit screen so they know they\'re paying the right account.',
+          "Send the *Binance Pay Name* — the display string shown next to your Pay ID (e.g. `urweebboii`). Users see this on the deposit screen so they know they're paying the right account.",
           { parse_mode: 'Markdown' },
         );
         return;
@@ -5858,9 +5721,7 @@ adminBot.on('message:text', async (ctx, next) => {
       if (flow.step === 'pay_name') {
         const trimmed = text.trim();
         if (!trimmed || trimmed.length < 2 || trimmed.length > 64) {
-          await ctx.reply(
-            '❌ Pay Name must be 2–64 chars. Try again or `/cancel`.',
-          );
+          await ctx.reply('❌ Pay Name must be 2–64 chars. Try again or `/cancel`.');
           return;
         }
         const m = await addPaymentMethod({
@@ -6004,10 +5865,9 @@ adminBot.on('message:text', async (ctx, next) => {
       } else if (flow.step === 'per_user_limit') {
         const lim = Number(text);
         if (!Number.isInteger(lim) || lim < 1) {
-          await ctx.reply(
-            '⚠️ Send a positive integer (e.g. <code>1</code>).',
-            { parse_mode: 'HTML' },
-          );
+          await ctx.reply('⚠️ Send a positive integer (e.g. <code>1</code>).', {
+            parse_mode: 'HTML',
+          });
           return;
         }
         ctx.session.adminFlow = {
@@ -6024,10 +5884,9 @@ adminBot.on('message:text', async (ctx, next) => {
         if (text !== '-' && text !== '') {
           const n = Number(text);
           if (!Number.isInteger(n) || n < 1) {
-            await ctx.reply(
-              '⚠️ Send a positive integer or <code>-</code> for unlimited.',
-              { parse_mode: 'HTML' },
-            );
+            await ctx.reply('⚠️ Send a positive integer or <code>-</code> for unlimited.', {
+              parse_mode: 'HTML',
+            });
             return;
           }
           max = n;
@@ -6088,10 +5947,10 @@ adminBot.on('message:text', async (ctx, next) => {
             );
             return;
           }
-          await ctx.reply(
-            '⚠️ Could not create gift code.' + detail,
-            { parse_mode: 'HTML', reply_markup: rootMenu() },
-          );
+          await ctx.reply('⚠️ Could not create gift code.' + detail, {
+            parse_mode: 'HTML',
+            reply_markup: rootMenu(),
+          });
         }
       }
       return;
@@ -6153,13 +6012,11 @@ adminBot.on('message:text', async (ctx, next) => {
       }
       await setEmoji(flow.data.key, unicode, customId, ctx.from!.id);
       ctx.session.adminFlow = undefined;
-      const idLine = customId
-        ? ` (premium id \`${customId}\`)`
-        : '';
-      await ctx.reply(
-        `✅ Emoji \`${flow.data.key}\` updated → ${unicode}${idLine}.`,
-        { parse_mode: 'Markdown', reply_markup: rootMenu() },
-      );
+      const idLine = customId ? ` (premium id \`${customId}\`)` : '';
+      await ctx.reply(`✅ Emoji \`${flow.data.key}\` updated → ${unicode}${idLine}.`, {
+        parse_mode: 'Markdown',
+        reply_markup: rootMenu(),
+      });
       return;
     }
 
@@ -6189,10 +6046,9 @@ adminBot.on('message:text', async (ctx, next) => {
         unicode = trimmed;
       }
       if (!unicode) {
-        await ctx.reply(
-          '❌ Couldn\'t read an emoji. Send a single emoji or `clear` to reset.',
-          { parse_mode: 'Markdown' },
-        );
+        await ctx.reply("❌ Couldn't read an emoji. Send a single emoji or `clear` to reset.", {
+          parse_mode: 'Markdown',
+        });
         return;
       }
       // Sanity-check unicode length — a plain emoji is at most ~8
@@ -6202,7 +6058,7 @@ adminBot.on('message:text', async (ctx, next) => {
       // keep the flow armed for a retry.
       if (!customId && unicode.length > 8) {
         await ctx.reply(
-          '⚠️ That doesn\'t look like a single emoji.\n\n' +
+          "⚠️ That doesn't look like a single emoji.\n\n" +
             'Send a single emoji (or a *premium* custom emoji message). ' +
             'Type `clear` to reset to default, or `/cancel` to abort.',
           { parse_mode: 'Markdown' },
@@ -6212,10 +6068,9 @@ adminBot.on('message:text', async (ctx, next) => {
       await setPaymentMethodIcon(flow.data.method_id, unicode, customId);
       ctx.session.adminFlow = undefined;
       const idLine = customId ? ` (premium id \`${customId}\`)` : '';
-      await ctx.reply(
-        `✅ Payment method #${flow.data.method_id} icon → ${unicode}${idLine}.`,
-        { parse_mode: 'Markdown' },
-      );
+      await ctx.reply(`✅ Payment method #${flow.data.method_id} icon → ${unicode}${idLine}.`, {
+        parse_mode: 'Markdown',
+      });
       return;
     }
 
@@ -6292,10 +6147,9 @@ adminBot.on('message:text', async (ctx, next) => {
       if (trimmed === '/clear') {
         await clearColorPrefix(mode);
         ctx.session.adminFlow = undefined;
-        await ctx.reply(
-          `✅ Cleared *${mode}* glyph — falling back to the built-in default.`,
-          { parse_mode: 'Markdown' },
-        );
+        await ctx.reply(`✅ Cleared *${mode}* glyph — falling back to the built-in default.`, {
+          parse_mode: 'Markdown',
+        });
         return;
       }
       // Trim whitespace but allow zero-width / multi-codepoint emoji.
@@ -6303,10 +6157,9 @@ adminBot.on('message:text', async (ctx, next) => {
       const glyph = trimmed.slice(0, 16);
       await setColorPrefix(mode, glyph, ctx.from!.id);
       ctx.session.adminFlow = undefined;
-      await ctx.reply(
-        `✅ Updated *${mode}* glyph → ${glyph || '_(empty)_'}.`,
-        { parse_mode: 'Markdown' },
-      );
+      await ctx.reply(`✅ Updated *${mode}* glyph → ${glyph || '_(empty)_'}.`, {
+        parse_mode: 'Markdown',
+      });
       return;
     }
 
@@ -6410,10 +6263,9 @@ adminBot.on('message:text', async (ctx, next) => {
             },
           },
         };
-        await ctx.reply(
-          `✅ Icon set → ${unicode} (premium id \`${customId}\`).`,
-          { parse_mode: 'Markdown' },
-        );
+        await ctx.reply(`✅ Icon set → ${unicode} (premium id \`${customId}\`).`, {
+          parse_mode: 'Markdown',
+        });
         await showAnnounceBuyEdit(ctx);
         return;
       }
@@ -6423,7 +6275,7 @@ adminBot.on('message:text', async (ctx, next) => {
     if (flow.type === 'set_channel') {
       if (!/^https?:\/\/t\.me\//i.test(text) && !/^https?:\/\//i.test(text)) {
         await ctx.reply(
-          '❌ That doesn\'t look like a URL. Send a link like `https://t.me/yourchannel`.',
+          "❌ That doesn't look like a URL. Send a link like `https://t.me/yourchannel`.",
           { parse_mode: 'Markdown' },
         );
         return;
@@ -6488,11 +6340,9 @@ adminBot.on('message:text', async (ctx, next) => {
                   amount: Math.abs(delta).toFixed(2),
                   balance: balanceFmt,
                 });
-          await ctx.api.sendMessage(
-            flow.data.telegram_id,
-            renderMdHtml(tpl),
-            { parse_mode: 'HTML' },
-          );
+          await ctx.api.sendMessage(flow.data.telegram_id, renderMdHtml(tpl), {
+            parse_mode: 'HTML',
+          });
         }
       } catch (err) {
         logger.warn({ err }, 'Could not DM user about balance change');
@@ -6522,9 +6372,7 @@ adminBot.on('message:text', async (ctx, next) => {
       await ctx.reply(
         `🚫 *User banned.*\n\n` +
           `\`${flow.data.telegram_id}\` will see no responses from the bot ` +
-          `until you unban them.${
-            reason ? `\n\nReason on file: _${reason}_` : ''
-          }`,
+          `until you unban them.${reason ? `\n\nReason on file: _${reason}_` : ''}`,
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;
@@ -6613,9 +6461,7 @@ adminBot.on('message:text', async (ctx, next) => {
           price,
           created_by: ctx.from!.id,
         });
-        ok.push(
-          `• ${escapeHtml(product.name)} (\`#${product_id}\`) → *$${price.toFixed(2)}*`,
-        );
+        ok.push(`• ${escapeHtml(product.name)} (\`#${product_id}\`) → *$${price.toFixed(2)}*`);
       }
       ctx.session.adminFlow = undefined;
       const summary = [
@@ -6978,7 +6824,7 @@ adminBot.on('message:text', async (ctx, next) => {
             'missing on your Supabase project. Apply ' +
             '`supabase/migrations/0021_payment_methods_chrome.sql`, then ' +
             'reload the API schema (Project Settings → API → Restart ' +
-            'server, or run `select pg_notify(\'pgrst\', \'reload schema\');`) ' +
+            "server, or run `select pg_notify('pgrst', 'reload schema');`) " +
             'and retry.',
           { parse_mode: 'Markdown', reply_markup: rootMenu() },
         );
@@ -6991,7 +6837,7 @@ adminBot.on('message:text', async (ctx, next) => {
       ctx.session.adminFlow = flow;
       const detail = e?.message ?? String(err);
       await ctx.reply(
-        '⚠️ Couldn\'t set that as the icon.\n\n' +
+        "⚠️ Couldn't set that as the icon.\n\n" +
           `\`\`\`\n${detail.slice(0, 500)}\n\`\`\`\n` +
           (e?.hint ? `_Hint: ${escapeHtml(e.hint)}_\n` : '') +
           '\nSend a single emoji (or a *premium* custom emoji message), ' +
@@ -7031,10 +6877,9 @@ adminBot.on('message:document', async (ctx, next) => {
       (doc.mime_type ?? '').toLowerCase().startsWith('text/') ||
       (doc.file_name ?? '').toLowerCase().endsWith('.txt');
     if (!isTxt) {
-      await ctx.reply(
-        '❌ Only `.txt` files are supported in this step. Re-upload as plain text.',
-        { parse_mode: 'Markdown' },
-      );
+      await ctx.reply('❌ Only `.txt` files are supported in this step. Re-upload as plain text.', {
+        parse_mode: 'Markdown',
+      });
       return;
     }
     if ((doc.file_size ?? 0) > ITEMS_DOC_BYTE_CAP) {
@@ -7069,10 +6914,9 @@ adminBot.on('message:document', async (ctx, next) => {
       (doc.mime_type ?? '').toLowerCase().startsWith('text/') ||
       (doc.file_name ?? '').toLowerCase().endsWith('.txt');
     if (!isTxt) {
-      await ctx.reply(
-        '❌ Only `.txt` files are supported in this flow. Re-upload as plain text.',
-        { parse_mode: 'Markdown' },
-      );
+      await ctx.reply('❌ Only `.txt` files are supported in this flow. Re-upload as plain text.', {
+        parse_mode: 'Markdown',
+      });
       return;
     }
     if ((doc.file_size ?? 0) > ITEMS_DOC_BYTE_CAP) {
@@ -7113,27 +6957,15 @@ adminBot.on('message:document', async (ctx, next) => {
     return;
   }
   if (flow.type === 'edit_payment_tutorial_file') {
-    await setPaymentMethodTutorialField(
-      flow.data.method_id,
-      'file_id',
-      doc.file_id,
-      ctx.from.id,
-    );
-    await setPaymentMethodTutorialField(
-      flow.data.method_id,
-      'file_type',
-      'document',
-      ctx.from.id,
-    );
+    await setPaymentMethodTutorialField(flow.data.method_id, 'file_id', doc.file_id, ctx.from.id);
+    await setPaymentMethodTutorialField(flow.data.method_id, 'file_type', 'document', ctx.from.id);
     ctx.session.adminFlow = undefined;
-    await ctx.reply(
-      `✅ Tutorial document for method #${flow.data.method_id} saved.`,
-    );
+    await ctx.reply(`✅ Tutorial document for method #${flow.data.method_id} saved.`);
     return;
   }
   if (flow.type === 'edit_payment_icon') {
     await ctx.reply(
-      '⚠️ That\'s a document, not an emoji.\n\n' +
+      "⚠️ That's a document, not an emoji.\n\n" +
         'Send a single emoji (or a *premium* custom emoji message). ' +
         'Type `clear` to reset to default, or `/cancel` to abort.',
       { parse_mode: 'Markdown' },
@@ -7170,22 +7002,10 @@ adminBot.on('message:photo', async (ctx, next) => {
     return;
   }
   if (flow.type === 'edit_payment_tutorial_file') {
-    await setPaymentMethodTutorialField(
-      flow.data.method_id,
-      'file_id',
-      fileId,
-      ctx.from.id,
-    );
-    await setPaymentMethodTutorialField(
-      flow.data.method_id,
-      'file_type',
-      'photo',
-      ctx.from.id,
-    );
+    await setPaymentMethodTutorialField(flow.data.method_id, 'file_id', fileId, ctx.from.id);
+    await setPaymentMethodTutorialField(flow.data.method_id, 'file_type', 'photo', ctx.from.id);
     ctx.session.adminFlow = undefined;
-    await ctx.reply(
-      `✅ Tutorial photo for method #${flow.data.method_id} saved.`,
-    );
+    await ctx.reply(`✅ Tutorial photo for method #${flow.data.method_id} saved.`);
     return;
   }
   if (flow.type === 'edit_payment_icon') {
@@ -7195,7 +7015,7 @@ adminBot.on('message:photo', async (ctx, next) => {
     await ctx.reply(
       '⚠️ That looks like a photo, not an emoji.\n\n' +
         'Send a single emoji (or a *premium* custom emoji message) — ' +
-        'photos / images / stickers can\'t be used as button icons.\n\n' +
+        "photos / images / stickers can't be used as button icons.\n\n" +
         'Send `clear` to reset to the per-provider default, or `/cancel` to abort.',
       { parse_mode: 'Markdown' },
     );
@@ -7212,9 +7032,9 @@ adminBot.on('message:sticker', async (ctx, next) => {
   if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
   if (flow.type === 'edit_payment_icon') {
     await ctx.reply(
-      '⚠️ That\'s a sticker, not an emoji.\n\n' +
+      "⚠️ That's a sticker, not an emoji.\n\n" +
         'Send a single emoji (or a *premium* custom emoji message) — ' +
-        'stickers can\'t be used as button icons.\n\n' +
+        "stickers can't be used as button icons.\n\n" +
         'Send `clear` to reset to the per-provider default, or `/cancel` to abort.',
       { parse_mode: 'Markdown' },
     );
@@ -7229,7 +7049,7 @@ adminBot.on('message:animation', async (ctx, next) => {
   if (!ctx.from || !(await isAdmin(ctx.from.id))) return next();
   if (flow.type === 'edit_payment_icon') {
     await ctx.reply(
-      '⚠️ That\'s an animation, not an emoji.\n\n' +
+      "⚠️ That's an animation, not an emoji.\n\n" +
         'Send a single emoji (or a *premium* custom emoji message).',
       { parse_mode: 'Markdown' },
     );
@@ -7260,27 +7080,15 @@ adminBot.on('message:video', async (ctx, next) => {
     return;
   }
   if (flow.type === 'edit_payment_tutorial_file') {
-    await setPaymentMethodTutorialField(
-      flow.data.method_id,
-      'file_id',
-      fileId,
-      ctx.from.id,
-    );
-    await setPaymentMethodTutorialField(
-      flow.data.method_id,
-      'file_type',
-      'video',
-      ctx.from.id,
-    );
+    await setPaymentMethodTutorialField(flow.data.method_id, 'file_id', fileId, ctx.from.id);
+    await setPaymentMethodTutorialField(flow.data.method_id, 'file_type', 'video', ctx.from.id);
     ctx.session.adminFlow = undefined;
-    await ctx.reply(
-      `✅ Tutorial video for method #${flow.data.method_id} saved.`,
-    );
+    await ctx.reply(`✅ Tutorial video for method #${flow.data.method_id} saved.`);
     return;
   }
   if (flow.type === 'edit_payment_icon') {
     await ctx.reply(
-      '⚠️ That\'s a video, not an emoji.\n\n' +
+      "⚠️ That's a video, not an emoji.\n\n" +
         'Send a single emoji (or a *premium* custom emoji message). ' +
         'Type `clear` to reset to default, or `/cancel` to abort.',
       { parse_mode: 'Markdown' },
@@ -7308,7 +7116,7 @@ adminBot.on('message', async (ctx, next) => {
   // and gets the polite retry hint.
   if ('text' in ctx.message && ctx.message.text) return next();
   await ctx.reply(
-    '⚠️ That message isn\'t an emoji.\n\n' +
+    "⚠️ That message isn't an emoji.\n\n" +
       'Send a single emoji (or a *premium* custom emoji message). ' +
       'Type `clear` to reset to default, or `/cancel` to abort.',
     { parse_mode: 'Markdown' },
@@ -7395,10 +7203,10 @@ adminBot.callbackQuery(/^adm:prod:skip:(warranty|description|note|items)$/, asyn
       data: flow.data,
     };
     const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:note');
-    await ctx.reply(
-      'Send the *View Note* text shown when buyer taps 📝 View Note (or Skip).',
-      { parse_mode: 'Markdown', reply_markup: kb },
-    );
+    await ctx.reply('Send the *View Note* text shown when buyer taps 📝 View Note (or Skip).', {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
   } else if (which === 'note' && flow.step === 'note') {
     ctx.session.adminFlow = {
       type: 'add_product',
@@ -7457,9 +7265,7 @@ async function finalizeProduct(
   }
   ctx.session.adminFlow = undefined;
   cache.del('cats');
-  const stockBlurb = unlimited
-    ? 'stock ∞'
-    : `stock ${product.stock}`;
+  const stockBlurb = unlimited ? 'stock ∞' : `stock ${product.stock}`;
   await ctx.reply(
     [
       `✅ Product *${product.name}* added (id=${product.id}, $${product.price}, ${stockBlurb}).`,
@@ -7532,13 +7338,11 @@ function readPremiumEmojiFromMessage(
   if (!reply) return null;
   const text = reply.text ?? reply.caption ?? '';
   const entities = reply.entities ?? reply.caption_entities ?? [];
-  const entity = entities.find(
-    (e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e,
-  ) as { offset: number; length: number; custom_emoji_id: string } | undefined;
+  const entity = entities.find((e) => e.type === 'custom_emoji' && 'custom_emoji_id' in e) as
+    | { offset: number; length: number; custom_emoji_id: string }
+    | undefined;
   if (!entity) return null;
-  const unicode = text
-    .substring(entity.offset, entity.offset + entity.length)
-    .trim();
+  const unicode = text.substring(entity.offset, entity.offset + entity.length).trim();
   if (!unicode) return null;
   return { unicode, custom_emoji_id: entity.custom_emoji_id };
 }
@@ -7600,7 +7404,9 @@ adminBot.command('setproducttutorial', async (ctx) => {
   //   /setproducttutorial <id> clear
   //   reply to photo/video/doc with: /setproducttutorial <id> file
   const text = ctx.message?.text ?? '';
-  const m = text.match(/^\/setproducttutorial(?:@\S+)?\s+(\d+)\s+(text|url|file|clear)\s*([\s\S]*)$/);
+  const m = text.match(
+    /^\/setproducttutorial(?:@\S+)?\s+(\d+)\s+(text|url|file|clear)\s*([\s\S]*)$/,
+  );
   if (!m) {
     await ctx.reply(
       'Usage:\n' +
@@ -7678,7 +7484,9 @@ adminBot.command('addproductitems', async (ctx) => {
     body = (ctx.message.reply_to_message.text ?? ctx.message.reply_to_message.caption ?? '').trim();
   }
   if (!body) {
-    await ctx.reply('No payloads found. Either include them after the id or reply to a message with one payload per line.');
+    await ctx.reply(
+      'No payloads found. Either include them after the id or reply to a message with one payload per line.',
+    );
     return;
   }
   const payloads = body
@@ -7691,7 +7499,9 @@ adminBot.command('addproductitems', async (ctx) => {
   }
   const inserted = await addProductItems(id, payloads);
   const remaining = await countAvailableProductItems(id);
-  await ctx.reply(`✅ Added ${inserted} items to product #${id}. Pool now has ${remaining} unconsumed.`);
+  await ctx.reply(
+    `✅ Added ${inserted} items to product #${id}. Pool now has ${remaining} unconsumed.`,
+  );
 });
 
 adminBot.command('countproductitems', async (ctx) => {

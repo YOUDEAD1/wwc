@@ -54,10 +54,7 @@ function buildWelcomeHtml(ctx: AppCtx): string {
   });
 }
 
-export async function showMainMenu(
-  ctx: AppCtx,
-  opts: { fresh?: boolean } = {},
-): Promise<void> {
+export async function showMainMenu(ctx: AppCtx, opts: { fresh?: boolean } = {}): Promise<void> {
   const html = buildWelcomeHtml(ctx);
   const reply_markup = mainMenuKeyboard(ctx.lang);
 
@@ -93,7 +90,6 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const qty = ctx.session.qty[p.id] ?? QTY_MIN;
   const total = (p.price * qty).toFixed(2);
   let referralLine = '';
-  let canRedeem = false;
   if (p.referral_required_count > 0) {
     try {
       const [totalReferrals, redeemed] = await Promise.all([
@@ -105,8 +101,10 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
       if (redeemed) {
         referralLine = ctx.t('shop.product.line.referral.claimed');
       } else if (remaining <= 0) {
-        referralLine = ctx.t('shop.product.line.referral.ready', { required: requiredTotal });
-        canRedeem = true;
+        referralLine = ctx.t('shop.product.line.referral.ready', {
+          total: totalReferrals,
+          required: requiredTotal,
+        });
       } else {
         referralLine = ctx.t('shop.product.line.referral.progress', {
           total: totalReferrals,
@@ -140,7 +138,9 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const shareUrl = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
   await ctx.reply(renderMdHtml(body), {
     parse_mode: 'HTML',
-    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, { canRedeem }),
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
+      showReferralPay: p.referral_required_count > 0,
+    }),
   });
   return true;
 }

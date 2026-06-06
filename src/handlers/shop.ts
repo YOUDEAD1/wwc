@@ -1,12 +1,6 @@
 import type { Composer } from 'grammy';
 import { InlineKeyboard, InputFile } from 'grammy';
-import {
-  LOCALES,
-  PRODUCTS_PER_PAGE,
-  QTY_MAX,
-  QTY_MIN,
-  type Lang,
-} from '../../config/index.js';
+import { LOCALES, PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN, type Lang } from '../../config/index.js';
 import {
   createOrder,
   countReferrals,
@@ -20,10 +14,7 @@ import {
   setOrderDeliveredItems,
 } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
-import {
-  applyUserPriceToProduct,
-  applyUserPriceToProducts,
-} from '../services/pricing.js';
+import { applyUserPriceToProduct, applyUserPriceToProducts } from '../services/pricing.js';
 import {
   nextPromoTeaser,
   priceBreakdown,
@@ -123,9 +114,7 @@ function productPageText(
   // screen so the buy page stays focused on the price / qty / total
   // trio.
   const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
-  const lines: string[] = [
-    ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
-  ];
+  const lines: string[] = [ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' })];
   lines.push(
     ctx.t('shop.product.line.price', { price: p.price }),
     ctx.t('shop.product.line.stock', { stock: stockLabel }),
@@ -137,6 +126,7 @@ function productPageText(
     } else if (referral.remaining <= 0) {
       lines.push(
         ctx.t('shop.product.line.referral.ready', {
+          total: referral.totalReferrals,
           required: referral.requiredTotal,
         }),
       );
@@ -162,9 +152,7 @@ function productPageText(
   //     they know the next reachable rule. We never surface a
   //     "weaker" upcoming promo on top of an active one — that
   //     would just be noise.
-  const teaserBeats = teaser
-    ? Number(teaser.discount_amount) > discount
-    : false;
+  const teaserBeats = teaser ? Number(teaser.discount_amount) > discount : false;
   if (teaser && (!eligible || teaserBeats)) {
     lines.push(
       ctx.t('shop.product.line.promo.teaser', {
@@ -236,11 +224,7 @@ function buildProductShareUrl(productId: number): string {
  * promo is active. Centralized so the buy / pay-wallet handlers
  * can just splice it into the existing `shop.pay.title` template.
  */
-function renderPromoLine(
-  ctx: AppCtx,
-  promo: PromoMatch | null,
-  discount: number,
-): string {
+function renderPromoLine(ctx: AppCtx, promo: PromoMatch | null, discount: number): string {
   if (!promo || discount <= 0) return '';
   const label =
     promo.promo.name?.trim() ||
@@ -306,7 +290,17 @@ async function finalizeOrderDelivery(args: {
   balanceAfter: number;
   confirmationText: string;
 }): Promise<void> {
-  const { ctx, product: p, qty, total, discount, order, paidVia, balanceAfter, confirmationText } = args;
+  const {
+    ctx,
+    product: p,
+    qty,
+    total,
+    discount,
+    order,
+    paidVia,
+    balanceAfter,
+    confirmationText,
+  } = args;
   await decrementProductStock(p.id, qty);
   delete ctx.session.qty[p.id];
   // Pull the actual delivery payload off the per-product items
@@ -451,12 +445,7 @@ async function finalizeOrderDelivery(args: {
     // handler knows this came from a post-purchase nudge (vs.
     // Settings → Set Email) and can run the auto-delete +
     // retroactive-invoice path.
-    inlineBtn(
-      noEmailKb,
-      ctx.lang,
-      'set_email_now',
-      `profile:email:set:post:${order.id}`,
-    );
+    inlineBtn(noEmailKb, ctx.lang, 'set_email_now', `profile:email:set:post:${order.id}`);
     await ctx.reply(renderMdHtml(ctx.t('shop.buy.add_email_prompt')), {
       parse_mode: 'HTML',
       reply_markup: noEmailKb,
@@ -550,12 +539,7 @@ async function showProduct(ctx: AppCtx, productId: number) {
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
   const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
-  const teaser = await nextPromoTeaser(
-    ctx.user.telegram_id,
-    p.id,
-    qty,
-    promo?.discount ?? 0,
-  );
+  const teaser = await nextPromoTeaser(ctx.user.telegram_id, p.id, qty, promo?.discount ?? 0);
   const referral = await getReferralRewardState(ctx, p, qty);
   const shareUrl = buildProductShareUrl(p.id);
   await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)), {
@@ -572,32 +556,21 @@ async function showProduct(ctx: AppCtx, productId: number) {
  * direct-pay flow after Order Delivered to drop the buyer back on
  * the qty / Buy Now page so they can buy more without re-navigating.
  */
-export async function sendProductPage(
-  ctx: AppCtx,
-  productId: number,
-): Promise<void> {
+export async function sendProductPage(ctx: AppCtx, productId: number): Promise<void> {
   const raw = await getProduct(productId);
   if (!raw) return;
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
   const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
-  const teaser = await nextPromoTeaser(
-    ctx.user.telegram_id,
-    p.id,
-    qty,
-    promo?.discount ?? 0,
-  );
+  const teaser = await nextPromoTeaser(ctx.user.telegram_id, p.id, qty, promo?.discount ?? 0);
   const referral = await getReferralRewardState(ctx, p, qty);
   const shareUrl = buildProductShareUrl(p.id);
-  await ctx.reply(
-    renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)),
-    {
-      parse_mode: 'HTML',
-      reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
-        showReferralPay: !!referral,
-      }),
-    },
-  );
+  await ctx.reply(renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)), {
+    parse_mode: 'HTML',
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
+      showReferralPay: !!referral,
+    }),
+  });
 }
 
 /**
@@ -630,7 +603,7 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
   // Live preview qty: buffer-as-number while the user is typing,
   // else the saved qty (or QTY_MIN) so the page is never visually
   // empty before the first tap.
-  const previewQty = buf.length > 0 ? Number(buf) : ctx.session.qty[productId] ?? QTY_MIN;
+  const previewQty = buf.length > 0 ? Number(buf) : (ctx.session.qty[productId] ?? QTY_MIN);
   const promo = await resolvePromo(ctx.user.telegram_id, p.id, previewQty, p.price);
   const teaser = await nextPromoTeaser(
     ctx.user.telegram_id,
@@ -770,9 +743,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // same way as `max` so the user sees an explanation instead
       // of a no-op tap.
       const preset = Number(action.slice(2));
-      const ceiling = p.unlimited_stock
-        ? QTY_MAX
-        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = p.unlimited_stock ? QTY_MAX : Math.min(QTY_MAX, Math.max(0, p.stock));
       if (ceiling < QTY_MIN) {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
@@ -803,9 +774,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // toast on out-of-stock so the user understands why the
       // buffer didn't move. The action only updates the staged
       // buffer — the user still has to tap ✅ Confirm to apply.
-      const ceiling = p.unlimited_stock
-        ? QTY_MAX
-        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = p.unlimited_stock ? QTY_MAX : Math.min(QTY_MAX, Math.max(0, p.stock));
       if (ceiling < QTY_MIN) {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
@@ -871,18 +840,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // to a callback popup) because the user typed a message — a
       // popup wouldn't surface here.
       const warn = await ctx.reply(
-        renderMdHtml(
-          ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) }),
-        ),
+        renderMdHtml(ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) })),
         { parse_mode: 'HTML' },
       );
       // Auto-cleanup: delete the user's bad reply now and the
       // warning bubble after ~5s so the screen stays calm.
       void ctx.deleteMessage().catch(() => undefined);
       setTimeout(() => {
-        void ctx.api
-          .deleteMessage(warn.chat.id, warn.message_id)
-          .catch(() => undefined);
+        void ctx.api.deleteMessage(warn.chat.id, warn.message_id).catch(() => undefined);
       }, 5_000);
       return;
     }
@@ -900,22 +865,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // just deleted, so we can't editMessageText into it).
     const shareUrl = buildProductShareUrl(p.id);
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, next_, p.price);
-    const teaser = await nextPromoTeaser(
-      ctx.user.telegram_id,
-      p.id,
-      next_,
-      promo?.discount ?? 0,
-    );
+    const teaser = await nextPromoTeaser(ctx.user.telegram_id, p.id, next_, promo?.discount ?? 0);
     const referral = await getReferralRewardState(ctx, p, next_);
-    await ctx.reply(
-      renderMdHtml(productPageText(ctx, p, next_, promo, teaser, referral)),
-      {
-        parse_mode: 'HTML',
-        reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl, {
-          showReferralPay: !!referral,
-        }),
-      },
-    );
+    await ctx.reply(renderMdHtml(productPageText(ctx, p, next_, promo, teaser, referral)), {
+      parse_mode: 'HTML',
+      reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl, {
+        showReferralPay: !!referral,
+      }),
+    });
   });
 
   // ---- Post-purchase delivery form: per-field text capture ----
@@ -955,10 +912,9 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // The submission is gone, the product was deleted, or the
       // delivery form was turned off mid-flight. Tell the buyer
       // gently so they can DM the admin manually.
-      await ctx.reply(
-        renderMdHtml(ctx.t('shop.delivery.edit_unavailable')),
-        { parse_mode: 'HTML' },
-      );
+      await ctx.reply(renderMdHtml(ctx.t('shop.delivery.edit_unavailable')), {
+        parse_mode: 'HTML',
+      });
     }
   });
 
@@ -1182,14 +1138,24 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     if (!referral.eligible) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('shop.referral.insufficient', {
-          required: referral.requiredTotal,
-          total: referral.totalReferrals,
-          remaining: referral.remaining,
-        }),
-        show_alert: true,
-      });
+      await ctx.answerCallbackQuery();
+      const kb = new InlineKeyboard();
+      inlineBtn(kb, ctx.lang, 'referral_earn_buy', 'profile:refer');
+      kb.row();
+      inlineBtn(kb, ctx.lang, 'back', `prod:${productId}`);
+      await ctx.editMessageText(
+        renderMdHtml(
+          ctx.t('shop.referral.insufficient.card', {
+            required: referral.requiredTotal,
+            total: referral.totalReferrals,
+            remaining: referral.remaining,
+          }),
+        ),
+        {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+        },
+      );
       return;
     }
     try {
@@ -1237,10 +1203,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         confirmationText,
       });
     } catch (err) {
-      logger.error(
-        { err, product_id: productId, user: ctx.user.telegram_id },
-        'redeem:ref failed',
-      );
+      logger.error({ err, product_id: productId, user: ctx.user.telegram_id }, 'redeem:ref failed');
       try {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.referral.failed'),
@@ -1387,12 +1350,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
         promo_id: promo?.promo.id ?? null,
         delivery: `Order #${id}-${qty}`,
       });
-      const newBalance = await charge(
-        ctx.from!.id,
-        total,
-        ctx.user.balance,
-        `order:${order.id}`,
-      );
+      const newBalance = await charge(ctx.from!.id, total, ctx.user.balance, `order:${order.id}`);
       ctx.user.balance = newBalance;
       const confirmationText = ctx.t('shop.buy.payment_verified', {
         total: total.toFixed(2),
