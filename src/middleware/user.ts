@@ -7,6 +7,7 @@ import type { Lang } from '../../config/index.js';
 import { getOrCreateUser } from '../db/queries.js';
 import { env } from '../env.js';
 import { t as translate } from '../i18n/index.js';
+import { renderMdHtml } from '../services/premium.js';
 import type { DBUser } from '../types.js';
 import type { SessionCtx } from './session.js';
 import { maybeSendEmailNag } from '../services/emailNag.js';
@@ -49,11 +50,11 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   // Fire-and-forget the 12h email nag.
   void maybeSendEmailNag(ctx);
 
-  // If this is a newly created user with a referrer, send notification to bot channel
+  // If this is a newly created user with a referrer, notify the referrer
+  // directly and mirror it to the admin channel when configured.
   if (
     (user as DBUser & { __just_created?: boolean }).__just_created &&
-    user.referred_by &&
-    env.BOT_REFERS_CHANNEL
+    user.referred_by
   ) {
     void sendReferralNotification(ctx, user.referred_by, ctx.from.id, ctx.from.username ?? null, ctx.from.first_name);
   }
@@ -61,8 +62,13 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   return next();
 };
 
+function cleanDisplayName(value: string): string {
+  return value.replace(/[*_`~]/g, '').trim() || 'New user';
+}
+
 /**
- * Send referral notification to the bot refers channel
+ * Send referral notifications. The user DM must not depend on optional
+ * admin-channel settings or newer referral-balance tables.
  */
 async function sendReferralNotification(
   ctx: AppCtx,
@@ -71,25 +77,53 @@ async function sendReferralNotification(
   refereeUsername: string | null,
   refereeFirstName: string | null,
 ) {
-  const { getUserByTelegramId } = await import('../db/queries.js');
-  const { countReferrals } = await import('../db/queries.js');
+  const { getUserByTelegramId, countReferrals } = await import('../db/queries.js');
 
   const referrer = await getUserByTelegramId(referrerId);
-  if (!referrer || !env.BOT_REFERS_CHANNEL) return;
+  if (!referrer) return;
 
-  const referrerUsername = referrer.username ? `@${referrer.username}` : referrer.first_name ?? `User ${referrer.telegram_id}`;
-  const refereeDisplay = refereeUsername ? `@${refereeUsername}` : refereeFirstName ?? `User ${refereeId}`;
+  const referrerUsername = cleanDisplayName(
+    referrer.username ? `@${referrer.username}` : referrer.first_name ?? `User ${referrer.telegram_id}`,
+  );
+  const refereeDisplay = cleanDisplayName(
+    refereeUsername ? `@${refereeUsername}` : refereeFirstName ?? `User ${refereeId}`,
+  );
 
-  // Get total referrals count
-  const totalRefs = await countReferrals(referrerId);
+  let totalRefs = 0;
+  try {
+    totalRefs = await countReferrals(referrerId);
+  } catch {
+    totalRefs = 0;
+  }
   const remaining = Math.max(0, 10 - totalRefs);
+
+  const userMsg = `🎁 *You Got a Refer +1!*
+
+👤 *New Active Refer:* ${refereeDisplay}
+✅ *Active Refers:* ${totalRefs} refs
+💎 *Referral Pay Balance:* ${totalRefs} refs
+
+Keep sharing your link and stack rewards.`;
+
+  await ctx.api
+    .sendMessage(referrerId, renderMdHtml(userMsg), { parse_mode: 'HTML' })
+    .catch(() => {});
+
+  if (!env.BOT_REFERS_CHANNEL) return;
+
+  const milestone =
+    remaining > 0
+      ? `⏳ *${remaining} more to earn $0.50*`
+      : '🏆 *Reward milestone unlocked!*';
 
   const notificationMsg = `📈 *New Active Referral!*
 
 👤 *Referrer:* ${referrerUsername}
 🫠 *Refer to:* ${refereeDisplay}
 ✅ *Active Referrals:* ${totalRefs}
-⏳ *${remaining} more to earn $0.50*`;
+${milestone}`;
 
-  await ctx.api.sendMessage(env.BOT_REFERS_CHANNEL, notificationMsg, { parse_mode: 'Markdown' }).catch(() => {});
+  await ctx.api
+    .sendMessage(env.BOT_REFERS_CHANNEL, renderMdHtml(notificationMsg), { parse_mode: 'HTML' })
+    .catch(() => {});
 }
