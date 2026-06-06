@@ -140,7 +140,6 @@ export function productKeyboard(
   product: DBProduct,
   qty: number,
   shareUrl: string,
-  options?: { showReferralPay?: boolean },
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const inStock = product.unlimited_stock || product.stock > 0;
@@ -159,10 +158,6 @@ export function productKeyboard(
     kb.text(String(qty), 'noop:qty');
     inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
     kb.row();
-    if (options?.showReferralPay) {
-      inlineBtn(kb, lang, 'redeem_referral', `redeem:ref:${product.id}`);
-      kb.row();
-    }
     // Buy Now sits directly under the stepper so the user's tap
     // path is "set qty → buy".
     inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
@@ -291,10 +286,15 @@ export function qtyKeypadKeyboard(
 export function paymentMethodKeyboard(
   lang: Lang,
   product: DBProduct,
+  options?: { showReferralPay?: boolean },
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'pay_wallet', `pay:wallet:${product.id}`);
   kb.row();
+  if (options?.showReferralPay) {
+    inlineBtn(kb, lang, 'pay_referral', `pay:referral:${product.id}`);
+    kb.row();
+  }
   inlineBtn(kb, lang, 'pay_direct', `pay:direct:${product.id}`);
   kb.row();
   // Top-up Wallet from the buy flow carries the originating product
