@@ -89,6 +89,7 @@ export const BUTTON_KEYS = {
   buy_now: 'btn.buy_now',
   redeem_referral: 'btn.redeem_referral',
   referral_earn_buy: 'btn.referral_earn_buy',
+  convert_refers: 'btn.convert_refers',
   topup_wallet: 'btn.topup_wallet',
   view_note: 'btn.view_note',
   qty_plus: 'btn.qty_plus',
@@ -193,6 +194,7 @@ export const BUTTON_KEYS = {
   qty_keypad_max: 'btn.qty_keypad_max',
   // ---- Buy-now payment-method screen ----------------------------
   pay_wallet: 'btn.pay_wallet',
+  pay_referral: 'btn.pay_referral',
   pay_direct: 'btn.pay_direct',
   pay_topup: 'btn.pay_topup',
   // "Others" + "Back" rows on the shared payment-methods keyboard
@@ -274,9 +276,10 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   next: 'none',
   prev: 'none',
   refresh: 'none',
-  buy_now: 'green',
+  buy_now: 'blue',
   redeem_referral: 'green',
   referral_earn_buy: 'green',
+  convert_refers: 'blue',
   topup_wallet: 'blue',
   view_note: 'none',
   qty_plus: 'none',
@@ -379,6 +382,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 
   // Buy-now payment-method screen.
   pay_wallet: 'green',
+  pay_referral: 'blue',
   pay_direct: 'yellow',
   pay_topup: 'blue',
   // Payment-methods keyboard chrome — Others sits below the per-
@@ -510,10 +514,18 @@ export const EMOJI: Record<string, EmojiSpec> = {
 
   // ---- Refer & Earn screen -------------------------------------
   refer_title: { unicode: '🎁', custom_emoji_id: '5053473385355412667' },
+  refer_prize_l: { unicode: '🏆', custom_emoji_id: '4909043075529048789' },
+  refer_prize_r: { unicode: '✨', custom_emoji_id: '6088990159334808217' },
+  refer_clicks: { unicode: '👁', custom_emoji_id: '5019759554234156094' },
+  refer_pending: { unicode: '⏳', custom_emoji_id: '5386367538735104399' },
+  refer_active: { unicode: '✅', custom_emoji_id: '6115971182542984044' },
+  refer_left: { unicode: '📌', custom_emoji_id: '6181467651395558500' },
+  refer_total: { unicode: '👤', custom_emoji_id: '5332724926216428039' },
   refer_user: { unicode: '👤', custom_emoji_id: '5332724926216428039' },
-  refer_coin: { unicode: '🪙', custom_emoji_id: '6325416826100519483' },
+  refer_coin: { unicode: '🪙', custom_emoji_id: '5264977499363746876' },
   refer_transferred: { unicode: '🔁', custom_emoji_id: '5832493956503442338' },
-  refer_withdrawn: { unicode: '💵', custom_emoji_id: '5841484860652263006' },
+  refer_withdrawn: { unicode: '💵', custom_emoji_id: '5201873447554145566' },
+  refer_spent: { unicode: '🧾', custom_emoji_id: '6276009124350138166' },
 
   // ---- Language picker -----------------------------------------
   lang_left: { unicode: '🌐', custom_emoji_id: '5330422213860407355' },
@@ -766,6 +778,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   buy_now: 'broadcast_shop_now',
   redeem_referral: 'refer_title',
   referral_earn_buy: 'refer_title',
+  convert_refers: 'refer_coin',
   topup_wallet: 'deposits_wallet',
   view_note: 'orders_note',
   my_orders: 'orders_title',
@@ -857,6 +870,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 
   // Buy-now payment-method screen — wallet on Pay, topup on Top Up.
   pay_wallet: 'prod_wallet',
+  pay_referral: 'refer_title',
   pay_direct: 'prod_total_amount',
   pay_topup: 'deposits_wallet',
   // Wallet-payment confirmation card (page 2): green check icon
