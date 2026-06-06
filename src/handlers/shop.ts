@@ -561,7 +561,7 @@ async function showProduct(ctx: AppCtx, productId: number) {
   await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser, referral)), {
     parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
-      canRedeem: referral?.eligible ?? false,
+      showReferralPay: !!referral,
     }),
   });
 }
@@ -594,7 +594,7 @@ export async function sendProductPage(
     {
       parse_mode: 'HTML',
       reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl, {
-        canRedeem: referral?.eligible ?? false,
+        showReferralPay: !!referral,
       }),
     },
   );
@@ -912,7 +912,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       {
         parse_mode: 'HTML',
         reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl, {
-          canRedeem: referral?.eligible ?? false,
+          showReferralPay: !!referral,
         }),
       },
     );
