@@ -1,4 +1,4 @@
-/* Tiếng Việt — keep keys in sync with en.ts */
+﻿/* Tiếng Việt — keep keys in sync with en.ts */
 export const vi: Record<string, string> = {
   'welcome': 'Chào mừng đến với SafwanTiger Shop',
   'welcome.title': 'Chào mừng đến với SafwanTiger Shop!',
@@ -81,7 +81,7 @@ export const vi: Record<string, string> = {
   'btn.region.clear': '🚫 Xóa',
   'btn.deposit_history': '💳 Lịch sử nạp',
   'btn.channel': 'Kênh',
-  'btn.reseller_api': '🔌 API',
+  'btn.reseller_api': '🔑 Api Key',
   'btn.stats': '📊 Thống kê',
   'btn.stats_refresh': '🔄 Làm mới',
   'btn.stats_back': '◀️ Quay lại',
