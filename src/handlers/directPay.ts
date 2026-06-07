@@ -191,13 +191,6 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('shop.buy.no_stock'),
-        show_alert: true,
-      });
-      return;
-    }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const intent = await buildIntent(ctx, raw, qty);
 
@@ -1234,5 +1227,4 @@ function buildChainDirectScreen(
   lines.push('*Please send your TX hash below:*');
   return lines.join('\n');
 }
-
 
