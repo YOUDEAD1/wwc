@@ -222,6 +222,21 @@ const schema = z.object({
   // Optional comma-separated failover list. When set, Binance Pay
   // verification tries each proxy first, then falls back to direct.
   BINANCE_PROXY_URLS: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  Bybit internal-transfer auto-verify
+  // ----------------------------------------------------------------
+  // Users send USDT inside Bybit to the configured Bybit UID / ID,
+  // then paste the internal transfer TXID. The bot checks
+  // GET /v5/asset/deposit/query-internal-record against the API-key
+  // owner's deposit records. Requires an API key with asset/wallet
+  // read access.
+  BYBIT_API_KEY: z.string().optional().or(z.literal('')),
+  BYBIT_API_SECRET: z.string().optional().or(z.literal('')),
+  // Optional comma-separated Bybit REST base URLs. Defaults to
+  // https://api.bybit.com and https://api.bytick.com.
+  BYBIT_API_BASE_URL: z.string().url().optional().or(z.literal('')),
+  BYBIT_API_BASE_URLS: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.
