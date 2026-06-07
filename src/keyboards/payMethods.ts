@@ -105,6 +105,7 @@ export function paymentMethodsKeyboard(
   //
   //   [ Binance Pay              ]   ← full row
   //   [ USDT BEP-20              ]   ← full row
+  //   [ Bybit Pay                ]   ← full row
   //   [ USDT TON   ][ USDT TRC-20 ]  ← paired row (small)
   //   [ Others                    ]
   //   [ Back (red)                ]
@@ -118,8 +119,8 @@ export function paymentMethodsKeyboard(
   // mutated.
   const PROVIDER_PRIORITY: Record<PaymentProvider, number> = {
     binance_pay: 0,
-    bybit_pay: 1,
-    usdt_bep20: 2,
+    usdt_bep20: 1,
+    bybit_pay: 2,
     usdt_ton: 3,
     usdt_trc20: 4,
     ltc: 5,
