@@ -279,6 +279,7 @@ export async function fulfilOrderForDeposit(args: {
       total: intent.total,
       paidVia: paidViaLabel(provider, methodName),
       balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+      lifecycle: preorder ? 'preorder' : 'delivered',
     })
     .catch((err) => logger.warn({ err }, 'direct-pay: logOrderCreated failed'));
 

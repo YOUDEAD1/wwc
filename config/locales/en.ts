@@ -216,6 +216,8 @@ export const en: Record<string, string> = {
   // products with `unlimited_stock = true`).
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
+  'shop.product.line.preorder_notice':
+    '{feed_title} *Order Will automatically sended with in second after restock*',
   'shop.product.line.referral.progress':
     '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Missing {remaining}',
   'shop.product.line.referral.ready':
@@ -303,6 +305,17 @@ export const en: Record<string, string> = {
     '{delivered_items} *Status:*',
     '{items}',
   ].join('\n'),
+  'shop.buy.order_auto_delivered': [
+    '{order_delivered} *Delivery has been automatically done!*',
+    '',
+    '*Order ID#:* `{order_id}`',
+    '*Product:* {name}',
+    '*Quantity:* {qty}',
+    '*Total Paid:* {total} USDT',
+    '',
+    '{delivered_items} *Items:*',
+    '{items}',
+  ].join('\n'),
   // Email follow-up #1: shown after Order Delivered when the buyer
   // has NO email on file. The `{email_add_l/r}` slots are left/right
   // premium-emoji bookends per the bot-owner spec.
@@ -333,7 +346,7 @@ export const en: Record<string, string> = {
   'shop.buy.delivery_pending':
     'Coming soon — admin will deliver your items manually within 12h.',
   'shop.buy.preorder_pending':
-    'Preorder pending — admin will deliver after restock.',
+    'Preorder pending — automatically deliver will be done after restock.',
   'shop.buy.insufficient':
     '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please top up first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',

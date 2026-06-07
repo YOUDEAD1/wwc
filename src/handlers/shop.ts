@@ -131,6 +131,9 @@ function productPageText(
     ctx.t('shop.product.line.stock', { stock: stockLabel }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
+  if (!p.unlimited_stock && p.stock <= 0) {
+    lines.push(ctx.t('shop.product.line.preorder_notice'));
+  }
   // Teaser line under Warranty.
   //   - Always shows when there is no active promo yet but an
   //     upcoming threshold exists (the original "Buy 10+ −$5 Off"
@@ -563,6 +566,7 @@ async function finalizeOrderDelivery(args: {
     total,
     paidVia,
     balanceAfter: Number(balanceAfter.toFixed(3)),
+    lifecycle: preorder ? 'preorder' : 'delivered',
   });
 }
 

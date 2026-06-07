@@ -284,7 +284,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   prev: 'none',
   refresh: 'none',
   buy_now: 'green',
-  pre_order: 'blue',
+  pre_order: 'red',
   redeem_referral: 'green',
   referral_earn_buy: 'green',
   convert_refers: 'blue',

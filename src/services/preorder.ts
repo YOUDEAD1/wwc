@@ -14,6 +14,7 @@ import { env } from '../env.js';
 import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
 import { t as translate } from '../i18n/index.js';
 import { logger } from '../logger.js';
+import * as adminLog from './adminLog.js';
 import { sendInvoiceEmail } from './mailer.js';
 import { buildOrderDeliveredChunks } from './orderRender.js';
 import { publicOrderId } from './orderId.js';
@@ -104,7 +105,7 @@ export async function fulfillPendingPreordersForProduct(
         api,
         order.user_id,
         renderMdHtml(
-          t('shop.buy.order_delivered', {
+          t('shop.buy.order_auto_delivered', {
             order_id: publicId,
             name: order.product_name,
             qty: order.qty,
@@ -139,6 +140,27 @@ export async function fulfillPendingPreordersForProduct(
           'preorder: delivery form start failed',
         );
       });
+
+      void adminLog
+        .logOrderCreated(api, {
+          user: {
+            telegram_id: order.user_id,
+            username: user?.username ?? null,
+            first_name: user?.first_name ?? null,
+            email: user?.email ?? null,
+          },
+          orderDbId: order.id,
+          orderPublicId: publicId,
+          productId,
+          productName: order.product_name,
+          qty: order.qty,
+          unitPrice: Number(order.unit_price),
+          total: Number(order.total),
+          paidVia: paidViaForPreorder(Number(order.total)),
+          balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+          lifecycle: 'auto_delivered',
+        })
+        .catch((err) => logger.warn({ err }, 'preorder: auto-delivery admin log failed'));
 
       if (user?.email) {
         void sendInvoiceEmail({
