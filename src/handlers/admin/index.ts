@@ -23,6 +23,8 @@ import {
   getDeposit,
   getOrder,
   getProductSales,
+  getProductSalesSince,
+  getRangeStats,
   getStats,
   getUserOrderSummary,
   isAdmin,
@@ -472,8 +474,84 @@ function escapeMd(s: string): string {
   return s.replace(/([_*`[\]\\])/g, '\\$1');
 }
 
+function statsRangeKeyboard(days?: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.text(days === 1 ? '✅ 24h' : '24h', 'adm:stats:r:1')
+    .text(days === 7 ? '✅ 7d' : '7d', 'adm:stats:r:7')
+    .text(days === 30 ? '✅ 30d' : '30d', 'adm:stats:r:30')
+    .row()
+    .text('🕒 Custom', 'adm:stats:custom')
+    .text('🔄 Refresh', days ? `adm:stats:r:${days}` : 'adm:stats')
+    .row()
+    .text('⬅️ Back', 'adm:back');
+  return kb;
+}
+
+async function showAdminStats(ctx: AppCtx, days?: number): Promise<void> {
+  const [allTime, range, productSales] = await Promise.all([
+    getStats(),
+    days ? getRangeStats(days) : Promise.resolve(null),
+    days ? getProductSalesSince(days, 50) : getProductSales(50),
+  ]);
+  const lines: string[] = [];
+  lines.push('📊 *Bot Stats*');
+  lines.push('');
+  lines.push('🌐 *All-Time Overview*');
+  lines.push(`👥 Users: *${allTime.users}*`);
+  lines.push(`📦 Active products: *${allTime.active_products}*`);
+  lines.push(`🗂 Active categories: *${allTime.active_categories}*`);
+  lines.push(`🧾 Total orders: *${allTime.orders}*`);
+  lines.push(`💰 Total revenue: *$${allTime.revenue.toFixed(2)}*`);
+  lines.push(`💳 Pending deposits: *${allTime.pending_deposits}*`);
+
+  if (range) {
+    const label = range.days === 1 ? 'Last 24 Hours' : `Last ${range.days} Days`;
+    lines.push('');
+    lines.push(`⏱ *${label}*`);
+    lines.push(`🧾 Orders: *${range.orders}*`);
+    lines.push(`📦 Units sold: *${range.units}*`);
+    lines.push(`👤 Buyers: *${range.unique_buyers}*`);
+    lines.push(`💰 Revenue: *$${range.revenue.toFixed(2)}*`);
+    lines.push(`💵 Approved topups: *${range.approved_deposits}* / *$${range.deposit_amount.toFixed(2)}*`);
+    lines.push(`🆕 New users: *${range.new_users}*`);
+  }
+
+  if (productSales.length > 0) {
+    lines.push('');
+    lines.push(days === 1 ? '🏆 *24h Top Sellers*' : '🏆 *Top Sellers*');
+    productSales.slice(0, 5).forEach((row, i) => {
+      const medal = ['🥇', '🥈', '🥉', '4.', '5.'][i] ?? `${i + 1}.`;
+      lines.push(`${medal} ${escapeMd(row.product_name)} — *${row.units_sold}*u · *$${row.revenue.toFixed(2)}*`);
+    });
+    lines.push('');
+    lines.push(days === 1 ? '📈 *24h Products Breakdown*' : '📈 *Products Breakdown*');
+    productSales.slice(0, 30).forEach((row) => {
+      const stock = row.stock_left !== null ? `stock *${row.stock_left}*` : '_deleted_';
+      const last = row.last_sold_at ? ` · last *${row.last_sold_at.slice(0, 10)}*` : '';
+      lines.push(`• ${escapeMd(row.product_name)}: *${row.units_sold}*u · *$${row.revenue.toFixed(2)}* · ${stock}${last}`);
+    });
+    if (productSales.length > 30) lines.push(`_…and ${productSales.length - 30} more products_`);
+  } else if (days) {
+    lines.push('', '_No paid orders in this range yet._');
+  }
+
+  let text = lines.join('\n');
+  if (text.length > 3950) text = `${text.slice(0, 3900)}\n\n_…(truncated)_`;
+  const opts = {
+    parse_mode: 'Markdown' as const,
+    reply_markup: statsRangeKeyboard(days),
+  };
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, opts);
+  } else {
+    await ctx.reply(text, opts);
+  }
+}
+
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
+  await showAdminStats(ctx);
+  return;
   const [s, productSales] = await Promise.all([
     getStats(),
     getProductSales(50),
@@ -532,6 +610,20 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
     parse_mode: 'Markdown',
     reply_markup: backRow(new InlineKeyboard()),
   });
+});
+
+adminBot.callbackQuery(/^adm:stats:r:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminStats(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery('adm:stats:custom', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'stats_custom_days', step: 'days', data: {} };
+  await ctx.editMessageText(
+    '🕒 *Custom Stats Range*\n\nSend number of days, e.g. `3`, `14`, `90`.\n\nOr `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
 });
 
 // ---------- Orders ----------
@@ -6094,6 +6186,17 @@ adminBot.on('message:text', async (ctx, next) => {
           );
         }
       }
+      return;
+    }
+
+    if (flow.type === 'stats_custom_days') {
+      const days = Number(text);
+      if (!Number.isInteger(days) || days < 1 || days > 365) {
+        await ctx.reply('⚠️ Send a whole number between 1 and 365.');
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await showAdminStats(ctx, days);
       return;
     }
 
