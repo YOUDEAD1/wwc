@@ -17,6 +17,7 @@ export const vi: Record<string, string> = {
   'btn.prev': '◀️ Trước',
   'btn.refresh': '🔄 Làm mới',
   'btn.buy_now': '✅ Mua ngay',
+  'btn.pre_order': '🛍 Pre Order',
   'btn.redeem_referral': '🎁 Thanh toán bằng giới thiệu',
   'btn.referral_earn_buy': '🔗 Kiếm lượt giới thiệu & Mua',
   'btn.convert_refers': '💱 Đổi Refers sang USDT',
