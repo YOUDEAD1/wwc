@@ -35,6 +35,7 @@ import {
   verifyLtcTx,
 } from './chainVerify.js';
 import { findPayTransactionByOrderId, isBinancePayEnabled } from './binance.js';
+import { isBybitPayEnabled, verifyBybitInternalDeposit } from './bybit.js';
 import { fulfilOrderForDeposit } from './orderFulfill.js';
 
 /**
@@ -297,6 +298,77 @@ export async function verifyAndCreditDeposit(args: {
       // the acceptance window — surface it to the admin log so the
       // VERIFIED stamp carries the on-chain (Binance ledger) time.
       onChainTimestampMs: txTime,
+      logUser: args.logUser,
+    });
+  }
+
+  // ----- Bybit internal transfer (/v5/asset/deposit/query-internal-record) -----
+  if (provider === 'bybit_pay') {
+    const txIdInput = submission.orderId?.trim() ?? submission.txHash?.trim();
+    if (!txIdInput) return { ok: false, reason: 'bybit internal transfer txid required' };
+    if (!method.address) {
+      return { ok: false, reason: 'bybit uid/id not configured on payment method' };
+    }
+    if (!isBybitPayEnabled()) {
+      return {
+        ok: false,
+        reason: 'bybit api credentials not set on this deployment',
+      };
+    }
+    if (!/^[A-Za-z0-9_-]{6,100}$/.test(txIdInput)) {
+      return {
+        ok: false,
+        reason: 'bybit internal transfer txid format invalid',
+      };
+    }
+
+    const result = await verifyBybitInternalDeposit({
+      txID: txIdInput,
+      deposit,
+    });
+    if (!result.ok) return { ok: false, reason: result.reason };
+
+    if (result.paidAtMs === null) {
+      return {
+        ok: false,
+        reason: 'bybit transfer timestamp unavailable - admin will verify manually',
+      };
+    }
+    if (result.paidAtMs < windowStart) {
+      return {
+        ok: false,
+        reason: 'bybit transfer was paid before this deposit screen was opened',
+      };
+    }
+    if (result.paidAtMs > windowEnd) {
+      return {
+        ok: false,
+        reason: 'bybit transfer was paid more than 30 minutes after this deposit screen was opened',
+      };
+    }
+
+    const amount = truncate3(result.amount);
+    if (deposit.order_intent) {
+      const required = Number(deposit.order_intent.total);
+      if (Number.isFinite(required) && amount + 0.005 < required) {
+        return {
+          ok: false,
+          reason: `paid amount $${amount.toFixed(3)} is less than order total $${required.toFixed(2)}`,
+        };
+      }
+    }
+
+    const dedupeOk = await checkDedupe(result.txId, deposit.id);
+    if (!dedupeOk.ok) return dedupeOk;
+
+    return finalizeApproval({
+      api: args.api,
+      deposit,
+      method,
+      amount,
+      txHash: result.txId,
+      sender: result.sender,
+      onChainTimestampMs: result.paidAtMs,
       logUser: args.logUser,
     });
   }
@@ -671,7 +743,6 @@ async function finalizeApproval(args: {
     provider: method.provider,
   };
 }
-
 
 
 
