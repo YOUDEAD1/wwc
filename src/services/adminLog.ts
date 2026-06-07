@@ -29,6 +29,7 @@ import type { Api, InputFile } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
+import * as publicFeed from './publicFeed.js';
 
 /**
  * Shared user shape every event payload includes. Keep this small
@@ -276,6 +277,15 @@ export async function logOrderCreated(api: Api, args: {
   // Orders go to the dedicated orders channel (`ORDER_LOG_CHAT_ID`),
   // falling back to `LOG_CHAT_ID` and finally the admin DM. Every
   // other event still goes straight to `LOG_CHAT_ID`.
+  void publicFeed.notifyPurchase(api, {
+    buyerId: args.user.telegram_id,
+    productId: args.productId,
+    productName: args.productName,
+    orderPublicId: args.orderPublicId,
+    qty: args.qty,
+    total: args.total,
+    paidVia: args.paidVia,
+  });
   await send(api, body, 'orders');
 }
 
@@ -422,6 +432,13 @@ export async function logTopupResolved(api: Api, args: {
       `Resolved By Admin: <code>${args.resolvedBy}</code>`,
     ],
   });
+  if (args.status === 'approved') {
+    void publicFeed.notifyTopup(api, {
+      userId: args.user.telegram_id,
+      amount: args.amount,
+      method: args.method,
+    });
+  }
   await send(api, body);
 }
 
@@ -445,6 +462,14 @@ export async function logBalanceChange(api: Api, args: {
       `Reason: ${escapeHtml(args.reason)}`,
     ],
   });
+  if (args.by === 'admin' && args.delta > 0) {
+    void publicFeed.notifyWalletCredit(api, {
+      userId: args.user.telegram_id,
+      amount: args.delta,
+      balanceAfter: args.balanceAfter,
+      reason: args.reason,
+    });
+  }
   await send(api, body);
 }
 
