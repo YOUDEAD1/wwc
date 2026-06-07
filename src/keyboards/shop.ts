@@ -136,32 +136,24 @@ export function productKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const inStock = product.unlimited_stock || product.stock > 0;
-  if (!inStock) {
-    // Out-of-stock UX: keyboard still shows a "Buy Now" button with
-    // the cross emoji per the bot-owner spec. Tapping it pops up
-    // the "contact admin to restock" alert instead of a silent ack.
-    inlineBtn(kb, lang, 'out_of_stock', 'noop:oos');
-    kb.row();
-  } else {
-    // Inline qty stepper first: ➖ on the left, the live qty in the
-    // middle (tap is a no-op — it's a label), ➕ on the right.
-    // Clamping to `[1, min(QTY_MAX, stock)]` happens in the
-    // callback handler so the keyboard stays presentation-only.
-    inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:dec`);
-    kb.text(String(qty), 'noop:qty');
-    inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
-    kb.row();
-    // Buy Now sits directly under the stepper so the user's tap
-    // path is "set qty → buy".
-    inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
-    kb.row();
-    // 1) Refresh re-fetches and re-renders the product page so any
-    // out-of-band stock / wallet balance updates show up. 2) Custom
-    // Quantity opens the numeric keypad.
-    inlineBtn(kb, lang, 'refresh', `prod:${product.id}`);
-    inlineBtn(kb, lang, 'custom_qty', `qty:${product.id}:custom`);
-    kb.row();
-  }
+  // Inline qty stepper first: ➖ on the left, the live qty in the
+  // middle (tap is a no-op — it's a label), ➕ on the right.
+  // Out-of-stock products use the same controls as a preorder
+  // surface; handlers cap preorder qty at QTY_MAX instead of stock 0.
+  inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:dec`);
+  kb.text(String(qty), 'noop:qty');
+  inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
+  kb.row();
+  // Buy Now / Pre Order sits directly under the stepper so the user's
+  // tap path is "set qty → buy".
+  inlineBtn(kb, lang, inStock ? 'buy_now' : 'pre_order', `buy:${product.id}`);
+  kb.row();
+  // 1) Refresh re-fetches and re-renders the product page so any
+  // out-of-band stock / wallet balance updates show up. 2) Custom
+  // Quantity opens the numeric keypad.
+  inlineBtn(kb, lang, 'refresh', `prod:${product.id}`);
+  inlineBtn(kb, lang, 'custom_qty', `qty:${product.id}:custom`);
+  kb.row();
   // Topup Wallet removed; replaced with a 1-tap *copy* link to
   // this product. Tapping copies the deep-link URL to the user's
   // clipboard with a "Copied" toast — no share-to-chat dialog, no
