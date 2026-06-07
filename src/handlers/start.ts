@@ -1,5 +1,6 @@
 import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
+import { formatPriceWithCurrency } from '../../config/currencies.js';
 import type { AppCtx } from '../middleware/user.js';
 import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
 import { renderMdHtml } from '../services/premium.js';
@@ -13,6 +14,8 @@ import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
 import { inlineBtn } from '../keyboards/helpers.js';
+import { showProfile, showReferScreen } from './profile.js';
+import { showTopupMenu } from './topup.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -90,16 +93,16 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   if (!raw) return false;
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[p.id] ?? QTY_MIN;
-  const total = (p.price * qty).toFixed(2);
+  const total = formatPriceWithCurrency(p.price * qty, ctx.user.currency);
   const body = [
     ctx.t('shop.product.line.name', { name: p.name }),
     p.description ? p.description : '',
-    ctx.t('shop.product.line.price', { price: p.price }),
+    ctx.t('shop.product.line.price', { price: formatPriceWithCurrency(p.price, ctx.user.currency) }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
     ctx.t('shop.product.line.qty', { qty }),
     ctx.t('shop.product.line.total', { total }),
-    ctx.t('shop.product.line.balance', { balance: ctx.user.balance }),
+    ctx.t('shop.product.line.balance', { balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency) }),
   ]
     .filter(Boolean)
     .join('\n');
@@ -169,6 +172,27 @@ async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
   return true;
 }
 
+async function handleReferDeepLink(ctx: AppCtx): Promise<boolean> {
+  const text = ctx.message?.text ?? '';
+  if (!/^\/start(?:@\S+)?\s+refer\b/i.test(text)) return false;
+  await showReferScreen(ctx, { forceReply: true });
+  return true;
+}
+
+async function handleSettingsDeepLink(ctx: AppCtx): Promise<boolean> {
+  const text = ctx.message?.text ?? '';
+  if (!/^\/start(?:@\S+)?\s+settings\b/i.test(text)) return false;
+  await showProfile(ctx, { forceReply: true });
+  return true;
+}
+
+async function handleTopupDeepLink(ctx: AppCtx): Promise<boolean> {
+  const text = ctx.message?.text ?? '';
+  if (!/^\/start(?:@\S+)?\s+topup\b/i.test(text)) return false;
+  await showTopupMenu(ctx, false);
+  return true;
+}
+
 export function registerStart(bot: Composer<AppCtx>): void {
   bot.command('start', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
@@ -191,6 +215,9 @@ export function registerStart(bot: Composer<AppCtx>): void {
         referredBy: ctx.user.referred_by ?? null,
       });
     }
+    if (await handleReferDeepLink(ctx)) return;
+    if (await handleSettingsDeepLink(ctx)) return;
+    if (await handleTopupDeepLink(ctx)) return;
     if (await handleProductDeepLink(ctx)) return;
     if (await handleInvoiceDeepLink(ctx)) return;
     await showMainMenu(ctx, { fresh: true });
