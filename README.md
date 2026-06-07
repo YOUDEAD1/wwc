@@ -271,15 +271,18 @@ pkgs.mkShell {
 
 #### Step 3: Connect Bot to VPN / Proxy
 
-1. If your VPN provider exposes an HTTP/SOCKS proxy, set
-   `BINANCE_PROXY_URL` in your **bot** service variables (Railway →
-   Service → Variables).
-2. If you run a WireGuard sidecar, expose a small HTTP/SOCKS proxy
-   inside the private network and point `BINANCE_PROXY_URL` to it
-   (for example: `socks5://vpn-sidecar:1080`).
-3. Redeploy the bot service so the env change takes effect.
+1. Expose an HTTP proxy that exits through a Binance-allowed country.
+   For a WireGuard sidecar, run a tiny HTTP proxy inside the private
+   network and route that proxy through the VPN tunnel.
+2. Set `BINANCE_PROXY_URL` in your **bot** service variables (Railway →
+   Service → Variables), for example `http://vpn-sidecar:8080`.
+3. For failover, set `BINANCE_PROXY_URLS` to a comma-separated list:
+   `http://proxy-nl:8080,http://proxy-fr:8080,http://proxy-de:8080`.
+4. Redeploy the bot service so the env change takes effect.
 
-> `BINANCE_PROXY_URL` is used only for Binance Pay auto-verify calls.
+> `BINANCE_PROXY_URL` / `BINANCE_PROXY_URLS` are used only for Binance
+> Pay auto-verify calls. BEP20/TRC20/TON/LTC verification does not use
+> these proxies.
 
 #### Alternative: Use ProtonVPN Business (Easier)
 
@@ -292,6 +295,7 @@ pkgs.mkShell {
 ```bash
 # SSH into your server (if using VPS)
 curl -I https://api.binance.com
+curl -I https://api1.binance.com
 
 # If you see HTTP 451, VPN is not working
 # If you see HTTP 200 or other, VPN is working
