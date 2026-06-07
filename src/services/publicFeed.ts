@@ -3,8 +3,15 @@ import { InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 import { renderMdHtml } from './premium.js';
+import { getEmoji } from './settings.js';
 
 const FEED_CHAT = '@TigerStockChat';
+
+type FeedButton = {
+  text: string;
+  url: string;
+  iconKey: string;
+};
 
 function botUrl(payload: string): string {
   return env.BOT_USERNAME ? `https://t.me/${env.BOT_USERNAME}?start=${payload}` : 'https://t.me/';
@@ -20,8 +27,15 @@ function money(amount: number): string {
   return Number(amount).toFixed(amount % 1 === 0 ? 0 : 2);
 }
 
-async function send(api: Api, body: string, buttonText: string, url: string): Promise<void> {
-  const kb = new InlineKeyboard().url(buttonText, url);
+function premiumIconId(key: string): string | undefined {
+  const spec = getEmoji(key);
+  return typeof spec === 'object' && spec.custom_emoji_id ? spec.custom_emoji_id : undefined;
+}
+
+async function send(api: Api, body: string, button: FeedButton): Promise<void> {
+  const kb = new InlineKeyboard().url(button.text, button.url);
+  const iconId = premiumIconId(button.iconKey);
+  if (iconId) kb.icon(iconId);
   kb.style('primary');
   try {
     await api.sendMessage(FEED_CHAT, renderMdHtml(body), {
@@ -41,16 +55,20 @@ export async function notifyActiveReferral(api: Api, args: {
 }): Promise<void> {
   const remaining = Math.max(0, 10 - (args.totalReferrals % 10 || 10));
   const body = [
-    '> 📝 *New Active Referral!*',
+    '> {feed_title} *New Active Referral!*',
     '>',
-    `> 📝 *Referrer:* ${args.referrerName}`,
-    `> 📝 *Active Referrals:* ${args.totalReferrals}`,
-    `> 📝 *Total earned from invites:* $${money(args.totalEarned)}`,
+    `> {refer_user} *Referrer:* ${args.referrerName}`,
+    `> {refer_active} *Active Referrals:* ${args.totalReferrals}`,
+    `> {refer_coin} *Total earned from invites:* $${money(args.totalEarned)}`,
     remaining === 0
-      ? '> 📝 *Reward milestone unlocked!*'
-      : `> 📝 *${remaining} more to earn $0.50*`,
+      ? '> {feed_title} *Reward milestone unlocked!*'
+      : `> {refer_left} *${remaining} more to earn $0.50*`,
   ].join('\n');
-  await send(api, body, '🎁 Refer & Earn', botUrl('refer'));
+  await send(api, body, {
+    text: 'Refer & Earn',
+    iconKey: 'refer_title',
+    url: botUrl('refer'),
+  });
 }
 
 export async function notifyReferralAchievement(api: Api, args: {
@@ -58,13 +76,17 @@ export async function notifyReferralAchievement(api: Api, args: {
   amount: number;
 }): Promise<void> {
   const body = [
-    '> 🎉 *New Achievement*',
+    '> {feed_title} *New Achievement*',
     '>',
-    `> 👤 *User:* ${maskId(args.userId)}`,
-    `> 💰 *Unlock:* ${money(args.amount)}$`,
-    '> 👥 *Keep Inviting More To Earn More!*',
+    `> {refer_user} *User:* ${maskId(args.userId)}`,
+    `> {refer_coin} *Unlock:* ${money(args.amount)}$`,
+    '> {refer_title} *Keep Inviting More To Earn More!*',
   ].join('\n');
-  await send(api, body, '🎁 Refer & Earn', botUrl('refer'));
+  await send(api, body, {
+    text: 'Refer & Earn',
+    iconKey: 'refer_title',
+    url: botUrl('refer'),
+  });
 }
 
 export async function notifyPurchase(api: Api, args: {
@@ -77,16 +99,20 @@ export async function notifyPurchase(api: Api, args: {
   paidVia: string;
 }): Promise<void> {
   const body = [
-    '> 🎉 *New Purchase!*',
+    '> {feed_title} *New Purchase!*',
     '>',
-    `> 🛍️ *Service:* ${args.productName}`,
-    `> 👤 *By:* ${maskId(args.buyerId)}`,
-    `> 🛍️ *Plan:* ${args.productName} [${args.paidVia}]`,
-    `> 🔖 *Order No.:* ${args.orderPublicId}`,
-    `> 🔢 *QTY:* ${args.qty}`,
-    `> 📈 *Total Paid:* ${money(args.total)} USDT`,
+    `> {broadcast_shop_now} *Service:* ${args.productName}`,
+    `> {refer_user} *By:* ${maskId(args.buyerId)}`,
+    `> {broadcast_shop_now} *Plan:* ${args.productName} [${args.paidVia}]`,
+    `> {orders_title} *Order No.:* ${args.orderPublicId}`,
+    `> {prod_qty_selected} *QTY:* ${args.qty}`,
+    `> {prod_total_amount} *Total Paid:* ${money(args.total)} USDT`,
   ].join('\n');
-  await send(api, body, '🛍️ View Product', botUrl(`prod_${args.productId}`));
+  await send(api, body, {
+    text: 'View Product',
+    iconKey: 'broadcast_shop_now',
+    url: botUrl(`prod_${args.productId}`),
+  });
 }
 
 export async function notifyTopup(api: Api, args: {
@@ -95,13 +121,17 @@ export async function notifyTopup(api: Api, args: {
   method: string;
 }): Promise<void> {
   const body = [
-    '> 🎉 *New Topup*',
+    '> {feed_title} *New Topup*',
     '>',
-    `> 👤 *User:* ${maskId(args.userId)}`,
-    `> 💵 *Amount:* ${money(args.amount)} USDT`,
-    `> 💳 *Method:* ${args.method}`,
+    `> {refer_user} *User:* ${maskId(args.userId)}`,
+    `> {gift_usdt} *Amount:* ${money(args.amount)} USDT`,
+    `> {paymethod_others} *Method:* ${args.method}`,
   ].join('\n');
-  await send(api, body, '💳 Top-Up Wallet', botUrl('topup'));
+  await send(api, body, {
+    text: 'Top-Up Wallet',
+    iconKey: 'deposits_wallet',
+    url: botUrl('topup'),
+  });
 }
 
 export async function notifyWalletCredit(api: Api, args: {
@@ -111,12 +141,16 @@ export async function notifyWalletCredit(api: Api, args: {
   reason: string;
 }): Promise<void> {
   const body = [
-    '> 🎉 *New Wallet Credit*',
+    '> {feed_title} *New Wallet Credit*',
     '>',
-    `> 👤 *User:* ${maskId(args.userId)}`,
-    `> 💵 *Amount:* +${money(args.amount)} USDT`,
-    `> 💳 *Balance:* ${money(args.balanceAfter)} USDT`,
-    `> 📝 *Reason:* ${args.reason}`,
+    `> {refer_user} *User:* ${maskId(args.userId)}`,
+    `> {gift_usdt} *Amount:* +${money(args.amount)} USDT`,
+    `> {prod_wallet} *Balance:* ${money(args.balanceAfter)} USDT`,
+    `> {orders_note} *Reason:* ${args.reason}`,
   ].join('\n');
-  await send(api, body, '⚙️ Open Settings', botUrl('settings'));
+  await send(api, body, {
+    text: 'Open Settings',
+    iconKey: 'profile_header',
+    url: botUrl('settings'),
+  });
 }
