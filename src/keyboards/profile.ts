@@ -1,4 +1,5 @@
 import { InlineKeyboard } from 'grammy';
+import { CURRENCIES, type CurrencyCode } from '../../config/currencies.js';
 import { type Lang } from '../../config/index.js';
 import { inlineBtn, inlineCopyText, inlineUrl } from './helpers.js';
 
@@ -32,6 +33,8 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
   // surfaced from Settings.
   inlineBtn(kb, lang, 'bot_tutorial', 'profile:tutorial');
   inlineBtn(kb, lang, 'send_price_list', 'profile:pricelist');
+  kb.row();
+  inlineBtn(kb, lang, 'currency', 'profile:currency');
   kb.row();
   inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
@@ -128,8 +131,39 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'stats_refresh', 'profile:stats:refresh');
   kb.row();
+  inlineBtn(kb, lang, 'stats_24h', 'profile:stats:range:1');
+  inlineBtn(kb, lang, 'stats_7d', 'profile:stats:range:7');
+  kb.row();
+  inlineBtn(kb, lang, 'stats_30d', 'profile:stats:range:30');
+  inlineBtn(kb, lang, 'stats_custom', 'profile:stats:custom');
+  kb.row();
   inlineBtn(kb, lang, 'send_pdf_stats', 'profile:stats:pdf');
   kb.row();
+  inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
+  return kb;
+}
+
+export function currencyKeyboard(
+  lang: Lang,
+  selected: CurrencyCode,
+  page = 0,
+): InlineKeyboard {
+  const perPage = 8;
+  const totalPages = Math.max(1, Math.ceil(CURRENCIES.length / perPage));
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const kb = new InlineKeyboard();
+  for (const currency of CURRENCIES.slice(safePage * perPage, safePage * perPage + perPage)) {
+    const marker = currency.code === selected ? '✅ ' : '';
+    kb.text(`${marker}${currency.code} — ${currency.label}`, `profile:currency:set:${currency.code}:${safePage}`);
+    kb.style(currency.code === selected ? 'success' : 'primary');
+    kb.row();
+  }
+  if (totalPages > 1) {
+    if (safePage > 0) inlineBtn(kb, lang, 'prev', `profile:currency:p:${safePage - 1}`);
+    kb.text(`${safePage + 1}/${totalPages}`, 'noop:currency-page');
+    if (safePage + 1 < totalPages) inlineBtn(kb, lang, 'next', `profile:currency:p:${safePage + 1}`);
+    kb.row();
+  }
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }
@@ -215,6 +249,8 @@ export function referKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineCopyText(kb, lang, 'copy_link', link);
+  kb.row();
+  inlineUrl(kb, lang, 'live_refers', 'https://t.me/TigerStockChat');
   kb.row();
   inlineBtn(kb, lang, 'convert_refers', 'profile:refer:convert');
   kb.row();
