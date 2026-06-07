@@ -99,7 +99,7 @@ async function showShopHome(ctx: AppCtx, page = 0) {
 }
 
 const STORED_HTML_RX =
-  /<\/?(?:a|b|blockquote|code|del|em|i|pre|s|span|strong|tg-emoji|tg-spoiler|u)\b/i;
+  /<tg-emoji\b|<a\b[^>]*href="[^"]*"[^>]*>[\s\S]*<\/a>|<(b|blockquote|code|del|em|i|pre|s|span|strong|tg-spoiler|u)\b[^>]*>[\s\S]*<\/\1>/i;
 
 function renderStoredProductText(raw: string | null | undefined, fallbackMarkdown: string): string {
   const trimmed = (raw ?? '').trim();
