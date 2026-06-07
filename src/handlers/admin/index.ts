@@ -128,6 +128,14 @@ import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import { fulfillPendingPreordersForProduct } from '../../services/preorder.js';
+import {
+  apiBaseUrl,
+  disableApiKey,
+  getAdminApiOverview,
+  getAdminApiUser,
+  listAdminApiOrders,
+  listAdminApiUsers,
+} from '../../services/resellerApi.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
@@ -199,10 +207,12 @@ function rootMenu(): InlineKeyboard {
     .text('🤖 AI Setup', 'adm:ai')
     .text('📊 Stats', 'adm:stats')
     .row()
+    .text('🔌 API', 'adm:api')
     .text('🧾 Orders', 'adm:ord:0')
-    .text('💸 Promos', 'adm:promo')
     .row()
+    .text('💸 Promos', 'adm:promo')
     .text('🎁 Gift Codes', 'adm:gift')
+    .row()
     .text('💎 Custom Prices', 'adm:price')
     .row()
     .text('🏠 Main Menu', 'adm:close');
@@ -641,6 +651,276 @@ adminBot.callbackQuery('adm:stats:custom', async (ctx) => {
     '🕒 *Custom Stats Range*\n\nSend number of days, e.g. `3`, `14`, `90`.\n\nOr `/cancel`.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
+});
+
+// ---------- Reseller Product API ----------
+//
+// Admin-side control center for the public reseller API:
+// overview, active keys, API spend, top reseller users, recent API
+// orders, and one-tap key disable.
+function apiMoney(n: number): string {
+  return Number(n).toFixed(2);
+}
+
+function apiDate(iso: string | null): string {
+  if (!iso) return '—';
+  return iso.replace('T', ' ').slice(0, 16);
+}
+
+function apiUserLabel(user: {
+  userId: number;
+  username: string | null;
+  firstName: string | null;
+}): string {
+  if (user.username) return `@${user.username}`;
+  if (user.firstName) return `${user.firstName} (${user.userId})`;
+  return String(user.userId);
+}
+
+function adminApiKeyboard(): InlineKeyboard {
+  const kb = new InlineKeyboard()
+    .text('👥 API Users', 'adm:api:users:0')
+    .text('🧾 API Orders', 'adm:api:orders:0')
+    .row()
+    .copyText('🔗 Copy Endpoint', apiBaseUrl())
+    .row()
+    .url('📘 Open API Docs', apiBaseUrl())
+    .row()
+    .text('🔄 Refresh', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiError(ctx: AppCtx, err: unknown): Promise<void> {
+  logger.error({ err }, 'admin API dashboard failed');
+  const text = [
+    '⚠️ *API Dashboard Not Ready*',
+    '',
+    'Run this Supabase migration first:',
+    '`supabase/migrations/0036_reseller_api.sql`',
+    '',
+    '_Paste the SQL file contents in Supabase SQL Editor, not the file path._',
+  ].join('\n');
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
+}
+
+async function showAdminApiOverview(ctx: AppCtx): Promise<void> {
+  try {
+    const s = await getAdminApiOverview();
+    const lines: string[] = [
+      '🔌 *Reseller API Control Panel*',
+      '',
+      `🟢 Active keys: *${s.activeKeys}* / ${s.totalKeys}`,
+      `👥 API users: *${s.totalUsers}*`,
+      `🧾 API orders: *${s.totalOrders}*`,
+      `💰 API spend: *${apiMoney(s.totalSpent)} USDT*`,
+      '',
+      '⏱ *Live Usage*',
+      `24h: *${s.orders24h}* orders · *${apiMoney(s.spend24h)} USDT*`,
+      `7d: *${s.orders7d}* orders · *${apiMoney(s.spend7d)} USDT*`,
+      `30d: *${s.orders30d}* orders · *${apiMoney(s.spend30d)} USDT*`,
+      '',
+      '*Endpoint*',
+      `\`${s.endpoint}\``,
+    ];
+
+    if (s.topUsers.length > 0) {
+      lines.push('', '🏆 *Top API Users*');
+      s.topUsers.forEach((u, i) => {
+        const marker = u.active ? '🟢' : '🔴';
+        lines.push(
+          `${i + 1}. ${marker} ${escapeMd(apiUserLabel(u))} — *${u.orders}* orders · *${apiMoney(u.totalSpent)}*`,
+        );
+      });
+    }
+
+    if (s.recentOrders.length > 0) {
+      lines.push('', '🧾 *Recent API Orders*');
+      s.recentOrders.forEach((o) => {
+        const id = o.orderPublicId ?? `#${o.orderDbId}`;
+        lines.push(
+          `• \`${id}\` · ${escapeMd(o.productName)} ×${o.qty} · *${apiMoney(o.total)}*`,
+        );
+      });
+    }
+
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: adminApiKeyboard(),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery('adm:api', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiOverview(ctx);
+});
+
+function apiUsersKeyboard(page: number, pages: number, rows: Array<{ userId: number; active: boolean }>): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const row of rows) {
+    kb.text(`${row.active ? '🟢' : '🔴'} ${row.userId}`, `adm:api:user:${row.userId}`);
+    kb.row();
+  }
+  if (pages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:api:users:${page - 1}`);
+    kb.text(`${page + 1}/${pages}`, 'noop:api-users-page');
+    if (page + 1 < pages) kb.text('Next ▶️', `adm:api:users:${page + 1}`);
+    kb.row();
+  }
+  kb.text('🔄 Refresh', `adm:api:users:${page}`).text('🔌 API Home', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiUsers(ctx: AppCtx, page: number): Promise<void> {
+  try {
+    const data = await listAdminApiUsers({ page, perPage: 8 });
+    const lines = [
+      '👥 *API Users*',
+      '',
+      `Total: *${data.total}*`,
+      '',
+    ];
+    if (data.rows.length === 0) {
+      lines.push('_No API users yet._');
+    } else {
+      data.rows.forEach((u, i) => {
+        const n = data.page * 8 + i + 1;
+        const status = u.active ? '🟢 Active' : '🔴 Disabled';
+        lines.push(
+          `${n}. *${escapeMd(apiUserLabel(u))}*`,
+          `   ${status} · orders *${u.orders}* · spent *${apiMoney(u.totalSpent)} USDT*`,
+          `   balance *${apiMoney(u.balance)} USDT* · last ${escapeMd(apiDate(u.lastUsedAt ?? u.lastOrderAt))}`,
+        );
+      });
+    }
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: apiUsersKeyboard(data.page, data.pages, data.rows),
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:users:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiUsers(ctx, Number(ctx.match[1]));
+});
+
+function apiOrdersKeyboard(page: number, pages: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (pages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:api:orders:${page - 1}`);
+    kb.text(`${page + 1}/${pages}`, 'noop:api-orders-page');
+    if (page + 1 < pages) kb.text('Next ▶️', `adm:api:orders:${page + 1}`);
+    kb.row();
+  }
+  kb.text('🔄 Refresh', `adm:api:orders:${page}`).text('🔌 API Home', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiOrders(ctx: AppCtx, page: number): Promise<void> {
+  try {
+    const data = await listAdminApiOrders({ page, perPage: 8 });
+    const lines = ['🧾 *Recent API Orders*', '', `Total: *${data.total}*`, ''];
+    if (data.rows.length === 0) {
+      lines.push('_No API orders yet._');
+    } else {
+      data.rows.forEach((o, i) => {
+        const n = data.page * 8 + i + 1;
+        const id = o.orderPublicId ?? `#${o.orderDbId}`;
+        lines.push(
+          `${n}. \`${id}\` — *${escapeMd(o.productName)}*`,
+          `   User: ${escapeMd(apiUserLabel(o))} · qty *${o.qty}* · *${apiMoney(o.total)} USDT*`,
+          `   ${escapeMd(apiDate(o.createdAt))}${o.requestId ? ` · req \`${escapeMd(o.requestId.slice(0, 32))}\`` : ''}`,
+        );
+      });
+    }
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: apiOrdersKeyboard(data.page, data.pages),
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:orders:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiOrders(ctx, Number(ctx.match[1]));
+});
+
+function apiUserDetailKeyboard(userId: number, active: boolean): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (active) {
+    kb.text('❌ Disable API Key', `adm:api:disable:${userId}`).row();
+  }
+  kb.text('👥 API Users', 'adm:api:users:0').text('🔄 Refresh', `adm:api:user:${userId}`).row();
+  kb.text('🔌 API Home', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiUser(ctx: AppCtx, userId: number): Promise<void> {
+  try {
+    const data = await getAdminApiUser(userId);
+    if (!data.user) {
+      await ctx.editMessageText('❌ API user not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const u = data.user;
+    const lines = [
+      '👤 *API User Detail*',
+      '',
+      `User: *${escapeMd(apiUserLabel(u))}*`,
+      `Telegram ID: \`${u.userId}\``,
+      `Status: *${u.active ? '🟢 Active' : '🔴 Disabled'}*`,
+      `Key: \`${u.keyPrefix ? `${u.keyPrefix}••••••••` : '—'}\``,
+      `Created: ${escapeMd(apiDate(u.keyCreatedAt))}`,
+      `Last used: ${escapeMd(apiDate(u.lastUsedAt))}`,
+      '',
+      `Wallet/API balance: *${apiMoney(u.balance)} USDT*`,
+      `Orders: *${u.orders}*`,
+      `Total spend: *${apiMoney(u.totalSpent)} USDT*`,
+      `24h / 7d / 30d: *${apiMoney(u.spend24h)}* / *${apiMoney(u.spend7d)}* / *${apiMoney(u.spend30d)}*`,
+    ];
+    if (data.recentOrders.length > 0) {
+      lines.push('', '🧾 *Last Orders*');
+      data.recentOrders.forEach((o) => {
+        const id = o.orderPublicId ?? `#${o.orderDbId}`;
+        lines.push(`• \`${id}\` · ${escapeMd(o.productName)} ×${o.qty} · *${apiMoney(o.total)}*`);
+      });
+    }
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: apiUserDetailKeyboard(userId, u.active),
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:user:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiUser(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:api:disable:(\d+)$/, async (ctx) => {
+  const userId = Number(ctx.match[1]);
+  await disableApiKey(userId);
+  await ctx.answerCallbackQuery({ text: 'API key disabled.' });
+  await showAdminApiUser(ctx, userId);
 });
 
 // ---------- Orders ----------
