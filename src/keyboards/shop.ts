@@ -2,7 +2,11 @@ import { InlineKeyboard } from 'grammy';
 import { formatPriceWithCurrency } from '../../config/currencies.js';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
 import { inlineBtn, inlineCopyText } from './helpers.js';
-import { getStateColor } from '../services/settings.js';
+import {
+  getCategoryColor,
+  getCategoryDefaultColor,
+  getStateColor,
+} from '../services/settings.js';
 import type { DBProduct } from '../types.js';
 
 /**
@@ -59,9 +63,19 @@ export function shopProductsKeyboard(
       ? p.emoji_id ?? defaultInStockIcon
       : p.emoji_id ?? oosIcon;
     if (iconId) kb.icon(iconId);
-    // In-stock catalog rows stay blue by default; out-of-stock rows
-    // stay red. Product/detail buttons can still use their own colors.
-    const mode = getStateColor(inStock ? 'in_stock' : 'out_of_stock');
+    // In-stock rows inherit the category color when the admin set one.
+    // If a category has no custom color, fall back to the global
+    // in-stock state color; out-of-stock rows keep the OOS warning color.
+    const categoryMode =
+      p.category_id == null ? 'none' : getCategoryColor(p.category_id);
+    const defaultCategoryMode = getCategoryDefaultColor();
+    const mode = inStock
+      ? categoryMode !== 'none'
+        ? categoryMode
+        : defaultCategoryMode !== 'none'
+          ? defaultCategoryMode
+          : getStateColor('in_stock')
+      : getStateColor('out_of_stock');
     const style = colorModeToStyle(mode);
     if (style !== undefined) kb.style(style);
     kb.row();
