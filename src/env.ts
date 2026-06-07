@@ -237,6 +237,12 @@ const schema = z.object({
   // https://api.bybit.com and https://api.bytick.com.
   BYBIT_API_BASE_URL: z.string().url().optional().or(z.literal('')),
   BYBIT_API_BASE_URLS: z.string().optional().or(z.literal('')),
+  // Optional proxy URL used ONLY for Bybit Pay API calls. Use this
+  // when Bybit/CloudFront blocks Railway's direct country/IP.
+  BYBIT_PROXY_URL: z.string().url().optional().or(z.literal('')),
+  // Optional comma-separated failover proxies. The bot tries these
+  // first, then BYBIT_PROXY_URL, then direct.
+  BYBIT_PROXY_URLS: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.
