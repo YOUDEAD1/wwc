@@ -26,6 +26,7 @@ const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   language: 'profile:lang',
   deposit_history: 'profile:deposits',
   channel: 'channel:open',
+  reseller_api: 'api:open',
   back_to_settings: 'profile:open',
   stats: 'profile:stats',
   stats_refresh: 'profile:stats:refresh',
