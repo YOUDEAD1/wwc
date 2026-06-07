@@ -212,10 +212,16 @@ const schema = z.object({
   // an exit IP Binance allows (e.g. ProtonVPN Netherlands).
   BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
   BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
-  // Optional proxy used ONLY for Binance Pay API requests. Supports
-  // HTTP(S) and SOCKS URLs (e.g. http://proxy.example.com:8080 or
-  // socks5://proxy.example.com:1080). Leave blank to connect directly.
+  // Optional comma-separated Binance REST base URLs. Defaults to the
+  // official api/api-gcp/api1-api4 rotation when unset.
+  BINANCE_API_BASE_URLS: z.string().optional().or(z.literal('')),
+  // Optional proxy used ONLY for Binance Pay API requests. Use an
+  // HTTP(S) proxy URL (e.g. http://proxy.example.com:8080). Leave
+  // blank to connect directly.
   BINANCE_PROXY_URL: z.string().url().optional().or(z.literal('')),
+  // Optional comma-separated failover list. When set, Binance Pay
+  // verification tries each proxy first, then falls back to direct.
+  BINANCE_PROXY_URLS: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.
