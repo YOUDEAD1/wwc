@@ -1,4 +1,5 @@
 import { InlineKeyboard } from 'grammy';
+import { formatPriceWithCurrency } from '../../config/currencies.js';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
 import { inlineBtn, inlineCopyText } from './helpers.js';
 import { getStateColor } from '../services/settings.js';
@@ -33,6 +34,7 @@ export function shopProductsKeyboard(
   products: DBProduct[],
   page: number,
   totalPages: number,
+  currency = 'USDT',
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
@@ -49,7 +51,7 @@ export function shopProductsKeyboard(
     // left of the label so we don't want a duplicate glyph.
     const hasPremiumIcon = Boolean(p.emoji_id);
     const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
-    const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
+    const label = `${namePrefix}${p.name} - ${formatPriceWithCurrency(p.price, currency)} (Stock: ${stockLabel})`.trim();
     // Out-of-stock products still navigate to the product page so
     // the user sees details + a popup-armed Buy Now button.
     kb.text(label, `prod:${p.id}`);
