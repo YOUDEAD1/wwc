@@ -64,19 +64,24 @@ export function getCurrency(code: string | null | undefined): CurrencySpec {
 
 function compactNumber(value: number, decimals: number): string {
   return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: decimals,
+    minimumFractionDigits: 0,
     maximumFractionDigits: decimals,
   }).format(value);
 }
 
+function displayCurrencyCode(code: CurrencyCode): string {
+  if (code === 'USDT') return 'USDT';
+  return code.charAt(0) + code.slice(1).toLowerCase();
+}
+
 export function formatUsdt(amount: number): string {
-  return `${Number(amount).toFixed(2)} USDT`;
+  return `${compactNumber(Number(amount), 2)}USDT`;
 }
 
 export function formatCurrencyOnly(amountUsdt: number, code: string | null | undefined): string {
   const currency = getCurrency(code);
   if (currency.code === 'USDT') return formatUsdt(amountUsdt);
-  return `${currency.symbol}${compactNumber(amountUsdt * currency.ratePerUsdt, currency.decimals)} ${currency.code}`;
+  return `${compactNumber(amountUsdt * currency.ratePerUsdt, currency.decimals)}${displayCurrencyCode(currency.code)}`;
 }
 
 export function formatPriceWithCurrency(
@@ -85,5 +90,5 @@ export function formatPriceWithCurrency(
 ): string {
   const currency = getCurrency(code);
   if (currency.code === 'USDT') return formatUsdt(amountUsdt);
-  return `${formatCurrencyOnly(amountUsdt, currency.code)} + ${formatUsdt(amountUsdt)}`;
+  return `${formatCurrencyOnly(amountUsdt, currency.code)} / ${formatUsdt(amountUsdt)}`;
 }
