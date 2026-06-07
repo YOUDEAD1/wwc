@@ -87,6 +87,7 @@ export const BUTTON_KEYS = {
   prev: 'btn.prev',
   refresh: 'btn.refresh',
   buy_now: 'btn.buy_now',
+  pre_order: 'btn.pre_order',
   redeem_referral: 'btn.redeem_referral',
   referral_earn_buy: 'btn.referral_earn_buy',
   convert_refers: 'btn.convert_refers',
@@ -283,6 +284,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   prev: 'none',
   refresh: 'none',
   buy_now: 'green',
+  pre_order: 'blue',
   redeem_referral: 'green',
   referral_earn_buy: 'green',
   convert_refers: 'blue',
@@ -539,6 +541,9 @@ export const EMOJI: Record<string, EmojiSpec> = {
   refer_withdrawn: { unicode: '💵', custom_emoji_id: '5201873447554145566' },
   refer_spent: { unicode: '🧾', custom_emoji_id: '6276009124350138166' },
 
+  // ---- Public group feed ---------------------------------------
+  feed_title: { unicode: '🎉', custom_emoji_id: '6181381563071077485' },
+
   // ---- Language picker -----------------------------------------
   lang_left: { unicode: '🌐', custom_emoji_id: '5330422213860407355' },
   lang_right: { unicode: '🗣', custom_emoji_id: '5818984364507139347' },
@@ -788,6 +793,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // left out so the original unicode emoji stays in the label.
   profile: 'profile_header',
   buy_now: 'broadcast_shop_now',
+  pre_order: 'broadcast_shop_now',
   redeem_referral: 'refer_title',
   referral_earn_buy: 'refer_title',
   convert_refers: 'refer_coin',
