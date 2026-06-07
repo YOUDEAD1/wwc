@@ -5751,6 +5751,15 @@ adminBot.on('message:text', async (ctx, next) => {
     ctx.message.text,
     ctx.message.entities,
   ).trim();
+  const productRichText = (() => {
+    const entities = ctx.message.entities ?? [];
+    const hasTelegramFormatting = entities.some(
+      (entity) => FORMAT_ENTITY_TYPES.has(entity.type) || entity.type === 'custom_emoji',
+    );
+    return hasTelegramFormatting
+      ? entitiesToHtml(ctx.message.text, entities).trim()
+      : text;
+  })();
 
   if (text === '/cancel') {
     ctx.session.adminFlow = undefined;
@@ -5864,7 +5873,7 @@ adminBot.on('message:text', async (ctx, next) => {
         ctx.session.adminFlow = {
           type: 'add_product',
           step: 'note',
-          data: { ...flow.data, description: text },
+          data: { ...flow.data, description: productRichText },
         };
         const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:note');
         await ctx.reply(
@@ -5875,7 +5884,7 @@ adminBot.on('message:text', async (ctx, next) => {
         ctx.session.adminFlow = {
           type: 'add_product',
           step: 'items',
-          data: { ...flow.data, note: text },
+          data: { ...flow.data, note: productRichText },
         };
         const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:items');
         await ctx.reply(
@@ -5925,14 +5934,14 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
     if (flow.type === 'edit_product_note_text') {
-      await updateProduct(flow.data.product_id, { note: text });
+      await updateProduct(flow.data.product_id, { note: productRichText });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Note text saved.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
     if (flow.type === 'edit_product_description') {
-      await updateProduct(flow.data.product_id, { description: text });
+      await updateProduct(flow.data.product_id, { description: productRichText });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Description saved.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
