@@ -19,6 +19,7 @@ export const en: Record<string, string> = {
   'btn.prev': '◀️ Prev',
   'btn.refresh': '🔄 Refresh',
   'btn.buy_now': '✅ Buy Now',
+  'btn.pre_order': '🛍 Pre Order',
   'btn.redeem_referral': '🎁 Pay with Referrals',
   'btn.referral_earn_buy': '🔗 Earn Referrals & Buy',
   'btn.convert_refers': '💱 Convert Refers to USDT',
@@ -291,6 +292,17 @@ export const en: Record<string, string> = {
     '{delivered_items} *Items:*',
     '{items}',
   ].join('\n'),
+  'shop.buy.order_preordered': [
+    '{feed_title} *Preorder Placed!*',
+    '',
+    '*Order ID#:* `{order_id}`',
+    '*Product:* {name}',
+    '*Quantity:* {qty}',
+    '*Total Paid:* {total} USDT',
+    '',
+    '{delivered_items} *Status:*',
+    '{items}',
+  ].join('\n'),
   // Email follow-up #1: shown after Order Delivered when the buyer
   // has NO email on file. The `{email_add_l/r}` slots are left/right
   // premium-emoji bookends per the bot-owner spec.
@@ -320,6 +332,8 @@ export const en: Record<string, string> = {
     '{debit_emoji} admin debited *${amount}* from your wallet.\n{balance_emoji} New balance: *${balance}*',
   'shop.buy.delivery_pending':
     'Coming soon — admin will deliver your items manually within 12h.',
+  'shop.buy.preorder_pending':
+    'Preorder pending — admin will deliver after restock.',
   'shop.buy.insufficient':
     '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please top up first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
