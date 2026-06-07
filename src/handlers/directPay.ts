@@ -125,7 +125,9 @@ async function sendTxCancelled(
 function tutButtonKeyFor(
   provider: PaymentProvider,
 ): 'where_txid' | 'where_order_id' {
-  return provider === 'binance_pay' ? 'where_order_id' : 'where_txid';
+  return provider === 'binance_pay' || provider === 'bybit_pay'
+    ? 'where_order_id'
+    : 'where_txid';
 }
 
 /**
@@ -405,6 +407,66 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       return;
     }
 
+    if (m.provider === 'bybit_pay') {
+      if (!m.address) {
+        await ctx.editMessageText(
+          renderMdHtml(
+            'Warning: This Bybit Pay method has no Bybit UID / ID configured. Please pick another method.',
+          ),
+          {
+            parse_mode: 'HTML',
+            reply_markup: new InlineKeyboard().text(
+              btn(ctx.lang, 'back'),
+              `pay:direct:${productId}`,
+            ),
+          },
+        );
+        return;
+      }
+
+      let depId: number;
+      try {
+        const dep = await createDeposit({
+          user_id: ctx.user.telegram_id,
+          method: m.name,
+          amount: intent.total,
+          note: 'Direct-pay Bybit Pay screen opened - awaiting internal transfer txid',
+          order_intent: intent,
+        });
+        depId = dep.id;
+      } catch (err) {
+        logger.error({ err }, 'direct-pay Bybit Pay deposit insert failed');
+        await ctx.editMessageText(
+          'Warning: Could not start the Bybit Pay payment. Please try again or pick another method.',
+        );
+        return;
+      }
+
+      ctx.session.userFlow = {
+        type: 'direct_bybit',
+        step: 'tx_id',
+        data: {
+          method_id: m.id,
+          method_name: m.name,
+          bybit_id: m.address,
+          bybit_name: m.pay_name,
+          deposit_id: depId,
+          intent,
+          opened_at_ms: Date.now(),
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
+        },
+      };
+
+      await ctx.editMessageText(
+        renderMdHtml(buildBybitDirectScreen(m, intent)),
+        {
+          parse_mode: 'HTML',
+          reply_markup: directPayInstructionKeyboard(ctx, m, productId),
+        },
+      );
+      return;
+    }
+
     if (m.provider === 'ltc') {
       if (!m.address) {
         await ctx.editMessageText(
@@ -589,6 +651,10 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       await handleBinanceDirectSubmit(ctx, flow, text);
       return;
     }
+    if (flow.type === 'direct_bybit') {
+      await handleBybitDirectSubmit(ctx, flow, text);
+      return;
+    }
     return next();
   });
 }
@@ -758,6 +824,163 @@ async function handleBinanceDirectSubmit(
         reason: result.reason,
       });
     }
+  }
+}
+
+// ----- Bybit Pay direct ---------------------------------------------------
+
+async function handleBybitDirectSubmit(
+  ctx: AppCtx,
+  flow: Extract<
+    NonNullable<AppCtx['session']['userFlow']>,
+    { type: 'direct_bybit' }
+  >,
+  text: string,
+): Promise<void> {
+  const cleaned = text.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9_-]{6,100}$/.test(cleaned)) {
+    ctx.session.userFlow = undefined;
+    await sendTxCancelled(ctx, flow.data.intent.product_id);
+    return;
+  }
+  const txId = cleaned;
+  const depId = flow.data.deposit_id;
+
+  const rl = consume(`bybit_pay:${ctx.user.telegram_id}`, 5, 60_000);
+  if (!rl.ok) {
+    await ctx.reply(
+      renderMdHtml(
+        `⏱ Too many Bybit TXID attempts. Please try again in ${formatRetryAfter(rl.retryAfterMs)}.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  ctx.session.userFlow = undefined;
+
+  const dep = await getDeposit(depId);
+  if (!dep) {
+    await ctx.reply('Warning: deposit row missing. Please reopen the direct-pay screen.');
+    return;
+  }
+  if (dep.status !== 'pending') {
+    await ctx.reply(
+      renderMdHtml(
+        `Warning: This deposit has already been ${dep.status}. Open a fresh direct-pay screen if you want to pay again.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  await setDepositNote(depId, `Direct-pay Bybit internal transfer TXID submitted: ${txId}`).catch(() => undefined);
+
+  const verifying = await startVerifyingMessage({
+    api: ctx.api,
+    chatId: ctx.chat!.id,
+    txId,
+  });
+
+  let result;
+  try {
+    result = await verifyAndCreditDeposit({
+      api: ctx.api,
+      deposit: dep,
+      submission: { orderId: txId },
+      openedAtMs: flow.data.opened_at_ms,
+      logUser: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, depId, txId }, 'direct bybit auto-verify threw');
+    result = {
+      ok: false as const,
+      reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}`,
+    };
+  }
+
+  if (result.ok) {
+    await verifying.done({
+      text: [
+        `✅ *Direct-pay verified (deposit #${depId}).*`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        `Charged: *$${Number(result.amount).toFixed(3)}*`,
+      ].join('\n'),
+      reply_markup: successKeyboard(ctx.lang, `prod:${flow.data.intent.product_id}`),
+    });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
+    return;
+  }
+
+  const klass = classifyReason(result.reason);
+  await setDepositNote(
+    depId,
+    `auto-verify failed: ${result.reason} (bybit txid ${txId})`,
+  ).catch(() => undefined);
+  if (klass === 'duplicate') {
+    await verifying.done({
+      text: [
+        `❌ *Already-used Bybit TXID (#${depId}).*`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        '_This Bybit transfer has already been used to credit a previous deposit. Each TXID can only be used once._',
+      ].join('\n'),
+      reply_markup: successKeyboard(ctx.lang, `prod:${flow.data.intent.product_id}`),
+    });
+  } else if (klass === 'reject') {
+    await setDepositStatus(depId, 'rejected').catch(() => undefined);
+    await verifying.done({
+      text: [
+        `❌ *Disapproved (#${depId}).*`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        `_${friendlyReason(result.reason)}_`,
+        '',
+        'This transfer did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
+      ].join('\n'),
+      reply_markup: rejectionKeyboard(
+        ctx.lang,
+        depId,
+        txId,
+        result.reason,
+        `prod:${flow.data.intent.product_id}`,
+      ),
+    });
+  } else {
+    await verifying.done({
+      text: [
+        `⏳ *Submitted (#${depId}) - pending admin review.*`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        `_${friendlyReason(result.reason)}_`,
+        '',
+        'Your order will be delivered as soon as admin verifies the payment manually.',
+      ].join('\n'),
+      reply_markup: manualReviewKeyboard(
+        ctx.lang,
+        depId,
+        txId,
+        `prod:${flow.data.intent.product_id}`,
+      ),
+    });
+    void adminLog.logTopupSubmitted(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      depositDbId: depId,
+      method: flow.data.method_name,
+      reference: txId,
+      reason: result.reason,
+    });
   }
 }
 
@@ -1173,6 +1396,31 @@ function buildBinanceDirectScreen(
   ].join('\n');
 }
 
+function buildBybitDirectScreen(
+  m: DBPaymentMethod,
+  intent: OrderIntent,
+): string {
+  const totalStr = intent.total.toFixed(2);
+  return [
+    '*Bybit Pay - Direct Pay*',
+    '',
+    `*${intent.product_name}*  x  *${intent.qty}*`,
+    `*Send EXACTLY:*  \`${totalStr} USDT\``,
+    '',
+    `*Bybit UID / ID:* \`${m.address ?? '(not set)'}\``,
+    `*Bybit Name:* \`${m.pay_name ?? '(not set)'}\``,
+    '',
+    `${PE.bullet_send} Send *exactly ${totalStr} USDT* inside Bybit to the ID above`,
+    `${PE.bullet_paste} Paste your *Bybit internal transfer TXID* below`,
+    '',
+    `${PE.note} _Only successful USDT internal transfers are auto-verified._`,
+    '',
+    '⏰ _Only payments completed within 30 minutes of opening this screen are auto-verified. Earlier or later payments still go to manual admin review._',
+    '',
+    '*Please send your Bybit TXID below:*',
+  ].join('\n');
+}
+
 function buildChainDirectScreen(
   m: DBPaymentMethod,
   intent: OrderIntent,
@@ -1227,4 +1475,3 @@ function buildChainDirectScreen(
   lines.push('*Please send your TX hash below:*');
   return lines.join('\n');
 }
-
