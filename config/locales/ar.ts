@@ -17,6 +17,7 @@ export const ar: Record<string, string> = {
   'btn.prev': '◀️ السابق',
   'btn.refresh': '🔄 تحديث',
   'btn.buy_now': '✅ شراء الآن',
+  'btn.pre_order': '🛍 Pre Order',
   'btn.redeem_referral': '🎁 الدفع بالإحالات',
   'btn.referral_earn_buy': '🔗 اكسب إحالات واشترِ',
   'btn.convert_refers': '💱 تحويل الإحالات إلى USDT',
