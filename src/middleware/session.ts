@@ -381,6 +381,21 @@ export type AdminFlow =
       type: 'add_binance_payment';
       step: 'pay_name';
       data: { name: string; pay_id: string };
+    }
+  | {
+      type: 'add_bybit_payment';
+      step: 'name';
+      data: Record<string, never>;
+    }
+  | {
+      type: 'add_bybit_payment';
+      step: 'bybit_id';
+      data: { name: string };
+    }
+  | {
+      type: 'add_bybit_payment';
+      step: 'bybit_name';
+      data: { name: string; bybit_id: string };
     };
 
 /**
@@ -499,6 +514,18 @@ export type UserFlow =
       };
     }
   | {
+      type: 'bybit_pay_topup';
+      step: 'tx_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        bybit_id: string;
+        bybit_name: string | null;
+        deposit_id: number;
+        opened_at_ms: number;
+        instruction_message_id?: number;
+      };
+    }  | {
       /**
        * LTC quote-on-display top-up — three steps:
        *   `usd_amount`  – user types the USD amount they want.
@@ -602,6 +629,19 @@ export type UserFlow =
       };
     }
   | {
+      type: 'direct_bybit';
+      step: 'tx_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        bybit_id: string;
+        bybit_name: string | null;
+        deposit_id: number;
+        intent: import('../types.js').OrderIntent;
+        opened_at_ms: number;
+        instruction_message_id?: number;
+      };
+    }  | {
       /**
        * User is in a Live Support relay session. While this flow is
        * active, every non-command message they send is forwarded to
