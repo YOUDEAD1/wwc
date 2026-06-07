@@ -284,6 +284,42 @@ pkgs.mkShell {
 > Pay auto-verify calls. BEP20/TRC20/TON/LTC verification does not use
 > these proxies.
 
+### Bybit Pay Auto-Verify
+
+Bybit Pay in this bot uses Bybit internal deposit records. The buyer
+sends USDT inside Bybit to your Bybit UID / ID, then pastes the
+internal transfer TXID. The bot checks Bybit's
+`GET /v5/asset/deposit/query-internal-record` endpoint and credits only
+successful USDT deposits that landed in the API-key owner's account.
+
+1. Run the Supabase migration:
+
+   `supabase/migrations/0035_bybit_pay_provider.sql`
+
+   In Supabase SQL editor, paste the SQL file contents, not the file
+   path.
+
+2. Add Railway variables:
+
+   ```env
+   BYBIT_API_KEY=
+   BYBIT_API_SECRET=
+   BYBIT_API_BASE_URL=
+   BYBIT_API_BASE_URLS=
+   ```
+
+   `BYBIT_API_BASE_URL` / `BYBIT_API_BASE_URLS` are optional. Leave
+   blank for the official mainnet hosts.
+
+3. Redeploy the Railway bot service.
+
+4. In Telegram admin panel, open Payment Methods, tap Add Bybit Pay,
+   then enter display name, Bybit UID / ID, and Bybit name.
+
+The Bybit API key should be read-only and must have access to asset /
+wallet deposit records. Do not enable trading or withdrawals for this
+bot key.
+
 #### Alternative: Use ProtonVPN Business (Easier)
 
 1. Buy ProtonVPN Business
