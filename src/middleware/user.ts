@@ -80,7 +80,7 @@ async function sendReferralNotification(
   refereeUsername: string | null,
   refereeFirstName: string | null,
 ) {
-  const { getUserByTelegramId, countReferrals, getReferralEarnings } = await import('../db/queries.js');
+  const { getUserByTelegramId, getReferralBalance, getReferralEarnings } = await import('../db/queries.js');
 
   const referrer = await getUserByTelegramId(referrerId);
   if (!referrer) return;
@@ -92,19 +92,26 @@ async function sendReferralNotification(
     refereeUsername ? `@${refereeUsername}` : refereeFirstName ?? `User ${refereeId}`,
   );
 
-  let totalRefs = 0;
+  let refBalance = { total: 0, spent: 0, available: 0 };
   let totalEarned = 0;
   try {
-    totalRefs = await countReferrals(referrerId);
+    refBalance = await getReferralBalance(referrerId);
   } catch {
-    totalRefs = 0;
+    refBalance = { total: 0, spent: 0, available: 0 };
   }
   try {
     totalEarned = (await getReferralEarnings(referrerId)).total;
   } catch {
     totalEarned = 0;
   }
-  const remaining = Math.max(0, 10 - totalRefs);
+  const remaining =
+    refBalance.available > 0 && refBalance.available % 10 === 0
+      ? 0
+      : 10 - (refBalance.available % 10);
+  // Existing notification templates call this "totalRefs", but the
+  // number shown to users must be the spendable Referral Pay balance:
+  // lifetime referrals minus purchase/conversion spends.
+  const totalRefs = refBalance.available;
 
   const userMsg = `🎁 *You Got a Refer +1!*
 
@@ -120,7 +127,8 @@ Keep sharing your link and stack rewards.`;
 
   void publicFeed.notifyActiveReferral(ctx.api, {
     referrerName: referrerUsername,
-    totalReferrals: totalRefs,
+    totalReferrals: refBalance.total,
+    activeReferrals: totalRefs,
     totalEarned,
   });
   if (totalRefs > 0 && totalRefs % 10 === 0) {
