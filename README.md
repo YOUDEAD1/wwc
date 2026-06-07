@@ -306,10 +306,18 @@ successful USDT deposits that landed in the API-key owner's account.
    BYBIT_API_SECRET=
    BYBIT_API_BASE_URL=
    BYBIT_API_BASE_URLS=
+   BYBIT_PROXY_URL=
+   BYBIT_PROXY_URLS=
    ```
 
    `BYBIT_API_BASE_URL` / `BYBIT_API_BASE_URLS` are optional. Leave
    blank for the official mainnet hosts.
+
+   If Bybit returns CloudFront `403` / country-block errors from
+   Railway, set `BYBIT_PROXY_URL` or comma-separated
+   `BYBIT_PROXY_URLS` to an HTTP(S) proxy or VPN sidecar exit where
+   Bybit is reachable. The bot tries Bybit proxies first, then reuses
+   `BINANCE_PROXY_URLS` / `BINANCE_PROXY_URL` if present, then direct.
 
 3. Redeploy the Railway bot service.
 
