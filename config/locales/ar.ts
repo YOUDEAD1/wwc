@@ -80,6 +80,7 @@ export const ar: Record<string, string> = {
   'btn.region.clear': '🚫 مسح',
   'btn.deposit_history': '💳 سجل الإيداعات',
   'btn.channel': 'القناة',
+  'btn.reseller_api': '🔌 API',
   'btn.stats': '📊 إحصائيات',
   'btn.stats_refresh': '🔄 تحديث',
   'btn.stats_back': '◀️ رجوع',
