@@ -316,6 +316,11 @@ export type DBWalletLedger = {
  *                    merchant Pay ID) is stored in
  *                    `payment_methods.address`; the human-readable
  *                    Binance Pay Name is stored in `pay_name`.
+ *   - `bybit_pay`    Bybit internal deposit lookup
+ *                    `/v5/asset/deposit/query-internal-record`,
+ *                    matched by a user-pasted internal transfer TXID.
+ *                    The merchant Bybit UID / ID is stored in
+ *                    `payment_methods.address` for display.
  *   - `usdt_trc20`   TronGrid REST tx lookup (tx hash input)
  *   - `usdt_bep20`   BSC public RPC tx lookup (tx hash input)
  *   - `usdt_ton`     TonCenter REST tx lookup (tx hash input)
@@ -328,6 +333,7 @@ export type DBWalletLedger = {
 export type PaymentProvider =
   | 'manual'
   | 'binance_pay'
+  | 'bybit_pay'
   | 'usdt_trc20'
   | 'usdt_bep20'
   | 'usdt_ton'
@@ -345,13 +351,14 @@ export type DBPaymentMethod = {
    * Wallet / account address. Required for every non-manual
    * provider — chain providers verify the recipient against this.
    * For `binance_pay` rows this stores the merchant's 10-digit
-   * Binance Pay ID (e.g. `"1101801594"`).
+   * Binance Pay ID (e.g. `"1101801594"`). For `bybit_pay` rows
+   * this stores the merchant Bybit UID / ID shown to buyers.
    */
   address: string | null;
   /**
-   * Human-readable Binance Pay Name shown next to the Pay ID on the
-   * user-facing top-up screen (e.g. `"urweebboii"`). Only set for
-   * `binance_pay` provider rows; null for every other provider.
+   * Human-readable Pay Name shown next to the Pay ID on the
+   * user-facing top-up screen (e.g. `"urweebboii"`). Set for
+   * Binance Pay / Bybit Pay provider rows; null for other providers.
    */
   pay_name: string | null;
   /**
