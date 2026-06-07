@@ -61,6 +61,7 @@ const schema = z.object({
   BOT_MODE: z.enum(['polling', 'webhook']).default('polling'),
   WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
   WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  PUBLIC_BASE_URL: z.string().url().optional().or(z.literal('')),
   PORT: z.coerce.number().int().default(3000),
 
   DEFAULT_LANG: z.enum(['en', 'ar', 'vi']).default('en'),
