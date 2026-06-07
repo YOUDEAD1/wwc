@@ -332,13 +332,16 @@ async function finalizeOrderDelivery(args: {
   confirmationText: string;
 }): Promise<void> {
   const { ctx, product: p, qty, total, discount, order, paidVia, balanceAfter, confirmationText } = args;
-  await decrementProductStock(p.id, qty);
+  const preorder = isPreorder(p, qty);
+  if (!preorder) {
+    await decrementProductStock(p.id, qty);
+  }
   delete ctx.session.qty[p.id];
   // Pull the actual delivery payload off the per-product items
   // pool. When the pool is empty (or short), fall back to a
   // "manual delivery" placeholder; the admin gets pinged via
   // logOrderCreated either way.
-  const claimed = await claimProductItems(p.id, qty, order.id);
+  const claimed = preorder ? [] : await claimProductItems(p.id, qty, order.id);
   const publicId = publicOrderId(order);
   // Items are rendered as Telegram blockquote pills (one `> line`
   // per claimed link / account) — same style as the View Note
@@ -358,10 +361,13 @@ async function finalizeOrderDelivery(args: {
   // existing /myorders renderer (and the /admin orders block)
   // doesn't suddenly contain blockquote markers.
   const deliveredChunks = buildOrderDeliveredChunks(claimed);
+  const pendingText = preorder
+    ? ctx.t('shop.buy.preorder_pending')
+    : ctx.t('shop.buy.delivery_pending');
   const firstChunkBlock =
-    deliveredChunks[0]?.inlineBlock ?? `> ${ctx.t('shop.buy.delivery_pending')}`;
+    deliveredChunks[0]?.inlineBlock ?? `> ${pendingText}`;
   const deliveredItemsForDb =
-    claimed.length > 0 ? claimed.join('\n') : ctx.t('shop.buy.delivery_pending');
+    claimed.length > 0 ? claimed.join('\n') : pendingText;
   // Always persist `delivered_items` — even the manual-delivery
   // placeholder — so the My Orders detail screen can render the
   // order without falling back to the legacy `delivery` blob.
@@ -404,7 +410,7 @@ async function finalizeOrderDelivery(args: {
   const headerHasKeyboard = deliveredChunks.length <= 1;
   await ctx.reply(
     renderMdHtml(
-      ctx.t('shop.buy.order_delivered', {
+      ctx.t(preorder ? 'shop.buy.order_preordered' : 'shop.buy.order_delivered', {
         order_id: publicId,
         name: p.name,
         qty,
@@ -668,15 +674,32 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
 }
 
 /**
- * Validate a candidate quantity against `[1, min(QTY_MAX, stock)]`.
+ * For normal products, cap quantity at the live stock. For out-of-stock
+ * products, allow a preorder quantity up to QTY_MAX instead of blocking
+ * at zero.
+ */
+function qtyLimitForProduct(p: { unlimited_stock: boolean; stock: number }): number {
+  if (p.unlimited_stock) return QTY_MAX;
+  return p.stock > 0 ? Math.min(QTY_MAX, p.stock) : QTY_MAX;
+}
+
+function isPreorder(
+  p: { unlimited_stock: boolean; stock: number },
+  qty: number,
+): boolean {
+  return !p.unlimited_stock && p.stock < qty;
+}
+
+/**
+ * Validate a candidate quantity against `[1, max]`.
  * Returns the clamped integer on success or `null` if the input is
  * non-numeric / out of range — caller surfaces the premium-emoji
  * error message and keeps the keypad open.
  */
-function validateQty(candidate: string | number, stock: number): number | null {
+function validateQty(candidate: string | number, max: number): number | null {
   const n = typeof candidate === 'string' ? Number(candidate) : candidate;
   if (!Number.isFinite(n) || !Number.isInteger(n)) return null;
-  const ceiling = Math.min(QTY_MAX, Math.max(0, stock));
+  const ceiling = Math.max(0, max);
   if (n < QTY_MIN || n > ceiling) return null;
   return n;
 }
@@ -722,7 +745,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    const ceiling = Math.min(QTY_MAX, Math.max(0, p.stock));
+    const ceiling = qtyLimitForProduct(p);
     const current = ctx.session.qty[id] ?? QTY_MIN;
     const candidate = direction === 'inc' ? current + 1 : current - 1;
     if (candidate < QTY_MIN || candidate > ceiling) {
@@ -782,9 +805,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // same way as `max` so the user sees an explanation instead
       // of a no-op tap.
       const preset = Number(action.slice(2));
-      const ceiling = p.unlimited_stock
-        ? QTY_MAX
-        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = qtyLimitForProduct(p);
       if (ceiling < QTY_MIN) {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
@@ -799,7 +820,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // never represents a qty the user couldn't actually buy.
       // Trailing taps past the ceiling are silently dropped (the
       // ack still happens below, so Telegram doesn't show a spinner).
-      const ceiling = Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = qtyLimitForProduct(p);
       if (buf.length < 4) {
         const candidate = (buf + digit).replace(/^0+(\d)/, '$1');
         if (Number(candidate) <= ceiling) buf = candidate;
@@ -815,9 +836,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // toast on out-of-stock so the user understands why the
       // buffer didn't move. The action only updates the staged
       // buffer — the user still has to tap ✅ Confirm to apply.
-      const ceiling = p.unlimited_stock
-        ? QTY_MAX
-        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = qtyLimitForProduct(p);
       if (ceiling < QTY_MIN) {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
@@ -827,10 +846,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
       }
       buf = String(ceiling);
     } else if (action === 'confirm') {
-      const next = validateQty(buf, p.stock);
+      const ceiling = qtyLimitForProduct(p);
+      const next = validateQty(buf, ceiling);
       if (next === null) {
         await ctx.answerCallbackQuery({
-          text: ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) }),
+          text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
           show_alert: true,
         });
         return;
@@ -877,14 +897,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // Strip non-digits so a stray space / punctuation doesn't
     // invalidate an otherwise-valid number ("11 " → "11").
     const digits = text.replace(/[^0-9]/g, '');
-    const next_ = digits ? validateQty(digits, p.stock) : null;
+    const ceiling = qtyLimitForProduct(p);
+    const next_ = digits ? validateQty(digits, ceiling) : null;
     if (next_ === null) {
       // Premium-emoji invalid warning. Sent to the chat (as opposed
       // to a callback popup) because the user typed a message — a
       // popup wouldn't surface here.
       const warn = await ctx.reply(
         renderMdHtml(
-          ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) }),
+          ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
         ),
         { parse_mode: 'HTML' },
       );
@@ -1170,10 +1191,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
       });
       return;
     }
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
-      return;
-    }
     const qty = ctx.session.qty[productId] ?? QTY_MIN;
     const referral = await getReferralPaymentState(ctx, p, qty);
     if (!referral) {
@@ -1219,10 +1236,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
         text: ctx.t('shop.referral.disabled'),
         show_alert: true,
       });
-      return;
-    }
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
       return;
     }
     const qty = ctx.session.qty[productId] ?? QTY_MIN;
@@ -1312,10 +1325,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
-      return;
-    }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
     const { discount, total } = priceBreakdown(p.price, qty, promo);
@@ -1358,13 +1367,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('shop.buy.no_stock'),
-        show_alert: true,
-      });
-      return;
-    }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
     const { discount, total } = priceBreakdown(p.price, qty, promo);
@@ -1415,10 +1417,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // so the price the user saw on the product page is the price
     // they're actually billed.
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
-      return;
-    }
     // Email is no longer a hard gate — the bot-owner spec relaxed
     // checkout so users without a saved email can still buy. The
     // 12-hour nag (see `services/emailNag.ts`) handles the soft
