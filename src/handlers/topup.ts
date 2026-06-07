@@ -1106,7 +1106,7 @@ function buildLtcUsdAmountScreen(m: DBPaymentMethod): string {
   ].join('\n');
 }
 
-async function showTopupMenu(ctx: AppCtx, asEdit = false) {
+export async function showTopupMenu(ctx: AppCtx, asEdit = false) {
   const methods = await listPaymentMethods();
   if (methods.length === 0) {
     const text = renderMdHtml(ctx.t('topup.no_methods'));
@@ -1135,5 +1135,4 @@ async function showTopupMenu(ctx: AppCtx, asEdit = false) {
     await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
 }
-
 
