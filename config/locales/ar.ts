@@ -1,4 +1,4 @@
-/* العربية — keep keys in sync with en.ts */
+﻿/* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
   'welcome': 'مرحبًا بك في متجر SafwanTiger',
   'welcome.title': 'مرحبًا بك في متجر SafwanTiger!',
@@ -80,7 +80,7 @@ export const ar: Record<string, string> = {
   'btn.region.clear': '🚫 مسح',
   'btn.deposit_history': '💳 سجل الإيداعات',
   'btn.channel': 'القناة',
-  'btn.reseller_api': '🔌 API',
+  'btn.reseller_api': '🔑 Api Key',
   'btn.stats': '📊 إحصائيات',
   'btn.stats_refresh': '🔄 تحديث',
   'btn.stats_back': '◀️ رجوع',
