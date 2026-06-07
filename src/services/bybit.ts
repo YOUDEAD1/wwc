@@ -7,7 +7,7 @@
  * deposits that match that TXID.
  */
 import crypto from 'node:crypto';
-import { fetch } from 'undici';
+import { ProxyAgent, fetch, type Response } from 'undici';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 import type { DBDeposit } from '../types.js';
@@ -15,6 +15,18 @@ import type { DBDeposit } from '../types.js';
 const DEFAULT_BASE_URLS = ['https://api.bybit.com', 'https://api.bytick.com'] as const;
 const ENDPOINT = '/v5/asset/deposit/query-internal-record';
 const RECV_WINDOW_MS = 5000;
+
+type ProxyRoute = {
+  label: string;
+  dispatcher?: ProxyAgent;
+  initError?: string;
+};
+
+type AttemptFailure = {
+  route: string;
+  status?: number;
+  reason: string;
+};
 
 export type BybitInternalDepositRecord = {
   id?: string;
@@ -65,6 +77,16 @@ function uniq(xs: string[]): string[] {
   return [...new Set(xs)];
 }
 
+function formatProxyLabel(value: string): string {
+  try {
+    const parsed = new URL(value);
+    const port = parsed.port ? `:${parsed.port}` : '';
+    return `${parsed.protocol}//${parsed.hostname}${port}`;
+  } catch {
+    return 'invalid-proxy-url';
+  }
+}
+
 function readBaseUrls(): string[] {
   const configured = uniq([
     ...splitEnvList(env.BYBIT_API_BASE_URLS),
@@ -83,6 +105,75 @@ function readBaseUrls(): string[] {
       }
     });
   return valid.length > 0 ? valid : [...DEFAULT_BASE_URLS];
+}
+
+function readProxyRoutes(): ProxyRoute[] {
+  const configured = uniq([
+    ...splitEnvList(env.BYBIT_PROXY_URLS),
+    ...splitEnvList(env.BYBIT_PROXY_URL),
+    // If the owner already fixed Binance Pay with a VPN/proxy sidecar,
+    // try that same exit for Bybit before falling back to direct. Bybit
+    // still has its own env vars above so it can use a different exit
+    // whenever needed.
+    ...splitEnvList(env.BINANCE_PROXY_URLS),
+    ...splitEnvList(env.BINANCE_PROXY_URL),
+  ]);
+  const routes: ProxyRoute[] = [];
+  for (const proxyUrl of configured) {
+    const label = formatProxyLabel(proxyUrl);
+    try {
+      routes.push({ label, dispatcher: new ProxyAgent(proxyUrl) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn({ err, proxy: label }, 'bybit: invalid proxy URL');
+      routes.push({ label, initError: message });
+    }
+  }
+  routes.push({ label: 'direct' });
+  return routes;
+}
+
+function routeLabel(baseUrl: string, proxy: ProxyRoute): string {
+  return proxy.dispatcher ? `${baseUrl} via ${proxy.label}` : `${baseUrl} direct`;
+}
+
+function isRegionBlockedFailure(f: AttemptFailure): boolean {
+  const reason = f.reason.toLowerCase();
+  return (
+    f.status === 403 ||
+    f.status === 451 ||
+    reason.includes('cloudfront') ||
+    reason.includes('access from your country') ||
+    reason.includes('region-blocked')
+  );
+}
+
+function summarizeFailures(failures: AttemptFailure[]): string {
+  const tried = failures.map((f) => f.route).join(', ');
+  const initErrors = failures.filter((f) => f.reason.startsWith('proxy misconfigured'));
+  const networkFailures = failures.filter((f) => f.reason.startsWith('fetch failed'));
+  const usableFailures = failures.filter((f) => !f.reason.startsWith('proxy misconfigured'));
+  const regionBlocked =
+    usableFailures.length > 0 && usableFailures.every((f) => isRegionBlockedFailure(f));
+
+  if (regionBlocked) {
+    return (
+      'bybit returned 403/451 - every tried direct/proxy route is region-blocked. ' +
+      'Set BYBIT_PROXY_URL or BYBIT_PROXY_URLS to a Bybit-allowed proxy/VPN exit. ' +
+      `Tried: ${tried}`
+    );
+  }
+  if (initErrors.length > 0 && initErrors.length === failures.length) {
+    return `bybit proxy misconfigured: ${initErrors.map((f) => f.reason).join('; ')}`;
+  }
+  if (networkFailures.length > 0 && networkFailures.length === failures.length) {
+    return `bybit network failed after ${failures.length} route(s): ${tried}`;
+  }
+  const compact = failures
+    .slice(0, 4)
+    .map((f) => `${f.route}: ${f.reason}`)
+    .join('; ');
+  return `bybit unavailable after ${failures.length} route(s): ${compact}`;
 }
 
 function sign(queryString: string, timestamp: string, apiKey: string, secret: string): string {
@@ -105,22 +196,42 @@ async function bybitGet<T>(
   if (!creds) throw new Error('bybit api credentials missing');
 
   const query = params.toString();
-  const timestamp = String(Date.now());
-  const signature = sign(query, timestamp, creds.apiKey, creds.apiSecret);
-  const headers = {
-    'X-BAPI-API-KEY': creds.apiKey,
-    'X-BAPI-TIMESTAMP': timestamp,
-    'X-BAPI-RECV-WINDOW': String(RECV_WINDOW_MS),
-    'X-BAPI-SIGN': signature,
-    'X-BAPI-SIGN-TYPE': '2',
-    'content-type': 'application/json',
-  };
+  const failures: AttemptFailure[] = [];
+  const baseUrls = readBaseUrls();
+  const proxyRoutes = readProxyRoutes();
 
-  const failures: string[] = [];
-  for (const baseUrl of readBaseUrls()) {
-    const url = `${baseUrl}${path}${query ? `?${query}` : ''}`;
-    try {
-      const res = await fetch(url, { headers });
+  for (const proxy of proxyRoutes) {
+    for (const baseUrl of baseUrls) {
+      const route = routeLabel(baseUrl, proxy);
+      if (proxy.initError) {
+        failures.push({ route, reason: `proxy misconfigured: ${proxy.initError}` });
+        continue;
+      }
+
+      const timestamp = String(Date.now());
+      const signature = sign(query, timestamp, creds.apiKey, creds.apiSecret);
+      const headers = {
+        'X-BAPI-API-KEY': creds.apiKey,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': String(RECV_WINDOW_MS),
+        'X-BAPI-SIGN': signature,
+        'X-BAPI-SIGN-TYPE': '2',
+        'content-type': 'application/json',
+      };
+      const url = `${baseUrl}${path}${query ? `?${query}` : ''}`;
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers,
+          ...(proxy.dispatcher ? { dispatcher: proxy.dispatcher } : {}),
+        });
+      } catch (err) {
+        const reason = `fetch failed: ${(err as Error)?.message ?? String(err)}`;
+        logger.warn({ err, route }, 'bybit: fetch threw, trying next route');
+        failures.push({ route, reason });
+        continue;
+      }
+
       const text = await res.text();
       let json: unknown = null;
       if (text.trim().length > 0) {
@@ -131,24 +242,39 @@ async function bybitGet<T>(
         }
       }
       if (!res.ok) {
-        failures.push(`${baseUrl}: http ${res.status}${text ? ` ${text.slice(0, 160)}` : ''}`);
+        logger.warn(
+          { status: res.status, body: text.slice(0, 400), route },
+          'bybit: non-200 from internal deposit endpoint',
+        );
+        failures.push({
+          route,
+          status: res.status,
+          reason: `http ${res.status}${text ? ` ${text.slice(0, 160)}` : ''}`,
+        });
         continue;
       }
       const envelope = (json ?? {}) as BybitEnvelope<T>;
       if (envelope.retCode !== 0) {
         failures.push(
-          `${baseUrl}: api ${envelope.retCode ?? '?'}${envelope.retMsg ? ` ${envelope.retMsg}` : ''}`,
+          {
+            route,
+            reason: `api ${envelope.retCode ?? '?'}${envelope.retMsg ? ` ${envelope.retMsg}` : ''}`,
+          },
         );
         continue;
       }
+      if (failures.length > 0) {
+        logger.info(
+          { route, priorFailures: failures.map((f) => ({ route: f.route, reason: f.reason })) },
+          'bybit: verifier succeeded after route fallback',
+        );
+      }
       return envelope;
-    } catch (err) {
-      failures.push(`${baseUrl}: ${(err as Error)?.message ?? String(err)}`);
     }
   }
 
   logger.warn({ failures }, 'bybit: all API routes failed');
-  throw new Error(`bybit unavailable: ${failures.slice(0, 3).join('; ')}`);
+  throw new Error(summarizeFailures(failures));
 }
 
 export function isBybitPayEnabled(): boolean {
