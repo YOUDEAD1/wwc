@@ -286,6 +286,8 @@ export const HTML_ENTITY_TYPES = new Set<MessageEntity['type']>([
   'underline',
   'strikethrough',
   'spoiler',
+  'blockquote',
+  'expandable_blockquote',
   'code',
   'pre',
   'text_link',
@@ -318,6 +320,10 @@ function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | n
       return { open: '<s>', close: '</s>', length: entity.length };
     case 'spoiler':
       return { open: '<span class="tg-spoiler">', close: '</span>', length: entity.length };
+    case 'blockquote':
+      return { open: '<blockquote>', close: '</blockquote>', length: entity.length };
+    case 'expandable_blockquote':
+      return { open: '<blockquote expandable>', close: '</blockquote>', length: entity.length };
     case 'code':
       return { open: '<code>', close: '</code>', length: entity.length };
     case 'pre':
