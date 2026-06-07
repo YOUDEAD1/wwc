@@ -7,6 +7,7 @@ import {
   QTY_MIN,
   type Lang,
 } from '../../config/index.js';
+import { formatPriceWithCurrency } from '../../config/currencies.js';
 import {
   createOrder,
   decrementProductStock,
@@ -88,7 +89,7 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   // total counts live in the keyboard footer where they don't
   // clutter the body copy.
   const html = renderMdHtml(ctx.t('shop.home.header'));
-  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages);
+  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages, ctx.user.currency ?? 'USDT');
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {
@@ -126,7 +127,7 @@ function productPageText(
     ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
   ];
   lines.push(
-    ctx.t('shop.product.line.price', { price: p.price }),
+    ctx.t('shop.product.line.price', { price: formatPriceWithCurrency(p.price, ctx.user.currency) }),
     ctx.t('shop.product.line.stock', { stock: stockLabel }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
@@ -161,14 +162,14 @@ function productPageText(
   if (eligible) {
     lines.push(
       ctx.t('shop.product.line.total.discounted', {
-        gross: gross.toFixed(2),
-        total: total.toFixed(2),
+        gross: formatPriceWithCurrency(gross, ctx.user.currency),
+        total: formatPriceWithCurrency(total, ctx.user.currency),
       }),
     );
   } else {
-    lines.push(ctx.t('shop.product.line.total', { total: total.toFixed(2) }));
+    lines.push(ctx.t('shop.product.line.total', { total: formatPriceWithCurrency(total, ctx.user.currency) }));
   }
-  lines.push(ctx.t('shop.product.line.balance', { balance: ctx.user.balance }));
+  lines.push(ctx.t('shop.product.line.balance', { balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency) }));
   return lines.join('\n');
 }
 
@@ -230,7 +231,7 @@ function renderPromoLine(
   return (
     ctx.t('shop.product.line.promo', {
       label,
-      discount: discount.toFixed(2),
+      discount: formatPriceWithCurrency(discount, ctx.user.currency),
     }) + '\n'
   );
 }
@@ -1322,8 +1323,8 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const text = ctx.t('shop.pay.title', {
       name: p.name,
       qty,
-      total: total.toFixed(2),
-      balance: ctx.user.balance,
+      total: formatPriceWithCurrency(total, ctx.user.currency),
+      balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency),
       // Per-product unicode emoji rendered behind the product name.
       // The premium auto-scan in `renderMdHtml` upgrades it to the
       // animated `<tg-emoji>` if a `custom_emoji_id` is configured.
@@ -1377,13 +1378,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
     const discountLine =
       discount > 0
-        ? ctx.t('shop.pay.confirm.discount_line', { discount: discount.toFixed(2) })
+        ? ctx.t('shop.pay.confirm.discount_line', {
+            discount: formatPriceWithCurrency(discount, ctx.user.currency),
+          })
         : '';
     const text = ctx.t('shop.pay.confirm', {
       name: p.name,
       qty,
-      total: total.toFixed(2),
-      balance: Number(ctx.user.balance).toFixed(2),
+      total: formatPriceWithCurrency(total, ctx.user.currency),
+      balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency),
       // Per-product unicode emoji prefix; auto-scan upgrades to
       // `<tg-emoji>` when `custom_emoji_id` is configured.
       emoji: p.emoji ?? '',
