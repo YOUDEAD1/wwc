@@ -175,6 +175,7 @@ export type AdminFlow =
   | { type: 'add_payment'; step: 'instructions'; data: { name: string } }
   | { type: 'set_text'; step: 'key'; data: Record<string, never> }
   | { type: 'set_text'; step: 'value'; data: { key: string } }
+  | { type: 'stats_custom_days'; step: 'days'; data: Record<string, never> }
   | { type: 'set_emoji'; step: 'key'; data: Record<string, never> }
   | { type: 'set_emoji'; step: 'value'; data: { key: string } }
   | { type: 'set_btnicon'; step: 'value'; data: { btnKey: string } }
