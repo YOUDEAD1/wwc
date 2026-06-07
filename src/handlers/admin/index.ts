@@ -2201,7 +2201,8 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
     .text('🔵 Add USDT (TON)', 'adm:pay:add:usdt_ton')
     .text('⚪ Add LTC', 'adm:pay:add:ltc')
     .row()
-    .text('🟡 Add Binance Pay', 'adm:pay:add:binance_pay');
+    .text('🟡 Add Binance Pay', 'adm:pay:add:binance_pay')
+    .text('Add Bybit Pay', 'adm:pay:add:bybit_pay');
   backRow(kb);
   await ctx.editMessageText(
     [
@@ -2302,6 +2303,25 @@ adminBot.callbackQuery('adm:pay:add:binance_pay', async (ctx) => {
   );
 });
 
+adminBot.callbackQuery('adm:pay:add:bybit_pay', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'add_bybit_payment',
+    step: 'name',
+    data: {},
+  };
+  await ctx.editMessageText(
+    [
+      '*Add Bybit Pay*',
+      '',
+      'Send the *display name* shown in the user-facing payment menu (e.g. `Bybit Pay`).',
+      '',
+      'Or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
 adminBot.callbackQuery('adm:pay:list', async (ctx) => {
   await ctx.answerCallbackQuery();
   await showPaymentList(ctx);
@@ -2329,13 +2349,20 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
               ? 'auto • TON'
               : m.provider === 'ltc'
                 ? 'auto • LTC'
+                : m.provider === 'bybit_pay'
+                  ? 'auto • Bybit Pay'
                 : 'auto • Binance Pay';
     lines.push(`#${m.id}  ${m.name} — _${tag}_`);
     if (m.address) {
-      const addrLabel = m.provider === 'binance_pay' ? 'Pay ID' : 'addr';
+      const addrLabel =
+        m.provider === 'binance_pay'
+          ? 'Pay ID'
+          : m.provider === 'bybit_pay'
+            ? 'Bybit UID'
+            : 'addr';
       lines.push(`     ${addrLabel}: \`${m.address}\``);
     }
-    if (m.provider === 'binance_pay' && m.pay_name) {
+    if ((m.provider === 'binance_pay' || m.provider === 'bybit_pay') && m.pay_name) {
       lines.push(`     Pay Name: \`${m.pay_name}\``);
     }
     // Per-method chrome controls. The button row reads "🎨 Color"
@@ -5926,6 +5953,79 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
 
+    if (flow.type === 'add_bybit_payment') {
+      if (flow.step === 'name') {
+        if (!text || text.length < 2 || text.length > 60) {
+          await ctx.reply('❌ Name must be 2–60 chars. Try again or `/cancel`.');
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_bybit_payment',
+          step: 'bybit_id',
+          data: { name: text },
+        };
+        await ctx.reply(
+          [
+            'Send the *Bybit UID / ID* users should pay inside Bybit.',
+            '',
+            'Users will send USDT to this ID, then paste their Bybit internal transfer TXID for auto-verify.',
+          ].join('\n'),
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'bybit_id') {
+        const cleaned = text.replace(/\s+/g, '');
+        if (!/^\d{4,20}$/.test(cleaned)) {
+          await ctx.reply(
+            '❌ Bybit UID / ID should be 4–20 digits, no spaces. Try again or `/cancel`.',
+          );
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_bybit_payment',
+          step: 'bybit_name',
+          data: { name: flow.data.name, bybit_id: cleaned },
+        };
+        await ctx.reply(
+          'Send the *Bybit Name* shown near your UID / ID. Users see this on the deposit screen so they know they are paying the right account.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'bybit_name') {
+        const trimmed = text.trim();
+        if (!trimmed || trimmed.length < 2 || trimmed.length > 64) {
+          await ctx.reply(
+            '❌ Bybit Name must be 2–64 chars. Try again or `/cancel`.',
+          );
+          return;
+        }
+        const m = await addPaymentMethod({
+          name: flow.data.name,
+          instructions: '(auto-verify - Bybit internal transfer instructions are rendered by the bot)',
+          min_amount: 0,
+          provider: 'bybit_pay',
+          address: flow.data.bybit_id,
+          pay_name: trimmed,
+        });
+        ctx.session.adminFlow = undefined;
+        await ctx.reply(
+          [
+            `✅ *${m.name}* added (id=${m.id})`,
+            'Provider: `bybit_pay`',
+            `Bybit UID: \`${flow.data.bybit_id}\``,
+            `Bybit Name: \`${trimmed}\``,
+            '',
+            'Set `BYBIT_API_KEY` and `BYBIT_API_SECRET` in Railway before users pay with it.',
+          ].join('\n'),
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
+        return;
+      }
+      return;
+    }
+
     if (flow.type === 'add_binance_payment') {
       if (flow.step === 'name') {
         if (!text || text.length < 2 || text.length > 60) {
@@ -7051,14 +7151,15 @@ adminBot.on('message:text', async (ctx, next) => {
     const isPaymentFlow =
       flow.type === 'add_payment' ||
       flow.type === 'add_chain_payment' ||
-      flow.type === 'add_binance_payment';
+      flow.type === 'add_binance_payment' ||
+      flow.type === 'add_bybit_payment';
     if (isPaymentFlow && (e?.code === '42P01' || e?.code === '42703')) {
       await ctx.reply(
         '⚠️ *Payment-methods schema not migrated*\n\n' +
           `The database is missing a column or table needed for this provider: \`${escapeHtml(
             e.message ?? '',
           )}\`.\n\nRun the latest \`supabase/migrations/*.sql\` files (in particular ` +
-          '`0020_binance_pay_restore.sql`) on your Supabase project, then retry.',
+          '`0035_bybit_pay_provider.sql`) on your Supabase project, then retry.',
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;
@@ -7069,7 +7170,7 @@ adminBot.on('message:text', async (ctx, next) => {
       await ctx.reply(
         '⚠️ *Provider not allowed by the database*\n\n' +
           'The Postgres CHECK constraint on `payment_methods.provider` rejected this row. ' +
-          'Apply the latest migration (`0020_binance_pay_restore.sql`) so the constraint includes `binance_pay`.',
+          'Apply the latest migration (`0035_bybit_pay_provider.sql`) so the constraint includes `bybit_pay`.',
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;
