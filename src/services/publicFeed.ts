@@ -51,14 +51,19 @@ async function send(api: Api, body: string, button: FeedButton): Promise<void> {
 export async function notifyActiveReferral(api: Api, args: {
   referrerName: string;
   totalReferrals: number;
+  activeReferrals?: number;
   totalEarned: number;
 }): Promise<void> {
-  const remaining = Math.max(0, 10 - (args.totalReferrals % 10 || 10));
+  const activeReferrals = args.activeReferrals ?? args.totalReferrals;
+  const remaining =
+    activeReferrals > 0 && activeReferrals % 10 === 0
+      ? 0
+      : 10 - (activeReferrals % 10);
   const body = [
     '> {feed_title} *New Active Referral!*',
     '>',
     `> {refer_user} *Referrer:* ${args.referrerName}`,
-    `> {refer_active} *Active Referrals:* ${args.totalReferrals}`,
+    `> {refer_active} *Active Referrals:* ${activeReferrals}`,
     `> {refer_coin} *Total earned from invites:* $${money(args.totalEarned)}`,
     remaining === 0
       ? '> {feed_title} *Reward milestone unlocked!*'
