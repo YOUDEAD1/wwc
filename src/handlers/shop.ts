@@ -45,6 +45,7 @@ import {
   clampForTelegram,
   escapeAttr,
   htmlToPlain,
+  renderHtmlTemplate,
   renderMdHtml,
   sanitizeButtonUrl,
 } from '../services/premium.js';
@@ -95,6 +96,17 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   } else {
     await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
+}
+
+const STORED_HTML_RX =
+  /<\/?(?:a|b|blockquote|code|del|em|i|pre|s|span|strong|tg-emoji|tg-spoiler|u)\b/i;
+
+function renderStoredProductText(raw: string | null | undefined, fallbackMarkdown: string): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return renderMdHtml(fallbackMarkdown);
+  return STORED_HTML_RX.test(trimmed)
+    ? renderHtmlTemplate(trimmed)
+    : renderMdHtml(trimmed);
 }
 
 /**
@@ -1015,16 +1027,17 @@ export function registerShop(bot: Composer<AppCtx>): void {
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
     await ctx.answerCallbackQuery();
-    const noteText = (p.note ?? '').trim();
-    const desc = (p.description ?? '').trim();
-    const body = ctx.t('shop.note.full', {
-      name: p.name,
-      description: desc.length > 0 ? desc : ctx.t('shop.note.empty_description'),
-      note: noteText.length > 0 ? noteText : ctx.t('shop.note.empty'),
-    });
     const kb = new InlineKeyboard();
     inlineBtn(kb, ctx.lang, 'back', `prod:${p.id}`);
-    const html = renderMdHtml(body);
+    const html = [
+      renderMdHtml(`{note_premium} *View Note — ${p.name}*`),
+      '',
+      renderMdHtml('{note_desc} *Description:*'),
+      renderStoredProductText(p.description, ctx.t('shop.note.empty_description')),
+      '',
+      renderMdHtml('{note_text} *Note:*'),
+      renderStoredProductText(p.note, ctx.t('shop.note.empty')),
+    ].join('\n');
     // View Note is text-only: just edit the in-place message back
     // to the rendered note body (description + note + product name).
     // Per bot-owner request the per-product file attachment was
