@@ -514,6 +514,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   profile_language: { unicode: '🌐', custom_emoji_id: '5364021605578071936' },
   profile_region: { unicode: '🗺', custom_emoji_id: '5309748255637118475' },
   profile_joined: { unicode: '📅', custom_emoji_id: '5028418466000930064' },
+  api_key: { unicode: '🔑', custom_emoji_id: '5287480366330816274' },
 
   // ---- Welcome banner -------------------------------------------
   welcome_banner: { unicode: '👋', custom_emoji_id: '6003746779474956178' },
@@ -818,6 +819,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   set_region: 'profile_region',
   set_email: 'profile_email',
   currency: 'refer_coin',
+  reseller_api: 'api_key',
 
   // Email hub & sub-screens
   email_settings: 'profile_email',
@@ -985,7 +987,6 @@ export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_K
   ['topup', 'profile'],
   ['support', 'ai_support'],
   ['refer', 'channel'],
-  ['reseller_api'],
 ];
 
 /** Shop pagination size — products per page */
