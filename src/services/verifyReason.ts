@@ -31,8 +31,29 @@ export function friendlyReason(reason: string): string {
   if (r.includes('only usdt binance pay deposits')) {
     return 'Only USDT Binance Pay payments are auto-verified. Please re-send the payment in USDT.';
   }
+  if (r.includes('bybit api credentials')) {
+    return 'Bybit auto-verification is not configured on the server yet. Admin will review this payment manually.';
+  }
+  if (r.includes('bybit unavailable')) {
+    return 'Bybit is temporarily unreachable from the server. Admin will review this payment manually.';
+  }
+  if (r.includes('bybit internal transfer not found')) {
+    return "We couldn't find that Bybit transfer TXID in your Bybit deposit records. Make sure you copied the full internal transfer TXID and paid within the 30-minute window.";
+  }
+  if (r.includes('bybit internal transfer is not successful yet')) {
+    return 'Bybit has not confirmed this internal transfer yet. Check the TXID and try again, or wait for admin review.';
+  }
+  if (r.includes('bybit coin mismatch')) {
+    return 'Only USDT Bybit internal transfers are auto-verified. Please send USDT.';
+  }
   if (r.includes('unsupported binance pay order type')) {
     return 'Binance Pay returned an unsupported order type for this transaction. Send the payment as a regular Binance Pay transfer (C2C) and try again.';
+  }
+  if (r.includes('bybit transfer was paid before')) {
+    return 'This Bybit transfer was paid before you opened the deposit screen. Please open a fresh deposit screen and pay again, or wait for admin review.';
+  }
+  if (r.includes('bybit transfer was paid more than 30 minutes after')) {
+    return 'This Bybit transfer was paid more than 30 minutes after you opened the deposit screen. Please open a fresh deposit screen and pay again, or wait for admin review.';
   }
   if (r.includes('paid before this deposit screen was opened')) {
     return 'This Binance Pay order was paid before you opened the deposit screen. Please open a fresh deposit screen and pay again, or wait for admin review.';
@@ -45,6 +66,9 @@ export function friendlyReason(reason: string): string {
   }
   if (r.includes('merchant pay id not configured')) {
     return 'This Binance Pay method has no Pay ID configured yet. Please contact support.';
+  }
+  if (r.includes('bybit uid/id not configured')) {
+    return 'This Bybit Pay method has no Bybit UID configured yet. Please contact support.';
   }
 
   // ----- Direct-pay amount guard -------------------------------------
@@ -60,6 +84,9 @@ export function friendlyReason(reason: string): string {
   // ----- Reference-id format gates -----------------------------------
   if (r.includes('binance pay order id format invalid')) {
     return 'That doesn\'t look like a Binance Pay Order ID. Paste the 18-digit numeric ID from your Binance Pay receipt.';
+  }
+  if (r.includes('bybit internal transfer txid format invalid')) {
+    return 'That does not look like a Bybit internal transfer TXID. Paste the full TXID from your Bybit transfer receipt.';
   }
   if (r.includes('tx hash format invalid')) {
     return 'That doesn\'t look like a transaction hash for this network. Paste the full TXID from your wallet.';
@@ -151,4 +178,3 @@ export function classifyReason(reason: string): 'duplicate' | 'reject' | 'defer'
   // missing config, network errors, …) — defer to manual review.
   return 'defer';
 }
-
