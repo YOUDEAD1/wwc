@@ -299,6 +299,62 @@ successful USDT deposits that landed in the API-key owner's account.
    In Supabase SQL editor, paste the SQL file contents, not the file
    path.
 
+### Reseller Product API
+
+Users can generate an API key from the bot with `/api`, `/apikey`, or
+the **API** main-menu button. The API lets another website/bot list
+your products, check the user's wallet balance, and place wallet-paid
+orders that deliver from this bot's stock.
+
+1. Run the Supabase migration:
+
+   `supabase/migrations/0036_reseller_api.sql`
+
+   In Supabase SQL editor, paste the SQL file contents, not the file
+   path.
+
+2. Set `PUBLIC_BASE_URL` in Railway to your public service domain,
+   for example:
+
+   ```env
+   PUBLIC_BASE_URL=https://your-app.up.railway.app
+   ```
+
+3. Redeploy the bot.
+
+Endpoints:
+
+```txt
+GET  /api
+GET  /api/products
+GET  /api/balance
+POST /api/order
+```
+
+Compatibility actions are also supported:
+
+```txt
+GET  /api?action=products
+GET  /api?action=balance
+POST /api?action=order
+```
+
+Send the API key as `Authorization: Bearer YOUR_KEY`, `x-api-key`, or
+`?api_key=YOUR_KEY`.
+
+Example order body:
+
+```json
+{
+  "product_id": 123,
+  "quantity": 1,
+  "request_id": "my-order-001"
+}
+```
+
+The API returns delivered items in JSON. The wallet is charged only
+after items are claimed and the order is created.
+
 2. Add Railway variables:
 
    ```env
