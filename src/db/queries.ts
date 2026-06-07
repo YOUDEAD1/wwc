@@ -1868,6 +1868,55 @@ export async function setOrderDeliveredItems(
   await supabase.from('orders').update({ delivered_items }).eq('id', order_id);
 }
 
+const PREORDER_PENDING_LIKE = 'Preorder pending%';
+const PREORDER_FULFILLING_MARKER = 'Preorder fulfilling...';
+
+export async function listPendingPreorderOrders(
+  product_id: number,
+  limit = 25,
+): Promise<DBOrder[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('product_id', product_id)
+    .eq('status', 'paid')
+    .like('delivered_items', PREORDER_PENDING_LIKE)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) {
+    logger.error({ err: error, product_id }, 'listPendingPreorderOrders failed');
+    throw error;
+  }
+  return (data ?? []) as DBOrder[];
+}
+
+export async function tryStartPreorderFulfillment(order_id: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ delivered_items: PREORDER_FULFILLING_MARKER })
+    .eq('id', order_id)
+    .eq('status', 'paid')
+    .like('delivered_items', PREORDER_PENDING_LIKE)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    logger.warn({ err: error, order_id }, 'tryStartPreorderFulfillment failed');
+    return false;
+  }
+  return Boolean(data);
+}
+
+export async function restorePreorderPending(
+  order_id: number,
+  pendingText: string,
+): Promise<void> {
+  await supabase
+    .from('orders')
+    .update({ delivered_items: pendingText })
+    .eq('id', order_id)
+    .eq('delivered_items', PREORDER_FULFILLING_MARKER);
+}
+
 export async function listOrders(user_id: number, limit = 10): Promise<DBOrder[]> {
   const { data } = await supabase
     .from('orders')
