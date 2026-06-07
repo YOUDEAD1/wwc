@@ -1,4 +1,5 @@
 import type { Composer } from 'grammy';
+import { getCurrency, normalizeCurrency } from '../../config/currencies.js';
 import { type Lang } from '../../config/index.js';
 import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/regions.js';
 import {
@@ -23,6 +24,7 @@ import {
   recordGiftCodeRedemption,
   recordLedger,
   setUserEmail,
+  setUserCurrency,
   setUserLanguage,
   setUserRegion,
   toggleEmailReports,
@@ -42,6 +44,7 @@ import {
   priceListKeyboard,
   referKeyboard,
   whyEmailKeyboard,
+  currencyKeyboard,
 } from '../keyboards/profile.js';
 import { regionPickerKeyboard } from '../keyboards/region.js';
 import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../keyboards/orders.js';
@@ -184,6 +187,11 @@ function profileText(ctx: AppCtx): string {
   lines.push(
     `{profile_balance} ${ctx.t('profile.row.balance', { balance: Number(u.balance).toFixed(3) })}`,
   );
+  lines.push(
+    `{refer_coin} ${ctx.t('profile.row.currency', {
+      currency: getCurrency(u.currency).code,
+    })}`,
+  );
   lines.push(`{profile_language} ${ctx.t('profile.row.language', { language: ctx.lang.toUpperCase() })}`);
   if (u.region && u.timezone) {
     const tz = u.timezone;
@@ -200,7 +208,7 @@ function profileText(ctx: AppCtx): string {
   return lines.join('\n');
 }
 
-async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
+export async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
   // HTML render path: keeps Markdown styling AND auto-wraps any unicode
   // emoji whose key has a configured premium custom_emoji_id.
   const html = renderMdHtml(profileText(ctx));
@@ -318,6 +326,21 @@ async function showRegionPicker(ctx: AppCtx, page: number) {
   await ctx.editMessageText(renderMdHtml(text), {
     parse_mode: 'HTML',
     reply_markup: regionPickerKeyboard(ctx.lang, page),
+  });
+}
+
+async function showCurrencyPicker(ctx: AppCtx, page = 0) {
+  const selected = normalizeCurrency(ctx.user.currency);
+  const text = [
+    ctx.t('profile.currency.title'),
+    '',
+    ctx.t('profile.currency.body'),
+    '',
+    `Current: *${selected}*`,
+  ].join('\n');
+  await ctx.editMessageText(renderMdHtml(text), {
+    parse_mode: 'HTML',
+    reply_markup: currencyKeyboard(ctx.lang, selected, page),
   });
 }
 
@@ -518,44 +541,56 @@ async function sendRetroactiveInvoiceForOrder(args: {
   }
 }
 
-export function registerProfile(bot: Composer<AppCtx>): void {
-  async function showReferScreen(
-    ctx: AppCtx,
-    options: { refreshCallback?: string; backCallback?: string } = {},
-  ): Promise<void> {
-    const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
-    const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
-    const DAY = 24 * 60 * 60 * 1000;
-    const [refBalance, ref24h, ref7d, earnings] = await Promise.all([
-      getReferralBalance(ctx.user.telegram_id),
-      countReferralsSince(ctx.user.telegram_id, DAY),
-      countReferralsSince(ctx.user.telegram_id, 7 * DAY),
-      getReferralEarnings(ctx.user.telegram_id),
-    ]);
-    const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
-    const body = ctx.t('profile.refer.body', {
-      link,
-      ref24h,
-      ref7d,
-      refTotal: refBalance.total,
-      refSpent: refBalance.spent,
-      refAvailable: refBalance.available,
-      clicks: 0,
-      pending: 0,
-      active: refBalance.available,
-      earnedTotal: fmt(earnings.total),
-      available: fmt(earnings.available),
-      transferred: fmt(earnings.transferred),
-      withdrawn: fmt(earnings.withdrawn),
-    });
-    const referText = `${ctx.t('profile.refer.title')}\n\n${body}`;
+export async function showReferScreen(
+  ctx: AppCtx,
+  options: { refreshCallback?: string; backCallback?: string; forceReply?: boolean } = {},
+): Promise<void> {
+  const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
+  const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
+  const DAY = 24 * 60 * 60 * 1000;
+  const [refBalance, ref24h, ref7d, earnings] = await Promise.all([
+    getReferralBalance(ctx.user.telegram_id),
+    countReferralsSince(ctx.user.telegram_id, DAY),
+    countReferralsSince(ctx.user.telegram_id, 7 * DAY),
+    getReferralEarnings(ctx.user.telegram_id),
+  ]);
+  const left = Math.max(0, 10 - refBalance.available);
+  const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
+  const body = ctx.t('profile.refer.body', {
+    link,
+    ref24h,
+    ref7d,
+    left,
+    refTotal: refBalance.total,
+    refSpent: refBalance.spent,
+    refAvailable: refBalance.available,
+    clicks: 0,
+    pending: 0,
+    active: refBalance.available,
+    earnedTotal: fmt(earnings.total),
+    available: fmt(earnings.available),
+    transferred: fmt(earnings.transferred),
+    withdrawn: fmt(earnings.withdrawn),
+  });
+  const referText = `${ctx.t('profile.refer.title')}\n\n${body}`;
+  const html = renderMdHtml(referText);
+  const reply_markup = referKeyboard(ctx.lang, link, options);
+  if (ctx.callbackQuery && !options.forceReply) {
     await ctx.editMessageText(renderMdHtml(referText), {
       parse_mode: 'HTML',
-      reply_markup: referKeyboard(ctx.lang, link, options),
+      reply_markup,
+      link_preview_options: { is_disabled: true },
+    });
+  } else {
+    await ctx.reply(html, {
+      parse_mode: 'HTML',
+      reply_markup,
       link_preview_options: { is_disabled: true },
     });
   }
+}
 
+export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:open', async (ctx) => {
     await ctx.answerCallbackQuery();
     // Drop any in-flight user flow (e.g. set_email) so subsequent
@@ -573,6 +608,34 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:stats:refresh', async (ctx) => {
     await ctx.answerCallbackQuery({ text: '🔄' });
     await showStats(ctx);
+  });
+
+  bot.callbackQuery('profile:currency', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showCurrencyPicker(ctx);
+  });
+
+  bot.callbackQuery(/^profile:currency:p:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showCurrencyPicker(ctx, Number(ctx.match[1]));
+  });
+
+  bot.callbackQuery(/^profile:currency:set:([A-Z]{3,4}):(\d+)$/, async (ctx) => {
+    const code = normalizeCurrency(ctx.match[1]);
+    const page = Number(ctx.match[2] ?? 0);
+    try {
+      await setUserCurrency(ctx.user.telegram_id, code);
+      ctx.user.currency = code;
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.currency.saved', { currency: code }),
+      });
+      await showCurrencyPicker(ctx, page);
+    } catch {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.currency.error'),
+        show_alert: true,
+      });
+    }
   });
 
   // ---- Send-PDF buttons (My Orders / Deposits / Stats screens) ----
