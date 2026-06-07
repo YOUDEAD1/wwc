@@ -1,4 +1,4 @@
-/* English (default) — edit text here. */
+﻿/* English (default) — edit text here. */
 export const en: Record<string, string> = {
   // ---------- Welcome / menu ----------
   'welcome': 'Welcome to SafwanTiger Shop',
@@ -122,7 +122,7 @@ export const en: Record<string, string> = {
   'btn.region.clear': '🚫 Clear',
   'btn.deposit_history': '💳 My Deposits',
   'btn.channel': 'Channel',
-  'btn.reseller_api': '🔌 API',
+  'btn.reseller_api': '🔑 Api Key',
   'btn.stats': '📊 Stats',
   'btn.stats_refresh': '🔄 Refresh',
   'btn.stats_back': '◀️ Back',
