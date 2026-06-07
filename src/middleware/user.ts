@@ -3,6 +3,7 @@
  * attaches `ctx.user` + `ctx.lang` + `ctx.t()` for handlers.
  */
 import type { MiddlewareFn } from 'grammy';
+import { normalizeCurrency } from '../../config/currencies.js';
 import type { Lang } from '../../config/index.js';
 import { getOrCreateUser } from '../db/queries.js';
 import { env } from '../env.js';
@@ -11,6 +12,7 @@ import { renderMdHtml } from '../services/premium.js';
 import type { DBUser } from '../types.js';
 import type { SessionCtx } from './session.js';
 import { maybeSendEmailNag } from '../services/emailNag.js';
+import * as publicFeed from '../services/publicFeed.js';
 
 export type AppCtx = SessionCtx & {
   user: DBUser;
@@ -44,6 +46,7 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   });
 
   ctx.user = user;
+  ctx.user.currency = normalizeCurrency((user as DBUser & { currency?: string | null }).currency);
   ctx.lang = user.language;
   ctx.t = (key, vars) => translate(ctx.lang, key, vars);
 
@@ -77,7 +80,7 @@ async function sendReferralNotification(
   refereeUsername: string | null,
   refereeFirstName: string | null,
 ) {
-  const { getUserByTelegramId, countReferrals } = await import('../db/queries.js');
+  const { getUserByTelegramId, countReferrals, getReferralEarnings } = await import('../db/queries.js');
 
   const referrer = await getUserByTelegramId(referrerId);
   if (!referrer) return;
@@ -90,10 +93,16 @@ async function sendReferralNotification(
   );
 
   let totalRefs = 0;
+  let totalEarned = 0;
   try {
     totalRefs = await countReferrals(referrerId);
   } catch {
     totalRefs = 0;
+  }
+  try {
+    totalEarned = (await getReferralEarnings(referrerId)).total;
+  } catch {
+    totalEarned = 0;
   }
   const remaining = Math.max(0, 10 - totalRefs);
 
@@ -108,6 +117,18 @@ Keep sharing your link and stack rewards.`;
   await ctx.api
     .sendMessage(referrerId, renderMdHtml(userMsg), { parse_mode: 'HTML' })
     .catch(() => {});
+
+  void publicFeed.notifyActiveReferral(ctx.api, {
+    referrerName: referrerUsername,
+    totalReferrals: totalRefs,
+    totalEarned,
+  });
+  if (totalRefs > 0 && totalRefs % 10 === 0) {
+    void publicFeed.notifyReferralAchievement(ctx.api, {
+      userId: referrerId,
+      amount: 0.5,
+    });
+  }
 
   if (!env.BOT_REFERS_CHANNEL) return;
 
