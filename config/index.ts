@@ -104,6 +104,7 @@ export const BUTTON_KEYS = {
   language: 'btn.language',
   deposit_history: 'btn.deposit_history',
   channel: 'btn.channel',
+  reseller_api: 'btn.reseller_api',
   back_to_settings: 'btn.back_to_settings',
   stats: 'btn.stats',
   stats_refresh: 'btn.stats_refresh',
@@ -301,6 +302,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   language: 'none',
   deposit_history: 'none',
   channel: 'blue',
+  reseller_api: 'blue',
   back_to_settings: 'none',
   stats: 'none',
   stats_refresh: 'none',
@@ -983,6 +985,7 @@ export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_K
   ['topup', 'profile'],
   ['support', 'ai_support'],
   ['refer', 'channel'],
+  ['reseller_api'],
 ];
 
 /** Shop pagination size — products per page */
