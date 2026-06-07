@@ -122,6 +122,7 @@ export const en: Record<string, string> = {
   'btn.region.clear': '🚫 Clear',
   'btn.deposit_history': '💳 My Deposits',
   'btn.channel': 'Channel',
+  'btn.reseller_api': '🔌 API',
   'btn.stats': '📊 Stats',
   'btn.stats_refresh': '🔄 Refresh',
   'btn.stats_back': '◀️ Back',
