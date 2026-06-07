@@ -3,10 +3,38 @@ import { buildBot } from './bot.js';
 import { env } from './env.js';
 import { logger } from './logger.js';
 import { logMailerStatus } from './services/mailer.js';
+import {
+  handleHealthRequest,
+  handleResellerApiRequest,
+} from './services/resellerApiHttp.js';
 
 async function main() {
   const bot = await buildBot();
   logMailerStatus();
+
+  const startHttpServer = (telegramHandler?: http.RequestListener) => {
+    const server = http.createServer((req, res) => {
+      void (async () => {
+        if (handleHealthRequest(req, res)) return;
+        if (await handleResellerApiRequest(req, res, bot.api)) return;
+        if (telegramHandler) {
+          telegramHandler(req, res);
+          return;
+        }
+        res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'not_found' }));
+      })().catch((err) => {
+        logger.error({ err }, 'HTTP request handler failed');
+        if (!res.headersSent) {
+          res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+        }
+        res.end(JSON.stringify({ ok: false, error: 'internal_error' }));
+      });
+    });
+    server.listen(env.PORT, () => {
+      logger.info({ port: env.PORT, mode: env.BOT_MODE }, 'HTTP server started');
+    });
+  };
 
   if (env.BOT_MODE === 'webhook') {
     if (!env.WEBHOOK_URL) {
@@ -22,13 +50,9 @@ async function main() {
     const handler = webhookCallback(bot, 'http', {
       secretToken: env.WEBHOOK_SECRET || undefined,
     });
-    const server = http.createServer((req, res) => {
-      void handler(req, res);
-    });
-    server.listen(env.PORT, () => {
-      logger.info({ port: env.PORT, url: env.WEBHOOK_URL }, 'Webhook server started');
-    });
+    startHttpServer(handler);
   } else {
+    startHttpServer();
     await bot.api.deleteWebhook({ drop_pending_updates: true });
 
     logger.info('Starting bot with long-polling…');
