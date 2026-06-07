@@ -127,6 +127,7 @@ import {
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
+import { fulfillPendingPreordersForProduct } from '../../services/preorder.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
@@ -135,6 +136,22 @@ import { env } from '../../env.js';
 import type { DBOrder, DBUser, DBPromo } from '../../types.js';
 
 export const adminBot = new Composer<AppCtx>();
+
+async function autoFulfillPreordersAfterRestock(
+  ctx: AppCtx,
+  productId: number,
+): Promise<void> {
+  try {
+    const result = await fulfillPendingPreordersForProduct(ctx.api, productId);
+    if (result.fulfilled > 0) {
+      await ctx.reply(
+        `✅ Auto-delivered ${result.fulfilled} pending preorder(s) for product #${productId}.`,
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, productId }, 'autoFulfillPreordersAfterRestock failed');
+  }
+}
 
 /**
  * Gate that ONLY blocks explicit admin invocations (commands and
@@ -1861,6 +1878,7 @@ adminBot.callbackQuery(/^adm:prod:items:confirm:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: `Adding ${staged.length} item(s)…` });
   try {
     await addProductItems(product_id, staged);
+    await autoFulfillPreordersAfterRestock(ctx, product_id);
   } catch (err) {
     logger.error({ err, product_id }, 'bulk addProductItems failed');
     await ctx.reply('❌ Could not save items — see logs for details.');
@@ -5676,6 +5694,7 @@ adminBot.on('message:text', async (ctx, next) => {
         return;
       }
       await updateProduct(flow.data.product_id, { stock });
+      await autoFulfillPreordersAfterRestock(ctx, flow.data.product_id);
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Stock updated.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
@@ -7554,6 +7573,7 @@ async function finalizeProduct(
   if (items.length > 0) {
     try {
       await addProductItems(product.id, items);
+      await autoFulfillPreordersAfterRestock(ctx, product.id);
     } catch (err) {
       logger.error({ err, product_id: product.id }, 'addProductItems on create failed');
     }
@@ -7793,6 +7813,7 @@ adminBot.command('addproductitems', async (ctx) => {
     return;
   }
   const inserted = await addProductItems(id, payloads);
+  await autoFulfillPreordersAfterRestock(ctx, id);
   const remaining = await countAvailableProductItems(id);
   await ctx.reply(`✅ Added ${inserted} items to product #${id}. Pool now has ${remaining} unconsumed.`);
 });
