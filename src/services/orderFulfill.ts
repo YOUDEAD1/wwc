@@ -15,11 +15,10 @@
  * handler (verify-on-tx-hash-submit) and the admin re-verify
  * callback.
  *
- * On the rare race condition where stock dropped to zero between
- * deposit creation and verification, the function falls back to
- * crediting the user's wallet for the order total so the user is
- * never out of money — a refund-like behaviour rather than a hard
- * failure.
+ * When stock is gone between deposit creation and verification, the
+ * function now creates a paid preorder/manual-delivery order instead
+ * of refunding automatically. That keeps direct-pay behaviour aligned
+ * with wallet/referral preorder checkout.
  */
 import type { Api } from 'grammy';
 import { logger } from '../logger.js';
@@ -112,34 +111,11 @@ export async function fulfilOrderForDeposit(args: {
     };
   }
 
-  if (!product.unlimited_stock && product.stock < intent.qty) {
-    const newBalance = await credit(
-      deposit.user_id,
-      Number(intent.total),
-      `deposit:${deposit.id}:out_of_stock`,
-      'deposit_credit',
-    );
-    logger.warn(
-      {
-        deposit: deposit.id,
-        productId: intent.product_id,
-        wanted: intent.qty,
-        stock: product.stock,
-        newBalance,
-      },
-      'fulfilOrderForDeposit: out of stock — refunded to wallet',
-    );
-    await safeNotify(
-      api,
-      deposit.user_id,
-      `⚠️ Your direct-pay for *${intent.product_name}* could not be delivered (out of stock). The full amount of *$${intent.total.toFixed(2)}* was credited to your wallet instead.`,
-    );
-    return {
-      ok: false,
-      reason: 'out of stock — refunded to wallet',
-      refundedToWallet: true,
-    };
-  }
+  const user = await findUserById(deposit.user_id);
+  const lang = user?.language ?? env.DEFAULT_LANG;
+  const t = (key: string, vars?: Record<string, string | number>) =>
+    translate(lang, key, vars);
+  const preorder = !product.unlimited_stock && product.stock < intent.qty;
 
   const order = await createOrder({
     user_id: deposit.user_id,
@@ -152,12 +128,16 @@ export async function fulfilOrderForDeposit(args: {
     promo_id: intent.promo_id,
     delivery: `Order #${intent.product_id}-${intent.qty}`,
   });
-  await decrementProductStock(intent.product_id, intent.qty);
-  const claimed = await claimProductItems(
-    intent.product_id,
-    intent.qty,
-    order.id,
-  );
+  if (!preorder) {
+    await decrementProductStock(intent.product_id, intent.qty);
+  }
+  const claimed = preorder
+    ? []
+    : await claimProductItems(
+        intent.product_id,
+        intent.qty,
+        order.id,
+      );
   const publicId = publicOrderId(order);
   // Match the wallet-pay layout: split the items into 7-per-chunk
   // messages so the Order Delivered card never blows past Telegram's
@@ -165,19 +145,18 @@ export async function fulfilOrderForDeposit(args: {
   // header card; subsequent chunks are sent as plain blockquote
   // messages right below it.
   const deliveredChunks = buildOrderDeliveredChunks(claimed);
+  const pendingText = preorder
+    ? t('shop.buy.preorder_pending')
+    : t('shop.buy.delivery_pending');
   const firstChunkBlock =
     deliveredChunks[0]?.inlineBlock ??
-    '> Manual delivery — admin will follow up shortly.';
+    `> ${pendingText}`;
   const deliveredItemsForDb =
-    claimed.length > 0 ? claimed.join('\n') : 'Manual delivery — admin will follow up shortly.';
+    claimed.length > 0 ? claimed.join('\n') : pendingText;
   // Always persist `delivered_items` — even the manual-delivery
   // placeholder — so the My Orders detail screen can render the
   // order without falling back to the legacy `delivery` blob.
   await setOrderDeliveredItems(order.id, deliveredItemsForDb);
-  const user = await findUserById(deposit.user_id);
-  const lang = user?.language ?? env.DEFAULT_LANG;
-  const t = (key: string, vars?: Record<string, string | number>) =>
-    translate(lang, key, vars);
   const deliveredKb = new InlineKeyboard();
   inlineBtn(deliveredKb, lang, 'using_method', `tut:${intent.product_id}`);
   deliveredKb.row();
@@ -200,7 +179,7 @@ export async function fulfilOrderForDeposit(args: {
     api,
     deposit.user_id,
     renderMdHtml(
-      t('shop.buy.order_delivered', {
+      t(preorder ? 'shop.buy.order_preordered' : 'shop.buy.order_delivered', {
         order_id: publicId,
         name: intent.product_name,
         qty: intent.qty,
