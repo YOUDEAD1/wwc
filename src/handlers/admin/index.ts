@@ -89,6 +89,7 @@ import {
   listSupplierOrderLogs,
   listSupplierProductLinks,
   updateSupplierApiSource,
+  updateSupplierProductLink,
   upsertSupplierProductLink,
 } from '../../db/queries.js';
 import { verifyAndCreditDeposit } from '../../services/depositVerify.js';
@@ -148,17 +149,22 @@ import {
 } from '../../services/resellerApi.js';
 import {
   isSupplierMigrationError,
+  canbosoSupplierConfig,
+  fetchSupplierProducts,
+  importSupplierProduct,
   parseSupplierLinkConfig,
   parseSupplierSourceConfig,
+  supplierSellPrice,
   syncSupplierProductLink,
   testSupplierConnection,
+  type SupplierCatalogProduct,
 } from '../../services/supplierApi.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
 import { env } from '../../env.js';
-import type { DBOrder, DBUser, DBPromo } from '../../types.js';
+import type { DBOrder, DBUser, DBPromo, DBSupplierApiSource, DBSupplierProductLink } from '../../types.js';
 
 export const adminBot = new Composer<AppCtx>();
 
@@ -979,6 +985,39 @@ adminBot.callbackQuery(/^adm:api:disable:(\d+)$/, async (ctx) => {
 // ids, test/sync them, and let checkout auto-order where possible.
 
 const SUPPLIERS_PER_PAGE = 8;
+const SUPPLIER_PRODUCTS_PER_PAGE = 6;
+type SupplierCatalogMode = 'all' | 'stock';
+
+function supplierProductFilter(
+  products: SupplierCatalogProduct[],
+  mode: SupplierCatalogMode,
+): SupplierCatalogProduct[] {
+  if (mode === 'stock') {
+    return products.filter((p) => p.stock === null || p.stock > 0);
+  }
+  return products;
+}
+
+function supplierStockLabel(product: SupplierCatalogProduct): string {
+  return product.stock === null ? 'stock ?' : `stock ${product.stock}`;
+}
+
+function supplierImportActive(source: DBSupplierApiSource): boolean {
+  return Boolean(source.auto_import_active);
+}
+
+function supplierImportCategory(source: DBSupplierApiSource): string {
+  return source.import_category_name || `Supplier - ${source.name}`;
+}
+
+async function supplierProductAt(
+  source: DBSupplierApiSource,
+  mode: SupplierCatalogMode,
+  index: number,
+): Promise<{ products: SupplierCatalogProduct[]; product: SupplierCatalogProduct | null }> {
+  const products = supplierProductFilter(await fetchSupplierProducts(source), mode);
+  return { products, product: products[index] ?? null };
+}
 
 async function supplierSendOrEdit(
   ctx: AppCtx,
@@ -1015,6 +1054,9 @@ function supplierSetupExample(): string {
         quantity: '{{qty}}',
         request_id: '{{request_id}}',
       },
+      auto_import_new_products: false,
+      auto_import_active: false,
+      import_category_name: 'Supplier Products',
       markup_percent: 25,
     },
     null,
@@ -1045,8 +1087,9 @@ async function showSupplierError(ctx: AppCtx, err: unknown): Promise<void> {
     ? [
         '⚠️ *Supplier APIs Not Ready*',
         '',
-        'Run this Supabase migration first:',
+        'Run these Supabase migrations first:',
         '`supabase/migrations/0037_supplier_apis.sql`',
+        '`supabase/migrations/0038_supplier_easy_import.sql`',
         '',
         '_Paste the SQL file contents in Supabase SQL Editor, not the file path._',
       ].join('\n')
@@ -1067,8 +1110,11 @@ function supplierListKeyboard(
   pages: number,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
-  kb.text('Add Supplier', 'adm:api:supplier:add');
+  kb.text('Add Canboso', 'adm:api:supplier:add:canboso');
   apiPremiumButton(kb, 'api_key', 'primary');
+  kb.text('Advanced JSON', 'adm:api:supplier:add');
+  apiPremiumButton(kb, 'orders_note', 'primary');
+  kb.row();
   kb.text('Map Product', 'adm:api:supplier:map');
   apiPremiumButton(kb, 'orders_product', 'primary');
   kb.row();
@@ -1109,10 +1155,10 @@ async function showSupplierApis(ctx: AppCtx, page = 0): Promise<void> {
       `Recent auto orders: *${successLogs}* success / *${failedLogs}* failed`,
       '',
       '*Flow*',
-      '1. Add supplier API JSON.',
-      '2. Test balance + products.',
-      '3. Map local product id to supplier product id.',
-      '4. Sync stock/price or let checkout auto-order.',
+      '1. Tap *Add Canboso* and paste the API key.',
+      '2. Open the supplier and tap *Browse Products*.',
+      '3. Import selected products or all in-stock products.',
+      '4. Toggle visibility, stock sync, and auto-order by button.',
     ];
     if (data.rows.length === 0) {
       lines.push('', '_No suppliers connected yet._');
@@ -1138,16 +1184,32 @@ async function showSupplierApis(ctx: AppCtx, page = 0): Promise<void> {
   }
 }
 
-function supplierDetailKeyboard(id: number, enabled: boolean): InlineKeyboard {
+function supplierDetailKeyboard(source: DBSupplierApiSource): InlineKeyboard {
+  const id = source.id;
   const kb = new InlineKeyboard();
+  kb.text('Browse Products', `adm:api:supplier:catalog:${id}:0:all`);
+  apiPremiumButton(kb, 'orders_product', 'primary');
+  kb.text('In Stock Only', `adm:api:supplier:catalog:${id}:0:stock`);
+  apiPremiumButton(kb, 'stats_refresh', 'success');
+  kb.row();
+  kb.text('Import In Stock', `adm:api:supplier:importall:${id}:stock`);
+  apiPremiumButton(kb, 'orders_product', 'success');
+  kb.text('Import All', `adm:api:supplier:importall:${id}:all`);
+  apiPremiumButton(kb, 'orders_note', 'primary');
+  kb.row();
+  kb.text(source.auto_import_new_products ? 'Auto New: ON' : 'Auto New: OFF', `adm:api:supplier:autoimport:${id}`);
+  apiPremiumButton(kb, source.auto_import_new_products ? 'stats_refresh' : 'orders_note', source.auto_import_new_products ? 'success' : 'danger');
+  kb.text(source.auto_import_active ? 'New Visible: ON' : 'New Visible: OFF', `adm:api:supplier:autoactive:${id}`);
+  apiPremiumButton(kb, source.auto_import_active ? 'api_key' : 'orders_note', source.auto_import_active ? 'success' : 'danger');
+  kb.row();
   kb.text('Test Connection', `adm:api:supplier:test:${id}`);
   apiPremiumButton(kb, 'stats_refresh', 'primary');
-  kb.text(enabled ? 'Disable' : 'Enable', `adm:api:supplier:toggle:${id}`);
-  apiPremiumButton(kb, enabled ? 'orders_note' : 'api_key', enabled ? 'danger' : 'success');
+  kb.text(source.enabled ? 'Disable' : 'Enable', `adm:api:supplier:toggle:${id}`);
+  apiPremiumButton(kb, source.enabled ? 'orders_note' : 'api_key', source.enabled ? 'danger' : 'success');
   kb.row();
   kb.text('Sync Links', `adm:api:supplier:sync:${id}`);
   apiPremiumButton(kb, 'orders_product', 'success');
-  kb.text('Map Product', `adm:api:supplier:map:${id}`);
+  kb.text('Advanced Map', `adm:api:supplier:map:${id}`);
   apiPremiumButton(kb, 'profile_link', 'primary');
   kb.row();
   kb.text('Recent Logs', `adm:api:supplier:logs:${id}`);
@@ -1184,6 +1246,9 @@ async function showSupplierDetail(ctx: AppCtx, id: number): Promise<void> {
       `Base URL: \`${escapeMd(source.base_url.slice(0, 120))}\``,
       `Balance: ${source.last_balance === null ? '—' : `*${apiMoney(Number(source.last_balance))}*`}`,
       `Markup: *${apiMoney(Number(source.markup_percent))}%* + *${apiMoney(Number(source.fixed_markup))} USDT*`,
+      `Import category: *${escapeMd(supplierImportCategory(source))}*`,
+      `Auto new products: *${source.auto_import_new_products ? 'ON' : 'OFF'}*`,
+      `New imported products: *${source.auto_import_active ? 'visible' : 'hidden until you enable'}*`,
       `Last test: ${escapeMd(apiDate(source.last_sync_at))}`,
       source.last_error ? `Last error: \`${escapeMd(source.last_error.slice(0, 300))}\`` : '',
       '',
@@ -1208,7 +1273,187 @@ async function showSupplierDetail(ctx: AppCtx, id: number): Promise<void> {
     }
     await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
       parse_mode: 'Markdown',
-      reply_markup: supplierDetailKeyboard(source.id, source.enabled),
+      reply_markup: supplierDetailKeyboard(source),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+async function supplierCatalogRows(
+  source: DBSupplierApiSource,
+  mode: SupplierCatalogMode,
+  page: number,
+): Promise<{
+  products: SupplierCatalogProduct[];
+  rows: Array<{
+    product: SupplierCatalogProduct;
+    index: number;
+    link: DBSupplierProductLink | null;
+    local: Awaited<ReturnType<typeof getProduct>>;
+  }>;
+  totalPages: number;
+}> {
+  const products = supplierProductFilter(await fetchSupplierProducts(source), mode);
+  const totalPages = Math.max(1, Math.ceil(products.length / SUPPLIER_PRODUCTS_PER_PAGE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const from = safePage * SUPPLIER_PRODUCTS_PER_PAGE;
+  const pageProducts = products.slice(from, from + SUPPLIER_PRODUCTS_PER_PAGE);
+  const links = await listSupplierProductLinks(source.id);
+  const linkBySupplierProduct = new Map(links.map((l) => [l.supplier_product_id, l]));
+  const rows = await Promise.all(
+    pageProducts.map(async (product, offset) => {
+      const link = linkBySupplierProduct.get(product.id) ?? null;
+      const local = link ? await getProduct(link.local_product_id).catch(() => null) : null;
+      return { product, index: from + offset, link, local };
+    }),
+  );
+  return { products, rows, totalPages };
+}
+
+async function showSupplierCatalog(
+  ctx: AppCtx,
+  supplierId: number,
+  page: number,
+  mode: SupplierCatalogMode,
+): Promise<void> {
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await supplierSendOrEdit(ctx, '❌ Supplier not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const { products, rows, totalPages } = await supplierCatalogRows(source, mode, page);
+    const safePage = Math.min(Math.max(0, page), totalPages - 1);
+    const lines = [
+      '🔌 *Supplier Products*',
+      '',
+      `Supplier: *${escapeMd(source.name)}* (#${source.id})`,
+      `Filter: *${mode === 'stock' ? 'in stock only' : 'all products'}*`,
+      `Products seen: *${products.length}*`,
+      `Markup: *${apiMoney(Number(source.markup_percent))}%* + *${apiMoney(Number(source.fixed_markup))} USDT*`,
+      '',
+      rows.length === 0
+        ? '_No products found from this supplier._'
+        : '_Tap a product to import/toggle it._',
+    ];
+    const kb = new InlineKeyboard();
+    for (const row of rows) {
+      const status = row.link
+        ? row.local?.active
+          ? 'ON'
+          : 'HIDDEN'
+        : 'IMPORT';
+      const cost = row.product.price === null ? '?' : apiMoney(row.product.price);
+      const sell = apiMoney(supplierSellPrice(source, row.product));
+      const label = `${status} ${row.product.name} · ${cost}->${sell} · ${supplierStockLabel(row.product)}`.slice(0, 60);
+      kb.text(label, `adm:api:supplier:p:${source.id}:${safePage}:${mode}:${row.index}`);
+      apiPremiumButton(kb, row.link ? (row.local?.active ? 'api_key' : 'orders_note') : 'orders_product', row.link && row.local?.active ? 'success' : 'primary');
+      kb.row();
+    }
+    if (safePage > 0) kb.text('Prev', `adm:api:supplier:catalog:${source.id}:${safePage - 1}:${mode}`);
+    kb.text(`${safePage + 1}/${totalPages}`, 'noop:supplier-catalog-page');
+    if (safePage + 1 < totalPages) kb.text('Next', `adm:api:supplier:catalog:${source.id}:${safePage + 1}:${mode}`);
+    kb.row();
+    kb.text(mode === 'stock' ? 'Show All' : 'In Stock Only', `adm:api:supplier:catalog:${source.id}:0:${mode === 'stock' ? 'all' : 'stock'}`);
+    apiPremiumButton(kb, 'stats_refresh', 'primary');
+    kb.text('Supplier Detail', `adm:api:supplier:${source.id}`);
+    apiPremiumButton(kb, 'api_key', 'primary');
+    backRow(kb);
+    await supplierSendOrEdit(ctx, lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+async function showSupplierCatalogProduct(
+  ctx: AppCtx,
+  supplierId: number,
+  page: number,
+  mode: SupplierCatalogMode,
+  index: number,
+): Promise<void> {
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await supplierSendOrEdit(ctx, '❌ Supplier not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const { products, product } = await supplierProductAt(source, mode, index);
+    if (!product) {
+      await supplierSendOrEdit(ctx, '❌ Supplier product not found. Refresh the supplier catalog.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const links = await listSupplierProductLinks(source.id);
+    const link = links.find((l) => l.supplier_product_id === product.id) ?? null;
+    const local = link ? await getProduct(link.local_product_id).catch(() => null) : null;
+    const cost = product.price === null ? 'unknown' : `${apiMoney(product.price)} USDT`;
+    const sell = `${apiMoney(supplierSellPrice(source, product))} USDT`;
+    const lines = [
+      '🛒 *Supplier Product*',
+      '',
+      `Supplier: *${escapeMd(source.name)}* (#${source.id})`,
+      `Product: *${escapeMd(product.name)}*`,
+      `Supplier ID: \`${escapeMd(product.id)}\``,
+      `Cost: *${escapeMd(cost)}*`,
+      `Your sell price: *${escapeMd(sell)}*`,
+      `Stock: *${escapeMd(supplierStockLabel(product))}*`,
+      '',
+      link
+        ? `Imported: *YES* -> local product #${link.local_product_id}`
+        : 'Imported: *NO*',
+      local ? `Local status: *${local.active ? 'visible' : 'hidden'}*` : '',
+      link ? `Auto order: *${link.auto_order ? 'ON' : 'OFF'}*` : '',
+      link ? `Auto stock sync: *${link.auto_sync_stock ? 'ON' : 'OFF'}*` : '',
+      '',
+      `Catalog position: ${index + 1}/${products.length}`,
+    ];
+    const kb = new InlineKeyboard();
+    if (!link || !local) {
+      kb.text('Import Visible', `adm:api:supplier:import:${source.id}:${page}:${mode}:${index}:1`);
+      apiPremiumButton(kb, 'orders_product', 'success');
+      kb.text('Import Hidden', `adm:api:supplier:import:${source.id}:${page}:${mode}:${index}:0`);
+      apiPremiumButton(kb, 'orders_note', 'primary');
+      kb.row();
+      if (link && !local) {
+        kb.text('Remove Broken Link', `adm:api:supplier:unlink2:${source.id}:${page}:${mode}:${index}:${link.id}`);
+        apiPremiumButton(kb, 'gift_invalid', 'danger');
+        kb.row();
+      }
+    } else {
+      kb.text('Open Local Product', `adm:prod:edit:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_product', 'primary');
+      kb.text(local.active ? 'Hide Product' : 'Show Product', `adm:api:supplier:link:visible:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, local.active ? 'orders_note' : 'api_key', local.active ? 'danger' : 'success');
+      kb.row();
+      kb.text(link.auto_order ? 'Auto Order: ON' : 'Auto Order: OFF', `adm:api:supplier:link:auto:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, link.auto_order ? 'api_key' : 'orders_note', link.auto_order ? 'success' : 'danger');
+      kb.text(link.auto_sync_stock ? 'Sync Stock: ON' : 'Sync Stock: OFF', `adm:api:supplier:link:sync:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, link.auto_sync_stock ? 'stats_refresh' : 'orders_note', link.auto_sync_stock ? 'success' : 'danger');
+      kb.row();
+      kb.text('Unlink', `adm:api:supplier:unlink2:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, 'gift_invalid', 'danger');
+      kb.row();
+    }
+    kb.text('Back to Products', `adm:api:supplier:catalog:${source.id}:${page}:${mode}`);
+    apiPremiumButton(kb, 'orders_product', 'primary');
+    kb.text('Supplier Detail', `adm:api:supplier:${source.id}`);
+    apiPremiumButton(kb, 'api_key', 'primary');
+    backRow(kb);
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
       link_preview_options: { is_disabled: true },
     });
   } catch (err) {
@@ -1234,6 +1479,30 @@ adminBot.callbackQuery('adm:api:supplier:add', async (ctx) => {
       '```json',
       supplierSetupExample(),
       '```',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery('adm:api:supplier:add:canboso', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'supplier_canboso_add', step: 'key', data: {} };
+  await ctx.editMessageText(
+    [
+      '🔑 *Add Canboso Supplier*',
+      '',
+      'Send the Canboso API key only.',
+      '',
+      'Example:',
+      '`tgb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`',
+      '',
+      'After saving, open *Browse Products* and import by button.',
       '',
       'Send `/cancel` to abort.',
     ].join('\n'),
@@ -1324,6 +1593,11 @@ adminBot.callbackQuery(/^adm:api:supplier:sync:(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   await ctx.answerCallbackQuery({ text: 'Syncing mapped products...' });
   try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
     const links = await listSupplierProductLinks(id);
     let matched = 0;
     let updated = 0;
@@ -1338,11 +1612,247 @@ adminBot.callbackQuery(/^adm:api:supplier:sync:(\d+)$/, async (ctx) => {
         logger.warn({ err, linkId: link.id }, 'supplier link sync failed');
       }
     }
+    let imported = 0;
+    let skipped = 0;
+    if (source.auto_import_new_products) {
+      const seenLinks = new Set((await listSupplierProductLinks(id)).map((l) => l.supplier_product_id));
+      const products = await fetchSupplierProducts(source);
+      for (const product of products) {
+        if (seenLinks.has(product.id)) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          const result = await importSupplierProduct({
+            source,
+            product,
+            active: supplierImportActive(source),
+            categoryName: supplierImportCategory(source),
+          });
+          if (result.created) imported += 1;
+          else skipped += 1;
+        } catch (err) {
+          failed += 1;
+          logger.warn({ err, supplierId: id, supplierProductId: product.id }, 'supplier auto import failed');
+        }
+      }
+    }
     await ctx.reply(
-      `✅ Supplier sync finished.\n\nMatched: *${matched}*\nUpdated local products: *${updated}*\nFailed: *${failed}*`,
+      `✅ Supplier sync finished.\n\nMatched: *${matched}*\nUpdated local products: *${updated}*\nAuto-imported: *${imported}*\nSkipped: *${skipped}*\nFailed: *${failed}*`,
       { parse_mode: 'Markdown' },
     );
     await showSupplierDetail(ctx, id);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:catalog:(\d+):(\d+):(all|stock)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierCatalog(
+    ctx,
+    Number(ctx.match[1]),
+    Number(ctx.match[2]),
+    ctx.match[3] as SupplierCatalogMode,
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:p:(\d+):(\d+):(all|stock):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierCatalogProduct(
+    ctx,
+    Number(ctx.match[1]),
+    Number(ctx.match[2]),
+    ctx.match[3] as SupplierCatalogMode,
+    Number(ctx.match[4]),
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:import:(\d+):(\d+):(all|stock):(\d+):(0|1)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const active = ctx.match[5] === '1';
+  await ctx.answerCallbackQuery({ text: active ? 'Importing visible product...' : 'Importing hidden product...' });
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    const { product } = await supplierProductAt(source, mode, index);
+    if (!product) {
+      await ctx.answerCallbackQuery({ text: 'Product not found. Refresh.', show_alert: true });
+      return;
+    }
+    const result = await importSupplierProduct({
+      source,
+      product,
+      active,
+      categoryName: supplierImportCategory(source),
+    });
+    await ctx.answerCallbackQuery({
+      text: result.created ? 'Imported.' : 'Already imported.',
+      show_alert: false,
+    });
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:importall:(\d+):(all|stock)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const mode = ctx.match[2] as SupplierCatalogMode;
+  await ctx.answerCallbackQuery({ text: 'Importing supplier products...' });
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    const products = supplierProductFilter(await fetchSupplierProducts(source), mode);
+    const links = await listSupplierProductLinks(source.id);
+    const linkedIds = new Set(links.map((l) => l.supplier_product_id));
+    let created = 0;
+    let existing = 0;
+    let failed = 0;
+    for (const product of products) {
+      if (linkedIds.has(product.id)) {
+        existing += 1;
+        continue;
+      }
+      try {
+        const result = await importSupplierProduct({
+          source,
+          product,
+          active: supplierImportActive(source),
+          categoryName: supplierImportCategory(source),
+        });
+        if (result.created) created += 1;
+        else existing += 1;
+      } catch (err) {
+        failed += 1;
+        logger.warn({ err, supplierId, supplierProductId: product.id }, 'supplier bulk import failed');
+      }
+    }
+    await ctx.reply(
+      [
+        '✅ Supplier import finished.',
+        '',
+        `Created local products: *${created}*`,
+        `Already imported: *${existing}*`,
+        `Failed: *${failed}*`,
+        `Visibility default: *${supplierImportActive(source) ? 'visible' : 'hidden'}*`,
+      ].join('\n'),
+      { parse_mode: 'Markdown' },
+    );
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:autoimport:(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) return;
+    await updateSupplierApiSource(supplierId, {
+      auto_import_new_products: !source.auto_import_new_products,
+    });
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:autoactive:(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) return;
+    await updateSupplierApiSource(supplierId, {
+      auto_import_active: !source.auto_import_active,
+    });
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:link:visible:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    const link = (await listSupplierProductLinks(supplierId)).find((l) => l.id === linkId);
+    if (!link) {
+      await ctx.answerCallbackQuery({ text: 'Link not found.', show_alert: true });
+      return;
+    }
+    const product = await getProduct(link.local_product_id);
+    if (!product) {
+      await ctx.answerCallbackQuery({ text: 'Local product missing.', show_alert: true });
+      return;
+    }
+    await setProductActive(product.id, !product.active);
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:link:auto:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    const link = (await listSupplierProductLinks(supplierId)).find((l) => l.id === linkId);
+    if (!link) return;
+    await updateSupplierProductLink(linkId, { auto_order: !link.auto_order });
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:link:sync:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    const link = (await listSupplierProductLinks(supplierId)).find((l) => l.id === linkId);
+    if (!link) return;
+    await updateSupplierProductLink(linkId, { auto_sync_stock: !link.auto_sync_stock });
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:unlink2:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    await deleteSupplierProductLink(linkId);
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
   } catch (err) {
     await showSupplierError(ctx, err);
   }
@@ -6299,6 +6809,33 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 
   try {
+    if (flow.type === 'supplier_canboso_add') {
+      const key = ctx.message.text.trim();
+      if (key.length < 12) {
+        await ctx.reply('❌ Send the full Canboso API key, or `/cancel`.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      const source = await createSupplierApiSource(canbosoSupplierConfig(key));
+      ctx.session.adminFlow = undefined;
+      let testLine = 'Saved. Tap Test Connection if you want to retry the live check.';
+      try {
+        const test = await testSupplierConnection(source);
+        testLine = test.ok
+          ? `Live test OK: ${test.balance === null ? 'balance unknown' : `balance ${apiMoney(test.balance)}`} · ${test.productsSeen} products`
+          : `Saved, but live test needs attention: ${test.error ?? 'unknown error'}`;
+      } catch (err) {
+        testLine = `Saved, but live test failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await ctx.reply(
+        `✅ Canboso supplier saved: *${escapeMd(source.name)}* (#${source.id})\n\n${escapeMd(testLine)}\n\nTap *Browse Products* to import by button.`,
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
+      return;
+    }
+
     if (flow.type === 'supplier_api_add') {
       const cfg = parseSupplierSourceConfig(ctx.message.text.trim());
       const source = await createSupplierApiSource(cfg);
@@ -8056,11 +8593,15 @@ adminBot.on('message:text', async (ctx, next) => {
       );
       return;
     }
-    if (flow.type === 'supplier_api_add' || flow.type === 'supplier_product_link_add') {
+    if (
+      flow.type === 'supplier_api_add' ||
+      flow.type === 'supplier_canboso_add' ||
+      flow.type === 'supplier_product_link_add'
+    ) {
       if (isSupplierMigrationError(err)) {
         await ctx.reply(
           '⚠️ *Supplier APIs Not Ready*\n\n' +
-            'Run `supabase/migrations/0037_supplier_apis.sql` in Supabase SQL Editor, ' +
+            'Run `supabase/migrations/0037_supplier_apis.sql` and `0038_supplier_easy_import.sql` in Supabase SQL Editor, ' +
             'then try this setup again.',
           { parse_mode: 'Markdown', reply_markup: rootMenu() },
         );
