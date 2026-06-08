@@ -1,11 +1,16 @@
 import {
+  addProduct,
   getProduct,
+  getOrCreateCategory,
   getSupplierApiSource,
+  getSupplierProductLinkBySupplierProduct,
   getSupplierProductLinkByProduct,
   recordSupplierOrderLog,
+  setProductActive,
   updateProduct,
   updateSupplierApiSource,
   updateSupplierProductLink,
+  upsertSupplierProductLink,
 } from '../db/queries.js';
 import { logger } from '../logger.js';
 import type {
@@ -23,6 +28,12 @@ export type SupplierCatalogProduct = {
   price: number | null;
   stock: number | null;
   raw: Record<string, unknown>;
+};
+
+export type SupplierImportResult = {
+  localProductId: number;
+  created: boolean;
+  link: DBSupplierProductLink;
 };
 
 export type SupplierConnectionTest = {
@@ -60,6 +71,9 @@ export type SupplierSourceConfig = {
   order_items_json_path?: string;
   order_status_json_path?: string;
   order_request_template?: Record<string, unknown>;
+  auto_import_new_products?: boolean;
+  auto_import_active?: boolean;
+  import_category_name?: string | null;
   markup_percent?: number;
   fixed_markup?: number;
   low_balance_threshold?: number;
@@ -82,6 +96,40 @@ export class SupplierApiError extends Error {
   constructor(message: string) {
     super(message);
   }
+}
+
+export function canbosoSupplierConfig(apiKey: string): SupplierSourceConfig {
+  return {
+    name: 'Canboso',
+    base_url: 'https://canboso.com',
+    api_key: apiKey.trim(),
+    auth_mode: 'query',
+    key_query_param: 'key',
+    products_path: '/api/telegram-buyer/products',
+    balance_path: '/api/telegram-buyer/balance',
+    order_path: '/api/telegram-buyer/purchase',
+    order_method: 'POST',
+    products_json_path: 'products',
+    balance_json_path: 'balanceUsd',
+    product_id_json_path: '_id',
+    product_name_json_path: 'product_name',
+    product_price_json_path: 'usdPricing',
+    product_stock_json_path: 'stats.available',
+    order_items_json_path: 'deliveredAccounts',
+    order_status_json_path: 'success',
+    order_request_template: {
+      product_id: '{{supplier_product_id}}',
+      quantity: '{{qty}}',
+      request_id: '{{request_id}}',
+    },
+    markup_percent: 25,
+    fixed_markup: 0,
+    low_balance_threshold: 5,
+    auto_import_new_products: false,
+    auto_import_active: false,
+    import_category_name: 'Canboso Supplier',
+    notes: 'One-click Canboso supplier connector.',
+  };
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -312,6 +360,72 @@ export async function fetchSupplierProducts(
   return arr
     .map((p) => normalizeCatalogProduct(source, p))
     .filter((p): p is SupplierCatalogProduct => p !== null);
+}
+
+export function supplierSellPrice(
+  source: DBSupplierApiSource,
+  product: SupplierCatalogProduct,
+): number {
+  const base = Number(product.price ?? 0);
+  return Number(
+    (base * (1 + Number(source.markup_percent) / 100) + Number(source.fixed_markup)).toFixed(3),
+  );
+}
+
+export async function importSupplierProduct(args: {
+  source: DBSupplierApiSource;
+  product: SupplierCatalogProduct;
+  active?: boolean;
+  categoryName?: string;
+}): Promise<SupplierImportResult> {
+  const existing = await getSupplierProductLinkBySupplierProduct(
+    args.source.id,
+    args.product.id,
+  ).catch((err) => {
+    if (isSupplierMigrationError(err)) throw err;
+    logger.warn({ err, supplierId: args.source.id, productId: args.product.id }, 'supplier import lookup failed');
+    return null;
+  });
+  if (existing) {
+    const product = await getProduct(existing.local_product_id);
+    if (product) {
+      return { localProductId: product.id, created: false, link: existing };
+    }
+  }
+
+  const category = await getOrCreateCategory(
+    args.categoryName ?? args.source.import_category_name ?? `Supplier - ${args.source.name}`,
+    '🔌',
+  );
+  const stock = args.product.stock ?? 0;
+  const description =
+    asString(firstValue(args.product.raw, ['description', 'description_raw', 'note'])) ??
+    `Supplier product from ${args.source.name}.`;
+  const local = await addProduct({
+    category_id: category.id,
+    name: args.product.name,
+    price: supplierSellPrice(args.source, args.product),
+    stock,
+    warranty: 'Supplier auto delivery',
+    description,
+    emoji: '🛒',
+    unlimited_stock: false,
+  });
+  if (args.active === false || (args.active === undefined && args.source.auto_import_active === false)) {
+    await setProductActive(local.id, false);
+  }
+  const link = await upsertSupplierProductLink({
+    local_product_id: local.id,
+    supplier_id: args.source.id,
+    supplier_product_id: args.product.id,
+    supplier_product_name: args.product.name,
+    supplier_cost: args.product.price,
+    supplier_stock: args.product.stock,
+    auto_order: true,
+    auto_sync_stock: true,
+    fallback_manual: true,
+  });
+  return { localProductId: local.id, created: true, link };
 }
 
 export async function testSupplierConnection(
@@ -579,6 +693,9 @@ export function parseSupplierSourceConfig(text: string): SupplierSourceConfig {
           request_id: '{{request_id}}',
         },
     ),
+    auto_import_new_products: asBoolean(cfg.auto_import_new_products ?? cfg.autoImportNewProducts, false),
+    auto_import_active: asBoolean(cfg.auto_import_active ?? cfg.autoImportActive, false),
+    import_category_name: asString(cfg.import_category_name ?? cfg.importCategoryName),
     markup_percent: asNumber(cfg.markup_percent ?? cfg.markupPercent) ?? 25,
     fixed_markup: asNumber(cfg.fixed_markup ?? cfg.fixedMarkup) ?? 0,
     low_balance_threshold: asNumber(cfg.low_balance_threshold ?? cfg.lowBalanceThreshold) ?? 5,
