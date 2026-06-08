@@ -323,6 +323,31 @@ export type ReferralConversionResult = ReferralBalance & {
   newBalance: number;
 };
 
+function isMissingReferralAdjustmentsError(error: unknown): boolean {
+  const msg =
+    error && typeof error === 'object'
+      ? String((error as { message?: unknown; code?: unknown }).message ?? '') +
+        String((error as { code?: unknown }).code ?? '')
+      : String(error ?? '');
+  return /referral_adjustments|42P01|PGRST205/i.test(msg);
+}
+
+async function getReferralAdjustmentTotal(user_id: number): Promise<number> {
+  const { data, error } = await supabase
+    .from('referral_adjustments')
+    .select('delta')
+    .eq('user_id', user_id);
+  if (error) {
+    if (isMissingReferralAdjustmentsError(error)) return 0;
+    logger.error({ err: error, user_id }, 'getReferralAdjustmentTotal failed');
+    throw error;
+  }
+  return (data ?? []).reduce(
+    (sum, row) => sum + Number((row as { delta?: number }).delta ?? 0),
+    0,
+  );
+}
+
 export async function getReferralBalance(user_id: number): Promise<ReferralBalance> {
   const [total, spendRows, conversionRows] = await Promise.all([
     countReferrals(user_id),
@@ -351,12 +376,84 @@ export async function getReferralBalance(user_id: number): Promise<ReferralBalan
     (sum, row) => sum + Number((row as { refs_spent?: number }).refs_spent ?? 0),
     0,
   );
+  const adjustment = await getReferralAdjustmentTotal(user_id);
   const spent = purchaseSpent + convertedSpent;
+  const adjustedTotal = Math.max(0, total + adjustment);
   return {
-    total,
+    total: adjustedTotal,
     spent,
-    available: Math.max(0, total - spent),
+    available: Math.max(0, adjustedTotal - spent),
   };
+}
+
+export type ReferralAdminRow = {
+  user: DBUser;
+  balance: ReferralBalance;
+};
+
+export async function listReferralAdminRows(
+  page: number,
+  perPage: number,
+): Promise<{ rows: ReferralAdminRow[]; total: number }> {
+  const users = await listRecentUsers(page, perPage);
+  const rows = await Promise.all(
+    users.rows.map(async (user) => ({
+      user,
+      balance: await getReferralBalance(user.telegram_id).catch((err) => {
+        logger.warn({ err, telegram_id: user.telegram_id }, 'listReferralAdminRows balance failed');
+        return { total: 0, spent: 0, available: 0 };
+      }),
+    })),
+  );
+  return { rows, total: users.total };
+}
+
+export async function addReferralAdjustment(args: {
+  user_id: number;
+  delta: number;
+  reason: string;
+  created_by: number;
+}): Promise<ReferralBalance> {
+  const rounded = Math.trunc(args.delta);
+  if (rounded === 0) return getReferralBalance(args.user_id);
+  const { error } = await supabase.from('referral_adjustments').insert({
+    user_id: args.user_id,
+    delta: rounded,
+    reason: args.reason,
+    created_by: args.created_by,
+  });
+  if (error) {
+    if (isMissingReferralAdjustmentsError(error)) {
+      throw new Error('REFERRAL_ADJUSTMENTS_MIGRATION_REQUIRED');
+    }
+    logger.error({ err: error, args }, 'addReferralAdjustment failed');
+    throw error;
+  }
+  return getReferralBalance(args.user_id);
+}
+
+export async function resetReferralUsage(user_id?: number): Promise<{
+  redemptions: number;
+  conversions: number;
+  adjustments: number;
+}> {
+  async function deleteRows(table: string): Promise<number> {
+    let q = supabase.from(table).delete({ count: 'exact' });
+    if (user_id !== undefined) q = q.eq('user_id', user_id);
+    const { count, error } = await q;
+    if (error) {
+      if (table === 'referral_adjustments' && isMissingReferralAdjustmentsError(error)) return 0;
+      logger.error({ err: error, table, user_id }, 'resetReferralUsage failed');
+      throw error;
+    }
+    return count ?? 0;
+  }
+  const [redemptions, conversions, adjustments] = await Promise.all([
+    deleteRows('referral_redemptions'),
+    deleteRows('referral_conversions'),
+    deleteRows('referral_adjustments'),
+  ]);
+  return { redemptions, conversions, adjustments };
 }
 
 export class InsufficientReferralBalanceError extends Error {
