@@ -54,7 +54,8 @@ export function shopProductsKeyboard(
     // product premium icon is configured — the icon renders to the
     // left of the label so we don't want a duplicate glyph.
     const hasPremiumIcon = Boolean(p.emoji_id);
-    const namePrefix = hasPremiumIcon ? '' : (p.emoji ? `${p.emoji} ` : '');
+    const productEmoji = p.emoji === '🛒' ? '' : (p.emoji ?? '');
+    const namePrefix = hasPremiumIcon ? '' : (productEmoji ? `${productEmoji} ` : '');
     const label = `${namePrefix}${p.name} - ${formatPriceWithCurrency(p.price, currency)} (Stock: ${stockLabel})`.trim();
     // Out-of-stock products still navigate to the product page so
     // the user sees details + a popup-armed Buy Now button.
