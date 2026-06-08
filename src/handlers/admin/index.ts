@@ -81,6 +81,15 @@ import {
   syncProductStockToPool,
   setDepositNote,
   changeProductId,
+  createSupplierApiSource,
+  deleteSupplierApiSource,
+  deleteSupplierProductLink,
+  getSupplierApiSource,
+  listSupplierApiSources,
+  listSupplierOrderLogs,
+  listSupplierProductLinks,
+  updateSupplierApiSource,
+  upsertSupplierProductLink,
 } from '../../db/queries.js';
 import { verifyAndCreditDeposit } from '../../services/depositVerify.js';
 import {
@@ -137,6 +146,13 @@ import {
   listAdminApiOrders,
   listAdminApiUsers,
 } from '../../services/resellerApi.js';
+import {
+  isSupplierMigrationError,
+  parseSupplierLinkConfig,
+  parseSupplierSourceConfig,
+  syncSupplierProductLink,
+  testSupplierConnection,
+} from '../../services/supplierApi.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
@@ -712,6 +728,9 @@ function adminApiKeyboardPremium(): InlineKeyboard {
   kb.copyText('Copy Endpoint', apiBaseUrl());
   apiPremiumButton(kb, 'profile_link', 'primary');
   kb.row();
+  kb.text('Supplier APIs', 'adm:api:suppliers:0');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  kb.row();
   kb.url('Open API Docs', apiBaseUrl());
   apiPremiumButton(kb, 'orders_note', 'primary');
   kb.row();
@@ -951,6 +970,458 @@ adminBot.callbackQuery(/^adm:api:disable:(\d+)$/, async (ctx) => {
   await disableApiKey(userId);
   await ctx.answerCallbackQuery({ text: 'API key disabled.' });
   await showAdminApiUser(ctx, userId);
+});
+
+// ---------- Supplier APIs ----------
+//
+// This is the owner's upstream side: connect supplier/reseller APIs
+// from other bots, map selected local products to supplier product
+// ids, test/sync them, and let checkout auto-order where possible.
+
+const SUPPLIERS_PER_PAGE = 8;
+
+async function supplierSendOrEdit(
+  ctx: AppCtx,
+  text: string,
+  opts: Parameters<AppCtx['editMessageText']>[1],
+): Promise<void> {
+  if (ctx.callbackQuery?.message) {
+    await ctx.editMessageText(text, opts);
+    return;
+  }
+  await ctx.reply(text, opts);
+}
+
+function supplierSetupExample(): string {
+  return JSON.stringify(
+    {
+      name: 'Supplier Bot Name',
+      base_url: 'https://supplier.example.com/api',
+      api_key: 'PASTE_API_KEY_HERE',
+      auth_mode: 'x-api-key',
+      key_header: 'x-api-key',
+      products_path: '/products',
+      balance_path: '/balance',
+      order_path: '/order',
+      products_json_path: 'products',
+      balance_json_path: 'balance',
+      product_id_json_path: 'id',
+      product_name_json_path: 'name',
+      product_price_json_path: 'price',
+      product_stock_json_path: 'stock',
+      order_items_json_path: 'items',
+      order_request_template: {
+        product_id: '{{supplier_product_id}}',
+        quantity: '{{qty}}',
+        request_id: '{{request_id}}',
+      },
+      markup_percent: 25,
+    },
+    null,
+    2,
+  );
+}
+
+function supplierMapExample(supplierId?: number): string {
+  return JSON.stringify(
+    {
+      supplier_id: supplierId ?? 1,
+      local_product_id: 12,
+      supplier_product_id: 'SUPPLIER_PRODUCT_ID',
+      supplier_product_name: 'Supplier product name',
+      auto_order: true,
+      auto_sync_stock: true,
+      fallback_manual: true,
+    },
+    null,
+    2,
+  );
+}
+
+async function showSupplierError(ctx: AppCtx, err: unknown): Promise<void> {
+  logger.error({ err }, 'supplier API admin screen failed');
+  const detail = err instanceof Error ? err.message : String(err);
+  const text = isSupplierMigrationError(err)
+    ? [
+        '⚠️ *Supplier APIs Not Ready*',
+        '',
+        'Run this Supabase migration first:',
+        '`supabase/migrations/0037_supplier_apis.sql`',
+        '',
+        '_Paste the SQL file contents in Supabase SQL Editor, not the file path._',
+      ].join('\n')
+    : [
+        '⚠️ *Supplier API Error*',
+        '',
+        `\`${escapeMd(detail.slice(0, 700))}\``,
+      ].join('\n');
+  await supplierSendOrEdit(ctx, text, {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
+}
+
+function supplierListKeyboard(
+  rows: Array<{ id: number; name: string; enabled: boolean }>,
+  page: number,
+  pages: number,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.text('Add Supplier', 'adm:api:supplier:add');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  kb.text('Map Product', 'adm:api:supplier:map');
+  apiPremiumButton(kb, 'orders_product', 'primary');
+  kb.row();
+  for (const row of rows) {
+    kb.text(`${row.enabled ? 'ON' : 'OFF'} ${row.name}`.slice(0, 56), `adm:api:supplier:${row.id}`);
+    apiPremiumButton(kb, row.enabled ? 'stats_refresh' : 'orders_note', row.enabled ? 'success' : 'danger');
+    kb.row();
+  }
+  if (pages > 1) {
+    if (page > 0) kb.text('Prev', `adm:api:suppliers:${page - 1}`);
+    kb.text(`${page + 1}/${pages}`, 'noop:supplier-page');
+    if (page + 1 < pages) kb.text('Next', `adm:api:suppliers:${page + 1}`);
+    kb.row();
+  }
+  kb.text('Refresh', `adm:api:suppliers:${page}`);
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
+  kb.text('API Home', 'adm:api');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  backRow(kb);
+  return kb;
+}
+
+async function showSupplierApis(ctx: AppCtx, page = 0): Promise<void> {
+  try {
+    const data = await listSupplierApiSources(page, SUPPLIERS_PER_PAGE);
+    const pages = Math.max(1, Math.ceil(data.total / SUPPLIERS_PER_PAGE));
+    const links = await listSupplierProductLinks().catch(() => []);
+    const logs = await listSupplierOrderLogs(undefined, 5).catch(() => []);
+    const successLogs = logs.filter((l) => l.status === 'success').length;
+    const failedLogs = logs.filter((l) => l.status === 'failed').length;
+    const lines = [
+      '🔌 *Supplier API Hub*',
+      '',
+      'Connect outside reseller bots/APIs and sell selected supplier products inside your shop.',
+      '',
+      `Suppliers: *${data.total}*`,
+      `Mapped products: *${links.length}*`,
+      `Recent auto orders: *${successLogs}* success / *${failedLogs}* failed`,
+      '',
+      '*Flow*',
+      '1. Add supplier API JSON.',
+      '2. Test balance + products.',
+      '3. Map local product id to supplier product id.',
+      '4. Sync stock/price or let checkout auto-order.',
+    ];
+    if (data.rows.length === 0) {
+      lines.push('', '_No suppliers connected yet._');
+    } else {
+      lines.push('', '*Connected Suppliers*');
+      data.rows.forEach((s, i) => {
+        const n = page * SUPPLIERS_PER_PAGE + i + 1;
+        const status = s.enabled ? 'ON' : 'OFF';
+        lines.push(
+          `${n}. *${escapeMd(s.name)}* (#${s.id})`,
+          `   ${status} · balance ${s.last_balance === null ? '—' : `*${apiMoney(Number(s.last_balance))}*`} · last ${escapeMd(apiDate(s.last_sync_at))}`,
+          s.last_error ? `   error: \`${escapeMd(s.last_error.slice(0, 120))}\`` : '',
+        );
+      });
+    }
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: supplierListKeyboard(data.rows, page, pages),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+function supplierDetailKeyboard(id: number, enabled: boolean): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.text('Test Connection', `adm:api:supplier:test:${id}`);
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
+  kb.text(enabled ? 'Disable' : 'Enable', `adm:api:supplier:toggle:${id}`);
+  apiPremiumButton(kb, enabled ? 'orders_note' : 'api_key', enabled ? 'danger' : 'success');
+  kb.row();
+  kb.text('Sync Links', `adm:api:supplier:sync:${id}`);
+  apiPremiumButton(kb, 'orders_product', 'success');
+  kb.text('Map Product', `adm:api:supplier:map:${id}`);
+  apiPremiumButton(kb, 'profile_link', 'primary');
+  kb.row();
+  kb.text('Recent Logs', `adm:api:supplier:logs:${id}`);
+  apiPremiumButton(kb, 'orders_title', 'primary');
+  kb.text('Delete', `adm:api:supplier:delask:${id}`);
+  apiPremiumButton(kb, 'orders_note', 'danger');
+  kb.row();
+  kb.text('Supplier List', 'adm:api:suppliers:0');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  kb.text('API Home', 'adm:api');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  backRow(kb);
+  return kb;
+}
+
+async function showSupplierDetail(ctx: AppCtx, id: number): Promise<void> {
+  try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await supplierSendOrEdit(ctx, '❌ Supplier not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const links = await listSupplierProductLinks(source.id);
+    const logs = await listSupplierOrderLogs(source.id, 5).catch(() => []);
+    const lines = [
+      '🔌 *Supplier Detail*',
+      '',
+      `Name: *${escapeMd(source.name)}*`,
+      `ID: \`${source.id}\``,
+      `Status: *${source.enabled ? 'ON' : 'OFF'}*`,
+      `Auth: \`${escapeMd(source.auth_mode)}\``,
+      `Base URL: \`${escapeMd(source.base_url.slice(0, 120))}\``,
+      `Balance: ${source.last_balance === null ? '—' : `*${apiMoney(Number(source.last_balance))}*`}`,
+      `Markup: *${apiMoney(Number(source.markup_percent))}%* + *${apiMoney(Number(source.fixed_markup))} USDT*`,
+      `Last test: ${escapeMd(apiDate(source.last_sync_at))}`,
+      source.last_error ? `Last error: \`${escapeMd(source.last_error.slice(0, 300))}\`` : '',
+      '',
+      `Mapped products: *${links.length}*`,
+    ];
+    if (links.length > 0) {
+      for (const link of links.slice(0, 8)) {
+        const product = await getProduct(link.local_product_id).catch(() => null);
+        lines.push(
+          `• #${link.local_product_id} ${escapeMd(product?.name ?? 'unknown')} -> \`${escapeMd(link.supplier_product_id)}\``,
+          `  auto ${link.auto_order ? 'ON' : 'OFF'} · sync ${link.auto_sync_stock ? 'ON' : 'OFF'} · stock ${link.supplier_stock ?? '—'} · cost ${link.supplier_cost ?? '—'}`,
+        );
+      }
+    }
+    if (logs.length > 0) {
+      lines.push('', '*Recent Supplier Orders*');
+      logs.forEach((l) => {
+        lines.push(
+          `• ${escapeMd(apiDate(l.created_at))} · ${escapeMd(l.status)} · product #${l.local_product_id ?? '—'}`,
+        );
+      });
+    }
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: supplierDetailKeyboard(source.id, source.enabled),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:suppliers:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierApis(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery('adm:api:supplier:add', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'supplier_api_add', step: 'json', data: {} };
+  await ctx.editMessageText(
+    [
+      '🔌 *Add Supplier API*',
+      '',
+      'Paste one JSON config. You can connect most supplier bots by changing paths/field names.',
+      '',
+      'Example:',
+      '```json',
+      supplierSetupExample(),
+      '```',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:map(?::(\d+))?$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const supplierId = ctx.match[1] ? Number(ctx.match[1]) : undefined;
+  ctx.session.adminFlow = {
+    type: 'supplier_product_link_add',
+    step: 'json',
+    data: supplierId ? { supplier_id: supplierId } : {},
+  };
+  await ctx.editMessageText(
+    [
+      '🔗 *Map Supplier Product*',
+      '',
+      'Paste one JSON mapping. This chooses which supplier product is sold as which local product.',
+      '',
+      'Example:',
+      '```json',
+      supplierMapExample(supplierId),
+      '```',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:test:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery({ text: 'Testing supplier...' });
+  try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    const result = await testSupplierConnection(source);
+    const sample = result.sampleProducts
+      .map((p) => `• \`${escapeMd(p.id)}\` ${escapeMd(p.name)} · ${p.price ?? '—'} · stock ${p.stock ?? '—'}`)
+      .join('\n');
+    await ctx.reply(
+      [
+        result.ok ? '✅ *Supplier Test OK*' : '⚠️ *Supplier Test Partial/Failed*',
+        '',
+        `Balance: ${result.balance === null ? '—' : `*${apiMoney(result.balance)}*`}`,
+        `Products seen: *${result.productsSeen}*`,
+        result.error ? `Error: \`${escapeMd(result.error.slice(0, 600))}\`` : '',
+        sample ? ['', '*Sample Products*', sample].join('\n') : '',
+      ].filter(Boolean).join('\n'),
+      { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } },
+    );
+    await showSupplierDetail(ctx, id);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:toggle:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    await updateSupplierApiSource(id, { enabled: !source.enabled });
+    await showSupplierDetail(ctx, id);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:sync:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery({ text: 'Syncing mapped products...' });
+  try {
+    const links = await listSupplierProductLinks(id);
+    let matched = 0;
+    let updated = 0;
+    let failed = 0;
+    for (const link of links) {
+      try {
+        const result = await syncSupplierProductLink(link);
+        if (result.matched) matched += 1;
+        if (result.updatedLocal) updated += 1;
+      } catch (err) {
+        failed += 1;
+        logger.warn({ err, linkId: link.id }, 'supplier link sync failed');
+      }
+    }
+    await ctx.reply(
+      `✅ Supplier sync finished.\n\nMatched: *${matched}*\nUpdated local products: *${updated}*\nFailed: *${failed}*`,
+      { parse_mode: 'Markdown' },
+    );
+    await showSupplierDetail(ctx, id);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:logs:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const logs = await listSupplierOrderLogs(id, 12);
+    const lines = ['🧾 *Supplier Order Logs*', '', `Supplier ID: \`${id}\``, ''];
+    if (logs.length === 0) {
+      lines.push('_No supplier order attempts yet._');
+    } else {
+      logs.forEach((l, i) => {
+        lines.push(
+          `${i + 1}. *${escapeMd(l.status)}* · ${escapeMd(apiDate(l.created_at))}`,
+          `   Local order: \`${l.local_order_id ?? '—'}\` · product: \`${l.local_product_id ?? '—'}\``,
+          l.error ? `   Error: \`${escapeMd(l.error.slice(0, 180))}\`` : '',
+        );
+      });
+    }
+    const kb = new InlineKeyboard();
+    kb.text('Supplier Detail', `adm:api:supplier:${id}`);
+    apiPremiumButton(kb, 'api_key', 'primary');
+    kb.text('Refresh', `adm:api:supplier:logs:${id}`);
+    apiPremiumButton(kb, 'stats_refresh', 'primary');
+    backRow(kb);
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:delask:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  const kb = new InlineKeyboard();
+  kb.text('Yes Delete Supplier', `adm:api:supplier:delete:${id}`);
+  apiPremiumButton(kb, 'orders_note', 'danger');
+  kb.row();
+  kb.text('Cancel', `adm:api:supplier:${id}`);
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
+  await ctx.editMessageText(
+    `⚠️ *Delete supplier #${id}?*\n\nThis removes its product mappings too. Local products stay in your shop.`,
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:delete:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    await deleteSupplierApiSource(id);
+    await ctx.reply(`✅ Supplier #${id} deleted.`);
+    await showSupplierApis(ctx, 0);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:unlink:(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const linkId = Number(ctx.match[2]);
+  await ctx.answerCallbackQuery();
+  try {
+    await deleteSupplierProductLink(linkId);
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierDetail(ctx, Number(ctx.match[1]));
 });
 
 // ---------- Orders ----------
@@ -5828,6 +6299,61 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 
   try {
+    if (flow.type === 'supplier_api_add') {
+      const cfg = parseSupplierSourceConfig(ctx.message.text.trim());
+      const source = await createSupplierApiSource(cfg);
+      ctx.session.adminFlow = undefined;
+      let testLine = 'Tap Test Connection to verify balance/products.';
+      try {
+        const test = await testSupplierConnection(source);
+        testLine = test.ok
+          ? `Test OK: ${test.balance === null ? 'balance —' : `balance ${apiMoney(test.balance)}`} · ${test.productsSeen} products`
+          : `Saved, but test needs attention: ${test.error ?? 'unknown error'}`;
+      } catch (err) {
+        testLine = `Saved, but test failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await ctx.reply(
+        `✅ Supplier API saved: *${escapeMd(source.name)}* (#${source.id})\n\n${escapeMd(testLine)}`,
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
+      return;
+    }
+
+    if (flow.type === 'supplier_product_link_add') {
+      const cfg = parseSupplierLinkConfig(ctx.message.text.trim(), flow.data.supplier_id);
+      const source = await getSupplierApiSource(cfg.supplier_id);
+      if (!source) {
+        await ctx.reply('❌ Supplier not found. Check `supplier_id` and try again.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      const product = await getProduct(cfg.local_product_id);
+      if (!product) {
+        await ctx.reply('❌ Local product not found. Check `local_product_id` and try again.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      const link = await upsertSupplierProductLink(cfg);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        [
+          '✅ Supplier product mapped.',
+          '',
+          `Local: *${escapeMd(product.name)}* (#${product.id})`,
+          `Supplier: *${escapeMd(source.name)}* (#${source.id})`,
+          `Supplier product id: \`${escapeMd(link.supplier_product_id)}\``,
+          '',
+          'Run *Sync Links* to pull supplier stock/price into this product.',
+        ].join('\n'),
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
+      return;
+    }
+
     if (flow.type === 'add_category') {
       if (flow.step === 'name') {
         ctx.session.adminFlow = {
@@ -7526,6 +8052,25 @@ adminBot.on('message:text', async (ctx, next) => {
           `\`\`\`\n${detail.slice(0, 500)}\n\`\`\`\n` +
           (e?.hint ? `_Hint: ${escapeHtml(e.hint)}_\n` : '') +
           '\nCheck the bot logs for the full stack trace.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+    if (flow.type === 'supplier_api_add' || flow.type === 'supplier_product_link_add') {
+      if (isSupplierMigrationError(err)) {
+        await ctx.reply(
+          '⚠️ *Supplier APIs Not Ready*\n\n' +
+            'Run `supabase/migrations/0037_supplier_apis.sql` in Supabase SQL Editor, ' +
+            'then try this setup again.',
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
+        return;
+      }
+      const detail = e?.message ?? String(err);
+      await ctx.reply(
+        '⚠️ *Supplier setup failed*\n\n' +
+          `\`\`\`\n${detail.slice(0, 700)}\n\`\`\`\n` +
+          '\nFix the JSON/API details and retry.',
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;
