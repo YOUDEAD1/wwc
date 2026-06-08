@@ -239,7 +239,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     // (alphanumerics + underscore aren't HTML-escaped), then swap it
     // post-render for the raw `<tg-emoji>` HTML.
     const PRODUCT_GLYPH_PLACEHOLDER = 'XPRODUCTGLYPHX';
-    const productUnicode = p.emoji && p.emoji.length > 0 ? p.emoji : '🎁';
+    const productUnicode = p.emoji && p.emoji.length > 0 && p.emoji !== '🛒' ? p.emoji : '🎁';
     // Defensive HTML-escape of the product fields so a stray `"` /
     // `<` in admin-typed values can't break out of the attribute or
     // smuggle markup.
