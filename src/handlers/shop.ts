@@ -101,9 +101,27 @@ async function showShopHome(ctx: AppCtx, page = 0) {
 const STORED_HTML_RX =
   /<tg-emoji\b|<a\b[^>]*href="[^"]*"[^>]*>[\s\S]*<\/a>|<(b|blockquote|code|del|em|i|pre|s|span|strong|tg-spoiler|u)\b[^>]*>[\s\S]*<\/\1>/i;
 
+function htmlBlockquoteToMarkdown(raw: string): string | null {
+  if (!/<blockquote\b/i.test(raw)) return null;
+  const replaced = raw.replace(
+    /<blockquote(?:\s+expandable)?[^>]*>([\s\S]*?)<\/blockquote>/gi,
+    (_match, body: string) => {
+      const plainBody = htmlToPlain(body).trim();
+      if (!plainBody) return '';
+      return plainBody
+        .split(/\r?\n/)
+        .map((line) => `> ${line}`)
+        .join('\n');
+    },
+  );
+  return htmlToPlain(replaced).trim() || null;
+}
+
 function renderStoredProductText(raw: string | null | undefined, fallbackMarkdown: string): string {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return renderMdHtml(fallbackMarkdown);
+  const quoteMarkdown = htmlBlockquoteToMarkdown(trimmed);
+  if (quoteMarkdown) return renderMdHtml(quoteMarkdown);
   return STORED_HTML_RX.test(trimmed)
     ? renderHtmlTemplate(trimmed)
     : renderMdHtml(trimmed);
