@@ -5,6 +5,7 @@ import {
   decrementProductStock,
   findUserById,
   getProduct,
+  getSupplierProductLinkByProduct,
   listPendingPreorderOrders,
   restorePreorderPending,
   setOrderDeliveredItems,
@@ -20,6 +21,7 @@ import { buildOrderDeliveredChunks } from './orderRender.js';
 import { publicOrderId } from './orderId.js';
 import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { renderMdHtml } from './premium.js';
+import { isSupplierMigrationError, trySupplierAutoOrder } from './supplierApi.js';
 
 export type PreorderFulfillResult = {
   fulfilled: number;
@@ -75,23 +77,42 @@ export async function fulfillPendingPreordersForProduct(
 
     try {
       const shouldClaimFromPool = poolAvailable >= order.qty;
-      const claimed = shouldClaimFromPool
-        ? await claimProductItems(productId, order.qty, order.id)
-        : [];
-      if (shouldClaimFromPool && claimed.length < order.qty) {
-        await restorePreorderPending(order.id, preorderPendingText);
-        break;
+      let deliveredItems: string[] = [];
+      if (shouldClaimFromPool) {
+        deliveredItems = await claimProductItems(productId, order.qty, order.id);
+        if (deliveredItems.length < order.qty) {
+          await restorePreorderPending(order.id, preorderPendingText);
+          break;
+        }
+      } else {
+        const supplierLink = await getSupplierProductLinkByProduct(productId).catch((err) => {
+          if (isSupplierMigrationError(err)) return null;
+          logger.warn({ err, productId }, 'preorder: supplier link lookup failed');
+          return null;
+        });
+        if (supplierLink?.auto_order) {
+          const supplierOrder = await trySupplierAutoOrder({
+            localProductId: productId,
+            qty: order.qty,
+            localOrderId: order.id,
+          });
+          if (!supplierOrder || supplierOrder.items.length === 0) {
+            await restorePreorderPending(order.id, preorderPendingText);
+            break;
+          }
+          deliveredItems = supplierOrder.items;
+        }
       }
 
       if (!product.unlimited_stock) {
         await decrementProductStock(productId, order.qty);
       }
 
-      const deliveredChunks = buildOrderDeliveredChunks(claimed);
+      const deliveredChunks = buildOrderDeliveredChunks(deliveredItems);
       const pendingText = t('shop.buy.delivery_pending');
       const firstChunkBlock = deliveredChunks[0]?.inlineBlock ?? `> ${pendingText}`;
       const deliveredItemsForDb =
-        claimed.length > 0 ? claimed.join('\n') : pendingText;
+        deliveredItems.length > 0 ? deliveredItems.join('\n') : pendingText;
       await setOrderDeliveredItems(order.id, deliveredItemsForDb);
 
       const deliveredKb = new InlineKeyboard();
@@ -175,7 +196,7 @@ export async function fulfillPendingPreordersForProduct(
           total: Number(order.total),
           discount: Number(order.discount ?? 0),
           paidVia: paidViaForPreorder(Number(order.total)),
-          items: claimed,
+          items: deliveredItems,
           invoiceLink: env.BOT_USERNAME
             ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
             : '',
