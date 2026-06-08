@@ -191,6 +191,9 @@ export type DBSupplierApiSource = {
   order_status_json_path: string;
   order_request_template: Record<string, unknown>;
   enabled: boolean;
+  auto_import_new_products: boolean;
+  auto_import_active: boolean;
+  import_category_name: string | null;
   markup_percent: number;
   fixed_markup: number;
   low_balance_threshold: number;
