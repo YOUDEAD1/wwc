@@ -662,6 +662,16 @@ function apiMoney(n: number): string {
   return Number(n).toFixed(2);
 }
 
+function apiPremiumButton(
+  kb: InlineKeyboard,
+  emojiKey: string,
+  style: 'primary' | 'success' | 'danger' = 'primary',
+): void {
+  const spec = EMOJI[emojiKey];
+  if (typeof spec === 'object' && spec.custom_emoji_id) kb.icon(spec.custom_emoji_id);
+  kb.style(style);
+}
+
 function apiDate(iso: string | null): string {
   if (!iso) return '—';
   return iso.replace('T', ' ').slice(0, 16);
@@ -687,6 +697,25 @@ function adminApiKeyboard(): InlineKeyboard {
     .url('📘 Open API Docs', apiBaseUrl())
     .row()
     .text('🔄 Refresh', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+function adminApiKeyboardPremium(): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.text('API Users', 'adm:api:users:0');
+  apiPremiumButton(kb, 'profile_username', 'primary');
+  kb.text('API Orders', 'adm:api:orders:0');
+  apiPremiumButton(kb, 'orders_title', 'primary');
+  kb.row();
+  kb.copyText('Copy Endpoint', apiBaseUrl());
+  apiPremiumButton(kb, 'profile_link', 'primary');
+  kb.row();
+  kb.url('Open API Docs', apiBaseUrl());
+  apiPremiumButton(kb, 'orders_note', 'primary');
+  kb.row();
+  kb.text('Refresh', 'adm:api');
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
   backRow(kb);
   return kb;
 }
@@ -749,7 +778,7 @@ async function showAdminApiOverview(ctx: AppCtx): Promise<void> {
 
     await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
       parse_mode: 'Markdown',
-      reply_markup: adminApiKeyboard(),
+      reply_markup: adminApiKeyboardPremium(),
       link_preview_options: { is_disabled: true },
     });
   } catch (err) {
