@@ -35,24 +35,40 @@ function premiumButton(
   kb.style(style);
 }
 
+const API_BUTTON_ICON_IDS = {
+  key: '5375338737028841420',
+  disable: '5040042498634810056',
+  docs: '5042306247047513767',
+  refresh: '5980787993139481991',
+} as const;
+
+function premiumButtonId(
+  kb: InlineKeyboard,
+  iconId: string,
+  style: 'primary' | 'success' | 'danger' = 'primary',
+): void {
+  kb.icon(iconId);
+  kb.style(style);
+}
+
 function panelKeyboard(status: ApiStatus): InlineKeyboard {
   const kb = new InlineKeyboard();
   if (status.active) {
     kb.text('Regenerate Key', 'api:generate');
-    premiumButton(kb, 'api_key', 'primary');
+    premiumButtonId(kb, API_BUTTON_ICON_IDS.key, 'primary');
     kb.row();
     kb.text('Disable API', 'api:disable');
-    premiumButton(kb, 'gift_invalid', 'danger');
+    premiumButtonId(kb, API_BUTTON_ICON_IDS.disable, 'danger');
   } else {
     kb.text('Generate New API Key', 'api:generate');
-    premiumButton(kb, 'api_key', 'success');
+    premiumButtonId(kb, API_BUTTON_ICON_IDS.key, 'success');
   }
   kb.row();
   kb.text('View API Documentation', 'api:docs');
-  premiumButton(kb, 'orders_note', 'primary');
+  premiumButtonId(kb, API_BUTTON_ICON_IDS.docs, 'primary');
   kb.row();
   kb.text('Refresh', 'api:open');
-  premiumButton(kb, 'stats_refresh', 'primary');
+  premiumButtonId(kb, API_BUTTON_ICON_IDS.refresh, 'primary');
   kb.row();
   kb.text('Back to Settings', 'profile:open');
   premiumButton(kb, 'profile_header', 'primary');
@@ -252,7 +268,7 @@ export function registerResellerApi(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
     const kb = new InlineKeyboard();
     kb.text('API Panel', 'api:open');
-    premiumButton(kb, 'api_key', 'primary');
+    premiumButtonId(kb, API_BUTTON_ICON_IDS.key, 'primary');
     kb.row();
     kb.text('Back to Settings', 'profile:open');
     premiumButton(kb, 'profile_header', 'primary');
