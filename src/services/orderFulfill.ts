@@ -132,12 +132,35 @@ export async function fulfilOrderForDeposit(args: {
   if (!preorder) {
     await decrementProductStock(intent.product_id, intent.qty);
   }
+  const publicId = publicOrderId(order);
+  const paidVia = paidViaLabel(provider, methodName);
   const supplierOrder = preorder
     ? null
     : await trySupplierAutoOrder({
         localProductId: intent.product_id,
         qty: intent.qty,
         localOrderId: order.id,
+        onFailure: (failure) =>
+          adminLog.logSupplierOrderFailed(api, {
+            user: {
+              telegram_id: deposit.user_id,
+              username: user?.username ?? null,
+              first_name: user?.first_name ?? null,
+              email: user?.email ?? null,
+            },
+            orderDbId: order.id,
+            orderPublicId: publicId,
+            productId: intent.product_id,
+            productName: intent.product_name,
+            qty: intent.qty,
+            total: intent.total,
+            paidVia,
+            balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+            supplierName: failure.supplierName,
+            supplierProductId: failure.supplierProductId,
+            reason: failure.error,
+            lowBalance: failure.lowBalance,
+          }).catch((err) => logger.warn({ err }, 'direct-pay: supplier failure admin log failed')),
       });
   const claimed = preorder
     ? []
@@ -148,7 +171,6 @@ export async function fulfilOrderForDeposit(args: {
           intent.qty,
           order.id,
         );
-  const publicId = publicOrderId(order);
   // Match the wallet-pay layout: split the items into 7-per-chunk
   // messages so the Order Delivered card never blows past Telegram's
   // 4096-char limit on bulk orders. The first chunk goes inside the
@@ -260,7 +282,7 @@ export async function fulfilOrderForDeposit(args: {
       unitPrice: intent.unit_price,
       total: intent.total,
       discount: intent.discount,
-      paidVia: paidViaLabel(provider, methodName),
+          paidVia,
       items: claimed,
       invoiceLink: env.BOT_USERNAME
         ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
@@ -287,7 +309,7 @@ export async function fulfilOrderForDeposit(args: {
       qty: intent.qty,
       unitPrice: intent.unit_price,
       total: intent.total,
-      paidVia: paidViaLabel(provider, methodName),
+      paidVia,
       balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
       lifecycle: preorder ? 'preorder' : 'delivered',
     })
