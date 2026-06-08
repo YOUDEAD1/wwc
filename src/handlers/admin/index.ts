@@ -85,6 +85,7 @@ import {
   deleteSupplierApiSource,
   deleteSupplierProductLink,
   getSupplierApiSource,
+  getSupplierProductLinkByProduct,
   listSupplierApiSources,
   listSupplierOrderLogs,
   listSupplierProductLinks,
@@ -1437,6 +1438,26 @@ async function showSupplierCatalogProduct(
       kb.text(local.active ? 'Hide Product' : 'Show Product', `adm:api:supplier:link:visible:${source.id}:${page}:${mode}:${index}:${link.id}`);
       apiPremiumButton(kb, local.active ? 'orders_note' : 'api_key', local.active ? 'danger' : 'success');
       kb.row();
+      kb.text('Edit Price', `adm:prod:price:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'deposits_wallet', 'primary');
+      kb.text('Edit Name', `adm:prod:name:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_product', 'primary');
+      kb.row();
+      kb.text('Premium Emoji', `adm:prod:emoji:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'api_key', 'primary');
+      kb.text('Referral Pay', `adm:prod:ref:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_product', 'primary');
+      kb.row();
+      kb.text('View Note', `adm:prod:note:settxt:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_note', 'primary');
+      kb.text('Description', `adm:prod:desc:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_note', 'primary');
+      kb.row();
+      kb.text('Warranty', `adm:prod:war:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'stats_refresh', 'primary');
+      kb.text('Tutorial', `adm:prod:tut:settxt:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'profile_link', 'primary');
+      kb.row();
       kb.text(link.auto_order ? 'Auto Order: ON' : 'Auto Order: OFF', `adm:api:supplier:link:auto:${source.id}:${page}:${mode}:${index}:${link.id}`);
       apiPremiumButton(kb, link.auto_order ? 'api_key' : 'orders_note', link.auto_order ? 'success' : 'danger');
       kb.text(link.auto_sync_stock ? 'Sync Stock: ON' : 'Sync Stock: OFF', `adm:api:supplier:link:sync:${source.id}:${page}:${mode}:${index}:${link.id}`);
@@ -2475,6 +2496,11 @@ async function showProductEditor(
   product_id: number,
   page: number,
 ): Promise<void> {
+  const supplierLink = await getSupplierProductLinkByProduct(product_id).catch((err) => {
+    if (isSupplierMigrationError(err)) return null;
+    logger.warn({ err, product_id }, 'showProductEditor supplier link lookup failed');
+    return null;
+  });
   // Re-align `products.stock` with the live pool count before reading
   // the product so the editor card always reflects reality.
   // `addProductItems()` already calls `syncProductStockToPool` after a
@@ -2486,12 +2512,14 @@ async function showProductEditor(
   // Doing the sync here is idempotent and cheap (two indexed queries),
   // and guarantees the admin-facing card and the buyer-facing stock
   // gate stay consistent after every bulk-add Confirm.
-  await syncProductStockToPool(product_id).catch((err) => {
-    logger.error(
-      { err, product_id },
-      'showProductEditor: syncProductStockToPool failed',
-    );
-  });
+  if (!supplierLink) {
+    await syncProductStockToPool(product_id).catch((err) => {
+      logger.error(
+        { err, product_id },
+        'showProductEditor: syncProductStockToPool failed',
+      );
+    });
+  }
   const p = await getProduct(product_id);
   if (!p) {
     await ctx.editMessageText('⚠️ Product not found.', {
@@ -2504,7 +2532,7 @@ async function showProductEditor(
   // product isn't unlimited — the products.stock column is just a
   // denormalised mirror, the truth is `countAvailableProductItems()`.
   // This keeps the card honest even if a sync ever misses.
-  const stockCell = p.unlimited_stock ? '∞' : String(itemsCount);
+  const stockCell = p.unlimited_stock ? '∞' : supplierLink ? String(p.stock) : String(itemsCount);
   // Per-product custom-price override count — surfaced inline + drives
   // the "Clear all custom prices" button label. Cheap (one head-count
   // query) and lets the admin see at a glance whether any user has a
@@ -2541,7 +2569,11 @@ async function showProductEditor(
     `*Name:* ${p.name}`,
     `*Price:* ${Number(p.price).toFixed(2)} USDT`,
     `*Stock:* ${stockCell}`,
+    supplierLink
+      ? `*Supplier link:* \`${supplierLink.supplier_product_id}\` · stock sync *${supplierLink.auto_sync_stock ? 'ON' : 'OFF'}*`
+      : null,
     `*Referral Pay:* ${referralLabel}`,
+    `*Warranty:* ${p.warranty ? '`set`' : '_unset_'}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
     `*Description:* ${p.description ? '`set`' : '_unset_'}`,
     `*Note Text:* ${p.note ? '`set`' : '_unset_'}`,
@@ -2554,7 +2586,7 @@ async function showProductEditor(
     `*Delivery vendor:* ${deliveryVendorLabel}`,
     '',
     '_Tap a button to edit. For "Set Premium Emoji" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
-  ];
+  ].filter((x): x is string => x !== null);
   const kb = new InlineKeyboard();
   kb.text('🎬 Set Premium Emoji', `adm:prod:emoji:set:${p.id}:${page}`)
     .text('🧹 Clear Emoji', `adm:prod:emoji:clr:${p.id}:${page}`)
@@ -2564,6 +2596,9 @@ async function showProductEditor(
     .row();
   kb.text('📄 Edit Description', `adm:prod:desc:set:${p.id}:${page}`)
     .text('🧹 Clear Desc', `adm:prod:desc:clr:${p.id}:${page}`)
+    .row();
+  kb.text('⭐ Edit Warranty', `adm:prod:war:set:${p.id}:${page}`)
+    .text('🧹 Clear Warranty', `adm:prod:war:clr:${p.id}:${page}`)
     .row();
   kb.text('📘 Tutorial Text', `adm:prod:tut:settxt:${p.id}:${page}`)
     .text('🎞 Tutorial File', `adm:prod:tut:setfile:${p.id}:${page}`)
@@ -2714,6 +2749,29 @@ adminBot.callbackQuery(/^adm:prod:desc:set:(\d+):(\d+)$/, async (ctx) => {
 adminBot.callbackQuery(/^adm:prod:desc:clr:(\d+):(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   await updateProduct(id, { description: null });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Warranty ---
+adminBot.callbackQuery(/^adm:prod:war:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_warranty',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '⭐ Send the new *warranty* text now. Send `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:war:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, { warranty: null });
   await ctx.answerCallbackQuery({ text: 'Cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
@@ -6787,8 +6845,6 @@ adminBot.on('message:text', async (ctx, next) => {
   ).trim();
   const productRichText = (() => {
     const entities = ctx.message.entities ?? [];
-    const quoteMarkdown = telegramQuoteToMarkdown(ctx.message.text, entities);
-    if (quoteMarkdown) return quoteMarkdown;
     const hasTelegramFormatting = entities.some(
       (entity) => FORMAT_ENTITY_TYPES.has(entity.type) || entity.type === 'custom_emoji',
     );
@@ -7062,6 +7118,13 @@ adminBot.on('message:text', async (ctx, next) => {
       await updateProduct(flow.data.product_id, { description: productRichText });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Description saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_warranty') {
+      await updateProduct(flow.data.product_id, { warranty: text });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Warranty saved.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
