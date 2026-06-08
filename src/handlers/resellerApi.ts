@@ -1,5 +1,6 @@
 import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
+import { EMOJI } from '../../config/index.js';
 import type { AppCtx } from '../middleware/user.js';
 import {
   apiBaseUrl,
@@ -9,8 +10,7 @@ import {
   type ApiStatus,
 } from '../services/resellerApi.js';
 import { renderMdHtml } from '../services/premium.js';
-
-const API_KEY_EMOJI_ID = '5287480366330816274';
+import { logger } from '../logger.js';
 
 function money(n: number): string {
   return Number(n).toFixed(2);
@@ -20,8 +20,18 @@ function mask(prefix: string | null): string {
   return prefix ? `${prefix}••••••••` : '—';
 }
 
-function premiumKeyButton(kb: InlineKeyboard, style: 'primary' | 'success' | 'danger' = 'primary'): void {
-  kb.icon(API_KEY_EMOJI_ID);
+function premiumIconId(key: string): string | undefined {
+  const spec = EMOJI[key];
+  return typeof spec === 'object' ? spec.custom_emoji_id : undefined;
+}
+
+function premiumButton(
+  kb: InlineKeyboard,
+  emojiKey: string,
+  style: 'primary' | 'success' | 'danger' = 'primary',
+): void {
+  const iconId = premiumIconId(emojiKey);
+  if (iconId) kb.icon(iconId);
   kb.style(style);
 }
 
@@ -29,23 +39,99 @@ function panelKeyboard(status: ApiStatus): InlineKeyboard {
   const kb = new InlineKeyboard();
   if (status.active) {
     kb.text('Regenerate Key', 'api:generate');
-    premiumKeyButton(kb, 'primary');
+    premiumButton(kb, 'api_key', 'primary');
     kb.row();
     kb.text('Disable API', 'api:disable');
-    premiumKeyButton(kb, 'danger');
+    premiumButton(kb, 'gift_invalid', 'danger');
   } else {
     kb.text('Generate New API Key', 'api:generate');
-    premiumKeyButton(kb, 'success');
+    premiumButton(kb, 'api_key', 'success');
   }
   kb.row();
   kb.text('View API Documentation', 'api:docs');
-  premiumKeyButton(kb, 'primary');
+  premiumButton(kb, 'orders_note', 'primary');
   kb.row();
   kb.text('Refresh', 'api:open');
-  premiumKeyButton(kb, 'primary');
+  premiumButton(kb, 'stats_refresh', 'primary');
   kb.row();
   kb.text('Back to Settings', 'profile:open');
+  premiumButton(kb, 'profile_header', 'primary');
   return kb;
+}
+
+function apiErrorKeyboard(): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.url(
+    'Open Migration File',
+    'https://github.com/safwandeveloper/SafwanTigerShopBot/blob/main/supabase/migrations/0036_reseller_api.sql',
+  );
+  premiumButton(kb, 'orders_note', 'primary');
+  kb.row();
+  kb.text('Back to Settings', 'profile:open');
+  premiumButton(kb, 'profile_header', 'primary');
+  return kb;
+}
+
+function looksLikeMissingMigration(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown };
+  const body = [e?.code, e?.message, e?.details, e?.hint].map(String).join(' ');
+  return (
+    body.includes('42P01') ||
+    body.includes('42703') ||
+    /reseller_api_(keys|orders)/i.test(body) ||
+    /relation .* does not exist/i.test(body) ||
+    /schema cache/i.test(body)
+  );
+}
+
+async function showApiError(ctx: AppCtx, err: unknown): Promise<void> {
+  logger.error({ err }, 'reseller API panel failed');
+  const migrationHint = looksLikeMissingMigration(err);
+  const text = migrationHint
+    ? [
+        '{api_key} *API Dashboard Not Ready*',
+        '',
+        'Run this Supabase migration first:',
+        '`supabase/migrations/0036_reseller_api.sql`',
+        '',
+        '*Important:* open that file and paste the SQL contents in Supabase SQL Editor. Do not paste only the file path.',
+      ].join('\n')
+    : [
+        '{api_key} *API panel failed to load*',
+        '',
+        'Tap Refresh once. If it still fails, check Railway logs for the exact API error.',
+      ].join('\n');
+  const html = renderMdHtml(text);
+  const reply_markup = migrationHint
+    ? apiErrorKeyboard()
+    : panelKeyboard({
+        active: false,
+        keyPrefix: null,
+        createdAt: null,
+        lastUsedAt: null,
+        balance: Number(ctx.user.balance ?? 0),
+        orders: 0,
+        totalSpent: 0,
+        recentSpent: 0,
+      });
+  if (ctx.callbackQuery) {
+    try {
+      await ctx.editMessageText(html, {
+        parse_mode: 'HTML',
+        reply_markup,
+        link_preview_options: { is_disabled: true },
+      });
+      return;
+    } catch {
+      // If Telegram refuses to edit the old message, send a fresh one
+      // so the user is never left with a spinning button.
+    }
+  }
+  await ctx.reply(html, {
+    parse_mode: 'HTML',
+    reply_markup,
+    link_preview_options: { is_disabled: true },
+  });
 }
 
 function apiPanelText(status: ApiStatus, newKey?: string): string {
@@ -109,22 +195,26 @@ function docsText(): string {
 }
 
 async function showApiPanel(ctx: AppCtx, newKey?: string): Promise<void> {
-  const status = await getApiStatus(ctx.user.telegram_id);
-  const html = renderMdHtml(apiPanelText(status, newKey));
-  const reply_markup = panelKeyboard(status);
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(html, {
+  try {
+    const status = await getApiStatus(ctx.user.telegram_id);
+    const html = renderMdHtml(apiPanelText(status, newKey));
+    const reply_markup = panelKeyboard(status);
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(html, {
+        parse_mode: 'HTML',
+        reply_markup,
+        link_preview_options: { is_disabled: true },
+      });
+      return;
+    }
+    await ctx.reply(html, {
       parse_mode: 'HTML',
       reply_markup,
       link_preview_options: { is_disabled: true },
     });
-    return;
+  } catch (err) {
+    await showApiError(ctx, err);
   }
-  await ctx.reply(html, {
-    parse_mode: 'HTML',
-    reply_markup,
-    link_preview_options: { is_disabled: true },
-  });
 }
 
 export function registerResellerApi(bot: Composer<AppCtx>): void {
@@ -139,23 +229,33 @@ export function registerResellerApi(bot: Composer<AppCtx>): void {
 
   bot.callbackQuery('api:generate', async (ctx) => {
     await ctx.answerCallbackQuery({ text: 'Generating API key...' });
-    const generated = await generateApiKey(ctx.user.telegram_id);
-    await showApiPanel(ctx, generated.key);
+    try {
+      const generated = await generateApiKey(ctx.user.telegram_id);
+      await showApiPanel(ctx, generated.key);
+    } catch (err) {
+      await showApiError(ctx, err);
+    }
   });
 
   bot.callbackQuery('api:disable', async (ctx) => {
-    await disableApiKey(ctx.user.telegram_id);
-    await ctx.answerCallbackQuery({ text: 'API key disabled.' });
-    await showApiPanel(ctx);
+    try {
+      await disableApiKey(ctx.user.telegram_id);
+      await ctx.answerCallbackQuery({ text: 'API key disabled.' });
+      await showApiPanel(ctx);
+    } catch (err) {
+      await ctx.answerCallbackQuery({ text: 'API action failed.' });
+      await showApiError(ctx, err);
+    }
   });
 
   bot.callbackQuery('api:docs', async (ctx) => {
     await ctx.answerCallbackQuery();
     const kb = new InlineKeyboard();
     kb.text('API Panel', 'api:open');
-    premiumKeyButton(kb, 'primary');
+    premiumButton(kb, 'api_key', 'primary');
     kb.row();
     kb.text('Back to Settings', 'profile:open');
+    premiumButton(kb, 'profile_header', 'primary');
     await ctx.editMessageText(renderMdHtml(docsText()), {
       parse_mode: 'HTML',
       reply_markup: kb,
