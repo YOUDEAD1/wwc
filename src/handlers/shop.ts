@@ -48,6 +48,7 @@ import {
   renderHtmlTemplate,
   renderMdHtml,
   sanitizeButtonUrl,
+  stripCustomEmojiTags,
 } from '../services/premium.js';
 import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
@@ -152,8 +153,9 @@ function productPageText(
   // screen so the buy page stays focused on the price / qty / total
   // trio.
   const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
+  const productEmoji = p.emoji === '🛒' ? '' : (p.emoji ?? '');
   const lines: string[] = [
-    ctx.t('shop.product.line.name', { name: p.name, emoji: p.emoji ?? '' }),
+    ctx.t('shop.product.line.name', { name: p.name, emoji: productEmoji }),
   ];
   lines.push(
     ctx.t('shop.product.line.price', { price: formatPriceWithCurrency(p.price, ctx.user.currency) }),
@@ -369,6 +371,7 @@ async function finalizeOrderDelivery(args: {
     await decrementProductStock(p.id, qty);
   }
   delete ctx.session.qty[p.id];
+  const publicId = publicOrderId(order);
   // Pull the actual delivery payload off the per-product items
   // pool. When the pool is empty (or short), fall back to a
   // "manual delivery" placeholder; the admin gets pinged via
@@ -379,13 +382,33 @@ async function finalizeOrderDelivery(args: {
         localProductId: p.id,
         qty,
         localOrderId: order.id,
+        onFailure: (failure) =>
+          adminLog.logSupplierOrderFailed(ctx.api, {
+            user: {
+              telegram_id: ctx.user.telegram_id,
+              username: ctx.user.username ?? null,
+              first_name: ctx.user.first_name ?? null,
+              email: ctx.user.email ?? null,
+            },
+            orderDbId: order.id,
+            orderPublicId: publicId,
+            productId: p.id,
+            productName: p.name,
+            qty,
+            total,
+            paidVia,
+            balanceAfter: Number(balanceAfter.toFixed(3)),
+            supplierName: failure.supplierName,
+            supplierProductId: failure.supplierProductId,
+            reason: failure.error,
+            lowBalance: failure.lowBalance,
+          }).catch((err) => logger.warn({ err }, 'supplier failure admin log failed')),
       });
   const claimed = preorder
     ? []
     : supplierOrder
       ? supplierOrder.items
       : await claimProductItems(p.id, qty, order.id);
-  const publicId = publicOrderId(order);
   // Items are rendered as Telegram blockquote pills (one `> line`
   // per claimed link / account) — same style as the View Note
   // "luli" / "Hey" pills the bot owner pointed to.
@@ -1079,8 +1102,17 @@ export function registerShop(bot: Composer<AppCtx>): void {
       });
     } catch (err) {
       logger.warn({ err, productId: p.id }, 'View Note HTML render failed; falling back to plain text');
-      const plain = htmlToPlain(safeHtml).slice(0, 3900);
-      await ctx.editMessageText(plain, { reply_markup: kb });
+      const noCustomEmojiHtml = clampForTelegram(stripCustomEmojiTags(safeHtml));
+      try {
+        await ctx.editMessageText(noCustomEmojiHtml, {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+        });
+      } catch (retryErr) {
+        logger.warn({ err: retryErr, productId: p.id }, 'View Note HTML retry failed; falling back to plain text');
+        const plain = htmlToPlain(safeHtml).slice(0, 3900);
+        await ctx.editMessageText(plain, { reply_markup: kb });
+      }
     }
   });
 
@@ -1263,7 +1295,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       required: referral.requiredTotal,
       available: referral.availableReferrals,
       after: referral.availableReferrals - referral.requiredTotal,
-      emoji: p.emoji ?? '',
+      emoji: p.emoji === '🛒' ? '' : (p.emoji ?? ''),
     });
     const kb = new InlineKeyboard();
     inlineBtn(kb, ctx.lang, 'confirm_pay', `pay:referral:do:${productId}`);
@@ -1389,7 +1421,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // Per-product unicode emoji rendered behind the product name.
       // The premium auto-scan in `renderMdHtml` upgrades it to the
       // animated `<tg-emoji>` if a `custom_emoji_id` is configured.
-      emoji: p.emoji ?? '',
+      emoji: p.emoji === '🛒' ? '' : (p.emoji ?? ''),
       promo_line: renderPromoLine(ctx, promo, discount),
       referral_line: referral
         ? `${ctx.t('shop.pay.referral_line', {
@@ -1443,7 +1475,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency),
       // Per-product unicode emoji prefix; auto-scan upgrades to
       // `<tg-emoji>` when `custom_emoji_id` is configured.
-      emoji: p.emoji ?? '',
+      emoji: p.emoji === '🛒' ? '' : (p.emoji ?? ''),
       discount_line: discountLine,
     });
     const kb = new InlineKeyboard();
