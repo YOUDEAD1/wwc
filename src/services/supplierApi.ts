@@ -48,7 +48,16 @@ export type SupplierOrderResult = {
   ok: boolean;
   items: string[];
   status: string | null;
+  error: string | null;
   raw: Record<string, unknown>;
+};
+
+export type SupplierAutoOrderFailure = {
+  supplierId: number;
+  supplierName: string;
+  supplierProductId: string;
+  error: string;
+  lowBalance: boolean;
 };
 
 export type SupplierSourceConfig = {
@@ -204,6 +213,29 @@ function firstValue(obj: unknown, paths: string[]): unknown {
     if (value !== undefined && value !== null && value !== '') return value;
   }
   return undefined;
+}
+
+function supplierResponseError(json: Record<string, unknown>, status: string | null): string {
+  return (
+    asString(
+      firstValue(json, [
+        'error',
+        'message',
+        'reason',
+        'details',
+        'data.error',
+        'data.message',
+        'data.reason',
+        'response.error',
+        'response.message',
+      ]),
+    ) ??
+    (status ? `Supplier status: ${status}` : 'Supplier rejected the order')
+  );
+}
+
+export function isSupplierLowBalanceMessage(message: string): boolean {
+  return /balance|insufficient|not enough|low fund|wallet|credit|recharge|top[\s-]?up/i.test(message);
 }
 
 function replaceTemplate(value: unknown, vars: Record<string, string | number>): unknown {
@@ -408,7 +440,7 @@ export async function importSupplierProduct(args: {
     stock,
     warranty: 'Supplier auto delivery',
     description,
-    emoji: '🛒',
+    emoji: '',
     unlimited_stock: false,
   });
   if (args.active === false || (args.active === undefined && args.source.auto_import_active === false)) {
@@ -474,6 +506,14 @@ function normalizeItems(source: DBSupplierApiSource, json: Record<string, unknow
     deepGet(json, 'account');
   if (typeof raw === 'string') return raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const hiddenKeys = new Set([
+    'productitemid',
+    'product_item_id',
+    'productitem_id',
+    'product_itemid',
+    'deliveredat',
+    'delivered_at',
+  ]);
   return arr
     .map((item) => {
       if (typeof item === 'string') return item.trim();
@@ -483,7 +523,10 @@ function normalizeItems(source: DBSupplierApiSource, json: Record<string, unknow
       );
       if (direct) return direct;
       const pairs = Object.entries(row)
-        .filter(([, value]) => value !== null && value !== undefined && value !== '')
+        .filter(([key, value]) => {
+          if (value === null || value === undefined || value === '') return false;
+          return !hiddenKeys.has(key.replace(/[\s-]/g, '').toLowerCase());
+        })
         .map(([key, value]) => `${key}: ${String(value)}`);
       return pairs.join('\n');
     })
@@ -532,6 +575,7 @@ export async function placeSupplierOrder(args: {
       statusValue === 0 ||
       (status ? /^(false|0)$|fail|error|reject|cancel/i.test(status) : false);
     const items = normalizeItems(args.source, json);
+    const error = failed ? supplierResponseError(json, status) : null;
     await recordSupplierOrderLog({
       supplier_id: args.source.id,
       local_order_id: args.localOrderId,
@@ -540,9 +584,9 @@ export async function placeSupplierOrder(args: {
       status: failed ? 'failed' : 'success',
       request_payload: payload,
       response_payload: Array.isArray(rawJson) ? { data: rawJson } : json,
-      error: failed ? `Supplier status: ${status}` : null,
+      error,
     });
-    return { ok: !failed, items, status, raw: Array.isArray(rawJson) ? { data: rawJson } : json };
+    return { ok: !failed, items, status, error, raw: Array.isArray(rawJson) ? { data: rawJson } : json };
   } catch (err) {
     const msg = errorMessage(err);
     await recordSupplierOrderLog({
@@ -563,6 +607,7 @@ export async function trySupplierAutoOrder(args: {
   localProductId: number;
   qty: number;
   localOrderId: number;
+  onFailure?: (failure: SupplierAutoOrderFailure) => void | Promise<void>;
 }): Promise<{ items: string[]; status: string | null; supplierName: string } | null> {
   const link = await getSupplierProductLinkByProduct(args.localProductId).catch((err) => {
     if (isSupplierMigrationError(err)) {
@@ -582,16 +627,37 @@ export async function trySupplierAutoOrder(args: {
       qty: args.qty,
       localOrderId: args.localOrderId,
     });
-    if (!result.ok) return null;
+    if (!result.ok) {
+      const error = result.error ?? `Supplier status: ${result.status ?? 'failed'}`;
+      await updateSupplierProductLink(link.id, {
+        last_error: error,
+      }).catch((updateErr) => logger.warn({ err: updateErr }, 'supplier link error update failed'));
+      await args.onFailure?.({
+        supplierId: source.id,
+        supplierName: source.name,
+        supplierProductId: link.supplier_product_id,
+        error,
+        lowBalance: isSupplierLowBalanceMessage(error),
+      });
+      return null;
+    }
     return { items: result.items, status: result.status, supplierName: source.name };
   } catch (err) {
+    const error = errorMessage(err);
     logger.warn(
       { err, localProductId: args.localProductId, orderId: args.localOrderId, supplierId: source.id },
       'supplier auto-order failed; falling back to local/manual delivery',
     );
     await updateSupplierProductLink(link.id, {
-      last_error: errorMessage(err),
+      last_error: error,
     }).catch((updateErr) => logger.warn({ err: updateErr }, 'supplier link error update failed'));
+    await args.onFailure?.({
+      supplierId: source.id,
+      supplierName: source.name,
+      supplierProductId: link.supplier_product_id,
+      error,
+      lowBalance: isSupplierLowBalanceMessage(error),
+    });
     return null;
   }
 }
