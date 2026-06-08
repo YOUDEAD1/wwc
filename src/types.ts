@@ -166,6 +166,72 @@ export type DBUserPriceOverride = {
   created_by: number | null;
 };
 
+export type SupplierAuthMode = 'none' | 'bearer' | 'x-api-key' | 'query';
+export type SupplierOrderMethod = 'GET' | 'POST';
+
+export type DBSupplierApiSource = {
+  id: number;
+  name: string;
+  base_url: string;
+  api_key: string;
+  auth_mode: SupplierAuthMode;
+  key_header: string;
+  key_query_param: string;
+  products_path: string;
+  balance_path: string;
+  order_path: string;
+  order_method: SupplierOrderMethod;
+  balance_json_path: string;
+  products_json_path: string;
+  product_id_json_path: string;
+  product_name_json_path: string;
+  product_price_json_path: string;
+  product_stock_json_path: string;
+  order_items_json_path: string;
+  order_status_json_path: string;
+  order_request_template: Record<string, unknown>;
+  enabled: boolean;
+  markup_percent: number;
+  fixed_markup: number;
+  low_balance_threshold: number;
+  notes: string | null;
+  last_balance: number | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DBSupplierProductLink = {
+  id: number;
+  local_product_id: number;
+  supplier_id: number;
+  supplier_product_id: string;
+  supplier_product_name: string | null;
+  supplier_cost: number | null;
+  supplier_stock: number | null;
+  auto_order: boolean;
+  auto_sync_stock: boolean;
+  fallback_manual: boolean;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DBSupplierOrderLog = {
+  id: number;
+  supplier_id: number | null;
+  local_order_id: number | null;
+  local_product_id: number | null;
+  supplier_product_id: string | null;
+  status: 'pending' | 'success' | 'failed' | 'manual';
+  request_payload: Record<string, unknown>;
+  response_payload: Record<string, unknown>;
+  error: string | null;
+  created_at: string;
+};
+
 export type DBOrder = {
   id: number;
   user_id: number;
