@@ -547,6 +547,20 @@ export async function addCategory(name: string, emoji?: string): Promise<DBCateg
   return data as DBCategory;
 }
 
+export async function getOrCreateCategory(
+  name: string,
+  emoji?: string,
+): Promise<DBCategory> {
+  const { data: existing, error: lookupError } = await supabase
+    .from('categories')
+    .select('*')
+    .ilike('name', name)
+    .limit(1)
+    .maybeSingle();
+  if (!lookupError && existing) return existing as DBCategory;
+  return addCategory(name, emoji);
+}
+
 // ---------- Products ----------
 
 export async function listProducts(
@@ -573,7 +587,7 @@ export async function getProduct(id: number): Promise<DBProduct | null> {
 }
 
 export async function addProduct(p: {
-  category_id: number;
+  category_id: number | null;
   name: string;
   price: number;
   stock: number;
@@ -1241,6 +1255,9 @@ export type SupplierApiSourceInput = {
   order_status_json_path?: string;
   order_request_template?: Record<string, unknown>;
   enabled?: boolean;
+  auto_import_new_products?: boolean;
+  auto_import_active?: boolean;
+  import_category_name?: string | null;
   markup_percent?: number;
   fixed_markup?: number;
   low_balance_threshold?: number;
@@ -1393,6 +1410,41 @@ export async function getSupplierProductLinkByProduct(
     .maybeSingle();
   if (error) {
     logger.error({ err: error, localProductId }, 'getSupplierProductLinkByProduct failed');
+    throw error;
+  }
+  return (data as DBSupplierProductLink) ?? null;
+}
+
+export async function getSupplierProductLink(
+  id: number,
+): Promise<DBSupplierProductLink | null> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, id }, 'getSupplierProductLink failed');
+    throw error;
+  }
+  return (data as DBSupplierProductLink) ?? null;
+}
+
+export async function getSupplierProductLinkBySupplierProduct(
+  supplierId: number,
+  supplierProductId: string,
+): Promise<DBSupplierProductLink | null> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .select('*')
+    .eq('supplier_id', supplierId)
+    .eq('supplier_product_id', supplierProductId)
+    .maybeSingle();
+  if (error) {
+    logger.error(
+      { err: error, supplierId, supplierProductId },
+      'getSupplierProductLinkBySupplierProduct failed',
+    );
     throw error;
   }
   return (data as DBSupplierProductLink) ?? null;
