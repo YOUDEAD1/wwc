@@ -5,6 +5,7 @@
  * buttons + multi-step text input collected through `session.adminFlow`.
  */
 import { Composer, InlineKeyboard, InputFile, type MiddlewareFn } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
 import {
   addCategory,
   addPaymentMethod,
@@ -5751,6 +5752,29 @@ adminBot.callbackQuery('adm:promo:nameSkip', async (ctx) => {
 // Multi-step input handler — fired for any text msg from admin
 // when session.adminFlow is set.
 // ============================================================
+function telegramQuoteToMarkdown(
+  raw: string,
+  entities: ReadonlyArray<MessageEntity> | undefined | null,
+): string | null {
+  const quoteEntities = (entities ?? [])
+    .filter((entity) => entity.type === 'blockquote' || entity.type === 'expandable_blockquote')
+    .sort((a, b) => b.offset - a.offset);
+  if (quoteEntities.length === 0) return null;
+
+  let out = raw;
+  for (const entity of quoteEntities) {
+    const start = Math.max(0, Math.min(entity.offset, out.length));
+    const end = Math.max(start, Math.min(entity.offset + entity.length, out.length));
+    const body = out.slice(start, end);
+    const quoted = body
+      .split(/\r?\n/)
+      .map((line) => (line.startsWith('>') ? line : `> ${line}`))
+      .join('\n');
+    out = `${out.slice(0, start)}${quoted}${out.slice(end)}`;
+  }
+  return out.trim();
+}
+
 adminBot.on('message:text', async (ctx, next) => {
   const flow = ctx.session.adminFlow;
   if (!flow) return next();
@@ -5782,6 +5806,8 @@ adminBot.on('message:text', async (ctx, next) => {
   ).trim();
   const productRichText = (() => {
     const entities = ctx.message.entities ?? [];
+    const quoteMarkdown = telegramQuoteToMarkdown(ctx.message.text, entities);
+    if (quoteMarkdown) return quoteMarkdown;
     const hasTelegramFormatting = entities.some(
       (entity) => FORMAT_ENTITY_TYPES.has(entity.type) || entity.type === 'custom_emoji',
     );
