@@ -31,7 +31,7 @@ async function main() {
         res.end(JSON.stringify({ ok: false, error: 'internal_error' }));
       });
     });
-    server.listen(env.PORT, () => {
+    server.listen(env.PORT, '0.0.0.0', () => {
       logger.info({ port: env.PORT, mode: env.BOT_MODE }, 'HTTP server started');
     });
   };
