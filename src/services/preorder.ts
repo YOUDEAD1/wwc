@@ -71,6 +71,7 @@ export async function fulfillPendingPreordersForProduct(
     const t = (key: string, vars?: Record<string, string | number>) =>
       translate(lang, key, vars);
     const preorderPendingText = t('shop.buy.preorder_pending');
+    const publicId = publicOrderId(order);
 
     const locked = await tryStartPreorderFulfillment(order.id);
     if (!locked) continue;
@@ -95,6 +96,27 @@ export async function fulfillPendingPreordersForProduct(
             localProductId: productId,
             qty: order.qty,
             localOrderId: order.id,
+            onFailure: (failure) =>
+              adminLog.logSupplierOrderFailed(api, {
+                user: {
+                  telegram_id: order.user_id,
+                  username: user?.username ?? null,
+                  first_name: user?.first_name ?? null,
+                  email: user?.email ?? null,
+                },
+                orderDbId: order.id,
+                orderPublicId: publicId,
+                productId,
+                productName: order.product_name,
+                qty: order.qty,
+                total: Number(order.total),
+                paidVia: paidViaForPreorder(Number(order.total)),
+                balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+                supplierName: failure.supplierName,
+                supplierProductId: failure.supplierProductId,
+                reason: failure.error,
+                lowBalance: failure.lowBalance,
+              }).catch((err) => logger.warn({ err }, 'preorder: supplier failure admin log failed')),
           });
           if (!supplierOrder || supplierOrder.items.length === 0) {
             await restorePreorderPending(order.id, preorderPendingText);
@@ -120,7 +142,6 @@ export async function fulfillPendingPreordersForProduct(
       deliveredKb.row();
       inlineBtn(deliveredKb, lang, 'send_note_txt', `order:txt:${order.id}`);
 
-      const publicId = publicOrderId(order);
       const headerHasKeyboard = deliveredChunks.length <= 1;
       await safeSendHtml(
         api,
