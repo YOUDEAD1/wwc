@@ -143,6 +143,27 @@ export class ApiError extends Error {
   }
 }
 
+function isResellerApiMigrationError(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown };
+  const body = [e?.code, e?.message, e?.details, e?.hint].map(String).join(' ');
+  return (
+    body.includes('42P01') ||
+    body.includes('42703') ||
+    /reseller_api_(keys|orders)/i.test(body) ||
+    /relation .* does not exist/i.test(body) ||
+    /schema cache/i.test(body)
+  );
+}
+
+function throwResellerApiMigrationRequired(err: unknown): never {
+  logger.error({ err }, 'reseller API migration missing');
+  throw new ApiError(
+    503,
+    'migration_required',
+    'Reseller API database is not ready. Apply supabase/migrations/0036_reseller_api.sql first.',
+  );
+}
+
 function hashApiKey(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
@@ -378,7 +399,7 @@ export async function listAdminApiOrders(args: {
 }
 
 export async function getApiStatus(userId: number): Promise<ApiStatus> {
-  const [{ data: key }, user, { count: orderCount }, { data: orderRows }, { data: recentRows }] =
+  const [keyRes, user, orderCountRes, orderRowsRes, recentRowsRes] =
     await Promise.all([
       supabase
         .from('reseller_api_keys')
@@ -403,6 +424,15 @@ export async function getApiStatus(userId: number): Promise<ApiStatus> {
         .eq('user_id', userId)
         .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
     ]);
+  const apiErr = keyRes.error ?? orderCountRes.error ?? orderRowsRes.error ?? recentRowsRes.error;
+  if (apiErr) {
+    if (isResellerApiMigrationError(apiErr)) throwResellerApiMigrationRequired(apiErr);
+    throw apiErr;
+  }
+  const key = keyRes.data;
+  const orderCount = orderCountRes.count;
+  const orderRows = orderRowsRes.data;
+  const recentRows = recentRowsRes.data;
   const totalSpent = (orderRows ?? []).reduce(
     (sum, row: { total?: number | string }) => sum + Number(row.total ?? 0),
     0,
@@ -472,6 +502,7 @@ export async function authenticateApiKey(rawKey: string): Promise<{
     .maybeSingle();
   if (error) {
     logger.error({ err: error }, 'authenticateApiKey lookup failed');
+    if (isResellerApiMigrationError(error)) throwResellerApiMigrationRequired(error);
     throw new ApiError(500, 'auth_failed', 'API authentication failed.');
   }
   const key = data as ApiKeyRow | null;
