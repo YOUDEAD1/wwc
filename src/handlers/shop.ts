@@ -52,6 +52,7 @@ import {
 import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
 import { buildOrderDeliveredChunks } from '../services/orderRender.js';
+import { trySupplierAutoOrder } from '../services/supplierApi.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
 import { sendInvoiceEmail } from '../services/mailer.js';
@@ -374,7 +375,18 @@ async function finalizeOrderDelivery(args: {
   // pool. When the pool is empty (or short), fall back to a
   // "manual delivery" placeholder; the admin gets pinged via
   // logOrderCreated either way.
-  const claimed = preorder ? [] : await claimProductItems(p.id, qty, order.id);
+  const supplierOrder = preorder
+    ? null
+    : await trySupplierAutoOrder({
+        localProductId: p.id,
+        qty,
+        localOrderId: order.id,
+      });
+  const claimed = preorder
+    ? []
+    : supplierOrder
+      ? supplierOrder.items
+      : await claimProductItems(p.id, qty, order.id);
   const publicId = publicOrderId(order);
   // Items are rendered as Telegram blockquote pills (one `> line`
   // per claimed link / account) — same style as the View Note
