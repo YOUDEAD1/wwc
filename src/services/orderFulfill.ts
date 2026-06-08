@@ -37,6 +37,7 @@ import { sendInvoiceEmail } from './mailer.js';
 import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
 import { buildOrderDeliveredChunks } from './orderRender.js';
+import { trySupplierAutoOrder } from './supplierApi.js';
 import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
 import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { t as translate } from '../i18n/index.js';
@@ -131,13 +132,22 @@ export async function fulfilOrderForDeposit(args: {
   if (!preorder) {
     await decrementProductStock(intent.product_id, intent.qty);
   }
+  const supplierOrder = preorder
+    ? null
+    : await trySupplierAutoOrder({
+        localProductId: intent.product_id,
+        qty: intent.qty,
+        localOrderId: order.id,
+      });
   const claimed = preorder
     ? []
-    : await claimProductItems(
-        intent.product_id,
-        intent.qty,
-        order.id,
-      );
+    : supplierOrder
+      ? supplierOrder.items
+      : await claimProductItems(
+          intent.product_id,
+          intent.qty,
+          order.id,
+        );
   const publicId = publicOrderId(order);
   // Match the wallet-pay layout: split the items into 7-per-chunk
   // messages so the Order Delivered card never blows past Telegram's
