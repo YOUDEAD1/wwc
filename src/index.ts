@@ -7,10 +7,12 @@ import {
   handleHealthRequest,
   handleResellerApiRequest,
 } from './services/resellerApiHttp.js';
+import { startSupplierStockSyncLoop } from './services/supplierAutoSync.js';
 
 async function main() {
   const bot = await buildBot();
   logMailerStatus();
+  startSupplierStockSyncLoop(bot.api);
 
   const startHttpServer = (telegramHandler?: http.RequestListener) => {
     const server = http.createServer((req, res) => {
