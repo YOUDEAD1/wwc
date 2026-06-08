@@ -36,6 +36,7 @@ function premiumButton(
 }
 
 const API_BUTTON_ICON_IDS = {
+  // Owner-provided premium emoji ids for the reseller API panel buttons.
   key: '5375338737028841420',
   disable: '5040042498634810056',
   docs: '5042306247047513767',
