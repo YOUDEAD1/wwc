@@ -1043,10 +1043,17 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // Per bot-owner request the per-product file attachment was
     // removed — this keeps the screen consistent and avoids
     // file_id-expiry edge cases.
-    await ctx.editMessageText(html, {
-      parse_mode: 'HTML',
-      reply_markup: kb,
-    });
+    const safeHtml = clampForTelegram(html);
+    try {
+      await ctx.editMessageText(safeHtml, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } catch (err) {
+      logger.warn({ err, productId: p.id }, 'View Note HTML render failed; falling back to plain text');
+      const plain = htmlToPlain(safeHtml).slice(0, 3900);
+      await ctx.editMessageText(plain, { reply_markup: kb });
+    }
   });
 
   // ---- Using Method tutorial ----
