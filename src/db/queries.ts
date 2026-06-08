@@ -19,6 +19,11 @@ import type {
   DeliveryFieldSpec,
   PaymentProvider,
   OrderIntent,
+  DBSupplierApiSource,
+  DBSupplierProductLink,
+  DBSupplierOrderLog,
+  SupplierAuthMode,
+  SupplierOrderMethod,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -1211,6 +1216,243 @@ export async function decrementProductStock(id: number, qty: number): Promise<vo
       'applyStockTransition after decrementProductStock failed',
     );
   });
+}
+
+// ---------- Upstream supplier APIs ----------
+
+export type SupplierApiSourceInput = {
+  name: string;
+  base_url: string;
+  api_key?: string;
+  auth_mode?: SupplierAuthMode;
+  key_header?: string;
+  key_query_param?: string;
+  products_path?: string;
+  balance_path?: string;
+  order_path?: string;
+  order_method?: SupplierOrderMethod;
+  balance_json_path?: string;
+  products_json_path?: string;
+  product_id_json_path?: string;
+  product_name_json_path?: string;
+  product_price_json_path?: string;
+  product_stock_json_path?: string;
+  order_items_json_path?: string;
+  order_status_json_path?: string;
+  order_request_template?: Record<string, unknown>;
+  enabled?: boolean;
+  markup_percent?: number;
+  fixed_markup?: number;
+  low_balance_threshold?: number;
+  notes?: string | null;
+};
+
+export type SupplierProductLinkInput = {
+  local_product_id: number;
+  supplier_id: number;
+  supplier_product_id: string;
+  supplier_product_name?: string | null;
+  supplier_cost?: number | null;
+  supplier_stock?: number | null;
+  auto_order?: boolean;
+  auto_sync_stock?: boolean;
+  fallback_manual?: boolean;
+};
+
+export async function createSupplierApiSource(
+  input: SupplierApiSourceInput,
+): Promise<DBSupplierApiSource> {
+  const { data, error } = await supabase
+    .from('supplier_api_sources')
+    .insert(input)
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, input: { ...input, api_key: input.api_key ? '[redacted]' : '' } }, 'createSupplierApiSource failed');
+    throw error ?? new Error('createSupplierApiSource failed');
+  }
+  return data as DBSupplierApiSource;
+}
+
+export async function updateSupplierApiSource(
+  id: number,
+  patch: Partial<SupplierApiSourceInput> & {
+    last_balance?: number | null;
+    last_sync_at?: string | null;
+    last_error?: string | null;
+  },
+): Promise<void> {
+  const payload = { ...patch, updated_at: new Date().toISOString() };
+  const { error } = await supabase
+    .from('supplier_api_sources')
+    .update(payload)
+    .eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'updateSupplierApiSource failed');
+    throw error;
+  }
+}
+
+export async function listSupplierApiSources(
+  page = 0,
+  perPage = 20,
+): Promise<{ rows: DBSupplierApiSource[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count, error } = await supabase
+    .from('supplier_api_sources')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  if (error) {
+    logger.error({ err: error }, 'listSupplierApiSources failed');
+    throw error;
+  }
+  return { rows: (data ?? []) as DBSupplierApiSource[], total: count ?? 0 };
+}
+
+export async function getSupplierApiSource(
+  id: number,
+): Promise<DBSupplierApiSource | null> {
+  const { data, error } = await supabase
+    .from('supplier_api_sources')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, id }, 'getSupplierApiSource failed');
+    throw error;
+  }
+  return (data as DBSupplierApiSource) ?? null;
+}
+
+export async function deleteSupplierApiSource(id: number): Promise<void> {
+  const { error } = await supabase.from('supplier_api_sources').delete().eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'deleteSupplierApiSource failed');
+    throw error;
+  }
+}
+
+export async function upsertSupplierProductLink(
+  input: SupplierProductLinkInput,
+): Promise<DBSupplierProductLink> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .upsert(input, { onConflict: 'local_product_id' })
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, input }, 'upsertSupplierProductLink failed');
+    throw error ?? new Error('upsertSupplierProductLink failed');
+  }
+  return data as DBSupplierProductLink;
+}
+
+export async function updateSupplierProductLink(
+  id: number,
+  patch: Partial<Omit<SupplierProductLinkInput, 'local_product_id'>> & {
+    last_sync_at?: string | null;
+    last_error?: string | null;
+  },
+): Promise<void> {
+  const payload = { ...patch, updated_at: new Date().toISOString() };
+  const { error } = await supabase
+    .from('supplier_product_links')
+    .update(payload)
+    .eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'updateSupplierProductLink failed');
+    throw error;
+  }
+}
+
+export async function listSupplierProductLinks(
+  supplierId?: number,
+): Promise<DBSupplierProductLink[]> {
+  let q = supabase
+    .from('supplier_product_links')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (supplierId !== undefined) q = q.eq('supplier_id', supplierId);
+  const { data, error } = await q;
+  if (error) {
+    logger.error({ err: error, supplierId }, 'listSupplierProductLinks failed');
+    throw error;
+  }
+  return (data ?? []) as DBSupplierProductLink[];
+}
+
+export async function getSupplierProductLinkByProduct(
+  localProductId: number,
+): Promise<DBSupplierProductLink | null> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .select('*')
+    .eq('local_product_id', localProductId)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, localProductId }, 'getSupplierProductLinkByProduct failed');
+    throw error;
+  }
+  return (data as DBSupplierProductLink) ?? null;
+}
+
+export async function deleteSupplierProductLink(id: number): Promise<void> {
+  const { error } = await supabase.from('supplier_product_links').delete().eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'deleteSupplierProductLink failed');
+    throw error;
+  }
+}
+
+export async function recordSupplierOrderLog(input: {
+  supplier_id?: number | null;
+  local_order_id?: number | null;
+  local_product_id?: number | null;
+  supplier_product_id?: string | null;
+  status: DBSupplierOrderLog['status'];
+  request_payload?: Record<string, unknown>;
+  response_payload?: Record<string, unknown>;
+  error?: string | null;
+}): Promise<DBSupplierOrderLog> {
+  const { data, error } = await supabase
+    .from('supplier_order_logs')
+    .insert({
+      supplier_id: input.supplier_id ?? null,
+      local_order_id: input.local_order_id ?? null,
+      local_product_id: input.local_product_id ?? null,
+      supplier_product_id: input.supplier_product_id ?? null,
+      status: input.status,
+      request_payload: input.request_payload ?? {},
+      response_payload: input.response_payload ?? {},
+      error: input.error ?? null,
+    })
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.warn({ err: error, input }, 'recordSupplierOrderLog failed');
+    throw error ?? new Error('recordSupplierOrderLog failed');
+  }
+  return data as DBSupplierOrderLog;
+}
+
+export async function listSupplierOrderLogs(
+  supplierId?: number,
+  limit = 10,
+): Promise<DBSupplierOrderLog[]> {
+  let q = supabase
+    .from('supplier_order_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (supplierId !== undefined) q = q.eq('supplier_id', supplierId);
+  const { data, error } = await q;
+  if (error) {
+    logger.error({ err: error, supplierId }, 'listSupplierOrderLogs failed');
+    throw error;
+  }
+  return (data ?? []) as DBSupplierOrderLog[];
 }
 
 // ---------- Per-user price overrides ----------
