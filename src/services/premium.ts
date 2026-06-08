@@ -278,7 +278,7 @@ function mdToHtml(md: string): string {
   return s;
 }
 
-type HtmlTagSpec = { open: string; close: string; length: number };
+type HtmlTagSpec = { open: string; close: string; length: number; priority: number };
 
 export const HTML_ENTITY_TYPES = new Set<MessageEntity['type']>([
   'bold',
@@ -302,43 +302,49 @@ export const FORMAT_ENTITY_TYPES = new Set<MessageEntity['type']>([
   'underline',
   'strikethrough',
   'spoiler',
+  'blockquote',
+  'expandable_blockquote',
   'code',
   'pre',
   'text_link',
   'text_mention',
+  'url',
+  'custom_emoji',
 ]);
 
 function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | null {
   switch (entity.type) {
     case 'bold':
-      return { open: '<b>', close: '</b>', length: entity.length };
+      return { open: '<b>', close: '</b>', length: entity.length, priority: 20 };
     case 'italic':
-      return { open: '<i>', close: '</i>', length: entity.length };
+      return { open: '<i>', close: '</i>', length: entity.length, priority: 20 };
     case 'underline':
-      return { open: '<u>', close: '</u>', length: entity.length };
+      return { open: '<u>', close: '</u>', length: entity.length, priority: 20 };
     case 'strikethrough':
-      return { open: '<s>', close: '</s>', length: entity.length };
+      return { open: '<s>', close: '</s>', length: entity.length, priority: 20 };
     case 'spoiler':
-      return { open: '<span class="tg-spoiler">', close: '</span>', length: entity.length };
+      return { open: '<tg-spoiler>', close: '</tg-spoiler>', length: entity.length, priority: 20 };
     case 'blockquote':
-      return { open: '<blockquote>', close: '</blockquote>', length: entity.length };
+      return { open: '<blockquote>', close: '</blockquote>', length: entity.length, priority: 0 };
     case 'expandable_blockquote':
-      return { open: '<blockquote expandable>', close: '</blockquote>', length: entity.length };
+      return { open: '<blockquote expandable>', close: '</blockquote>', length: entity.length, priority: 0 };
     case 'code':
-      return { open: '<code>', close: '</code>', length: entity.length };
+      return { open: '<code>', close: '</code>', length: entity.length, priority: 30 };
     case 'pre':
-      return { open: '<pre>', close: '</pre>', length: entity.length };
+      return { open: '<pre>', close: '</pre>', length: entity.length, priority: 10 };
     case 'text_link':
       return {
         open: `<a href="${escapeHtmlAttr(entity.url ?? '')}">`,
         close: '</a>',
         length: entity.length,
+        priority: 15,
       };
     case 'text_mention':
       return {
         open: `<a href="tg://user?id=${escapeHtmlAttr(String(entity.user?.id ?? ''))}">`,
         close: '</a>',
         length: entity.length,
+        priority: 15,
       };
     case 'url': {
       const url = source.slice(entity.offset, entity.offset + entity.length);
@@ -346,6 +352,7 @@ function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | n
         open: `<a href="${escapeHtmlAttr(url)}">`,
         close: '</a>',
         length: entity.length,
+        priority: 15,
       };
     }
     case 'custom_emoji':
@@ -353,6 +360,7 @@ function entityToHtmlTag(entity: MessageEntity, source: string): HtmlTagSpec | n
         open: `<tg-emoji emoji-id="${escapeHtmlAttr(entity.custom_emoji_id ?? '')}">`,
         close: '</tg-emoji>',
         length: entity.length,
+        priority: 40,
       };
     default:
       return null;
@@ -378,9 +386,16 @@ export function entitiesToHtml(
     opens.get(start)!.push(tag);
     closes.get(end)!.push(tag);
   }
-  // Sort so outer tags open before inner, and inner tags close before outer.
-  for (const list of opens.values()) list.sort((a, b) => b.length - a.length);
-  for (const list of closes.values()) list.sort((a, b) => a.length - b.length);
+  // Sort so outer tags open before inner, and inner tags close before
+  // outer. For equal ranges, blockquote stays outermost while inline
+  // formatting/custom emoji stays inside it; otherwise Telegram can
+  // reject the HTML when an admin applies quote + bold to the same text.
+  for (const list of opens.values()) {
+    list.sort((a, b) => b.length - a.length || a.priority - b.priority);
+  }
+  for (const list of closes.values()) {
+    list.sort((a, b) => a.length - b.length || b.priority - a.priority);
+  }
 
   let out = '';
   for (let i = 0; i <= text.length; i++) {
