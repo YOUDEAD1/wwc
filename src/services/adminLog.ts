@@ -300,6 +300,62 @@ export async function logOrderCreated(api: Api, args: {
   await send(api, body, 'orders');
 }
 
+export async function logSupplierOrderFailed(api: Api, args: {
+  user: LogUser;
+  orderDbId: number;
+  orderPublicId: string;
+  productId: number;
+  productName: string;
+  qty: number;
+  total: number;
+  paidVia: string;
+  balanceAfter: number;
+  supplierName: string;
+  supplierProductId: string;
+  reason: string;
+  lowBalance: boolean;
+}): Promise<void> {
+  const body = compose({
+    tag: 'SUPPLIER',
+    title: args.lowBalance
+      ? 'Supplier Balance Low - Send Manual'
+      : 'Supplier Auto Delivery Failed - Send Manual',
+    user: args.user,
+    headerLines: [
+      `🆔 Order ID# :: <code>${args.orderPublicId}</code>`,
+      `Internal DB ID: ${args.orderDbId}`,
+    ],
+    bodyLines: [
+      '🚨 <b>Supplier Auto Delivery Alert</b>',
+      args.lowBalance
+        ? '<b>Reason: supplier balance is low.</b>'
+        : '<b>Reason: supplier API did not deliver.</b>',
+      '',
+      '📦 <b>Order</b>',
+      `Product ID: ${args.productId}`,
+      `Product: ${escapeHtml(args.productName)}`,
+      `Quantity: ${args.qty} unit${args.qty === 1 ? '' : 's'}`,
+      `Total: ${args.total} USDT`,
+      `Paid Via: ${escapeHtml(args.paidVia)}`,
+      '',
+      '🔌 <b>Supplier</b>',
+      `Name: ${escapeHtml(args.supplierName)}`,
+      `Supplier Product ID: <code>${escapeHtml(args.supplierProductId)}</code>`,
+      `Error: ${escapeHtml(clampForLog(args.reason, 700))}`,
+      '',
+      '🛠 <b>Action Needed:</b> send manual delivery to the buyer.',
+      '',
+      '👛 <b>Wallet</b>',
+      `💳 Balance After: ${args.balanceAfter} USDT`,
+    ],
+  });
+  const kb = new InlineKeyboard()
+    .text('📦 Open Product', `adm:prod:edit:${args.productId}:0`)
+    .row()
+    .text('👤 Open User', `adm:usr:v:${args.user.telegram_id}`);
+  await send(api, body, 'orders', kb);
+}
+
 
 
 /**
