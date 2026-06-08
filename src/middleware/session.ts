@@ -80,6 +80,7 @@ export type AdminFlow =
   | { type: 'edit_product_emoji'; step: 'premium'; data: { product_id: number; page: number } }
   | { type: 'edit_product_note_text'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_description'; step: 'text'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_warranty'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_text'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_file'; step: 'file'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_url'; step: 'url'; data: { product_id: number; page: number } }
