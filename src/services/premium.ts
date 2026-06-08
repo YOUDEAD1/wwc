@@ -608,6 +608,16 @@ export function htmlToPlain(html: string): string {
 }
 
 /**
+ * Keep Telegram formatting but degrade premium emoji tags to their
+ * unicode fallback. This is useful when Telegram rejects one custom
+ * emoji id: retrying with plain text would also lose bold/quote/link
+ * formatting, while this preserves the rest of the admin-authored body.
+ */
+export function stripCustomEmojiTags(html: string): string {
+  return html.replace(/<tg-emoji\b[^>]*>([\s\S]*?)<\/tg-emoji>/g, '$1');
+}
+
+/**
  * Conservative URL sanitiser for inline `url:` keyboard buttons.
  *
  * Returns the trimmed URL when it parses as a valid `http(s)://` or
