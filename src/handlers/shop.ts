@@ -121,8 +121,6 @@ function htmlBlockquoteToMarkdown(raw: string): string | null {
 function renderStoredProductText(raw: string | null | undefined, fallbackMarkdown: string): string {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return renderMdHtml(fallbackMarkdown);
-  const quoteMarkdown = htmlBlockquoteToMarkdown(trimmed);
-  if (quoteMarkdown) return renderMdHtml(quoteMarkdown);
   return STORED_HTML_RX.test(trimmed)
     ? renderHtmlTemplate(trimmed)
     : renderMdHtml(trimmed);
