@@ -49,6 +49,10 @@ import {
   clearAllUserPriceOverrides,
   countProductPriceOverrides,
   clearAllProductPriceOverrides,
+  addReferralAdjustment,
+  getReferralBalance,
+  listReferralAdminRows,
+  resetReferralUsage,
   getProduct,
   setDepositAmount,
   setDepositStatus,
@@ -135,6 +139,7 @@ import {
   injectCustomEmojiMarkers,
   renderHtmlTemplate,
   renderMdHtml,
+  stripCustomEmojiTags,
 } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
@@ -225,6 +230,9 @@ function rootMenu(): InlineKeyboard {
     .text('👥 Users', 'adm:usr:0')
     .text('📣 Broadcast', 'adm:ann')
     .row()
+    .text('🎁 Referrals', 'adm:refs:0')
+    .text('🧾 Orders', 'adm:ord:0')
+    .row()
     .text('🎨 Customize', 'adm:cust')
     .text('⚙️ Bot Settings', 'adm:bot')
     .row()
@@ -232,9 +240,8 @@ function rootMenu(): InlineKeyboard {
     .text('📊 Stats', 'adm:stats')
     .row()
     .text('🔌 API', 'adm:api')
-    .text('🧾 Orders', 'adm:ord:0')
-    .row()
     .text('💸 Promos', 'adm:promo')
+    .row()
     .text('🎁 Gift Codes', 'adm:gift')
     .row()
     .text('💎 Custom Prices', 'adm:price')
@@ -4802,10 +4809,18 @@ async function showAnnounceConfirm(ctx: AppCtx): Promise<void> {
       `\n   • Color: <code>${buy.color}</code>` +
       `\n   • Icon: ${buy.icon_unicode ? `${buy.icon_unicode} (premium)` : '<i>none</i>'}`
     : '\n\n<i>No Buy button attached. Tap “Add Buy Button” to deep-link an announcement to a specific product.</i>';
-  await ctx.reply(previewHtml, {
-    parse_mode: 'HTML',
-    reply_markup: announceBroadcastKeyboard(buy),
-  });
+  try {
+    await ctx.reply(previewHtml, {
+      parse_mode: 'HTML',
+      reply_markup: announceBroadcastKeyboard(buy),
+    });
+  } catch (err) {
+    logger.warn({ err }, 'announce preview render failed; retrying without custom emoji tags');
+    await ctx.reply(stripCustomEmojiTags(previewHtml), {
+      parse_mode: 'HTML',
+      reply_markup: announceBroadcastKeyboard(buy),
+    });
+  }
   await ctx.reply(`📣 <b>Confirm broadcast</b>${buyLine}`, {
     parse_mode: 'HTML',
     reply_markup: announceConfirmKeyboard(recipients.length, buy),
@@ -5138,10 +5153,18 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
       // grammyjs InlineKeyboard is mutable, and reusing the same
       // instance across `sendMessage` calls is unsafe.
       const reply_markup = announceBroadcastKeyboard(buy);
-      await ctx.api.sendMessage(r.telegram_id, html, {
-        parse_mode: 'HTML',
-        ...(reply_markup ? { reply_markup } : {}),
-      });
+      try {
+        await ctx.api.sendMessage(r.telegram_id, html, {
+          parse_mode: 'HTML',
+          ...(reply_markup ? { reply_markup } : {}),
+        });
+      } catch (err) {
+        logger.warn({ err, user: r.telegram_id }, 'announce send HTML failed; retrying without custom emoji tags');
+        await ctx.api.sendMessage(r.telegram_id, stripCustomEmojiTags(html), {
+          parse_mode: 'HTML',
+          ...(reply_markup ? { reply_markup } : {}),
+        });
+      }
       ok++;
     } catch (err) {
       fail++;
@@ -5351,6 +5374,214 @@ adminBot.callbackQuery(/^adm:usr:unban:(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: '♻️ User unbanned.' });
   const u = await findUserById(id);
   if (u) await showUserCard(ctx, u);
+});
+
+// ============================================================
+// Referral Admin — view/correct available referral balances.
+// ============================================================
+
+const REFERRAL_ADMIN_PER_PAGE = 7;
+
+function referralUserLabel(user: DBUser): string {
+  if (user.username) return `@${user.username}`;
+  if (user.first_name) return user.first_name;
+  return `id ${user.telegram_id}`;
+}
+
+async function showReferralAdminList(ctx: AppCtx, page: number): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const { rows, total } = await listReferralAdminRows(page, REFERRAL_ADMIN_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(total / REFERRAL_ADMIN_PER_PAGE));
+  const lines = [
+    '🎁 <b>Referral Control</b>',
+    '',
+    'View available refs, correct balances, or reset used Referral Pay records.',
+    'The + / - buttons require migration <code>0039_referral_admin_adjustments.sql</code>.',
+    '',
+  ];
+  const kb = new InlineKeyboard();
+  for (const row of rows) {
+    const label = referralUserLabel(row.user);
+    lines.push(
+      `<code>${row.user.telegram_id}</code> ${escapeHtml(label)}  •  ` +
+        `available <b>${row.balance.available}</b> / total ${row.balance.total} / used ${row.balance.spent}`,
+    );
+    kb.text(
+      `${label.slice(0, 18)} • ${row.balance.available} refs`,
+      `adm:refs:v:${row.user.telegram_id}`,
+    ).row();
+  }
+  if (rows.length === 0) lines.push('<i>No users found.</i>');
+  if (page > 0) kb.text('◀️ Prev', `adm:refs:${page - 1}`);
+  if (page + 1 < totalPages) kb.text('Next ▶️', `adm:refs:${page + 1}`);
+  if (totalPages > 1) kb.row();
+  kb.text('🔍 Find User', 'adm:refs:find')
+    .text('♻️ Reset All Used', 'adm:refs:resetall:ask')
+    .row();
+  kb.text('🔄 Refresh', `adm:refs:${page}`).text('⬅️ Back', 'adm:root');
+  const body = lines.join('\n');
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(body, { parse_mode: 'HTML', reply_markup: kb });
+  } else {
+    await ctx.reply(body, { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+async function showReferralAdminUser(ctx: AppCtx, user: DBUser): Promise<void> {
+  const balance = await getReferralBalance(user.telegram_id);
+  const label = referralUserLabel(user);
+  const lines = [
+    '🎁 <b>Referral User</b>',
+    '',
+    `User: ${escapeHtml(label)}`,
+    `Telegram ID: <code>${user.telegram_id}</code>`,
+    '',
+    `Available Refs: <b>${balance.available}</b>`,
+    `Total Active Refs: <b>${balance.total}</b>`,
+    `Used / Converted: <b>${balance.spent}</b>`,
+    '',
+    'Use + / - for admin corrections. Reset removes this user\'s referral usage/adjustments, not the real invited-user rows.',
+  ];
+  const kb = new InlineKeyboard()
+    .text('➕ +1 Ref', `adm:refs:adj:${user.telegram_id}:1`)
+    .text('➖ -1 Ref', `adm:refs:adj:${user.telegram_id}:-1`)
+    .row()
+    .text('✍️ Custom +/-', `adm:refs:custom:${user.telegram_id}`)
+    .row()
+    .text('♻️ Reset User Used Refs', `adm:refs:reset:${user.telegram_id}:ask`)
+    .row()
+    .text('⬅️ Back to Referrals', 'adm:refs:0')
+    .text('🏠 Main', 'adm:root');
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  } else {
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+async function applyReferralAdjustmentAndShow(
+  ctx: AppCtx,
+  telegramId: number,
+  delta: number,
+): Promise<void> {
+  const user = await findUserById(telegramId);
+  if (!user) {
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: 'User not found.', show_alert: true });
+    } else {
+      await ctx.reply('User not found.');
+    }
+    return;
+  }
+  try {
+    await addReferralAdjustment({
+      user_id: telegramId,
+      delta,
+      reason: `admin ${delta > 0 ? 'add' : 'deduct'} referral balance`,
+      created_by: ctx.from!.id,
+    });
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: `Referral balance ${delta > 0 ? '+' : ''}${delta}` });
+    }
+    await showReferralAdminUser(ctx, user);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const text =
+      msg === 'REFERRAL_ADJUSTMENTS_MIGRATION_REQUIRED'
+        ? 'Run migration 0039_referral_admin_adjustments.sql first.'
+        : 'Could not adjust referral balance.';
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text, show_alert: true });
+    } else {
+      await ctx.reply(`❌ ${text}`);
+    }
+  }
+}
+
+adminBot.callbackQuery(/^adm:refs:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showReferralAdminList(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery('adm:refs:find', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'referral_find_user', step: 'query', data: {} };
+  await ctx.editMessageText(
+    '🔍 <b>Find Referral User</b>\n\nSend Telegram numeric ID or @username.\n\nSend /cancel to abort.',
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery(/^adm:refs:v:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await findUserById(Number(ctx.match[1]));
+  if (!user) {
+    await ctx.editMessageText('User not found.', { reply_markup: backRow(new InlineKeyboard()) });
+    return;
+  }
+  await showReferralAdminUser(ctx, user);
+});
+
+adminBot.callbackQuery(/^adm:refs:adj:(\d+):(-?\d+)$/, async (ctx) => {
+  await applyReferralAdjustmentAndShow(ctx, Number(ctx.match[1]), Number(ctx.match[2]));
+});
+
+adminBot.callbackQuery(/^adm:refs:custom:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const telegramId = Number(ctx.match[1]);
+  ctx.session.adminFlow = { type: 'referral_adjust', step: 'delta', data: { telegram_id: telegramId } };
+  await ctx.editMessageText(
+    `✍️ <b>Custom Referral Adjustment</b>\n\nUser: <code>${telegramId}</code>\nSend an integer like <code>5</code> or <code>-3</code>.\n\nSend /cancel to abort.`,
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery(/^adm:refs:reset:(\d+):ask$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const telegramId = Number(ctx.match[1]);
+  const kb = new InlineKeyboard()
+    .text('✅ Yes, reset this user', `adm:refs:reset:${telegramId}:do`)
+    .row()
+    .text('⬅️ Cancel', `adm:refs:v:${telegramId}`);
+  await ctx.editMessageText(
+    `⚠️ <b>Reset referral usage?</b>\n\nThis clears used Referral Pay records, conversions, and admin adjustments for <code>${telegramId}</code>. Real invited-user rows stay untouched.`,
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:refs:reset:(\d+):do$/, async (ctx) => {
+  const telegramId = Number(ctx.match[1]);
+  const user = await findUserById(telegramId);
+  if (!user) {
+    await ctx.answerCallbackQuery({ text: 'User not found.', show_alert: true });
+    return;
+  }
+  const result = await resetReferralUsage(telegramId);
+  await ctx.answerCallbackQuery({
+    text: `Reset ${result.redemptions + result.conversions + result.adjustments} row(s).`,
+  });
+  await showReferralAdminUser(ctx, user);
+});
+
+adminBot.callbackQuery('adm:refs:resetall:ask', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const kb = new InlineKeyboard()
+    .text('✅ Yes, reset ALL used refs', 'adm:refs:resetall:do')
+    .row()
+    .text('⬅️ Cancel', 'adm:refs:0');
+  await ctx.editMessageText(
+    '⚠️ <b>Reset ALL referral usage?</b>\n\nThis clears every user\'s Referral Pay usage, referral conversions, and admin adjustments. Real invited-user rows stay untouched.',
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:refs:resetall:do', async (ctx) => {
+  const result = await resetReferralUsage();
+  await ctx.answerCallbackQuery({
+    text: `Reset ${result.redemptions + result.conversions + result.adjustments} row(s).`,
+    show_alert: true,
+  });
+  await showReferralAdminList(ctx, 0);
 });
 
 // ============================================================
@@ -8140,6 +8371,33 @@ adminBot.on('message:text', async (ctx, next) => {
         return;
       }
       await showUserCard(ctx, user);
+      return;
+    }
+
+    if (flow.type === 'referral_find_user') {
+      const query = text.replace(/^@/, '');
+      const user = /^\d+$/.test(query)
+        ? await findUserById(Number(query))
+        : await findUserByUsername(query);
+      ctx.session.adminFlow = undefined;
+      if (!user) {
+        await ctx.reply('No user found.', { reply_markup: rootMenu() });
+        return;
+      }
+      await showReferralAdminUser(ctx, user);
+      return;
+    }
+
+    if (flow.type === 'referral_adjust') {
+      const delta = Number(text);
+      if (!Number.isInteger(delta) || delta === 0) {
+        await ctx.reply('❌ Send a non-zero integer, like `5` or `-3`.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await applyReferralAdjustmentAndShow(ctx, flow.data.telegram_id, delta);
       return;
     }
 
