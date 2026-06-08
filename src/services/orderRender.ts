@@ -83,6 +83,13 @@ function bulkOnlyPill(total: number): string {
   return `> 📎 ${total} items — see attached file`;
 }
 
+function quotePayload(payload: string): string {
+  return payload
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+
 /**
  * Try to render `items` inline using `renderBlock`. When the full
  * render exceeds the inline budget OR the item count crosses the
@@ -141,7 +148,7 @@ export function buildOrderDeliveredItemsBlock(
   const filename = opts.filename ?? 'delivered-items.txt';
   const attachText = items.join('\n') + '\n';
   const renderBlock = (xs: string[]) =>
-    xs.map((it) => `> ${it}`).join('\n>\n');
+    xs.map((it) => quotePayload(it)).join('\n>\n');
   return pickPreview(items, renderBlock, '\n>\n', attachText, filename);
 }
 
@@ -184,7 +191,7 @@ export function buildOrderDeliveredChunks(
   for (let i = 0; i < items.length; i += size) {
     const slice = items.slice(i, i + size);
     chunks.push({
-      inlineBlock: slice.map((it) => `> ${it}`).join('\n>\n'),
+      inlineBlock: slice.map((it) => quotePayload(it)).join('\n>\n'),
       isFirst: i === 0,
       isLast: i + size >= items.length,
     });
@@ -215,7 +222,7 @@ export function buildOrderDetailReceivedBlock(
       .map((item, i) => {
         const n = i + 1;
         const inner = URL_RE.test(item) ? `[Open Link #${n}](${item})` : item;
-        return `> #${n}\n> ${inner}`;
+        return `> #${n}\n${quotePayload(inner)}`;
       })
       .join('\n\n');
   return pickPreview(items, renderBlock, '\n\n', attachText, filename);
