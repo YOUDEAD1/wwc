@@ -620,13 +620,7 @@ export async function syncSupplierProductLink(link: DBSupplierProductLink): Prom
   let updatedLocal = false;
   const local = await getProduct(link.local_product_id);
   if (local && link.auto_sync_stock && matched.stock !== null) {
-    const patch: { stock?: number; price?: number } = { stock: matched.stock };
-    if (matched.price !== null) {
-      patch.price = Number(
-        (matched.price * (1 + Number(source.markup_percent) / 100) + Number(source.fixed_markup)).toFixed(3),
-      );
-    }
-    await updateProduct(link.local_product_id, patch);
+    await updateProduct(link.local_product_id, { stock: matched.stock });
     updatedLocal = true;
   }
   return { matched, updatedLocal };
