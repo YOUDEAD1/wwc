@@ -249,6 +249,8 @@ export type AdminFlow =
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
+  | { type: 'referral_find_user'; step: 'query'; data: Record<string, never> }
+  | { type: 'referral_adjust'; step: 'delta'; data: { telegram_id: number } }
   | {
       // Step 1 of the Custom-Prices flow — admin entered the menu and
       // is being asked to identify which user the overrides apply to.
