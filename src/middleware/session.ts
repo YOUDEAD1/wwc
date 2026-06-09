@@ -184,6 +184,7 @@ export type AdminFlow =
   | { type: 'set_color_glyph'; step: 'value'; data: { mode: string } }
   | { type: 'supplier_api_add'; step: 'json'; data: Record<string, never> }
   | { type: 'supplier_canboso_add'; step: 'key'; data: Record<string, never> }
+  | { type: 'supplier_reseller_add'; step: 'key'; data: Record<string, never> }
   | { type: 'supplier_product_link_add'; step: 'json'; data: { supplier_id?: number } }
   | { type: 'announce'; step: 'text'; data: Record<string, never> }
   | {
