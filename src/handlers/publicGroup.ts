@@ -9,6 +9,8 @@ import {
 import { escapeAttr, renderHtmlTemplate } from '../services/premium.js';
 import { logger } from '../logger.js';
 
+const BUY_BUTTON_ICON_ID = '5440841102871517055';
+
 function normalized(text: string): string {
   return text
     .toLowerCase()
@@ -25,6 +27,14 @@ function isConfiguredFeedChat(ctx: AppCtx): boolean {
   const wanted = configured.replace(/^@/, '').toLowerCase();
   const username = 'username' in chat ? chat.username?.toLowerCase() : undefined;
   return username === wanted;
+}
+
+function productIconHtml(product: { emoji?: string | null; emoji_id?: string | null }): string {
+  const glyph = product.emoji && product.emoji !== '🛒' ? product.emoji : '';
+  if (!glyph) return '';
+  return product.emoji_id
+    ? `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(glyph)}</tg-emoji> `
+    : `${escapeAttr(glyph)} `;
 }
 
 export function registerPublicGroup(bot: Bot<AppCtx>): void {
@@ -62,22 +72,22 @@ export function registerPublicGroup(bot: Bot<AppCtx>): void {
       const kb = new InlineKeyboard();
       for (const { product } of matches) {
         kb.url(
-          `Buy ${product.emoji ?? ''} ${product.name}`.replace(/\s+/g, ' ').slice(0, 64),
+          `Buy ${product.name}`.replace(/\s+/g, ' ').slice(0, 64),
           publicFeedBotUrl(`prod_${product.id}`),
         );
-        if (product.emoji_id) kb.icon(product.emoji_id);
+        kb.icon(BUY_BUTTON_ICON_ID);
         kb.style('primary').row();
       }
 
-      const names = matches.map(({ product }) => escapeAttr(product.name));
+      const lines = matches.map(({ product }) => {
+        const name = `${productIconHtml(product)}${escapeAttr(product.name)}`;
+        return `<b>${name} available now!</b>`;
+      });
       const html = renderHtmlTemplate(
         [
-          `<blockquote>{refer_user} <b>SAFWAN TIGER(TM)</b>`,
-          escapeAttr(text),
-          '</blockquote>',
+          ...lines,
           '',
-          `${names.join(', ')} available now!`,
-          `{broadcast_shop_now} <b>Tap below to buy:</b>`,
+          `{feed_tap_buy} <b>Tap below to buy:</b>`,
         ].join('\n'),
       );
 
