@@ -546,6 +546,8 @@ export const EMOJI: Record<string, EmojiSpec> = {
 
   // ---- Public group feed ---------------------------------------
   feed_title: { unicode: '🎉', custom_emoji_id: '6181381563071077485' },
+  feed_tap_buy: { unicode: '👉', custom_emoji_id: '6181460307001481584' },
+  feed_buy_button: { unicode: '🛒', custom_emoji_id: '5440841102871517055' },
 
   // ---- Language picker -----------------------------------------
   lang_left: { unicode: '🌐', custom_emoji_id: '5330422213860407355' },
@@ -795,7 +797,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // viewers). Keys whose locale emoji has no exact premium twin are
   // left out so the original unicode emoji stays in the label.
   profile: 'profile_header',
-  buy_now: 'broadcast_shop_now',
+  buy_now: 'feed_buy_button',
   pre_order: 'broadcast_shop_now',
   redeem_referral: 'refer_title',
   referral_earn_buy: 'refer_title',
