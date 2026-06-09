@@ -372,42 +372,64 @@ export function entitiesToHtml(
   entities: ReadonlyArray<MessageEntity> | undefined | null,
 ): string {
   if (!entities || entities.length === 0) return escapeHtml(text);
-  const opens = new Map<number, HtmlTagSpec[]>();
-  const closes = new Map<number, HtmlTagSpec[]>();
-  for (const entity of entities) {
+  const ranges: Array<{
+    key: string;
+    start: number;
+    end: number;
+    tag: HtmlTagSpec;
+  }> = [];
+  const boundaries = new Set<number>([0, text.length]);
+  for (const [index, entity] of entities.entries()) {
     const tag = entityToHtmlTag(entity, text);
     if (!tag) continue;
     // Clamp offsets to guard against malformed entity ranges.
     const start = Math.max(0, Math.min(entity.offset, text.length));
     const end = Math.max(start, Math.min(entity.offset + entity.length, text.length));
     if (start === end) continue;
-    if (!opens.has(start)) opens.set(start, []);
-    if (!closes.has(end)) closes.set(end, []);
-    opens.get(start)!.push(tag);
-    closes.get(end)!.push(tag);
+    ranges.push({
+      key: `${entity.type}:${start}:${end}:${index}`,
+      start,
+      end,
+      tag,
+    });
+    boundaries.add(start);
+    boundaries.add(end);
   }
-  // Sort so outer tags open before inner, and inner tags close before
-  // outer. For equal ranges, blockquote stays outermost while inline
-  // formatting/custom emoji stays inside it; otherwise Telegram can
-  // reject the HTML when an admin applies quote + bold to the same text.
-  for (const list of opens.values()) {
-    list.sort((a, b) => b.length - a.length || a.priority - b.priority);
-  }
-  for (const list of closes.values()) {
-    list.sort((a, b) => a.length - b.length || b.priority - a.priority);
-  }
-
+  if (ranges.length === 0) return escapeHtml(text);
+  const points = [...boundaries].sort((a, b) => a - b);
+  let active: typeof ranges = [];
   let out = '';
-  for (let i = 0; i <= text.length; i++) {
-    const closeTags = closes.get(i);
-    if (closeTags) {
-      for (const tag of closeTags) out += tag.close;
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i]!;
+    const end = points[i + 1]!;
+    const next = ranges
+      .filter((range) => range.start <= start && range.end >= end)
+      .sort(
+        (a, b) =>
+          a.tag.priority - b.tag.priority ||
+          b.tag.length - a.tag.length ||
+          a.start - b.start ||
+          a.key.localeCompare(b.key),
+      );
+    let common = 0;
+    while (
+      common < active.length &&
+      common < next.length &&
+      active[common]!.key === next[common]!.key
+    ) {
+      common++;
     }
-    const openTags = opens.get(i);
-    if (openTags) {
-      for (const tag of openTags) out += tag.open;
+    for (let j = active.length - 1; j >= common; j--) {
+      out += active[j]!.tag.close;
     }
-    if (i < text.length) out += escapeHtml(text[i]!);
+    for (let j = common; j < next.length; j++) {
+      out += next[j]!.tag.open;
+    }
+    out += escapeHtml(text.slice(start, end));
+    active = next;
+  }
+  for (let i = active.length - 1; i >= 0; i--) {
+    out += active[i]!.tag.close;
   }
   return out;
 }

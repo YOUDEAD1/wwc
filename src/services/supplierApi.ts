@@ -540,6 +540,45 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+const HIDDEN_DELIVERY_KEY_RX =
+  /^(?:product[_-]?item[_-]?id|delivered[_-]?at|created[_-]?at|updated[_-]?at)$/i;
+
+function sanitizeDeliveryString(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      return sanitizeDeliveryValue(JSON.parse(trimmed));
+    } catch {
+      // Keep treating it as a normal supplier payload.
+    }
+  }
+  return trimmed
+    .split(/\r?\n/)
+    .filter((line) => {
+      const key = line.split(':', 1)[0]?.trim() ?? '';
+      return !HIDDEN_DELIVERY_KEY_RX.test(key);
+    })
+    .join('\n')
+    .trim();
+}
+
+function sanitizeDeliveryValue(value: unknown): string {
+  if (typeof value === 'string') return sanitizeDeliveryString(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  const row = asRecord(value);
+  const direct = asString(firstValue(row, ['payload', 'item', 'code', 'link', 'account']));
+  if (direct) return sanitizeDeliveryString(direct);
+  return Object.entries(row)
+    .filter(([key, item]) => {
+      if (item === null || item === undefined || item === '') return false;
+      return !HIDDEN_DELIVERY_KEY_RX.test(key.replace(/\s+/g, '_'));
+    })
+    .map(([key, item]) => `${key}: ${typeof item === 'object' ? JSON.stringify(item) : String(item)}`)
+    .join('\n')
+    .trim();
+}
+
 function normalizeItems(source: DBSupplierApiSource, json: Record<string, unknown>): string[] {
   const raw =
     deepGet(json, source.order_items_json_path) ??
@@ -549,32 +588,13 @@ function normalizeItems(source: DBSupplierApiSource, json: Record<string, unknow
     deepGet(json, 'data.delivery') ??
     deepGet(json, 'code') ??
     deepGet(json, 'account');
-  if (typeof raw === 'string') return raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (typeof raw === 'string') {
+    const clean = sanitizeDeliveryString(raw);
+    return clean ? [clean] : [];
+  }
   const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  const hiddenKeys = new Set([
-    'productitemid',
-    'product_item_id',
-    'productitem_id',
-    'product_itemid',
-    'deliveredat',
-    'delivered_at',
-  ]);
   return arr
-    .map((item) => {
-      if (typeof item === 'string') return item.trim();
-      const row = asRecord(item);
-      const direct = asString(
-        firstValue(row, ['payload', 'item', 'code', 'link', 'account', 'email', 'login']),
-      );
-      if (direct) return direct;
-      const pairs = Object.entries(row)
-        .filter(([key, value]) => {
-          if (value === null || value === undefined || value === '') return false;
-          return !hiddenKeys.has(key.replace(/[\s-]/g, '').toLowerCase());
-        })
-        .map(([key, value]) => `${key}: ${String(value)}`);
-      return pairs.join('\n');
-    })
+    .map(sanitizeDeliveryValue)
     .filter((s) => s.length > 0);
 }
 

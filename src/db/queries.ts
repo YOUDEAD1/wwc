@@ -672,6 +672,7 @@ export async function listProducts(
     .select('*', { count: 'exact' })
     .eq('category_id', categoryId)
     .eq('active', true)
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);
@@ -2889,6 +2890,7 @@ export async function listAllProducts(
   const { data, count } = await supabase
     .from('products')
     .select('*', { count: 'exact' })
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);
@@ -2907,55 +2909,21 @@ export async function findAdjacentProduct(
   productId: number,
   direction: 'up' | 'down',
 ): Promise<DBProduct | null> {
-  const { data: cur } = await supabase
-    .from('products')
-    .select('sort_order')
-    .eq('id', productId)
-    .single();
-  if (!cur) return null;
-  const sort = Number(cur.sort_order);
-  // Find the strict neighbour on the requested side. We compare on
-  // the lexicographic (sort_order, id) tuple so ties on sort_order
-  // (very common for legacy rows that all default to 0) still
-  // produce a deterministic adjacency by id.
-  if (direction === 'up') {
-    const { data: tied } = await supabase
-      .from('products')
-      .select('*')
-      .eq('sort_order', sort)
-      .lt('id', productId)
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (tied) return tied as DBProduct;
-    const { data: above } = await supabase
-      .from('products')
-      .select('*')
-      .lt('sort_order', sort)
-      .order('sort_order', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return (above as DBProduct | null) ?? null;
-  }
-  const { data: tied } = await supabase
+  const { data } = await supabase
     .from('products')
     .select('*')
-    .eq('sort_order', sort)
-    .gt('id', productId)
-    .order('id', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (tied) return tied as DBProduct;
-  const { data: below } = await supabase
-    .from('products')
-    .select('*')
-    .gt('sort_order', sort)
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
-    .order('id', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  return (below as DBProduct | null) ?? null;
+    .order('id', { ascending: true });
+  const rows = (data ?? []) as DBProduct[];
+  const current = rows.find((row) => row.id === productId);
+  if (!current) return null;
+  const section = rows.filter(
+    (row) => Boolean(row.is_pinned) === Boolean(current.is_pinned),
+  );
+  const idx = section.findIndex((row) => row.id === productId);
+  if (idx < 0) return null;
+  return section[direction === 'up' ? idx - 1 : idx + 1] ?? null;
 }
 
 /**
@@ -3006,6 +2974,7 @@ export async function listActiveProducts(
     .from('products')
     .select('*', { count: 'exact' })
     .eq('active', true)
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);

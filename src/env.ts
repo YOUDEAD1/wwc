@@ -32,6 +32,9 @@ const DEFAULT_LOG_CHAT = '@safwantigershopsales';
  */
 const DEFAULT_ORDER_LOG_CHAT = '@SafwanTigerShopBotInfo';
 
+/** Public shop feed / watcher group. */
+const DEFAULT_PUBLIC_FEED_CHAT = '@TigerStockChat';
+
 /**
  * Shared transformer for the `LOG_CHAT_ID` family of env vars. Each
  * one accepts the same input shapes — `@channelusername` (with or
@@ -156,6 +159,13 @@ const schema = z.object({
     .trim()
     .optional()
     .transform(logChannelTransformer('')),
+
+  // Public shop feed / watcher group (sold, stock and announcement cards).
+  PUBLIC_FEED_CHAT_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform(logChannelTransformer(DEFAULT_PUBLIC_FEED_CHAT)),
 
   // ----------------------------------------------------------------
   //  TonCenter (TON USDT jetton verification)
