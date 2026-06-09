@@ -94,6 +94,7 @@ function docsBody(): JsonRecord {
       product_id: 123,
       quantity: 1,
       request_id: 'optional-unique-id',
+      external_order_id: 'optional-unique-id-alias',
     },
   };
 }
@@ -166,7 +167,11 @@ export async function handleResellerApiRequest(
         ? body.request_id
         : typeof body.requestId === 'string'
           ? body.requestId
-          : null;
+          : typeof body.external_order_id === 'string'
+            ? body.external_order_id
+            : typeof body.externalOrderId === 'string'
+              ? body.externalOrderId
+              : null;
       const order = await placeApiOrder({
         api,
         apiKeyId: auth.key.id,
@@ -201,4 +206,3 @@ export function handleHealthRequest(req: http.IncomingMessage, res: http.ServerR
   sendText(res, 200, 'ok');
   return true;
 }
-
