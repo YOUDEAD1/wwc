@@ -2,10 +2,14 @@ import type { Api } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
-import { renderMdHtml } from './premium.js';
+import { getProduct } from '../db/queries.js';
+import {
+  escapeAttr,
+  renderHtmlTemplate,
+  renderMdHtml,
+  stripCustomEmojiTags,
+} from './premium.js';
 import { getEmoji } from './settings.js';
-
-const FEED_CHAT = '@TigerStockChat';
 
 type FeedButton = {
   text: string;
@@ -13,8 +17,12 @@ type FeedButton = {
   iconKey: string;
 };
 
-function botUrl(payload: string): string {
+export function publicFeedBotUrl(payload: string): string {
   return env.BOT_USERNAME ? `https://t.me/${env.BOT_USERNAME}?start=${payload}` : 'https://t.me/';
+}
+
+export function publicFeedChatId(): string | number | undefined {
+  return env.PUBLIC_FEED_CHAT_ID;
 }
 
 function maskId(id: number): string {
@@ -32,20 +40,41 @@ function premiumIconId(key: string): string | undefined {
   return typeof spec === 'object' && spec.custom_emoji_id ? spec.custom_emoji_id : undefined;
 }
 
-async function send(api: Api, body: string, button: FeedButton): Promise<void> {
+function feedKeyboard(button?: FeedButton): InlineKeyboard | undefined {
+  if (!button) return undefined;
   const kb = new InlineKeyboard().url(button.text, button.url);
   const iconId = premiumIconId(button.iconKey);
   if (iconId) kb.icon(iconId);
   kb.style('primary');
+  return kb;
+}
+
+async function sendRenderedHtml(api: Api, html: string, button?: FeedButton): Promise<void> {
+  const chat = publicFeedChatId();
+  if (!chat) return;
+  const reply_markup = feedKeyboard(button);
   try {
-    await api.sendMessage(FEED_CHAT, renderMdHtml(body), {
+    await api.sendMessage(chat, html, {
       parse_mode: 'HTML',
-      reply_markup: kb,
+      ...(reply_markup ? { reply_markup } : {}),
       link_preview_options: { is_disabled: true },
     });
   } catch (err) {
-    logger.warn({ err, chat: FEED_CHAT }, 'publicFeed send failed');
+    logger.warn({ err, chat }, 'publicFeed HTML send failed; retrying without custom emoji tags');
+    try {
+      await api.sendMessage(chat, stripCustomEmojiTags(html), {
+        parse_mode: 'HTML',
+        ...(reply_markup ? { reply_markup } : {}),
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (retryErr) {
+      logger.warn({ err: retryErr, chat }, 'publicFeed send failed');
+    }
   }
+}
+
+async function send(api: Api, body: string, button?: FeedButton): Promise<void> {
+  await sendRenderedHtml(api, renderMdHtml(body), button);
 }
 
 export async function notifyActiveReferral(api: Api, args: {
@@ -72,7 +101,7 @@ export async function notifyActiveReferral(api: Api, args: {
   await send(api, body, {
     text: 'Refer & Earn',
     iconKey: 'refer_title',
-    url: botUrl('refer'),
+    url: publicFeedBotUrl('refer'),
   });
 }
 
@@ -90,7 +119,7 @@ export async function notifyReferralAchievement(api: Api, args: {
   await send(api, body, {
     text: 'Refer & Earn',
     iconKey: 'refer_title',
-    url: botUrl('refer'),
+    url: publicFeedBotUrl('refer'),
   });
 }
 
@@ -103,20 +132,22 @@ export async function notifyPurchase(api: Api, args: {
   total: number;
   paidVia: string;
 }): Promise<void> {
-  const body = [
-    '> {feed_title} *New Purchase!*',
-    '>',
-    `> {broadcast_shop_now} *Service:* ${args.productName}`,
-    `> {refer_user} *By:* ${maskId(args.buyerId)}`,
-    `> {broadcast_shop_now} *Plan:* ${args.productName} [${args.paidVia}]`,
-    `> {orders_title} *Order No.:* ${args.orderPublicId}`,
-    `> {prod_qty_selected} *QTY:* ${args.qty}`,
-    `> {prod_total_amount} *Total Paid:* ${money(args.total)} USDT`,
-  ].join('\n');
-  await send(api, body, {
-    text: 'View Product',
+  const product = await getProduct(args.productId).catch(() => null);
+  const glyph = product?.emoji && product.emoji !== '🛒' ? product.emoji : '';
+  const productIcon =
+    glyph && product?.emoji_id
+      ? `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(glyph)}</tg-emoji> `
+      : glyph
+        ? `${escapeAttr(glyph)} `
+        : '';
+  const name = escapeAttr(args.productName);
+  const html = renderHtmlTemplate(
+    `<blockquote>{broadcast_shop_now} <b>Someone just bought ${args.qty}x ${productIcon}${name}!</b></blockquote>`,
+  );
+  await sendRenderedHtml(api, html, {
+    text: `Buy ${args.productName}`.slice(0, 64),
     iconKey: 'broadcast_shop_now',
-    url: botUrl(`prod_${args.productId}`),
+    url: publicFeedBotUrl(`prod_${args.productId}`),
   });
 }
 
@@ -135,7 +166,7 @@ export async function notifyTopup(api: Api, args: {
   await send(api, body, {
     text: 'Top-Up Wallet',
     iconKey: 'deposits_wallet',
-    url: botUrl('topup'),
+    url: publicFeedBotUrl('topup'),
   });
 }
 
@@ -156,6 +187,61 @@ export async function notifyWalletCredit(api: Api, args: {
   await send(api, body, {
     text: 'Open Settings',
     iconKey: 'profile_header',
-    url: botUrl('settings'),
+    url: publicFeedBotUrl('settings'),
+  });
+}
+
+export async function notifyAnnouncement(api: Api, args: {
+  text: string;
+  format: 'md' | 'html';
+  button?: { text: string; productId: number; iconKey?: string };
+}): Promise<void> {
+  const html =
+    args.format === 'html'
+      ? renderHtmlTemplate(args.text)
+      : renderMdHtml(args.text);
+  await sendRenderedHtml(
+    api,
+    html,
+    args.button
+      ? {
+          text: args.button.text.slice(0, 64),
+          iconKey: args.button.iconKey ?? 'broadcast_shop_now',
+          url: publicFeedBotUrl(`prod_${args.button.productId}`),
+        }
+      : undefined,
+  );
+}
+
+export async function notifyStockAdded(api: Api, args: {
+  productId: number;
+  productName: string;
+  productEmoji?: string | null;
+  productEmojiId?: string | null;
+  qtyAdded: number;
+  available: number;
+  price: number;
+}): Promise<void> {
+  const glyph = args.productEmoji && args.productEmoji !== '🛒' ? args.productEmoji : '';
+  const productIcon =
+    glyph && args.productEmojiId
+      ? `<tg-emoji emoji-id="${escapeAttr(args.productEmojiId)}">${escapeAttr(glyph)}</tg-emoji> `
+      : glyph
+        ? `${escapeAttr(glyph)} `
+        : '';
+  const name = `${productIcon}${escapeAttr(args.productName)}`;
+  const html = renderHtmlTemplate(
+    [
+      `<blockquote>{feed_title} <b>${args.qtyAdded} new stock added for ${name}!</b>`,
+      '',
+      `{refer_active} <b>Available:</b> ${args.available} items`,
+      `{prod_price_base} <b>Price:</b> ${money(args.price)} USDT`,
+      '</blockquote>',
+    ].join('\n'),
+  );
+  await sendRenderedHtml(api, html, {
+    text: `Buy ${args.productName}`.slice(0, 64),
+    iconKey: 'broadcast_shop_now',
+    url: publicFeedBotUrl(`prod_${args.productId}`),
   });
 }
