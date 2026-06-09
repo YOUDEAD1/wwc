@@ -94,9 +94,9 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[p.id] ?? QTY_MIN;
   const total = formatPriceWithCurrency(p.price * qty, ctx.user.currency);
+  const productEmoji = p.emoji === '🛒' ? '' : (p.emoji ?? '');
   const body = [
-    ctx.t('shop.product.line.name', { name: p.name }),
-    p.description ? p.description : '',
+    ctx.t('shop.product.line.name', { name: p.name, emoji: productEmoji }),
     ctx.t('shop.product.line.price', { price: formatPriceWithCurrency(p.price, ctx.user.currency) }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
