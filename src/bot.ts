@@ -11,6 +11,7 @@ import { registerSupport, restoreLiveSupportSession } from './handlers/support.j
 import { registerTopup } from './handlers/topup.js';
 import { registerDirectPay } from './handlers/directPay.js';
 import { registerResellerApi } from './handlers/resellerApi.js';
+import { registerPublicGroup } from './handlers/publicGroup.js';
 import { adminBot } from './handlers/admin/index.js';
 import { refreshSettings } from './services/settings.js';
 
@@ -30,6 +31,7 @@ export async function buildBot(): Promise<Bot<AppCtx>> {
   registerTopup(bot);
   registerDirectPay(bot);
   registerResellerApi(bot);
+  registerPublicGroup(bot);
   bot.use(adminBot);
 
   bot.catch((err) => {
