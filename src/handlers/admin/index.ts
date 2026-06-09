@@ -143,6 +143,7 @@ import {
 } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
+import * as publicFeed from '../../services/publicFeed.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import { fulfillPendingPreordersForProduct } from '../../services/preorder.js';
 import {
@@ -189,6 +190,25 @@ async function autoFulfillPreordersAfterRestock(
   } catch (err) {
     logger.warn({ err, productId }, 'autoFulfillPreordersAfterRestock failed');
   }
+}
+
+async function notifyPublicStockAdded(
+  ctx: AppCtx,
+  productId: number,
+  qtyAdded: number,
+): Promise<void> {
+  if (qtyAdded <= 0) return;
+  const product = await getProduct(productId);
+  if (!product) return;
+  await publicFeed.notifyStockAdded(ctx.api, {
+    productId,
+    productName: product.name,
+    productEmoji: product.emoji,
+    productEmojiId: product.emoji_id,
+    qtyAdded,
+    available: product.stock,
+    price: product.price,
+  });
 }
 
 /**
@@ -2370,6 +2390,7 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
       )
       .row();
     kb.text(p.active ? `👁 Hide #${p.id}` : `👁 Show #${p.id}`, `adm:prod:tog:${p.id}:${page}`)
+      .text(`🆔 ID #${p.id}`, `adm:prod:id:set:${p.id}:${page}`)
       .text(`🗑 #${p.id}`, `adm:prod:del:${p.id}:${page}`)
       .row();
     // Per-product Add Items / Edit Pool shortcuts. Both reuse the
@@ -3268,6 +3289,7 @@ adminBot.callbackQuery(/^adm:prod:items:confirm:(\d+):(\d+)$/, async (ctx) => {
   try {
     await addProductItems(product_id, staged);
     await autoFulfillPreordersAfterRestock(ctx, product_id);
+    await notifyPublicStockAdded(ctx, product_id, staged.length);
   } catch (err) {
     logger.error({ err, product_id }, 'bulk addProductItems failed');
     await ctx.reply('❌ Could not save items — see logs for details.');
@@ -4793,7 +4815,7 @@ type AnnounceBuy = {
 function announceBroadcastKeyboard(buy?: AnnounceBuy): InlineKeyboard | undefined {
   if (!buy) return undefined;
   const kb = new InlineKeyboard();
-  kb.text(buy.label, `prod:${buy.product_id}`);
+  kb.url(buy.label, publicFeed.publicFeedBotUrl(`prod_${buy.product_id}`));
   if (buy.icon_custom_emoji_id) kb.icon(buy.icon_custom_emoji_id);
   const style = colorModeToStyle(buy.color);
   if (style !== undefined) kb.style(style);
@@ -4912,7 +4934,7 @@ async function showAnnounceBuyEdit(ctx: AppCtx): Promise<void> {
     return;
   }
   const previewKb = new InlineKeyboard();
-  previewKb.text(buy.label, `prod:${buy.product_id}`);
+  previewKb.url(buy.label, publicFeed.publicFeedBotUrl(`prod_${buy.product_id}`));
   if (buy.icon_custom_emoji_id) previewKb.icon(buy.icon_custom_emoji_id);
   const style = colorModeToStyle(buy.color);
   if (style !== undefined) previewKb.style(style);
@@ -5172,43 +5194,73 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
   }
   await ctx.answerCallbackQuery();
   const body = flow.data.text;
+  const format = flow.data.format ?? 'md';
   const buy = flow.data.buy;
   const recipients = await listUsersForAnnouncement();
-  await ctx.editMessageText(`📣 Broadcasting to ${recipients.length} user(s)…`);
-  // Render once: HTML output expands `{tokens}` AND auto-wraps any
-  // unicode emoji that has a configured premium custom_emoji_id.
-  const html = flow.data.format === 'html' ? renderHtmlTemplate(body) : renderMdHtml(body);
-  let ok = 0;
-  let fail = 0;
-  for (const r of recipients) {
-    try {
-      // Build a fresh keyboard per recipient — the underlying
-      // grammyjs InlineKeyboard is mutable, and reusing the same
-      // instance across `sendMessage` calls is unsafe.
-      const reply_markup = announceBroadcastKeyboard(buy);
-      try {
-        await ctx.api.sendMessage(r.telegram_id, html, {
-          parse_mode: 'HTML',
-          ...(reply_markup ? { reply_markup } : {}),
-        });
-      } catch (err) {
-        logger.warn({ err, user: r.telegram_id }, 'announce send HTML failed; retrying without custom emoji tags');
-        await ctx.api.sendMessage(r.telegram_id, stripCustomEmojiTags(html), {
-          parse_mode: 'HTML',
-          ...(reply_markup ? { reply_markup } : {}),
-        });
-      }
-      ok++;
-    } catch (err) {
-      fail++;
-      logger.warn({ err, user: r.telegram_id }, 'announce send failed');
-    }
-  }
+  const api = ctx.api;
+  const statusChatId = ctx.chat?.id;
+  const statusMessageId = ctx.callbackQuery.message?.message_id;
   ctx.session.adminFlow = undefined;
   await ctx.editMessageText(
-    `✅ Done. Delivered: *${ok}*, failed: *${fail}*.`,
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+    `📣 Broadcast started for ${recipients.length} user(s).\n\nBot commands stay active while this runs.`,
+    { reply_markup: backRow(new InlineKeyboard()) },
   );
+
+  void (async () => {
+    // Render once: HTML output expands `{tokens}` AND auto-wraps any
+    // unicode emoji that has a configured premium custom_emoji_id.
+    const html = format === 'html' ? renderHtmlTemplate(body) : renderMdHtml(body);
+    let ok = 0;
+    let fail = 0;
+    await publicFeed.notifyAnnouncement(api, {
+      text: body,
+      format,
+      ...(buy
+        ? {
+            button: {
+              text: buy.label,
+              productId: buy.product_id,
+              iconKey: 'broadcast_shop_now',
+            },
+          }
+        : {}),
+    });
+    for (const r of recipients) {
+      try {
+        // Build a fresh keyboard per recipient — the underlying
+        // grammyjs InlineKeyboard is mutable, and reusing the same
+        // instance across `sendMessage` calls is unsafe.
+        const reply_markup = announceBroadcastKeyboard(buy);
+        try {
+          await api.sendMessage(r.telegram_id, html, {
+            parse_mode: 'HTML',
+            ...(reply_markup ? { reply_markup } : {}),
+          });
+        } catch (err) {
+          logger.warn({ err, user: r.telegram_id }, 'announce send HTML failed; retrying without custom emoji tags');
+          await api.sendMessage(r.telegram_id, stripCustomEmojiTags(html), {
+            parse_mode: 'HTML',
+            ...(reply_markup ? { reply_markup } : {}),
+          });
+        }
+        ok++;
+      } catch (err) {
+        fail++;
+        logger.warn({ err, user: r.telegram_id }, 'announce send failed');
+      }
+      if ((ok + fail) % 25 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
+    }
+    if (statusChatId && statusMessageId) {
+      await api.editMessageText(
+        statusChatId,
+        statusMessageId,
+        `✅ Done. Delivered: *${ok}*, failed: *${fail}*.`,
+        { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+      ).catch((err) => logger.warn({ err }, 'announce final status edit failed'));
+    }
+  })().catch((err) => logger.error({ err }, 'announce background worker failed'));
 });
 
 // ---------- Users ----------
@@ -7486,8 +7538,14 @@ adminBot.on('message:text', async (ctx, next) => {
         await ctx.reply('❌ Bad stock. Send an integer ≥ 0.');
         return;
       }
+      const before = await getProduct(flow.data.product_id);
       await updateProduct(flow.data.product_id, { stock });
       await autoFulfillPreordersAfterRestock(ctx, flow.data.product_id);
+      await notifyPublicStockAdded(
+        ctx,
+        flow.data.product_id,
+        Math.max(0, stock - Number(before?.stock ?? 0)),
+      );
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Stock updated.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
@@ -9492,6 +9550,7 @@ async function finalizeProduct(
     try {
       await addProductItems(product.id, items);
       await autoFulfillPreordersAfterRestock(ctx, product.id);
+      await notifyPublicStockAdded(ctx, product.id, items.length);
     } catch (err) {
       logger.error({ err, product_id: product.id }, 'addProductItems on create failed');
     }
@@ -9732,6 +9791,7 @@ adminBot.command('addproductitems', async (ctx) => {
   }
   const inserted = await addProductItems(id, payloads);
   await autoFulfillPreordersAfterRestock(ctx, id);
+  await notifyPublicStockAdded(ctx, id, inserted);
   const remaining = await countAvailableProductItems(id);
   await ctx.reply(`✅ Added ${inserted} items to product #${id}. Pool now has ${remaining} unconsumed.`);
 });
