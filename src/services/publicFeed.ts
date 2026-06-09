@@ -17,6 +17,8 @@ type FeedButton = {
   iconKey: string;
 };
 
+const CART_FALLBACK = '\u{1F6D2}';
+
 export function publicFeedBotUrl(payload: string): string {
   return env.BOT_USERNAME ? `https://t.me/${env.BOT_USERNAME}?start=${payload}` : 'https://t.me/';
 }
@@ -133,16 +135,16 @@ export async function notifyPurchase(api: Api, args: {
   paidVia: string;
 }): Promise<void> {
   const product = await getProduct(args.productId).catch(() => null);
-  const glyph = product?.emoji && product.emoji !== '🛒' ? product.emoji : '';
+  const glyph = product?.emoji?.trim() ?? '';
   const productIcon =
-    glyph && product?.emoji_id
-      ? `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(glyph)}</tg-emoji> `
-      : glyph
+    product?.emoji_id
+      ? `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(glyph || CART_FALLBACK)}</tg-emoji> `
+      : glyph && glyph !== CART_FALLBACK
         ? `${escapeAttr(glyph)} `
         : '';
   const name = escapeAttr(args.productName);
   const html = renderHtmlTemplate(
-    `{broadcast_shop_now} <b>Someone just bought (${args.qty}× ${productIcon}${name})</b>`,
+    `{broadcast_shop_now} <b>Someone just bought (${args.qty}&times; ${productIcon}${name})</b>`,
   );
   await sendRenderedHtml(api, html);
 }
@@ -218,11 +220,11 @@ export async function notifyStockAdded(api: Api, args: {
   available: number;
   price: number;
 }): Promise<void> {
-  const glyph = args.productEmoji && args.productEmoji !== '🛒' ? args.productEmoji : '';
+  const glyph = args.productEmoji?.trim() ?? '';
   const productIcon =
     glyph && args.productEmojiId
       ? `<tg-emoji emoji-id="${escapeAttr(args.productEmojiId)}">${escapeAttr(glyph)}</tg-emoji> `
-      : glyph
+      : glyph && glyph !== CART_FALLBACK
         ? `${escapeAttr(glyph)} `
         : '';
   const name = `${productIcon}${escapeAttr(args.productName)}`;
