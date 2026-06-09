@@ -142,13 +142,9 @@ export async function notifyPurchase(api: Api, args: {
         : '';
   const name = escapeAttr(args.productName);
   const html = renderHtmlTemplate(
-    `<blockquote>{broadcast_shop_now} <b>Someone just bought ${args.qty}x ${productIcon}${name}!</b></blockquote>`,
+    `{broadcast_shop_now} <b>Someone just bought (${args.qty}× ${productIcon}${name})</b>`,
   );
-  await sendRenderedHtml(api, html, {
-    text: `Buy ${args.productName}`.slice(0, 64),
-    iconKey: 'broadcast_shop_now',
-    url: publicFeedBotUrl(`prod_${args.productId}`),
-  });
+  await sendRenderedHtml(api, html);
 }
 
 export async function notifyTopup(api: Api, args: {
@@ -241,7 +237,7 @@ export async function notifyStockAdded(api: Api, args: {
   );
   await sendRenderedHtml(api, html, {
     text: `Buy ${args.productName}`.slice(0, 64),
-    iconKey: 'broadcast_shop_now',
+    iconKey: 'feed_buy_button',
     url: publicFeedBotUrl(`prod_${args.productId}`),
   });
 }
