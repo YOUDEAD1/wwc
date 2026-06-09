@@ -160,6 +160,7 @@ import {
   importSupplierProduct,
   parseSupplierLinkConfig,
   parseSupplierSourceConfig,
+  supabaseResellerSupplierConfig,
   supplierSellPrice,
   syncSupplierProductLink,
   testSupplierConnection,
@@ -1118,11 +1119,13 @@ function supplierListKeyboard(
   pages: number,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
+  kb.text('Add Reseller API', 'adm:api:supplier:add:reseller');
+  apiPremiumButton(kb, 'api_key', 'primary');
   kb.text('Add Canboso', 'adm:api:supplier:add:canboso');
   apiPremiumButton(kb, 'api_key', 'primary');
+  kb.row();
   kb.text('Advanced JSON', 'adm:api:supplier:add');
   apiPremiumButton(kb, 'orders_note', 'primary');
-  kb.row();
   kb.text('Map Product', 'adm:api:supplier:map');
   apiPremiumButton(kb, 'orders_product', 'primary');
   kb.row();
@@ -1163,7 +1166,7 @@ async function showSupplierApis(ctx: AppCtx, page = 0): Promise<void> {
       `Recent auto orders: *${successLogs}* success / *${failedLogs}* failed`,
       '',
       '*Flow*',
-      '1. Tap *Add Canboso* and paste the API key.',
+      '1. Tap *Add Reseller API* / *Add Canboso* and paste the API key.',
       '2. Open the supplier and tap *Browse Products*.',
       '3. Import selected products or all in-stock products.',
       '4. Toggle visibility, stock sync, and auto-order by button.',
@@ -1531,6 +1534,36 @@ adminBot.callbackQuery('adm:api:supplier:add:canboso', async (ctx) => {
       '`tgb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`',
       '',
       'After saving, open *Browse Products* and import by button.',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery('adm:api:supplier:add:reseller', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'supplier_reseller_add', step: 'key', data: {} };
+  await ctx.editMessageText(
+    [
+      '*Add Reseller API Supplier*',
+      '',
+      'Send the reseller API key only. This preset already knows:',
+      '`https://mxcuakzztajvkgtsocln.supabase.co/functions/v1/reseller-api`',
+      '',
+      'Auth: `Authorization: Bearer YOUR_API_KEY`',
+      'Products: `?action=products`',
+      'Balance: `?action=balance`',
+      'Order: `?action=order`',
+      '',
+      'Example:',
+      '`rsk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`',
+      '',
+      'After saving, open *Browse Products* and import products by button.',
       '',
       'Send `/cancel` to abort.',
     ].join('\n'),
@@ -7096,6 +7129,38 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 
   try {
+    if (flow.type === 'supplier_reseller_add') {
+      const rawKey = ctx.message.text.trim();
+      const key =
+        rawKey.match(/\b(rsk_live_[a-zA-Z0-9_-]{24,})\b/)?.[1] ??
+        rawKey.match(/\b(stapi_[a-zA-Z0-9_-]{24,})\b/)?.[1] ??
+        rawKey.match(/bearer\s+([a-zA-Z0-9_-]{24,})/i)?.[1] ??
+        rawKey;
+      if (key.length < 24) {
+        await ctx.reply('❌ Send the full reseller API key, or `/cancel`.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      const source = await createSupplierApiSource(supabaseResellerSupplierConfig(key));
+      ctx.session.adminFlow = undefined;
+      let testLine = 'Saved. Tap Test Connection if you want to retry the live check.';
+      try {
+        const test = await testSupplierConnection(source);
+        testLine = test.ok
+          ? `Live test OK: ${test.balance === null ? 'balance unknown' : `balance ${apiMoney(test.balance)}`} · ${test.productsSeen} products`
+          : `Saved, but live test needs attention: ${test.error ?? 'unknown error'}`;
+      } catch (err) {
+        testLine = `Saved, but live test failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await ctx.reply(
+        `✅ Reseller API supplier saved: *${escapeMd(source.name)}* (#${source.id})\n\n${escapeMd(testLine)}\n\nTap *Browse Products* to import by button.`,
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
+      return;
+    }
+
     if (flow.type === 'supplier_canboso_add') {
       const key = ctx.message.text.trim();
       if (key.length < 12) {
@@ -8917,6 +8982,7 @@ adminBot.on('message:text', async (ctx, next) => {
     if (
       flow.type === 'supplier_api_add' ||
       flow.type === 'supplier_canboso_add' ||
+      flow.type === 'supplier_reseller_add' ||
       flow.type === 'supplier_product_link_add'
     ) {
       if (isSupplierMigrationError(err)) {
