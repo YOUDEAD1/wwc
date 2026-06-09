@@ -10,6 +10,7 @@ import { escapeAttr, renderHtmlTemplate } from '../services/premium.js';
 import { logger } from '../logger.js';
 
 const BUY_BUTTON_ICON_ID = '5440841102871517055';
+const CART_FALLBACK = '\u{1F6D2}';
 
 function normalized(text: string): string {
   return text
@@ -30,11 +31,13 @@ function isConfiguredFeedChat(ctx: AppCtx): boolean {
 }
 
 function productIconHtml(product: { emoji?: string | null; emoji_id?: string | null }): string {
-  const glyph = product.emoji && product.emoji !== '🛒' ? product.emoji : '';
-  if (!glyph) return '';
-  return product.emoji_id
-    ? `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(glyph)}</tg-emoji> `
-    : `${escapeAttr(glyph)} `;
+  const glyph = product.emoji?.trim() ?? '';
+  if (product.emoji_id) {
+    const fallback = glyph || CART_FALLBACK;
+    return `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(fallback)}</tg-emoji> `;
+  }
+  if (!glyph || glyph === CART_FALLBACK) return '';
+  return `${escapeAttr(glyph)} `;
 }
 
 export function registerPublicGroup(bot: Bot<AppCtx>): void {
@@ -86,7 +89,6 @@ export function registerPublicGroup(bot: Bot<AppCtx>): void {
       const html = renderHtmlTemplate(
         [
           ...lines,
-          '',
           `{feed_tap_buy} <b>Tap below to buy:</b>`,
         ].join('\n'),
       );
