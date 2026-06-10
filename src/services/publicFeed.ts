@@ -79,32 +79,16 @@ async function send(api: Api, body: string, button?: FeedButton): Promise<void> 
   await sendRenderedHtml(api, renderMdHtml(body), button);
 }
 
-export async function notifyActiveReferral(api: Api, args: {
+export async function notifyActiveReferral(api: Api, _args: {
   referrerName: string;
   totalReferrals: number;
   activeReferrals?: number;
   totalEarned: number;
 }): Promise<void> {
-  const activeReferrals = args.activeReferrals ?? args.totalReferrals;
-  const remaining =
-    activeReferrals > 0 && activeReferrals % 10 === 0
-      ? 0
-      : 10 - (activeReferrals % 10);
-  const body = [
-    '> {feed_title} *New Active Referral!*',
-    '>',
-    `> {refer_user} *Referrer:* ${args.referrerName}`,
-    `> {refer_active} *Active Referrals:* ${activeReferrals}`,
-    `> {refer_coin} *Total earned from invites:* $${money(args.totalEarned)}`,
-    remaining === 0
-      ? '> {feed_title} *Reward milestone unlocked!*'
-      : `> {refer_left} *${remaining} more to earn $0.50*`,
-  ].join('\n');
-  await send(api, body, {
-    text: 'Refer & Earn',
-    iconKey: 'refer_title',
-    url: publicFeedBotUrl('refer'),
-  });
+  const html = renderHtmlTemplate(
+    '{refer_active} <b>Someone just got 1x new active Refer</b>',
+  );
+  await sendRenderedHtml(api, html);
 }
 
 export async function notifyReferralAchievement(api: Api, args: {
@@ -144,7 +128,7 @@ export async function notifyPurchase(api: Api, args: {
         : '';
   const name = escapeAttr(args.productName);
   const html = renderHtmlTemplate(
-    `{broadcast_shop_now} <b>Someone just bought (${args.qty}&times; ${productIcon}${name})</b>`,
+    `{broadcast_shop_now} <b>Someone just bought ${args.qty}x ${productIcon}${name}</b>`,
   );
   await sendRenderedHtml(api, html);
 }
