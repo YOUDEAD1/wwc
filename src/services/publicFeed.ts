@@ -24,7 +24,7 @@ export function publicFeedBotUrl(payload: string): string {
 }
 
 export function publicFeedChatId(): string | number | undefined {
-  return env.PUBLIC_FEED_CHAT_ID;
+  return env.PUBLIC_FEED_CHAT_ID || env.ORDER_LOG_CHAT_ID || env.BOT_REFERS_CHANNEL;
 }
 
 function maskId(id: number): string {
