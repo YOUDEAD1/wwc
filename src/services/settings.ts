@@ -106,6 +106,28 @@ export async function setCategoryDefaultColor(
   cache.set(key, color);
 }
 
+/** Optional per-product catalog button color override. */
+export function getProductColor(id: number): ColorMode | undefined {
+  const v = cache.get(`color.product.${id}`);
+  return typeof v === 'string' && v in COLOR_PREFIX ? (v as ColorMode) : undefined;
+}
+
+export async function setProductColor(
+  id: number,
+  color: ColorMode,
+  updated_by?: number,
+): Promise<void> {
+  const key = `color.product.${id}`;
+  await setSetting(key, color, updated_by);
+  cache.set(key, color);
+}
+
+export async function clearProductColor(id: number): Promise<void> {
+  const key = `color.product.${id}`;
+  await deleteSetting(key);
+  cache.delete(key);
+}
+
 export function getEmoji(key: string): EmojiSpec {
   const v = cache.get(`emoji.${key}`);
   if (

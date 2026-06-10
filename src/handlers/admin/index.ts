@@ -134,6 +134,9 @@ import {
   setCategoryColor,
   getCategoryDefaultColor,
   setCategoryDefaultColor,
+  getProductColor,
+  setProductColor,
+  clearProductColor,
 } from '../../services/settings.js';
 import {
   FORMAT_ENTITY_TYPES,
@@ -2691,6 +2694,7 @@ async function showProductEditor(
     p.referral_required_count > 0
       ? `*${p.referral_required_count} referral${p.referral_required_count === 1 ? '' : 's'}*`
       : '_OFF_';
+  const productColor = getProductColor(p.id);
   const lines = [
     `✏️ *Edit Product #${p.id}*`,
     '',
@@ -2701,6 +2705,7 @@ async function showProductEditor(
       ? `*Supplier link:* \`${supplierLink.supplier_product_id}\` · stock sync *${supplierLink.auto_sync_stock ? 'ON' : 'OFF'}*`
       : null,
     `*Referral Pay:* ${referralLabel}`,
+    `*Select Button Color:* ${productColor ? `*${productColor}*` : '_Default / inherited_'}`,
     `*Warranty:* ${p.warranty ? '`set`' : '_unset_'}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
     `*Description:* ${p.description ? '`set`' : '_unset_'}`,
@@ -2760,6 +2765,10 @@ async function showProductEditor(
       `adm:prod:pin:${p.id}:${page}`,
     )
     .row();
+  kb.text(
+    `🎨 Select Button Color: ${productColor ?? 'Default'}`,
+    `adm:prod:color:${p.id}:${page}`,
+  ).row();
   kb.text('💰 Edit Price', `adm:prod:price:set:${p.id}:${page}`)
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
@@ -2811,6 +2820,66 @@ adminBot.callbackQuery(/^adm:prod:edit:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   await showProductEditor(ctx, Number(ctx.match[1]), Number(ctx.match[2]));
 });
+
+// --- Per-product catalog select-button color ---
+adminBot.callbackQuery(/^adm:prod:color:(\d+):(\d+)$/, async (ctx) => {
+  const productId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const product = await getProduct(productId);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'Product not found.', show_alert: true });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  const current = getProductColor(productId);
+  const kb = new InlineKeyboard();
+  const modes: Array<{ mode: ColorMode; label: string }> = [
+    { mode: 'blue', label: '🔵 Blue' },
+    { mode: 'green', label: '🟢 Green' },
+    { mode: 'red', label: '🔴 Red' },
+  ];
+  for (const { mode, label } of modes) {
+    kb.text(`${current === mode ? '✓ ' : ''}${label}`, `adm:prod:color:set:${productId}:${page}:${mode}`);
+    const style = colorModeToStyle(mode);
+    if (style) kb.style(style);
+  }
+  kb.row()
+    .text(
+      `${current === undefined ? '✓ ' : ''}Default / Inherit`,
+      `adm:prod:color:set:${productId}:${page}:default`,
+    )
+    .row()
+    .text('⬅️ Back to product', `adm:prod:edit:${productId}:${page}`);
+  await ctx.editMessageText(
+    [
+      `🎨 <b>Select Button Color</b>`,
+      '',
+      `<b>Product:</b> ${escapeHtml(product.name)}`,
+      `<b>Current:</b> ${current ?? 'Default / inherited'}`,
+      '',
+      'This changes only this product button in the Available Products list.',
+      'Out-of-stock products still show red.',
+    ].join('\n'),
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(
+  /^adm:prod:color:set:(\d+):(\d+):(default|blue|green|red)$/,
+  async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    const page = Number(ctx.match[2]);
+    const selected = ctx.match[3]!;
+    if (selected === 'default') {
+      await clearProductColor(productId);
+      await ctx.answerCallbackQuery({ text: 'Product color reset to inherited default.' });
+    } else {
+      await setProductColor(productId, selected as ColorMode, ctx.from!.id);
+      await ctx.answerCallbackQuery({ text: `Product button color set to ${selected}.` });
+    }
+    await showProductEditor(ctx, productId, page);
+  },
+);
 
 // --- Premium emoji ---
 adminBot.callbackQuery(/^adm:prod:emoji:set:(\d+):(\d+)$/, async (ctx) => {

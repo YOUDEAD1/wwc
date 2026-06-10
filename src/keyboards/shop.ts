@@ -5,6 +5,7 @@ import { inlineBtn, inlineCopyText } from './helpers.js';
 import {
   getCategoryColor,
   getCategoryDefaultColor,
+  getProductColor,
   getStateColor,
 } from '../services/settings.js';
 import type { DBProduct } from '../types.js';
@@ -70,12 +71,14 @@ export function shopProductsKeyboard(
     const categoryMode =
       p.category_id == null ? 'none' : getCategoryColor(p.category_id);
     const defaultCategoryMode = getCategoryDefaultColor();
+    const productMode = getProductColor(p.id);
     const mode = inStock
-      ? categoryMode !== 'none'
-        ? categoryMode
-        : defaultCategoryMode !== 'none'
-          ? defaultCategoryMode
-          : getStateColor('in_stock')
+      ? productMode ??
+        (categoryMode !== 'none'
+          ? categoryMode
+          : defaultCategoryMode !== 'none'
+            ? defaultCategoryMode
+            : getStateColor('in_stock'))
       : getStateColor('out_of_stock');
     const style = colorModeToStyle(mode);
     if (style !== undefined) kb.style(style);
