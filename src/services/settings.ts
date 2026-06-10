@@ -394,7 +394,7 @@ export function getPriceListPromoFooter(): string | null {
 
 /** Get the store name — editable via /admin → Store Settings. */
 export function getStoreName(): string {
-  return readString('store.name') ?? 'Homlander Store';
+  return readString('store.name') ?? 'SafwanTiger Shop';
 }
 
 /** Get the log chat id override — editable via /admin → Bot Settings. */

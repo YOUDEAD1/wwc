@@ -1,7 +1,7 @@
 /* العربية — keep keys in sync with en.ts */
 export const ar: Record<string, string> = {
-  'welcome': 'مرحبًا بك في متجر Homlander Store 👑',
-  'welcome.title': 'مرحبًا بك في متجر Homlander Store 👑',
+  'welcome': 'مرحبًا بك في متجر SafwanTiger',
+  'welcome.title': 'مرحبًا بك في متجر SafwanTiger!',
   'welcome.balance': 'رصيدك: *${balance}*',
   'welcome.tap_menu': 'اضغط *القائمة الرئيسية* بالأسفل للبدء.',
   'welcome.guide': [
@@ -18,24 +18,24 @@ export const ar: Record<string, string> = {
     '',
     '📌 *يرجى اختيار القائمة:*',
   ].join('\n'),
-  'menu.title': '👑 *Homlander Store* — القائمة الرئيسية',
+  'menu.title': '🐯 *متجر SafwanTiger* — القائمة الرئيسية',
 
   'btn.main_menu': '⬅️ رجوع',
-  'btn.shop': '💎 شراء',
-  'btn.topup': '💳 شحن الرصيد',
-  'btn.profile': '👑 الحساب والضبط',
-  'btn.support': '⚡ الدعم الفني',
+  'btn.shop': '🛍 المتجر',
+  'btn.topup': '👛 شحن المحفظة',
+  'btn.profile': '⚙️ الإعدادات',
+  'btn.support': '💬 الدعم',
   'btn.ai_support': '🥝 Kiwi Ai',
   'btn.back': '⬅️ رجوع',
   'btn.next': 'التالي ▶️',
   'btn.prev': '◀️ السابق',
   'btn.refresh': '🔄 تحديث',
   'btn.buy_now': '✅ شراء الآن',
-  'btn.pre_order': '🛍 الطلب المسبق',
+  'btn.pre_order': '🛍 Pre Order',
   'btn.redeem_referral': '🎁 الدفع بالإحالات',
   'btn.referral_earn_buy': '🔗 اكسب إحالات واشترِ',
   'btn.convert_refers': '💱 تحويل الإحالات إلى USDT',
-  'btn.topup_wallet': '💳 شحن الرصيد',
+  'btn.topup_wallet': '👛 شحن المحفظة',
   'btn.view_note': '📝 عرض الملاحظة',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
@@ -47,7 +47,7 @@ export const ar: Record<string, string> = {
   // (`min(QTY_MAX, المخزون)`) بضغطة واحدة، للمشتري
   // الذي يرغب في شراء الكمية الكاملة دون إدخال الأرقام.
   'btn.qty_keypad_max': '🎯 الحد الأقصى',
-  'btn.pay_wallet': '💳 المحفظة',
+  'btn.pay_wallet': '👛 المحفظة',
   'btn.pay_referral': '🎁 دفع بالإحالات',
   'btn.pay_direct': '💸 دفع مباشر',
   'btn.pay_topup': '🪙 شحن',
@@ -73,8 +73,8 @@ export const ar: Record<string, string> = {
   'btn.view_note_file': '📥 حفظ كملف TXT',
   'btn.send_note_txt': '📥 تنزيل TXT',
   'btn.out_of_stock': '❌ غير متوفر',
-  'btn.my_orders': '📊 طلباتي',
-  'btn.refer': '✨ الإحالة والكسب',
+  'btn.my_orders': '🧾 طلباتي',
+  'btn.refer': '🎁 إحالة',
   'btn.notifications': '🔔 الإشعارات',
   'btn.toggle_stock': '📢 تنبيهات المخزون',
   'btn.toggle_announcements': '💬 تنبيهات عامة',
@@ -234,7 +234,7 @@ export const ar: Record<string, string> = {
   'shop.referral.delivery': 'دفع بالإحالات للمنتج #{product_id} (الكمية: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
-  'profile.title': '👑 *الحساب والضبط*',
+  'profile.title': '⚙️ *الإعدادات*',
   'profile.notifications.title': '{notify_bell} *الإشعارات*',
   'profile.notifications.body':
     '{notify_on} _فعّل فقط التنبيهات التي تهمّك_ {notify_bell}\n\n' +
@@ -245,7 +245,7 @@ export const ar: Record<string, string> = {
     '{notify_off} معطلة',
   'profile.user_id': 'معرف المستخدم: `{id}`',
   'profile.username': 'اسم المستخدم: @{username}',
-  'profile.balance': '💳 الرصيد: *{balance}*',
+  'profile.balance': '👛 الرصيد: *{balance}*',
   'profile.language': '🌐 اللغة: *{language}*',
   'profile.joined': '📅 الانضمام: *{joined}*',
   // شاشة الإحالة والتربح.
@@ -319,7 +319,7 @@ export const ar: Record<string, string> = {
     '🪄 لا توجد طلبات بعد.\n\n' +
     '✨ 🛍️ 🚀 ابدأ التسوق وستظهر طلباتك هنا!',
   'profile.orders.empty': 'لا توجد طلبات بعد.',
-  'profile.orders.title': '📊 *طلباتي*',
+  'profile.orders.title': '🧾 *طلباتي*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',
   'profile.notify.stock_on': 'تنبيهات المخزون: ✅ مفعلة',
   'profile.notify.stock_off': 'تنبيهات المخزون: ⛔ معطلة',
@@ -354,8 +354,8 @@ export const ar: Record<string, string> = {
     '_لم يضف المسؤول شرحًا لهذه الطريقة بعد. تحقق لاحقًا._',
   'pay.tutorial.body': '{body}',
 
-  'topup.title': '💳 *شحن الرصيد*',
-  'topup.choose_method': '💳 *شحن الرصيد*',
+  'topup.title': '👛 *شحن المحفظة*',
+  'topup.choose_method': '👛 *شحن المحفظة*',
   'topup.empty_methods': 'لا توجد طرق دفع مكوّنة. يرجى التواصل مع الدعم.',
   'topup.method.body': '*{name}*\n\n{instructions}',
   'topup.requested': '✅ تم تقديم طلب الشحن (#{id}).\nسيتم التحقق وإضافة الرصيد قريبًا.',
@@ -364,7 +364,7 @@ export const ar: Record<string, string> = {
   'support.body':
     '_*إذا تعذّر عليك إرسال رسالة أو واجهتك مشكلة، استخدم الدعم المباشر للتواصل مع المسؤول مباشرة.*_',
   'support.btn.contact': '📩 تواصل مع المسؤول',
-  'support.contact_prefill': 'مرحبًا، أحتاج مساعدة بخصوص ShopBot Homlander Store، الرجاء المساعدة بشأن: ',
+  'support.contact_prefill': 'مرحبًا، أحتاج مساعدة بخصوص ShopBot SafwanTiger، الرجاء المساعدة بشأن: ',
   'support.btn.cancel': 'إلغاء الدعم',
   'support.btn.live': '🟢 الدعم المباشر',
   'support.btn.end_session': '🔴 إنهاء الجلسة',

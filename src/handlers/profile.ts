@@ -1288,7 +1288,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       });
       return;
     }
-    const filename = `Homlander-Store-PriceList-${new Date()
+    const filename = `SafwanTiger-Shop-PriceList-${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
     await ctx.replyWithDocument(new InputFile(csv, filename));

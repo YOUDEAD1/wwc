@@ -23,7 +23,7 @@ import { logger } from '../logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-/** Path to the Homlander Store logo (same asset used in the email). */
+/** Path to the SafwanTiger Shop logo (same asset used in the email). */
 const LOGO_PATH = path.resolve(__dirname, '../../../assets/email-logo.png');
 
 // ---------------------------------------------------------------------------
@@ -284,10 +284,10 @@ function renderPdf(
         size: 'LETTER',
         margins: { top: 96, bottom: 0, left: MARGIN_X, right: MARGIN_X },
         info: {
-          Title: `Homlander Store — ${title}`,
-          Author: 'Homlander Store',
+          Title: `SafwanTiger Shop — ${title}`,
+          Author: 'SafwanTiger Shop',
           Subject: `${title} report`,
-          Creator: 'Homlander Store Bot',
+          Creator: 'SafwanTiger Shop Bot',
         },
       });
       const chunks: Buffer[] = [];
@@ -405,7 +405,7 @@ function paintPageChrome(
 
   // User identity (right side)
   const idLines = [
-    user.first_name ? user.first_name : 'Homlander Store user',
+    user.first_name ? user.first_name : 'SafwanTiger Shop user',
     user.username ? `@${user.username}` : null,
     `ID: ${user.telegram_id}`,
     user.email ? user.email : null,
@@ -427,7 +427,7 @@ function paintPageChrome(
     .font('Helvetica')
     .fontSize(8)
     .text(
-      'Homlander Store · @lara_v2 · shopbot@homlanderstore.com',
+      'SafwanTiger Shop · @safwantigershopbot · shopbot@safwantiger.com',
       MARGIN_X,
       PAGE_H - 36,
       {
@@ -737,11 +737,11 @@ export async function buildInvoicePdf(args: {
     // an admin can re-enable this section later without a refactor.
     drawSectionHeader(doc, 'Notes');
     drawInfoBlock(doc, [
-      'Thanks for purchasing from Homlander Store. This invoice is your',
+      'Thanks for purchasing from SafwanTiger Shop. This invoice is your',
       'permanent receipt — keep it for your records.',
       '',
       'Need help with this order? Reply to this email or message',
-      '@lara_v2 on Telegram with your Order ID above.',
+      '@safwantigershopbot on Telegram with your Order ID above.',
     ]);
   });
 }
@@ -969,7 +969,7 @@ export async function buildPriceListPdf(args: {
 }): Promise<Buffer> {
   const reportUser: ReportUser = {
     telegram_id: 0,
-    first_name: 'Homlander Store',
+    first_name: 'SafwanTiger Shop',
     username: null,
     email: null,
   };

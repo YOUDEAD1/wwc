@@ -1,13 +1,14 @@
 import { InlineKeyboard } from 'grammy';
 import { MAIN_MENU_LAYOUT, BUTTON_KEYS, type Lang } from '../../config/index.js';
-import { applyButtonChrome, btn, inlineBtn, resolveIconId, stripDecorativeEmoji } from './helpers.js';
-import { getChannelUrl, getButtonIcon } from '../services/settings.js';
+import { applyButtonChrome, btn, inlineBtn } from './helpers.js';
+import { getChannelUrl } from '../services/settings.js';
 
 const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   shop: 'shop:home',
   topup: 'topup:open',
   profile: 'profile:open',
   support: 'support:open',
+  ai_support: 'support:ai',
 
   main_menu: 'main:open',
   back: 'main:open',
@@ -28,44 +29,22 @@ const CALLBACK: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 };
 
 /** Inline keyboard rendered under the welcome message. */
-export async function mainMenuKeyboard(lang: Lang, balance?: number): Promise<InlineKeyboard> {
+export function mainMenuKeyboard(lang: Lang): InlineKeyboard {
   const kb = new InlineKeyboard();
   const channelUrl = getChannelUrl();
-
-  const rows = [...MAIN_MENU_LAYOUT];
-
-  rows.forEach((row, i) => {
+  MAIN_MENU_LAYOUT.forEach((row, i) => {
     row.forEach((k) => {
+      // Render the channel button as a direct URL when configured so
+      // the user is sent straight to Telegram's join screen.
       if (k === 'channel' && channelUrl) {
         kb.url(btn(lang, 'channel'), channelUrl);
         applyButtonChrome(kb, 'channel');
-      } else if (k === 'topup' && balance !== undefined) {
-        let label = lang === 'ar'
-          ? `رصيدك: $${balance.toFixed(2)}`
-          : lang === 'vi'
-          ? `Số dư của bạn: $${balance.toFixed(2)}`
-          : `Your balance: $${balance.toFixed(2)}`;
-        const iconOverride = getButtonIcon('topup');
-        if (iconOverride) {
-          if (iconOverride.custom_emoji_id) {
-            // Premium icon will be handled by applyButtonChrome, so keep label stripped
-          } else {
-            // Plain unicode icon override -> prepend it to the label
-            label = `${iconOverride.unicode} ${label}`;
-          }
-        } else {
-          // No override -> prepend default '💳'
-          label = `💳 ${label}`;
-        }
-        kb.text(label, CALLBACK[k] ?? `noop:${k}`);
-        applyButtonChrome(kb, 'topup');
       } else {
         inlineBtn(kb, lang, k, CALLBACK[k] ?? `noop:${k}`);
       }
     });
-    if (i < rows.length - 1) kb.row();
+    if (i < MAIN_MENU_LAYOUT.length - 1) kb.row();
   });
-
   return kb;
 }
 

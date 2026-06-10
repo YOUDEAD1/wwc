@@ -1,8 +1,8 @@
 /* English (default) — edit text here. */
 export const en: Record<string, string> = {
   // ---------- Welcome / menu ----------
-  'welcome': 'Welcome to Homlander Store 👑',
-  'welcome.title': 'Welcome to Homlander Store 👑',
+  'welcome': 'Welcome to SafwanTiger Shop',
+  'welcome.title': 'Welcome to SafwanTiger Shop!',
   'welcome.balance': 'Your balance: *${balance}*',
   'welcome.tap_menu': 'Tap *Main Menu* below to begin.',
   'welcome.guide': [
@@ -19,14 +19,14 @@ export const en: Record<string, string> = {
     '',
     '📌 *Please choose a menu:*',
   ].join('\n'),
-  'menu.title': '👑 *Homlander Store* — Main Menu',
+  'menu.title': '🐯 *SafwanTiger Shop* — Main Menu',
 
   // ---------- Buttons ----------
   'btn.main_menu': '⬅️ Back',
-  'btn.shop': '💎 Buy',
-  'btn.topup': '💳 Top-up Wallet',
-  'btn.profile': '👑 Settings',
-  'btn.support': '⚡ Support',
+  'btn.shop': '🛍 Shop',
+  'btn.topup': '👛 Top-up Wallet',
+  'btn.profile': '⚙️ Settings',
+  'btn.support': '💬 Support',
   'btn.ai_support': '🥝 Kiwi Ai',
   'btn.back': '⬅️ Back',
   'btn.next': 'Next ▶️',
@@ -37,7 +37,7 @@ export const en: Record<string, string> = {
   'btn.redeem_referral': '🎁 Pay with Referrals',
   'btn.referral_earn_buy': '🔗 Earn Referrals & Buy',
   'btn.convert_refers': '💱 Convert Refers to USDT',
-  'btn.topup_wallet': '💳 Top-up Wallet',
+  'btn.topup_wallet': '👛 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
   'btn.qty_minus': '➖',
@@ -52,7 +52,7 @@ export const en: Record<string, string> = {
   // who wants the full lot doesn't have to type each digit.
   'btn.qty_keypad_max': '🎯 Max',
   // Buy-now payment-method screen.
-  'btn.pay_wallet': '💳 Wallet',
+  'btn.pay_wallet': '👛 Wallet',
   'btn.pay_referral': '🎁 Referral Pay',
   'btn.pay_direct': '💸 Pay Direct',
   'btn.pay_topup': '🪙 Top-up',
@@ -111,8 +111,8 @@ export const en: Record<string, string> = {
   // Post-purchase email follow-up CTAs.
   'btn.set_email_now': '📧 Add Verified Email',
   'btn.view_invoice': '🔗 View Invoice',
-  'btn.my_orders': '📊 My Orders',
-  'btn.refer': '✨ Refer & Earn',
+  'btn.my_orders': '🧾 My Orders',
+  'btn.refer': '🎁 Refer',
   'btn.notifications': '🔔 Notifications',
   'btn.toggle_stock': '📢 Stock Alerts',
   'btn.toggle_announcements': '💬 Info Alerts',
@@ -510,7 +510,7 @@ export const en: Record<string, string> = {
   'shop.page.header': '🛒 *{category}*\n\n*Available Products:*\n_{total} products — page {page}/{pages}_',
 
   // ---------- Profile ----------
-  'profile.title': '👑 *Settings*',
+  'profile.title': '*User Profile*',
   'profile.notifications.title': '{notify_bell} *Notifications*',
   'profile.notifications.body':
     '{notify_on} _Tune in only the alerts you love_ {notify_bell}\n\n' +
@@ -638,13 +638,13 @@ export const en: Record<string, string> = {
   'profile.pricelist.csv.promo_format': 'Buy {min_qty}+ \u2212{discount} USDT',
   'profile.pricelist.csv.unlimited': '\u221e',
   // PDF (mail-only) — title / section header used by buildPriceListPdf.
-  'profile.pricelist.pdf.title': 'Homlander Store \u2014 Price List',
+  'profile.pricelist.pdf.title': 'SafwanTiger Shop \u2014 Price List',
   'profile.pricelist.pdf.section': 'Catalog',
   // Footer surfaced both in the CSV body and in the email subject /
   // body. Admin can override the marketing copy via /settext
   // `profile.pricelist.promo_footer`.
   'profile.pricelist.promo_footer':
-    'Thanks for choosing Homlander Store. Tap the bot to redeem promos and earn referral rewards. \ud83d\udc2f',
+    'Thanks for choosing SafwanTiger Shop. Tap the bot to redeem promos and earn referral rewards. \ud83d\udc2f',
   // Email Settings hub (the new submenu opened from a single Settings button).
   'profile.email.hub.title': '{email_bracket_l} *Email Settings* {profile_email}',
   'profile.email.hub.body':
@@ -849,7 +849,7 @@ export const en: Record<string, string> = {
   'support.btn.contact': '📩 Contact Admin',
   // Pre-filled into the admin DM's input bar when the user taps
   // Contact Admin (via t.me/<admin>?text=...).
-  'support.contact_prefill': 'Hi i need help about ShopBot Homlander Store Please Help me about : ',
+  'support.contact_prefill': 'Hi i need help about ShopBot SafwanTiger Please Help me about : ',
   'support.btn.cancel': 'Cancel Support',
   'support.btn.live': '🟢 Live Support',
   'support.btn.end_session': '🔴 End Session',

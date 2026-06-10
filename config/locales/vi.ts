@@ -1,7 +1,7 @@
-﻿/* Tiếng Việt — keep keys in sync with en.ts */
+/* Tiếng Việt — keep keys in sync with en.ts */
 export const vi: Record<string, string> = {
-  'welcome': 'Chào mừng đến với Homlander Store 👑',
-  'welcome.title': 'Chào mừng đến với Homlander Store 👑',
+  'welcome': 'Chào mừng đến với SafwanTiger Shop',
+  'welcome.title': 'Chào mừng đến với SafwanTiger Shop!',
   'welcome.balance': 'Số dư của bạn: *${balance}*',
   'welcome.tap_menu': 'Nhấn *Menu Chính* bên dưới để bắt đầu.',
   'welcome.guide': [
@@ -18,13 +18,13 @@ export const vi: Record<string, string> = {
     '',
     '📌 *Vui lòng chọn một menu:*',
   ].join('\n'),
-  'menu.title': '👑 *Homlander Store* — Menu Chính',
+  'menu.title': '🐯 *SafwanTiger Shop* — Menu Chính',
 
   'btn.main_menu': '⬅️ Quay lại',
-  'btn.shop': '💎 Mua',
-  'btn.topup': '💳 Nạp ví',
-  'btn.profile': '👑 Cài đặt',
-  'btn.support': '⚡ Hỗ trợ',
+  'btn.shop': '🛍 Cửa hàng',
+  'btn.topup': '👛 Nạp ví',
+  'btn.profile': '⚙️ Cài đặt',
+  'btn.support': '💬 Hỗ trợ',
   'btn.ai_support': '🥝 Kiwi Ai',
   'btn.back': '⬅️ Quay lại',
   'btn.next': 'Tiếp ▶️',
@@ -368,7 +368,7 @@ export const vi: Record<string, string> = {
   'support.body':
     '_*Nếu bạn không thể gửi tin nhắn hoặc gặp sự cố, hãy sử dụng Hỗ trợ trực tiếp để kết nối ngay với quản trị viên.*_',
   'support.btn.contact': '📩 Liên hệ quản trị',
-  'support.contact_prefill': 'Chào, tôi cần trợ giúp về ShopBot Homlander Store. Vui lòng giúp tôi về: ',
+  'support.contact_prefill': 'Chào, tôi cần trợ giúp về ShopBot SafwanTiger. Vui lòng giúp tôi về: ',
   'support.btn.cancel': 'Hủy hỗ trợ',
   'support.btn.live': '🟢 Hỗ trợ trực tiếp',
   'support.btn.end_session': '🔴 Kết thúc phiên',

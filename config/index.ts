@@ -1,5 +1,5 @@
 /**
- * Homlander Store Bot — central editable config.
+ * SafwanTiger Shop Bot — central editable config.
  *
  * Almost every user-facing string, button label, emoji, and color
  * mode lives in this single file. The admin can also override any
@@ -268,11 +268,11 @@ export const BUTTON_KEYS = {
  * The admin can override these at runtime via /setcolor <key> <mode>.
  */
 export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> = {
-  shop: 'blue',
-  topup: 'yellow',
+  shop: 'green',
+  topup: 'blue',
   profile: 'none',
-  support: 'yellow',
-  ai_support: 'yellow',
+  support: 'blue',
+  ai_support: 'blue',
   main_menu: 'none',
   // 2026-05-08: rolled back to neutral. The previous bot-owner
   // tweak made every plain `Back` look like a destructive button,
@@ -284,18 +284,18 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   next: 'none',
   prev: 'none',
   refresh: 'none',
-  buy_now: 'blue',
+  buy_now: 'green',
   pre_order: 'red',
   redeem_referral: 'green',
   referral_earn_buy: 'green',
   convert_refers: 'blue',
-  topup_wallet: 'yellow',
+  topup_wallet: 'blue',
   view_note: 'none',
   qty_plus: 'none',
   qty_minus: 'none',
   out_of_stock: 'red',
   my_orders: 'none',
-  refer: 'blue',
+  refer: 'green',
   notifications: 'none',
   toggle_stock: 'none',
   toggle_announcements: 'none',
@@ -455,27 +455,27 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 export type EmojiSpec = string | { unicode: string; custom_emoji_id: string };
 
 export const EMOJI: Record<string, EmojiSpec> = {
-  fire: '✨',
-  rocket: '⚡',
-  tiger: '👑',
-  cart: '🛒',
-  wallet: '💳',
-  wave: '🙌',
+  fire: '🔥',
+  rocket: '🚀',
+  tiger: '🐯',
+  cart: '🛍',
+  wallet: '🪙',
+  wave: '👋',
   bell: '🔔',
   globe: '🌐',
   user: '👤',
   warranty: '🛡️',
-  stock: '💎',
-  price: '💵',
-  total: '📊',
-  back: '🔙',
-  next: '🔜',
+  stock: '📦',
+  price: '💰',
+  total: '🧮',
+  back: '◀️',
+  next: '▶️',
   refresh: '🔄',
   plus: '➕',
   minus: '➖',
-  buy: '🛒',
+  buy: '✅',
   note: '📝',
-  star: '✨',
+  star: '⭐',
   ai: '🤖',
   settings: '⚙️',
   pencil: '✏️',
@@ -797,7 +797,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // viewers). Keys whose locale emoji has no exact premium twin are
   // left out so the original unicode emoji stays in the label.
   profile: 'profile_header',
-  buy_now: 'feed_buy_button',
+  buy_now: 'orders_received',
   pre_order: 'broadcast_shop_now',
   redeem_referral: 'refer_title',
   referral_earn_buy: 'refer_title',
@@ -987,7 +987,7 @@ export const LOCALES = { en, ar, vi } as const satisfies Record<Lang, Record<str
 export const MAIN_MENU_LAYOUT: ReadonlyArray<ReadonlyArray<keyof typeof BUTTON_KEYS>> = [
   ['shop'],
   ['topup', 'profile'],
-  ['support'],
+  ['support', 'ai_support'],
   ['refer', 'channel'],
 ];
 
