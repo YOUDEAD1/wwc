@@ -18,6 +18,7 @@ type FeedButton = {
 };
 
 const CART_FALLBACK = '\u{1F6D2}';
+const TIGER_STOCK_CHAT = '@TigerStockChat';
 
 export function publicFeedBotUrl(payload: string): string {
   const username = env.BOT_USERNAME.replace(/^@+/, '').trim();
@@ -25,8 +26,8 @@ export function publicFeedBotUrl(payload: string): string {
   return username ? `https://t.me/${username}?start=${start}` : `https://t.me/?start=${start}`;
 }
 
-export function publicFeedChatId(): string | number | undefined {
-  return env.ORDER_LOG_CHAT_ID || env.PUBLIC_FEED_CHAT_ID || env.BOT_REFERS_CHANNEL;
+export function publicFeedChatId(): string {
+  return TIGER_STOCK_CHAT;
 }
 
 function maskId(id: number): string {
@@ -77,20 +78,35 @@ async function sendRenderedHtml(api: Api, html: string, button?: FeedButton): Pr
   }
 }
 
-async function send(api: Api, body: string, button?: FeedButton): Promise<void> {
-  await sendRenderedHtml(api, renderMdHtml(body), button);
-}
-
 export async function notifyActiveReferral(api: Api, _args: {
   referrerName: string;
   totalReferrals: number;
   activeReferrals?: number;
   totalEarned: number;
 }): Promise<void> {
+  const active = Math.max(0, _args.activeReferrals ?? _args.totalReferrals);
+  const remaining = active > 0 && active % 10 === 0 ? 0 : 10 - (active % 10);
+  const milestone =
+    remaining === 0
+      ? '{refer_prize_l} <b>Reward milestone unlocked!</b>'
+      : `{refer_left} <b>${remaining} more to earn $0.50</b>`;
   const html = renderHtmlTemplate(
-    '{refer_active} <b>Someone just got 1x new active Refer</b>',
+    [
+      '<blockquote>',
+      '{feed_title} <b>New Active Referral!</b>',
+      '',
+      `{refer_user} <b>Referrer:</b> <b>${escapeAttr(_args.referrerName)}</b>`,
+      `{refer_active} <b>Active Referrals:</b> <b>${active}</b>`,
+      `{refer_coin} <b>Total earned from invites:</b> <b>$${money(_args.totalEarned)}</b>`,
+      milestone,
+      '</blockquote>',
+    ].join('\n'),
   );
-  await sendRenderedHtml(api, html);
+  await sendRenderedHtml(api, html, {
+    text: 'Refer & Earn',
+    iconKey: 'refer_title',
+    url: publicFeedBotUrl('refer'),
+  });
 }
 
 export async function notifyReferralAchievement(api: Api, args: {
@@ -98,13 +114,15 @@ export async function notifyReferralAchievement(api: Api, args: {
   amount: number;
 }): Promise<void> {
   const body = [
-    '> {feed_title} *New Achievement*',
-    '>',
-    `> {refer_user} *User:* ${maskId(args.userId)}`,
-    `> {refer_coin} *Unlock:* ${money(args.amount)}$`,
-    '> {refer_title} *Keep Inviting More To Earn More!*',
+    '<blockquote>',
+    '{feed_title} <b>New Achievement!</b>',
+    '',
+    `{refer_user} <b>User:</b> <b>${maskId(args.userId)}</b>`,
+    `{refer_coin} <b>Unlock:</b> <b>$${money(args.amount)}</b>`,
+    '{refer_title} <b>Keep Inviting More To Earn More!</b>',
+    '</blockquote>',
   ].join('\n');
-  await send(api, body, {
+  await sendRenderedHtml(api, renderHtmlTemplate(body), {
     text: 'Refer & Earn',
     iconKey: 'refer_title',
     url: publicFeedBotUrl('refer'),
@@ -125,14 +143,27 @@ export async function notifyPurchase(api: Api, args: {
   const productIcon =
     product?.emoji_id
       ? `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(glyph || CART_FALLBACK)}</tg-emoji> `
-      : glyph && glyph !== CART_FALLBACK
-        ? `${escapeAttr(glyph)} `
-        : '';
+      : '{orders_product} ';
   const name = escapeAttr(args.productName);
   const html = renderHtmlTemplate(
-    `{broadcast_shop_now} <b>Someone just bought ${args.qty}x ${productIcon}${name}</b>`,
+    [
+      '<blockquote>',
+      '{feed_title} <b>New Purchase!</b>',
+      '',
+      `${productIcon}<b>Service:</b> <b>${name}</b>`,
+      `{refer_user} <b>By:</b> <b>${maskId(args.buyerId)}</b>`,
+      `{orders_product} <b>Plan:</b> <b>${name} [${escapeAttr(args.paidVia)}]</b>`,
+      `{orders_id} <b>Order No.:</b> <b>${escapeAttr(args.orderPublicId)}</b>`,
+      `{orders_qty} <b>QTY:</b> <b>${args.qty}</b>`,
+      `{orders_total} <b>Total Purchase:</b> <b>${money(args.total)} USDT</b>`,
+      '</blockquote>',
+    ].join('\n'),
   );
-  await sendRenderedHtml(api, html);
+  await sendRenderedHtml(api, html, {
+    text: 'View Product',
+    iconKey: 'feed_buy_button',
+    url: publicFeedBotUrl(`prod_${args.productId}`),
+  });
 }
 
 export async function notifyTopup(api: Api, args: {
@@ -140,14 +171,16 @@ export async function notifyTopup(api: Api, args: {
   amount: number;
   method: string;
 }): Promise<void> {
-  const body = [
-    '> {feed_title} *New Topup*',
-    '>',
-    `> {refer_user} *User:* ${maskId(args.userId)}`,
-    `> {gift_usdt} *Amount:* ${money(args.amount)} USDT`,
-    `> {paymethod_others} *Method:* ${args.method}`,
-  ].join('\n');
-  await send(api, body, {
+  const html = renderHtmlTemplate([
+    '<blockquote>',
+    '{feed_title} <b>New Topup!</b>',
+    '',
+    `{refer_user} <b>User:</b> <b>${maskId(args.userId)}</b>`,
+    `{gift_usdt} <b>Amount:</b> <b>${money(args.amount)} USDT</b>`,
+    `{paymethod_others} <b>Method:</b> <b>${escapeAttr(args.method)}</b>`,
+    '</blockquote>',
+  ].join('\n'));
+  await sendRenderedHtml(api, html, {
     text: 'Top-Up Wallet',
     iconKey: 'deposits_wallet',
     url: publicFeedBotUrl('topup'),
@@ -160,16 +193,18 @@ export async function notifyWalletCredit(api: Api, args: {
   balanceAfter: number;
   reason: string;
 }): Promise<void> {
-  const body = [
-    '> {feed_title} *New Wallet Credit*',
-    '>',
-    `> {refer_user} *User:* ${maskId(args.userId)}`,
-    `> {gift_usdt} *Amount:* +${money(args.amount)} USDT`,
-    `> {prod_wallet} *Balance:* ${money(args.balanceAfter)} USDT`,
-    `> {orders_note} *Reason:* ${args.reason}`,
-  ].join('\n');
-  await send(api, body, {
-    text: 'Open Settings',
+  const html = renderHtmlTemplate([
+    '<blockquote>',
+    '{feed_title} <b>New Admin Wallet Credit!</b>',
+    '',
+    `{refer_user} <b>User:</b> <b>${maskId(args.userId)}</b>`,
+    `{gift_usdt} <b>Amount:</b> <b>+${money(args.amount)} USDT</b>`,
+    `{prod_wallet} <b>Wallet Balance:</b> <b>${money(args.balanceAfter)} USDT</b>`,
+    `{orders_note} <b>Reason:</b> <b>${escapeAttr(args.reason)}</b>`,
+    '</blockquote>',
+  ].join('\n'));
+  await sendRenderedHtml(api, html, {
+    text: 'Open Wallet',
     iconKey: 'profile_header',
     url: publicFeedBotUrl('settings'),
   });

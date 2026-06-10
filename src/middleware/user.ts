@@ -104,10 +104,6 @@ async function sendReferralNotification(
   } catch {
     totalEarned = 0;
   }
-  const remaining =
-    refBalance.available > 0 && refBalance.available % 10 === 0
-      ? 0
-      : 10 - (refBalance.available % 10);
   // Existing notification templates call this "totalRefs", but the
   // number shown to users must be the spendable Referral Pay balance:
   // lifetime referrals minus purchase/conversion spends.
@@ -137,22 +133,4 @@ Keep sharing your link and stack rewards.`;
       amount: 0.5,
     });
   }
-
-  if (!env.BOT_REFERS_CHANNEL) return;
-
-  const milestone =
-    remaining > 0
-      ? `⏳ *${remaining} more to earn $0.50*`
-      : '🏆 *Reward milestone unlocked!*';
-
-  const notificationMsg = `📈 *New Active Referral!*
-
-👤 *Referrer:* ${referrerUsername}
-🫠 *Refer to:* ${refereeDisplay}
-✅ *Active Referrals:* ${totalRefs}
-${milestone}`;
-
-  await ctx.api
-    .sendMessage(env.BOT_REFERS_CHANNEL, renderMdHtml(notificationMsg), { parse_mode: 'HTML' })
-    .catch(() => {});
 }
