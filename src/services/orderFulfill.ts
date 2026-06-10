@@ -15,11 +15,10 @@
  * handler (verify-on-tx-hash-submit) and the admin re-verify
  * callback.
  *
- * On the rare race condition where stock dropped to zero between
- * deposit creation and verification, the function falls back to
- * crediting the user's wallet for the order total so the user is
- * never out of money — a refund-like behaviour rather than a hard
- * failure.
+ * When stock is gone between deposit creation and verification, the
+ * function now creates a paid preorder/manual-delivery order instead
+ * of refunding automatically. That keeps direct-pay behaviour aligned
+ * with wallet/referral preorder checkout.
  */
 import type { Api } from 'grammy';
 import { logger } from '../logger.js';
@@ -37,6 +36,8 @@ import { publicOrderId } from './orderId.js';
 import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
 import { buildOrderDeliveredChunks } from './orderRender.js';
+import { trySupplierAutoOrder } from './supplierApi.js';
+import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
 import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { t as translate } from '../i18n/index.js';
 import type { DBDeposit, OrderIntent, PaymentProvider } from '../types.js';
@@ -110,34 +111,11 @@ export async function fulfilOrderForDeposit(args: {
     };
   }
 
-  if (!product.unlimited_stock && product.stock < intent.qty) {
-    const newBalance = await credit(
-      deposit.user_id,
-      Number(intent.total),
-      `deposit:${deposit.id}:out_of_stock`,
-      'deposit_credit',
-    );
-    logger.warn(
-      {
-        deposit: deposit.id,
-        productId: intent.product_id,
-        wanted: intent.qty,
-        stock: product.stock,
-        newBalance,
-      },
-      'fulfilOrderForDeposit: out of stock — refunded to wallet',
-    );
-    await safeNotify(
-      api,
-      deposit.user_id,
-      `⚠️ Your direct-pay for *${intent.product_name}* could not be delivered (out of stock). The full amount of *$${intent.total.toFixed(2)}* was credited to your wallet instead.`,
-    );
-    return {
-      ok: false,
-      reason: 'out of stock — refunded to wallet',
-      refundedToWallet: true,
-    };
-  }
+  const user = await findUserById(deposit.user_id);
+  const lang = user?.language ?? env.DEFAULT_LANG;
+  const t = (key: string, vars?: Record<string, string | number>) =>
+    translate(lang, key, vars);
+  const preorder = !product.unlimited_stock && product.stock < intent.qty;
 
   const order = await createOrder({
     user_id: deposit.user_id,
@@ -150,43 +128,81 @@ export async function fulfilOrderForDeposit(args: {
     promo_id: intent.promo_id,
     delivery: `Order #${intent.product_id}-${intent.qty}`,
   });
-  await decrementProductStock(intent.product_id, intent.qty);
-  // ── Stock alert: notify admin if stock depleted or low ──
-  if (!product.unlimited_stock) {
-    const remaining = product.stock - intent.qty;
-    if (remaining <= 3) {
-      void adminLog.logStockAlert(api, {
-        productId: product.id,
-        productName: product.name,
-        remaining: Math.max(0, remaining),
-      });
+  if (!preorder) {
+    await decrementProductStock(intent.product_id, intent.qty);
+    // ── Stock alert: notify admin if stock depleted or low ──
+    if (!product.unlimited_stock) {
+      const remaining = product.stock - intent.qty;
+      if (remaining <= 3) {
+        void adminLog.logStockAlert(api, {
+          productId: product.id,
+          productName: product.name,
+          remaining: Math.max(0, remaining),
+        }).catch((err) => logger.warn({ err }, 'logStockAlert failed'));
+      }
     }
   }
-  const claimed = await claimProductItems(
-    intent.product_id,
-    intent.qty,
-    order.id,
-  );
   const publicId = publicOrderId(order);
+  const paidVia = paidViaLabel(provider, methodName);
+  const supplierOrder = preorder
+    ? null
+    : await trySupplierAutoOrder({
+        localProductId: intent.product_id,
+        qty: intent.qty,
+        localOrderId: order.id,
+        onFailure: (failure) =>
+          adminLog.logSupplierOrderFailed(api, {
+            user: {
+              telegram_id: deposit.user_id,
+              username: user?.username ?? null,
+              first_name: user?.first_name ?? null,
+              email: user?.email ?? null,
+            },
+            orderDbId: order.id,
+            orderPublicId: publicId,
+            productId: intent.product_id,
+            productName: intent.product_name,
+            qty: intent.qty,
+            total: intent.total,
+            paidVia,
+            balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+            supplierName: failure.supplierName,
+            supplierProductId: failure.supplierProductId,
+            reason: failure.error,
+            lowBalance: failure.lowBalance,
+          }).catch((err) => logger.warn({ err }, 'direct-pay: supplier failure admin log failed')),
+      });
+  const claimed = preorder
+    ? []
+    : supplierOrder
+      ? supplierOrder.items
+      : await claimProductItems(
+          intent.product_id,
+          intent.qty,
+          order.id,
+        );
   // Match the wallet-pay layout: split the items into 7-per-chunk
   // messages so the Order Delivered card never blows past Telegram's
   // 4096-char limit on bulk orders. The first chunk goes inside the
   // header card; subsequent chunks are sent as plain blockquote
   // messages right below it.
   const deliveredChunks = buildOrderDeliveredChunks(claimed);
+  const pendingText = preorder
+    ? t('shop.buy.preorder_pending')
+    : t('shop.buy.delivery_pending');
   const firstChunkBlock =
     deliveredChunks[0]?.inlineBlock ??
-    '> Manual delivery — admin will follow up shortly.';
+    `> ${pendingText}`;
   const deliveredItemsForDb =
-    claimed.length > 0 ? claimed.join('\n') : 'Manual delivery — admin will follow up shortly.';
+    claimed.length > 0 ? claimed.join('\n') : pendingText;
   // Always persist `delivered_items` — even the manual-delivery
   // placeholder — so the My Orders detail screen can render the
   // order without falling back to the legacy `delivery` blob.
   await setOrderDeliveredItems(order.id, deliveredItemsForDb);
-  const user = await findUserById(deposit.user_id);
-  const lang = user?.language ?? env.DEFAULT_LANG;
-  const t = (key: string, vars?: Record<string, string | number>) =>
-    translate(lang, key, vars);
+  const deliveredKb = new InlineKeyboard();
+  inlineBtn(deliveredKb, lang, 'using_method', `tut:${intent.product_id}`);
+  deliveredKb.row();
+  inlineBtn(deliveredKb, lang, 'send_note_txt', `order:txt:${order.id}`);
 
   // Step 1: Payment Verified card
   await safeSendHtml(
@@ -200,11 +216,12 @@ export async function fulfilOrderForDeposit(args: {
   );
 
   // Step 2: Order Delivered card with the first chunk of items.
+  const headerHasKeyboard = deliveredChunks.length <= 1;
   await safeSendHtml(
     api,
     deposit.user_id,
     renderMdHtml(
-      t('shop.buy.order_delivered', {
+      t(preorder ? 'shop.buy.order_preordered' : 'shop.buy.order_delivered', {
         order_id: publicId,
         name: intent.product_name,
         qty: intent.qty,
@@ -212,6 +229,7 @@ export async function fulfilOrderForDeposit(args: {
         items: firstChunkBlock,
       }),
     ),
+    headerHasKeyboard ? { reply_markup: deliveredKb } : undefined,
   );
 
   // Step 2b: send any remaining 7-link chunks as plain blockquote
@@ -221,11 +239,10 @@ export async function fulfilOrderForDeposit(args: {
     const chunk = deliveredChunks[i];
     if (!chunk) continue;
     try {
-      await api.sendMessage(
-        deposit.user_id,
-        renderMdHtml(chunk.inlineBlock),
-        { parse_mode: 'HTML' },
-      );
+      const opts = chunk.isLast
+        ? { parse_mode: 'HTML' as const, reply_markup: deliveredKb }
+        : { parse_mode: 'HTML' as const };
+      await api.sendMessage(deposit.user_id, renderMdHtml(chunk.inlineBlock), opts);
     } catch (err) {
       logger.warn(
         {
@@ -262,6 +279,27 @@ export async function fulfilOrderForDeposit(args: {
     );
   }
 
+  // Step 3: Email follow-up
+  if (user?.email) {
+    const { sendInvoiceEmail } = await import('./mailer.js');
+    void sendInvoiceEmail({
+      email: user.email,
+      firstName: user.first_name ?? null,
+      username: user.username ?? null,
+      orderPublicId: publicId,
+      orderDate: order.created_at,
+      productName: intent.product_name,
+      qty: intent.qty,
+      unitPrice: intent.unit_price,
+      total: intent.total,
+      discount: intent.discount,
+      paidVia,
+      items: claimed,
+      invoiceLink: env.BOT_USERNAME
+        ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
+        : '',
+    });
+  }
 
   // Step 4: Admin log entry. `balanceAfter` is the user's current
   // wallet balance (unchanged — direct-pay never touches the wallet);
@@ -282,8 +320,9 @@ export async function fulfilOrderForDeposit(args: {
       qty: intent.qty,
       unitPrice: intent.unit_price,
       total: intent.total,
-      paidVia: paidViaLabel(provider, methodName),
+      paidVia,
       balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+      lifecycle: preorder ? 'preorder' : 'delivered',
     })
     .catch((err) => logger.warn({ err }, 'direct-pay: logOrderCreated failed'));
 
@@ -298,9 +337,14 @@ async function safeNotify(api: Api, userId: number, text: string): Promise<void>
   }
 }
 
-async function safeSendHtml(api: Api, userId: number, html: string): Promise<void> {
+async function safeSendHtml(
+  api: Api,
+  userId: number,
+  html: string,
+  opts?: Parameters<Api['sendMessage']>[2],
+): Promise<void> {
   try {
-    await api.sendMessage(userId, html, { parse_mode: 'HTML' });
+    await api.sendMessage(userId, html, { parse_mode: 'HTML', ...(opts ?? {}) });
   } catch (err) {
     logger.warn({ err, userId }, 'direct-pay: user HTML DM failed');
   }

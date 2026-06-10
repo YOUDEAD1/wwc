@@ -5,6 +5,8 @@
  * buttons + multi-step text input collected through `session.adminFlow`.
  */
 import { Composer, InlineKeyboard, InputFile, type MiddlewareFn } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
+import { inlineBtn } from '../../keyboards/helpers.js';
 import {
   addCategory,
   addPaymentMethod,
@@ -23,6 +25,8 @@ import {
   getDeposit,
   getOrder,
   getProductSales,
+  getProductSalesSince,
+  getRangeStats,
   getStats,
   getUserOrderSummary,
   isAdmin,
@@ -46,6 +50,10 @@ import {
   clearAllUserPriceOverrides,
   countProductPriceOverrides,
   clearAllProductPriceOverrides,
+  addReferralAdjustment,
+  getReferralBalance,
+  listReferralAdminRows,
+  resetReferralUsage,
   getProduct,
   setDepositAmount,
   setDepositStatus,
@@ -75,9 +83,21 @@ import {
   listAvailableProductItems,
   clearProductItems,
   deleteProductItem,
+  setOrderDeliveredItems,
   syncProductStockToPool,
   setDepositNote,
   changeProductId,
+  createSupplierApiSource,
+  deleteSupplierApiSource,
+  deleteSupplierProductLink,
+  getSupplierApiSource,
+  getSupplierProductLinkByProduct,
+  listSupplierApiSources,
+  listSupplierOrderLogs,
+  listSupplierProductLinks,
+  updateSupplierApiSource,
+  updateSupplierProductLink,
+  upsertSupplierProductLink,
 } from '../../db/queries.js';
 import { verifyAndCreditDeposit } from '../../services/depositVerify.js';
 import {
@@ -114,23 +134,92 @@ import {
   setCategoryColor,
   getCategoryDefaultColor,
   setCategoryDefaultColor,
+  getProductColor,
+  setProductColor,
+  clearProductColor,
 } from '../../services/settings.js';
 import {
+  FORMAT_ENTITY_TYPES,
+  entitiesToHtml,
   injectCustomEmojiMarkers,
+  renderHtmlTemplate,
   renderMdHtml,
+  stripCustomEmojiTags,
 } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
+import * as publicFeed from '../../services/publicFeed.js';
+import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
+import { fulfillPendingPreordersForProduct } from '../../services/preorder.js';
+import { buildOrderDeliveredChunks } from '../../services/orderRender.js';
+import { publicOrderId } from '../../services/orderId.js';
+import { maybeStartDeliveryFormFromApi } from '../../services/postPurchaseDelivery.js';
+import {
+  apiBaseUrl,
+  disableApiKey,
+  getAdminApiOverview,
+  getAdminApiUser,
+  listAdminApiOrders,
+  listAdminApiUsers,
+} from '../../services/resellerApi.js';
+import {
+  isSupplierMigrationError,
+  canbosoSupplierConfig,
+  fetchSupplierProducts,
+  importSupplierProduct,
+  parseSupplierLinkConfig,
+  parseSupplierSourceConfig,
+  supabaseResellerSupplierConfig,
+  supplierSellPrice,
+  syncSupplierProductLink,
+  testSupplierConnection,
+  type SupplierCatalogProduct,
+} from '../../services/supplierApi.js';
 import type { ColorMode } from '../../../config/index.js';
 import { BUTTON_KEYS, COLOR_PREFIX, EMOJI, colorModeToStyle } from '../../../config/index.js';
 import type { AppCtx } from '../../middleware/user.js';
 import { logger } from '../../logger.js';
 import { env } from '../../env.js';
-import type { DBOrder, DBUser, DBPromo } from '../../types.js';
+import type { DBOrder, DBUser, DBPromo, DBSupplierApiSource, DBSupplierProductLink } from '../../types.js';
 import { supabase } from '../../db/supabase.js';
 import { getForceSub, setForceSubEnabled, setForceSubChannel } from '../../services/forceSub.js';
 
 export const adminBot = new Composer<AppCtx>();
+
+async function autoFulfillPreordersAfterRestock(
+  ctx: AppCtx,
+  productId: number,
+): Promise<void> {
+  try {
+    const result = await fulfillPendingPreordersForProduct(ctx.api, productId);
+    if (result.fulfilled > 0) {
+      await ctx.reply(
+        `✅ Auto-delivered ${result.fulfilled} pending preorder(s) for product #${productId}.`,
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, productId }, 'autoFulfillPreordersAfterRestock failed');
+  }
+}
+
+async function notifyPublicStockAdded(
+  ctx: AppCtx,
+  productId: number,
+  qtyAdded: number,
+): Promise<void> {
+  if (qtyAdded <= 0) return;
+  const product = await getProduct(productId);
+  if (!product) return;
+  await publicFeed.notifyStockAdded(ctx.api, {
+    productId,
+    productName: product.name,
+    productEmoji: product.emoji,
+    productEmojiId: product.emoji_id,
+    qtyAdded,
+    available: product.stock,
+    price: product.price,
+  });
+}
 
 /**
  * Gate that ONLY blocks explicit admin invocations (commands and
@@ -172,16 +261,20 @@ function rootMenu(): InlineKeyboard {
     .text('👥 Users', 'adm:usr:0')
     .text('📣 Broadcast', 'adm:ann')
     .row()
+    .text('🎁 Referrals', 'adm:refs:0')
+    .text('🧾 Orders', 'adm:ord:0')
+    .row()
     .text('🎨 Customize', 'adm:cust')
     .text('⚙️ Bot Settings', 'adm:bot')
     .row()
     .text('📊 Stats', 'adm:stats')
     .text('🏪 Store Settings', 'adm:store')
     .row()
-    .text('🧾 Orders', 'adm:ord:0')
+    .text('🔌 API', 'adm:api')
     .text('💸 Promos', 'adm:promo')
     .row()
     .text('🎁 Gift Codes', 'adm:gift')
+    .row()
     .text('💎 Custom Prices', 'adm:price')
     .row()
     .text('🔌 API Manager', 'adm:api')
@@ -662,13 +755,89 @@ adminBot.callbackQuery(/^adm:gift:del:(.+)$/, async (ctx) => {
 // at the first ~30 products and truncate the entire body to 3950
 // chars as a final guard.
 function escapeMd(s: string): string {
-  // Markdown v1 only treats `_*\`[` specially. We keep this minimal
-  // because the rest of the admin UI also uses Markdown v1.
-  return s.replace(/([_*`[\]])/g, '\\$1');
+  // Markdown v1 treats backslash plus `_*\`[` as special.
+  // Keep the escape set minimal to match the rest of the admin UI.
+  return s.replace(/([_*`[\]\\])/g, '\\$1');
+}
+
+function statsRangeKeyboard(days?: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.text(days === 1 ? '✅ 24h' : '24h', 'adm:stats:r:1')
+    .text(days === 7 ? '✅ 7d' : '7d', 'adm:stats:r:7')
+    .text(days === 30 ? '✅ 30d' : '30d', 'adm:stats:r:30')
+    .row()
+    .text('🕒 Custom', 'adm:stats:custom')
+    .text('🔄 Refresh', days ? `adm:stats:r:${days}` : 'adm:stats')
+    .row()
+    .text('⬅️ Back', 'adm:back');
+  return kb;
+}
+
+async function showAdminStats(ctx: AppCtx, days?: number): Promise<void> {
+  const [allTime, range, productSales] = await Promise.all([
+    getStats(),
+    days ? getRangeStats(days) : Promise.resolve(null),
+    days ? getProductSalesSince(days, 50) : getProductSales(50),
+  ]);
+  const lines: string[] = [];
+  lines.push('📊 *Bot Stats*');
+  lines.push('');
+  lines.push('🌐 *All-Time Overview*');
+  lines.push(`👥 Users: *${allTime.users}*`);
+  lines.push(`📦 Active products: *${allTime.active_products}*`);
+  lines.push(`🗂 Active categories: *${allTime.active_categories}*`);
+  lines.push(`🧾 Total orders: *${allTime.orders}*`);
+  lines.push(`💰 Total revenue: *$${allTime.revenue.toFixed(2)}*`);
+  lines.push(`💳 Pending deposits: *${allTime.pending_deposits}*`);
+
+  if (range) {
+    const label = range.days === 1 ? 'Last 24 Hours' : `Last ${range.days} Days`;
+    lines.push('');
+    lines.push(`⏱ *${label}*`);
+    lines.push(`🧾 Orders: *${range.orders}*`);
+    lines.push(`📦 Units sold: *${range.units}*`);
+    lines.push(`👤 Buyers: *${range.unique_buyers}*`);
+    lines.push(`💰 Revenue: *$${range.revenue.toFixed(2)}*`);
+    lines.push(`💵 Approved topups: *${range.approved_deposits}* / *$${range.deposit_amount.toFixed(2)}*`);
+    lines.push(`🆕 New users: *${range.new_users}*`);
+  }
+
+  if (productSales.length > 0) {
+    lines.push('');
+    lines.push(days === 1 ? '🏆 *24h Top Sellers*' : '🏆 *Top Sellers*');
+    productSales.slice(0, 5).forEach((row, i) => {
+      const medal = ['🥇', '🥈', '🥉', '4.', '5.'][i] ?? `${i + 1}.`;
+      lines.push(`${medal} ${escapeMd(row.product_name)} — *${row.units_sold}*u · *$${row.revenue.toFixed(2)}*`);
+    });
+    lines.push('');
+    lines.push(days === 1 ? '📈 *24h Products Breakdown*' : '📈 *Products Breakdown*');
+    productSales.slice(0, 30).forEach((row) => {
+      const stock = row.stock_left !== null ? `stock *${row.stock_left}*` : '_deleted_';
+      const last = row.last_sold_at ? ` · last *${row.last_sold_at.slice(0, 10)}*` : '';
+      lines.push(`• ${escapeMd(row.product_name)}: *${row.units_sold}*u · *$${row.revenue.toFixed(2)}* · ${stock}${last}`);
+    });
+    if (productSales.length > 30) lines.push(`_…and ${productSales.length - 30} more products_`);
+  } else if (days) {
+    lines.push('', '_No paid orders in this range yet._');
+  }
+
+  let text = lines.join('\n');
+  if (text.length > 3950) text = `${text.slice(0, 3900)}\n\n_…(truncated)_`;
+  const opts = {
+    parse_mode: 'Markdown' as const,
+    reply_markup: statsRangeKeyboard(days),
+  };
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, opts);
+  } else {
+    await ctx.reply(text, opts);
+  }
 }
 
 adminBot.callbackQuery('adm:stats', async (ctx) => {
   await ctx.answerCallbackQuery();
+  await showAdminStats(ctx);
+  return;
   const [s, productSales] = await Promise.all([
     getStats(),
     getProductSales(50),
@@ -729,6 +898,1330 @@ adminBot.callbackQuery('adm:stats', async (ctx) => {
   });
 });
 
+adminBot.callbackQuery(/^adm:stats:r:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminStats(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery('adm:stats:custom', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'stats_custom_days', step: 'days', data: {} };
+  await ctx.editMessageText(
+    '🕒 *Custom Stats Range*\n\nSend number of days, e.g. `3`, `14`, `90`.\n\nOr `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+// ---------- Reseller Product API ----------
+//
+// Admin-side control center for the public reseller API:
+// overview, active keys, API spend, top reseller users, recent API
+// orders, and one-tap key disable.
+function apiMoney(n: number): string {
+  return Number(n).toFixed(2);
+}
+
+function apiPremiumButton(
+  kb: InlineKeyboard,
+  emojiKey: string,
+  style: 'primary' | 'success' | 'danger' = 'primary',
+): void {
+  const spec = EMOJI[emojiKey];
+  if (typeof spec === 'object' && spec.custom_emoji_id) kb.icon(spec.custom_emoji_id);
+  kb.style(style);
+}
+
+function apiDate(iso: string | null): string {
+  if (!iso) return '—';
+  return iso.replace('T', ' ').slice(0, 16);
+}
+
+function apiUserLabel(user: {
+  userId: number;
+  username: string | null;
+  firstName: string | null;
+}): string {
+  if (user.username) return `@${user.username}`;
+  if (user.firstName) return `${user.firstName} (${user.userId})`;
+  return String(user.userId);
+}
+
+function adminApiKeyboard(): InlineKeyboard {
+  const kb = new InlineKeyboard()
+    .text('👥 API Users', 'adm:api:users:0')
+    .text('🧾 API Orders', 'adm:api:orders:0')
+    .row()
+    .copyText('🔗 Copy Endpoint', apiBaseUrl())
+    .row()
+    .url('📘 Open API Docs', apiBaseUrl())
+    .row()
+    .text('🔄 Refresh', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+function adminApiKeyboardPremium(): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.text('API Users', 'adm:api:users:0');
+  apiPremiumButton(kb, 'profile_username', 'primary');
+  kb.text('API Orders', 'adm:api:orders:0');
+  apiPremiumButton(kb, 'orders_title', 'primary');
+  kb.row();
+  kb.copyText('Copy Endpoint', apiBaseUrl());
+  apiPremiumButton(kb, 'profile_link', 'primary');
+  kb.row();
+  kb.text('Supplier APIs', 'adm:api:suppliers:0');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  kb.row();
+  kb.url('Open API Docs', apiBaseUrl());
+  apiPremiumButton(kb, 'orders_note', 'primary');
+  kb.row();
+  kb.text('Refresh', 'adm:api');
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiError(ctx: AppCtx, err: unknown): Promise<void> {
+  logger.error({ err }, 'admin API dashboard failed');
+  const text = [
+    '⚠️ *API Dashboard Not Ready*',
+    '',
+    'Run this Supabase migration first:',
+    '`supabase/migrations/0036_reseller_api.sql`',
+    '',
+    '_Paste the SQL file contents in Supabase SQL Editor, not the file path._',
+  ].join('\n');
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
+}
+
+async function showAdminApiOverview(ctx: AppCtx): Promise<void> {
+  try {
+    const s = await getAdminApiOverview();
+    const lines: string[] = [
+      '🔌 *Reseller API Control Panel*',
+      '',
+      `🟢 Active keys: *${s.activeKeys}* / ${s.totalKeys}`,
+      `👥 API users: *${s.totalUsers}*`,
+      `🧾 API orders: *${s.totalOrders}*`,
+      `💰 API spend: *${apiMoney(s.totalSpent)} USDT*`,
+      '',
+      '⏱ *Live Usage*',
+      `24h: *${s.orders24h}* orders · *${apiMoney(s.spend24h)} USDT*`,
+      `7d: *${s.orders7d}* orders · *${apiMoney(s.spend7d)} USDT*`,
+      `30d: *${s.orders30d}* orders · *${apiMoney(s.spend30d)} USDT*`,
+      '',
+      '*Endpoint*',
+      `\`${s.endpoint}\``,
+    ];
+
+    if (s.topUsers.length > 0) {
+      lines.push('', '🏆 *Top API Users*');
+      s.topUsers.forEach((u, i) => {
+        const marker = u.active ? '🟢' : '🔴';
+        lines.push(
+          `${i + 1}. ${marker} ${escapeMd(apiUserLabel(u))} — *${u.orders}* orders · *${apiMoney(u.totalSpent)}*`,
+        );
+      });
+    }
+
+    if (s.recentOrders.length > 0) {
+      lines.push('', '🧾 *Recent API Orders*');
+      s.recentOrders.forEach((o) => {
+        const id = o.orderPublicId ?? `#${o.orderDbId}`;
+        lines.push(
+          `• \`${id}\` · ${escapeMd(o.productName)} ×${o.qty} · *${apiMoney(o.total)}*`,
+        );
+      });
+    }
+
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: adminApiKeyboardPremium(),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery('adm:api', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiOverview(ctx);
+});
+
+function apiUsersKeyboard(page: number, pages: number, rows: Array<{ userId: number; active: boolean }>): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const row of rows) {
+    kb.text(`${row.active ? '🟢' : '🔴'} ${row.userId}`, `adm:api:user:${row.userId}`);
+    kb.row();
+  }
+  if (pages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:api:users:${page - 1}`);
+    kb.text(`${page + 1}/${pages}`, 'noop:api-users-page');
+    if (page + 1 < pages) kb.text('Next ▶️', `adm:api:users:${page + 1}`);
+    kb.row();
+  }
+  kb.text('🔄 Refresh', `adm:api:users:${page}`).text('🔌 API Home', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiUsers(ctx: AppCtx, page: number): Promise<void> {
+  try {
+    const data = await listAdminApiUsers({ page, perPage: 8 });
+    const lines = [
+      '👥 *API Users*',
+      '',
+      `Total: *${data.total}*`,
+      '',
+    ];
+    if (data.rows.length === 0) {
+      lines.push('_No API users yet._');
+    } else {
+      data.rows.forEach((u, i) => {
+        const n = data.page * 8 + i + 1;
+        const status = u.active ? '🟢 Active' : '🔴 Disabled';
+        lines.push(
+          `${n}. *${escapeMd(apiUserLabel(u))}*`,
+          `   ${status} · orders *${u.orders}* · spent *${apiMoney(u.totalSpent)} USDT*`,
+          `   balance *${apiMoney(u.balance)} USDT* · last ${escapeMd(apiDate(u.lastUsedAt ?? u.lastOrderAt))}`,
+        );
+      });
+    }
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: apiUsersKeyboard(data.page, data.pages, data.rows),
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:users:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiUsers(ctx, Number(ctx.match[1]));
+});
+
+function apiOrdersKeyboard(page: number, pages: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (pages > 1) {
+    if (page > 0) kb.text('◀️ Prev', `adm:api:orders:${page - 1}`);
+    kb.text(`${page + 1}/${pages}`, 'noop:api-orders-page');
+    if (page + 1 < pages) kb.text('Next ▶️', `adm:api:orders:${page + 1}`);
+    kb.row();
+  }
+  kb.text('🔄 Refresh', `adm:api:orders:${page}`).text('🔌 API Home', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiOrders(ctx: AppCtx, page: number): Promise<void> {
+  try {
+    const data = await listAdminApiOrders({ page, perPage: 8 });
+    const lines = ['🧾 *Recent API Orders*', '', `Total: *${data.total}*`, ''];
+    if (data.rows.length === 0) {
+      lines.push('_No API orders yet._');
+    } else {
+      data.rows.forEach((o, i) => {
+        const n = data.page * 8 + i + 1;
+        const id = o.orderPublicId ?? `#${o.orderDbId}`;
+        lines.push(
+          `${n}. \`${id}\` — *${escapeMd(o.productName)}*`,
+          `   User: ${escapeMd(apiUserLabel(o))} · qty *${o.qty}* · *${apiMoney(o.total)} USDT*`,
+          `   ${escapeMd(apiDate(o.createdAt))}${o.requestId ? ` · req \`${escapeMd(o.requestId.slice(0, 32))}\`` : ''}`,
+        );
+      });
+    }
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: apiOrdersKeyboard(data.page, data.pages),
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:orders:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiOrders(ctx, Number(ctx.match[1]));
+});
+
+function apiUserDetailKeyboard(userId: number, active: boolean): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (active) {
+    kb.text('❌ Disable API Key', `adm:api:disable:${userId}`).row();
+  }
+  kb.text('👥 API Users', 'adm:api:users:0').text('🔄 Refresh', `adm:api:user:${userId}`).row();
+  kb.text('🔌 API Home', 'adm:api');
+  backRow(kb);
+  return kb;
+}
+
+async function showAdminApiUser(ctx: AppCtx, userId: number): Promise<void> {
+  try {
+    const data = await getAdminApiUser(userId);
+    if (!data.user) {
+      await ctx.editMessageText('❌ API user not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const u = data.user;
+    const lines = [
+      '👤 *API User Detail*',
+      '',
+      `User: *${escapeMd(apiUserLabel(u))}*`,
+      `Telegram ID: \`${u.userId}\``,
+      `Status: *${u.active ? '🟢 Active' : '🔴 Disabled'}*`,
+      `Key: \`${u.keyPrefix ? `${u.keyPrefix}••••••••` : '—'}\``,
+      `Created: ${escapeMd(apiDate(u.keyCreatedAt))}`,
+      `Last used: ${escapeMd(apiDate(u.lastUsedAt))}`,
+      '',
+      `Wallet/API balance: *${apiMoney(u.balance)} USDT*`,
+      `Orders: *${u.orders}*`,
+      `Total spend: *${apiMoney(u.totalSpent)} USDT*`,
+      `24h / 7d / 30d: *${apiMoney(u.spend24h)}* / *${apiMoney(u.spend7d)}* / *${apiMoney(u.spend30d)}*`,
+    ];
+    if (data.recentOrders.length > 0) {
+      lines.push('', '🧾 *Last Orders*');
+      data.recentOrders.forEach((o) => {
+        const id = o.orderPublicId ?? `#${o.orderDbId}`;
+        lines.push(`• \`${id}\` · ${escapeMd(o.productName)} ×${o.qty} · *${apiMoney(o.total)}*`);
+      });
+    }
+    await ctx.editMessageText(lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: apiUserDetailKeyboard(userId, u.active),
+    });
+  } catch (err) {
+    await showAdminApiError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:user:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showAdminApiUser(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:api:disable:(\d+)$/, async (ctx) => {
+  const userId = Number(ctx.match[1]);
+  await disableApiKey(userId);
+  await ctx.answerCallbackQuery({ text: 'API key disabled.' });
+  await showAdminApiUser(ctx, userId);
+});
+
+// ---------- Supplier APIs ----------
+//
+// This is the owner's upstream side: connect supplier/reseller APIs
+// from other bots, map selected local products to supplier product
+// ids, test/sync them, and let checkout auto-order where possible.
+
+const SUPPLIERS_PER_PAGE = 8;
+const SUPPLIER_PRODUCTS_PER_PAGE = 6;
+type SupplierCatalogMode = 'all' | 'stock';
+
+function supplierProductFilter(
+  products: SupplierCatalogProduct[],
+  mode: SupplierCatalogMode,
+): SupplierCatalogProduct[] {
+  if (mode === 'stock') {
+    return products.filter((p) => p.stock === null || p.stock > 0);
+  }
+  return products;
+}
+
+function supplierStockLabel(product: SupplierCatalogProduct): string {
+  return product.stock === null ? 'stock ?' : `stock ${product.stock}`;
+}
+
+function supplierImportActive(source: DBSupplierApiSource): boolean {
+  return Boolean(source.auto_import_active);
+}
+
+function supplierImportCategory(source: DBSupplierApiSource): string {
+  return source.import_category_name || `Supplier - ${source.name}`;
+}
+
+async function supplierProductAt(
+  source: DBSupplierApiSource,
+  mode: SupplierCatalogMode,
+  index: number,
+): Promise<{ products: SupplierCatalogProduct[]; product: SupplierCatalogProduct | null }> {
+  const products = supplierProductFilter(await fetchSupplierProducts(source), mode);
+  return { products, product: products[index] ?? null };
+}
+
+async function supplierSendOrEdit(
+  ctx: AppCtx,
+  text: string,
+  opts: Parameters<AppCtx['editMessageText']>[1],
+): Promise<void> {
+  if (ctx.callbackQuery?.message) {
+    await ctx.editMessageText(text, opts);
+    return;
+  }
+  await ctx.reply(text, opts);
+}
+
+function supplierSetupExample(): string {
+  return JSON.stringify(
+    {
+      name: 'Supplier Bot Name',
+      base_url: 'https://supplier.example.com/api',
+      api_key: 'PASTE_API_KEY_HERE',
+      auth_mode: 'x-api-key',
+      key_header: 'x-api-key',
+      products_path: '/products',
+      balance_path: '/balance',
+      order_path: '/order',
+      products_json_path: 'products',
+      balance_json_path: 'balance',
+      product_id_json_path: 'id',
+      product_name_json_path: 'name',
+      product_price_json_path: 'price',
+      product_stock_json_path: 'stock',
+      order_items_json_path: 'items',
+      order_request_template: {
+        product_id: '{{supplier_product_id}}',
+        quantity: '{{qty}}',
+        request_id: '{{request_id}}',
+      },
+      auto_import_new_products: false,
+      auto_import_active: false,
+      import_category_name: 'Supplier Products',
+      markup_percent: 25,
+    },
+    null,
+    2,
+  );
+}
+
+function supplierMapExample(supplierId?: number): string {
+  return JSON.stringify(
+    {
+      supplier_id: supplierId ?? 1,
+      local_product_id: 12,
+      supplier_product_id: 'SUPPLIER_PRODUCT_ID',
+      supplier_product_name: 'Supplier product name',
+      auto_order: true,
+      auto_sync_stock: true,
+      fallback_manual: true,
+    },
+    null,
+    2,
+  );
+}
+
+async function showSupplierError(ctx: AppCtx, err: unknown): Promise<void> {
+  logger.error({ err }, 'supplier API admin screen failed');
+  const detail = err instanceof Error ? err.message : String(err);
+  const text = isSupplierMigrationError(err)
+    ? [
+        '⚠️ *Supplier APIs Not Ready*',
+        '',
+        'Run these Supabase migrations first:',
+        '`supabase/migrations/0037_supplier_apis.sql`',
+        '`supabase/migrations/0038_supplier_easy_import.sql`',
+        '',
+        '_Paste the SQL file contents in Supabase SQL Editor, not the file path._',
+      ].join('\n')
+    : [
+        '⚠️ *Supplier API Error*',
+        '',
+        `\`${escapeMd(detail.slice(0, 700))}\``,
+      ].join('\n');
+  await supplierSendOrEdit(ctx, text, {
+    parse_mode: 'Markdown',
+    reply_markup: backRow(new InlineKeyboard()),
+  });
+}
+
+function supplierListKeyboard(
+  rows: Array<{ id: number; name: string; enabled: boolean }>,
+  page: number,
+  pages: number,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  kb.text('Add Reseller API', 'adm:api:supplier:add:reseller');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  kb.text('Add Canboso', 'adm:api:supplier:add:canboso');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  kb.row();
+  kb.text('Advanced JSON', 'adm:api:supplier:add');
+  apiPremiumButton(kb, 'orders_note', 'primary');
+  kb.text('Map Product', 'adm:api:supplier:map');
+  apiPremiumButton(kb, 'orders_product', 'primary');
+  kb.row();
+  for (const row of rows) {
+    kb.text(`${row.enabled ? 'ON' : 'OFF'} ${row.name}`.slice(0, 56), `adm:api:supplier:${row.id}`);
+    apiPremiumButton(kb, row.enabled ? 'stats_refresh' : 'orders_note', row.enabled ? 'success' : 'danger');
+    kb.row();
+  }
+  if (pages > 1) {
+    if (page > 0) kb.text('Prev', `adm:api:suppliers:${page - 1}`);
+    kb.text(`${page + 1}/${pages}`, 'noop:supplier-page');
+    if (page + 1 < pages) kb.text('Next', `adm:api:suppliers:${page + 1}`);
+    kb.row();
+  }
+  kb.text('Refresh', `adm:api:suppliers:${page}`);
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
+  kb.text('API Home', 'adm:api');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  backRow(kb);
+  return kb;
+}
+
+async function showSupplierApis(ctx: AppCtx, page = 0): Promise<void> {
+  try {
+    const data = await listSupplierApiSources(page, SUPPLIERS_PER_PAGE);
+    const pages = Math.max(1, Math.ceil(data.total / SUPPLIERS_PER_PAGE));
+    const links = await listSupplierProductLinks().catch(() => []);
+    const logs = await listSupplierOrderLogs(undefined, 5).catch(() => []);
+    const successLogs = logs.filter((l) => l.status === 'success').length;
+    const failedLogs = logs.filter((l) => l.status === 'failed').length;
+    const lines = [
+      '🔌 *Supplier API Hub*',
+      '',
+      'Connect outside reseller bots/APIs and sell selected supplier products inside your shop.',
+      '',
+      `Suppliers: *${data.total}*`,
+      `Mapped products: *${links.length}*`,
+      `Recent auto orders: *${successLogs}* success / *${failedLogs}* failed`,
+      '',
+      '*Flow*',
+      '1. Tap *Add Reseller API* / *Add Canboso* and paste the API key.',
+      '2. Open the supplier and tap *Browse Products*.',
+      '3. Import selected products or all in-stock products.',
+      '4. Toggle visibility, stock sync, and auto-order by button.',
+    ];
+    if (data.rows.length === 0) {
+      lines.push('', '_No suppliers connected yet._');
+    } else {
+      lines.push('', '*Connected Suppliers*');
+      data.rows.forEach((s, i) => {
+        const n = page * SUPPLIERS_PER_PAGE + i + 1;
+        const status = s.enabled ? 'ON' : 'OFF';
+        lines.push(
+          `${n}. *${escapeMd(s.name)}* (#${s.id})`,
+          `   ${status} · balance ${s.last_balance === null ? '—' : `*${apiMoney(Number(s.last_balance))}*`} · last ${escapeMd(apiDate(s.last_sync_at))}`,
+          s.last_error ? `   error: \`${escapeMd(s.last_error.slice(0, 120))}\`` : '',
+        );
+      });
+    }
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: supplierListKeyboard(data.rows, page, pages),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+function supplierDetailKeyboard(source: DBSupplierApiSource): InlineKeyboard {
+  const id = source.id;
+  const kb = new InlineKeyboard();
+  kb.text('Browse Products', `adm:api:supplier:catalog:${id}:0:all`);
+  apiPremiumButton(kb, 'orders_product', 'primary');
+  kb.text('In Stock Only', `adm:api:supplier:catalog:${id}:0:stock`);
+  apiPremiumButton(kb, 'stats_refresh', 'success');
+  kb.row();
+  kb.text('Import In Stock', `adm:api:supplier:importall:${id}:stock`);
+  apiPremiumButton(kb, 'orders_product', 'success');
+  kb.text('Import All', `adm:api:supplier:importall:${id}:all`);
+  apiPremiumButton(kb, 'orders_note', 'primary');
+  kb.row();
+  kb.text(source.auto_import_new_products ? 'Auto New: ON' : 'Auto New: OFF', `adm:api:supplier:autoimport:${id}`);
+  apiPremiumButton(kb, source.auto_import_new_products ? 'stats_refresh' : 'orders_note', source.auto_import_new_products ? 'success' : 'danger');
+  kb.text(source.auto_import_active ? 'New Visible: ON' : 'New Visible: OFF', `adm:api:supplier:autoactive:${id}`);
+  apiPremiumButton(kb, source.auto_import_active ? 'api_key' : 'orders_note', source.auto_import_active ? 'success' : 'danger');
+  kb.row();
+  kb.text('Test Connection', `adm:api:supplier:test:${id}`);
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
+  kb.text(source.enabled ? 'Disable' : 'Enable', `adm:api:supplier:toggle:${id}`);
+  apiPremiumButton(kb, source.enabled ? 'orders_note' : 'api_key', source.enabled ? 'danger' : 'success');
+  kb.row();
+  kb.text('Sync Links', `adm:api:supplier:sync:${id}`);
+  apiPremiumButton(kb, 'orders_product', 'success');
+  kb.text('Advanced Map', `adm:api:supplier:map:${id}`);
+  apiPremiumButton(kb, 'profile_link', 'primary');
+  kb.row();
+  kb.text('Recent Logs', `adm:api:supplier:logs:${id}`);
+  apiPremiumButton(kb, 'orders_title', 'primary');
+  kb.text('Delete', `adm:api:supplier:delask:${id}`);
+  apiPremiumButton(kb, 'orders_note', 'danger');
+  kb.row();
+  kb.text('Supplier List', 'adm:api:suppliers:0');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  kb.text('API Home', 'adm:api');
+  apiPremiumButton(kb, 'api_key', 'primary');
+  backRow(kb);
+  return kb;
+}
+
+async function showSupplierDetail(ctx: AppCtx, id: number): Promise<void> {
+  try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await supplierSendOrEdit(ctx, '❌ Supplier not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const links = await listSupplierProductLinks(source.id);
+    const logs = await listSupplierOrderLogs(source.id, 5).catch(() => []);
+    const lines = [
+      '🔌 *Supplier Detail*',
+      '',
+      `Name: *${escapeMd(source.name)}*`,
+      `ID: \`${source.id}\``,
+      `Status: *${source.enabled ? 'ON' : 'OFF'}*`,
+      `Auth: \`${escapeMd(source.auth_mode)}\``,
+      `Base URL: \`${escapeMd(source.base_url.slice(0, 120))}\``,
+      `Balance: ${source.last_balance === null ? '—' : `*${apiMoney(Number(source.last_balance))}*`}`,
+      `Markup: *${apiMoney(Number(source.markup_percent))}%* + *${apiMoney(Number(source.fixed_markup))} USDT*`,
+      `Import category: *${escapeMd(supplierImportCategory(source))}*`,
+      `Auto new products: *${source.auto_import_new_products ? 'ON' : 'OFF'}*`,
+      `New imported products: *${source.auto_import_active ? 'visible' : 'hidden until you enable'}*`,
+      `Last test: ${escapeMd(apiDate(source.last_sync_at))}`,
+      source.last_error ? `Last error: \`${escapeMd(source.last_error.slice(0, 300))}\`` : '',
+      '',
+      `Mapped products: *${links.length}*`,
+    ];
+    if (links.length > 0) {
+      for (const link of links.slice(0, 8)) {
+        const product = await getProduct(link.local_product_id).catch(() => null);
+        lines.push(
+          `• #${link.local_product_id} ${escapeMd(product?.name ?? 'unknown')} -> \`${escapeMd(link.supplier_product_id)}\``,
+          `  auto ${link.auto_order ? 'ON' : 'OFF'} · sync ${link.auto_sync_stock ? 'ON' : 'OFF'} · stock ${link.supplier_stock ?? '—'} · cost ${link.supplier_cost ?? '—'}`,
+        );
+      }
+    }
+    if (logs.length > 0) {
+      lines.push('', '*Recent Supplier Orders*');
+      logs.forEach((l) => {
+        lines.push(
+          `• ${escapeMd(apiDate(l.created_at))} · ${escapeMd(l.status)} · product #${l.local_product_id ?? '—'}`,
+        );
+      });
+    }
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: supplierDetailKeyboard(source),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+async function supplierCatalogRows(
+  source: DBSupplierApiSource,
+  mode: SupplierCatalogMode,
+  page: number,
+): Promise<{
+  products: SupplierCatalogProduct[];
+  rows: Array<{
+    product: SupplierCatalogProduct;
+    index: number;
+    link: DBSupplierProductLink | null;
+    local: Awaited<ReturnType<typeof getProduct>>;
+  }>;
+  totalPages: number;
+}> {
+  const products = supplierProductFilter(await fetchSupplierProducts(source), mode);
+  const totalPages = Math.max(1, Math.ceil(products.length / SUPPLIER_PRODUCTS_PER_PAGE));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
+  const from = safePage * SUPPLIER_PRODUCTS_PER_PAGE;
+  const pageProducts = products.slice(from, from + SUPPLIER_PRODUCTS_PER_PAGE);
+  const links = await listSupplierProductLinks(source.id);
+  const linkBySupplierProduct = new Map(links.map((l) => [l.supplier_product_id, l]));
+  const rows = await Promise.all(
+    pageProducts.map(async (product, offset) => {
+      const link = linkBySupplierProduct.get(product.id) ?? null;
+      const local = link ? await getProduct(link.local_product_id).catch(() => null) : null;
+      return { product, index: from + offset, link, local };
+    }),
+  );
+  return { products, rows, totalPages };
+}
+
+async function showSupplierCatalog(
+  ctx: AppCtx,
+  supplierId: number,
+  page: number,
+  mode: SupplierCatalogMode,
+): Promise<void> {
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await supplierSendOrEdit(ctx, '❌ Supplier not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const { products, rows, totalPages } = await supplierCatalogRows(source, mode, page);
+    const safePage = Math.min(Math.max(0, page), totalPages - 1);
+    const lines = [
+      '🔌 *Supplier Products*',
+      '',
+      `Supplier: *${escapeMd(source.name)}* (#${source.id})`,
+      `Filter: *${mode === 'stock' ? 'in stock only' : 'all products'}*`,
+      `Products seen: *${products.length}*`,
+      `Markup: *${apiMoney(Number(source.markup_percent))}%* + *${apiMoney(Number(source.fixed_markup))} USDT*`,
+      '',
+      rows.length === 0
+        ? '_No products found from this supplier._'
+        : '_Tap a product to import/toggle it._',
+    ];
+    const kb = new InlineKeyboard();
+    for (const row of rows) {
+      const status = row.link
+        ? row.local?.active
+          ? 'ON'
+          : 'HIDDEN'
+        : 'IMPORT';
+      const cost = row.product.price === null ? '?' : apiMoney(row.product.price);
+      const sell = apiMoney(supplierSellPrice(source, row.product));
+      const label = `${status} ${row.product.name} · ${cost}->${sell} · ${supplierStockLabel(row.product)}`.slice(0, 60);
+      kb.text(label, `adm:api:supplier:p:${source.id}:${safePage}:${mode}:${row.index}`);
+      apiPremiumButton(kb, row.link ? (row.local?.active ? 'api_key' : 'orders_note') : 'orders_product', row.link && row.local?.active ? 'success' : 'primary');
+      kb.row();
+    }
+    if (safePage > 0) kb.text('Prev', `adm:api:supplier:catalog:${source.id}:${safePage - 1}:${mode}`);
+    kb.text(`${safePage + 1}/${totalPages}`, 'noop:supplier-catalog-page');
+    if (safePage + 1 < totalPages) kb.text('Next', `adm:api:supplier:catalog:${source.id}:${safePage + 1}:${mode}`);
+    kb.row();
+    kb.text(mode === 'stock' ? 'Show All' : 'In Stock Only', `adm:api:supplier:catalog:${source.id}:0:${mode === 'stock' ? 'all' : 'stock'}`);
+    apiPremiumButton(kb, 'stats_refresh', 'primary');
+    kb.text('Supplier Detail', `adm:api:supplier:${source.id}`);
+    apiPremiumButton(kb, 'api_key', 'primary');
+    backRow(kb);
+    await supplierSendOrEdit(ctx, lines.join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+async function showSupplierCatalogProduct(
+  ctx: AppCtx,
+  supplierId: number,
+  page: number,
+  mode: SupplierCatalogMode,
+  index: number,
+): Promise<void> {
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await supplierSendOrEdit(ctx, '❌ Supplier not found.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const { products, product } = await supplierProductAt(source, mode, index);
+    if (!product) {
+      await supplierSendOrEdit(ctx, '❌ Supplier product not found. Refresh the supplier catalog.', {
+        reply_markup: backRow(new InlineKeyboard()),
+      });
+      return;
+    }
+    const links = await listSupplierProductLinks(source.id);
+    const link = links.find((l) => l.supplier_product_id === product.id) ?? null;
+    const local = link ? await getProduct(link.local_product_id).catch(() => null) : null;
+    const cost = product.price === null ? 'unknown' : `${apiMoney(product.price)} USDT`;
+    const sell = `${apiMoney(supplierSellPrice(source, product))} USDT`;
+    const lines = [
+      '🛒 *Supplier Product*',
+      '',
+      `Supplier: *${escapeMd(source.name)}* (#${source.id})`,
+      `Product: *${escapeMd(product.name)}*`,
+      `Supplier ID: \`${escapeMd(product.id)}\``,
+      `Cost: *${escapeMd(cost)}*`,
+      `Your sell price: *${escapeMd(sell)}*`,
+      `Stock: *${escapeMd(supplierStockLabel(product))}*`,
+      '',
+      link
+        ? `Imported: *YES* -> local product #${link.local_product_id}`
+        : 'Imported: *NO*',
+      local ? `Local status: *${local.active ? 'visible' : 'hidden'}*` : '',
+      link ? `Auto order: *${link.auto_order ? 'ON' : 'OFF'}*` : '',
+      link ? `Auto stock sync: *${link.auto_sync_stock ? 'ON' : 'OFF'}*` : '',
+      '',
+      `Catalog position: ${index + 1}/${products.length}`,
+    ];
+    const kb = new InlineKeyboard();
+    if (!link || !local) {
+      kb.text('Import Visible', `adm:api:supplier:import:${source.id}:${page}:${mode}:${index}:1`);
+      apiPremiumButton(kb, 'orders_product', 'success');
+      kb.text('Import Hidden', `adm:api:supplier:import:${source.id}:${page}:${mode}:${index}:0`);
+      apiPremiumButton(kb, 'orders_note', 'primary');
+      kb.row();
+      if (link && !local) {
+        kb.text('Remove Broken Link', `adm:api:supplier:unlink2:${source.id}:${page}:${mode}:${index}:${link.id}`);
+        apiPremiumButton(kb, 'gift_invalid', 'danger');
+        kb.row();
+      }
+    } else {
+      kb.text('Open Local Product', `adm:prod:edit:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_product', 'primary');
+      kb.text(local.active ? 'Hide Product' : 'Show Product', `adm:api:supplier:link:visible:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, local.active ? 'orders_note' : 'api_key', local.active ? 'danger' : 'success');
+      kb.row();
+      kb.text('Edit Price', `adm:prod:price:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'deposits_wallet', 'primary');
+      kb.text('Edit Name', `adm:prod:name:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_product', 'primary');
+      kb.row();
+      kb.text('Premium Emoji', `adm:prod:emoji:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'api_key', 'primary');
+      kb.text('Referral Pay', `adm:prod:ref:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_product', 'primary');
+      kb.row();
+      kb.text('View Note', `adm:prod:note:settxt:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_note', 'primary');
+      kb.text('Description', `adm:prod:desc:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'orders_note', 'primary');
+      kb.row();
+      kb.text('Warranty', `adm:prod:war:set:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'stats_refresh', 'primary');
+      kb.text('Tutorial', `adm:prod:tut:settxt:${link.local_product_id}:0`);
+      apiPremiumButton(kb, 'profile_link', 'primary');
+      kb.row();
+      kb.text(link.auto_order ? 'Auto Order: ON' : 'Auto Order: OFF', `adm:api:supplier:link:auto:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, link.auto_order ? 'api_key' : 'orders_note', link.auto_order ? 'success' : 'danger');
+      kb.text(link.auto_sync_stock ? 'Sync Stock: ON' : 'Sync Stock: OFF', `adm:api:supplier:link:sync:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, link.auto_sync_stock ? 'stats_refresh' : 'orders_note', link.auto_sync_stock ? 'success' : 'danger');
+      kb.row();
+      kb.text('Unlink', `adm:api:supplier:unlink2:${source.id}:${page}:${mode}:${index}:${link.id}`);
+      apiPremiumButton(kb, 'gift_invalid', 'danger');
+      kb.row();
+    }
+    kb.text('Back to Products', `adm:api:supplier:catalog:${source.id}:${page}:${mode}`);
+    apiPremiumButton(kb, 'orders_product', 'primary');
+    kb.text('Supplier Detail', `adm:api:supplier:${source.id}`);
+    apiPremiumButton(kb, 'api_key', 'primary');
+    backRow(kb);
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+}
+
+adminBot.callbackQuery(/^adm:api:suppliers:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierApis(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery('adm:api:supplier:add', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'supplier_api_add', step: 'json', data: {} };
+  await ctx.editMessageText(
+    [
+      '🔌 *Add Supplier API*',
+      '',
+      'Paste one JSON config. You can connect most supplier bots by changing paths/field names.',
+      '',
+      'Example:',
+      '```json',
+      supplierSetupExample(),
+      '```',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery('adm:api:supplier:add:canboso', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'supplier_canboso_add', step: 'key', data: {} };
+  await ctx.editMessageText(
+    [
+      '🔑 *Add Canboso Supplier*',
+      '',
+      'Send the Canboso API key only.',
+      '',
+      'Example:',
+      '`tgb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`',
+      '',
+      'After saving, open *Browse Products* and import by button.',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery('adm:api:supplier:add:reseller', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'supplier_reseller_add', step: 'key', data: {} };
+  await ctx.editMessageText(
+    [
+      '*Add Reseller API Supplier*',
+      '',
+      'Send the reseller API key only. This preset already knows:',
+      '`https://mxcuakzztajvkgtsocln.supabase.co/functions/v1/reseller-api`',
+      '',
+      'Auth: `Authorization: Bearer YOUR_API_KEY`',
+      'Products: `?action=products`',
+      'Balance: `?action=balance`',
+      'Order: `?action=order`',
+      '',
+      'Example:',
+      '`rsk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`',
+      '',
+      'After saving, open *Browse Products* and import products by button.',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:map(?::(\d+))?$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const supplierId = ctx.match[1] ? Number(ctx.match[1]) : undefined;
+  ctx.session.adminFlow = {
+    type: 'supplier_product_link_add',
+    step: 'json',
+    data: supplierId ? { supplier_id: supplierId } : {},
+  };
+  await ctx.editMessageText(
+    [
+      '🔗 *Map Supplier Product*',
+      '',
+      'Paste one JSON mapping. This chooses which supplier product is sold as which local product.',
+      '',
+      'Example:',
+      '```json',
+      supplierMapExample(supplierId),
+      '```',
+      '',
+      'Send `/cancel` to abort.',
+    ].join('\n'),
+    {
+      parse_mode: 'Markdown',
+      reply_markup: backRow(new InlineKeyboard()),
+      link_preview_options: { is_disabled: true },
+    },
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:test:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery({ text: 'Testing supplier...' });
+  try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    const result = await testSupplierConnection(source);
+    const sample = result.sampleProducts
+      .map((p) => `• \`${escapeMd(p.id)}\` ${escapeMd(p.name)} · ${p.price ?? '—'} · stock ${p.stock ?? '—'}`)
+      .join('\n');
+    await ctx.reply(
+      [
+        result.ok ? '✅ *Supplier Test OK*' : '⚠️ *Supplier Test Partial/Failed*',
+        '',
+        `Balance: ${result.balance === null ? '—' : `*${apiMoney(result.balance)}*`}`,
+        `Products seen: *${result.productsSeen}*`,
+        result.error ? `Error: \`${escapeMd(result.error.slice(0, 600))}\`` : '',
+        sample ? ['', '*Sample Products*', sample].join('\n') : '',
+      ].filter(Boolean).join('\n'),
+      { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } },
+    );
+    await showSupplierDetail(ctx, id);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:toggle:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    await updateSupplierApiSource(id, { enabled: !source.enabled });
+    await showSupplierDetail(ctx, id);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:sync:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery({ text: 'Syncing mapped products...' });
+  try {
+    const source = await getSupplierApiSource(id);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    const links = await listSupplierProductLinks(id);
+    let matched = 0;
+    let updated = 0;
+    let failed = 0;
+    for (const link of links) {
+      try {
+        const result = await syncSupplierProductLink(link);
+        if (result.matched) matched += 1;
+        if (result.updatedLocal) updated += 1;
+      } catch (err) {
+        failed += 1;
+        logger.warn({ err, linkId: link.id }, 'supplier link sync failed');
+      }
+    }
+    let imported = 0;
+    let skipped = 0;
+    if (source.auto_import_new_products) {
+      const seenLinks = new Set((await listSupplierProductLinks(id)).map((l) => l.supplier_product_id));
+      const products = await fetchSupplierProducts(source);
+      for (const product of products) {
+        if (seenLinks.has(product.id)) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          const result = await importSupplierProduct({
+            source,
+            product,
+            active: supplierImportActive(source),
+            categoryName: supplierImportCategory(source),
+          });
+          if (result.created) imported += 1;
+          else skipped += 1;
+        } catch (err) {
+          failed += 1;
+          logger.warn({ err, supplierId: id, supplierProductId: product.id }, 'supplier auto import failed');
+        }
+      }
+    }
+    await ctx.reply(
+      `✅ Supplier sync finished.\n\nMatched: *${matched}*\nUpdated local products: *${updated}*\nAuto-imported: *${imported}*\nSkipped: *${skipped}*\nFailed: *${failed}*`,
+      { parse_mode: 'Markdown' },
+    );
+    await showSupplierDetail(ctx, id);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:catalog:(\d+):(\d+):(all|stock)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierCatalog(
+    ctx,
+    Number(ctx.match[1]),
+    Number(ctx.match[2]),
+    ctx.match[3] as SupplierCatalogMode,
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:p:(\d+):(\d+):(all|stock):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierCatalogProduct(
+    ctx,
+    Number(ctx.match[1]),
+    Number(ctx.match[2]),
+    ctx.match[3] as SupplierCatalogMode,
+    Number(ctx.match[4]),
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:import:(\d+):(\d+):(all|stock):(\d+):(0|1)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const active = ctx.match[5] === '1';
+  await ctx.answerCallbackQuery({ text: active ? 'Importing visible product...' : 'Importing hidden product...' });
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    const { product } = await supplierProductAt(source, mode, index);
+    if (!product) {
+      await ctx.answerCallbackQuery({ text: 'Product not found. Refresh.', show_alert: true });
+      return;
+    }
+    const result = await importSupplierProduct({
+      source,
+      product,
+      active,
+      categoryName: supplierImportCategory(source),
+    });
+    await ctx.answerCallbackQuery({
+      text: result.created ? 'Imported.' : 'Already imported.',
+      show_alert: false,
+    });
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:importall:(\d+):(all|stock)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const mode = ctx.match[2] as SupplierCatalogMode;
+  await ctx.answerCallbackQuery({ text: 'Importing supplier products...' });
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) {
+      await ctx.answerCallbackQuery({ text: 'Supplier not found.', show_alert: true });
+      return;
+    }
+    const products = supplierProductFilter(await fetchSupplierProducts(source), mode);
+    const links = await listSupplierProductLinks(source.id);
+    const linkedIds = new Set(links.map((l) => l.supplier_product_id));
+    let created = 0;
+    let existing = 0;
+    let failed = 0;
+    for (const product of products) {
+      if (linkedIds.has(product.id)) {
+        existing += 1;
+        continue;
+      }
+      try {
+        const result = await importSupplierProduct({
+          source,
+          product,
+          active: supplierImportActive(source),
+          categoryName: supplierImportCategory(source),
+        });
+        if (result.created) created += 1;
+        else existing += 1;
+      } catch (err) {
+        failed += 1;
+        logger.warn({ err, supplierId, supplierProductId: product.id }, 'supplier bulk import failed');
+      }
+    }
+    await ctx.reply(
+      [
+        '✅ Supplier import finished.',
+        '',
+        `Created local products: *${created}*`,
+        `Already imported: *${existing}*`,
+        `Failed: *${failed}*`,
+        `Visibility default: *${supplierImportActive(source) ? 'visible' : 'hidden'}*`,
+      ].join('\n'),
+      { parse_mode: 'Markdown' },
+    );
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:autoimport:(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) return;
+    await updateSupplierApiSource(supplierId, {
+      auto_import_new_products: !source.auto_import_new_products,
+    });
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:autoactive:(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const source = await getSupplierApiSource(supplierId);
+    if (!source) return;
+    await updateSupplierApiSource(supplierId, {
+      auto_import_active: !source.auto_import_active,
+    });
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:link:visible:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    const link = (await listSupplierProductLinks(supplierId)).find((l) => l.id === linkId);
+    if (!link) {
+      await ctx.answerCallbackQuery({ text: 'Link not found.', show_alert: true });
+      return;
+    }
+    const product = await getProduct(link.local_product_id);
+    if (!product) {
+      await ctx.answerCallbackQuery({ text: 'Local product missing.', show_alert: true });
+      return;
+    }
+    await setProductActive(product.id, !product.active);
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:link:auto:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    const link = (await listSupplierProductLinks(supplierId)).find((l) => l.id === linkId);
+    if (!link) return;
+    await updateSupplierProductLink(linkId, { auto_order: !link.auto_order });
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:link:sync:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    const link = (await listSupplierProductLinks(supplierId)).find((l) => l.id === linkId);
+    if (!link) return;
+    await updateSupplierProductLink(linkId, { auto_sync_stock: !link.auto_sync_stock });
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:unlink2:(\d+):(\d+):(all|stock):(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const mode = ctx.match[3] as SupplierCatalogMode;
+  const index = Number(ctx.match[4]);
+  const linkId = Number(ctx.match[5]);
+  await ctx.answerCallbackQuery();
+  try {
+    await deleteSupplierProductLink(linkId);
+    await showSupplierCatalogProduct(ctx, supplierId, page, mode, index);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:logs:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    const logs = await listSupplierOrderLogs(id, 12);
+    const lines = ['🧾 *Supplier Order Logs*', '', `Supplier ID: \`${id}\``, ''];
+    if (logs.length === 0) {
+      lines.push('_No supplier order attempts yet._');
+    } else {
+      logs.forEach((l, i) => {
+        lines.push(
+          `${i + 1}. *${escapeMd(l.status)}* · ${escapeMd(apiDate(l.created_at))}`,
+          `   Local order: \`${l.local_order_id ?? '—'}\` · product: \`${l.local_product_id ?? '—'}\``,
+          l.error ? `   Error: \`${escapeMd(l.error.slice(0, 180))}\`` : '',
+        );
+      });
+    }
+    const kb = new InlineKeyboard();
+    kb.text('Supplier Detail', `adm:api:supplier:${id}`);
+    apiPremiumButton(kb, 'api_key', 'primary');
+    kb.text('Refresh', `adm:api:supplier:logs:${id}`);
+    apiPremiumButton(kb, 'stats_refresh', 'primary');
+    backRow(kb);
+    await supplierSendOrEdit(ctx, lines.filter(Boolean).join('\n').slice(0, 3900), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:delask:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  const kb = new InlineKeyboard();
+  kb.text('Yes Delete Supplier', `adm:api:supplier:delete:${id}`);
+  apiPremiumButton(kb, 'orders_note', 'danger');
+  kb.row();
+  kb.text('Cancel', `adm:api:supplier:${id}`);
+  apiPremiumButton(kb, 'stats_refresh', 'primary');
+  await ctx.editMessageText(
+    `⚠️ *Delete supplier #${id}?*\n\nThis removes its product mappings too. Local products stay in your shop.`,
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:delete:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await ctx.answerCallbackQuery();
+  try {
+    await deleteSupplierApiSource(id);
+    await ctx.reply(`✅ Supplier #${id} deleted.`);
+    await showSupplierApis(ctx, 0);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:unlink:(\d+):(\d+)$/, async (ctx) => {
+  const supplierId = Number(ctx.match[1]);
+  const linkId = Number(ctx.match[2]);
+  await ctx.answerCallbackQuery();
+  try {
+    await deleteSupplierProductLink(linkId);
+    await showSupplierDetail(ctx, supplierId);
+  } catch (err) {
+    await showSupplierError(ctx, err);
+  }
+});
+
+adminBot.callbackQuery(/^adm:api:supplier:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showSupplierDetail(ctx, Number(ctx.match[1]));
+});
+
 // ---------- Orders ----------
 //
 // Three views, all rendered in HTML so user-supplied strings
@@ -759,6 +2252,14 @@ function buyerHandle(u: DBUser | null, fallback_id: number): string {
   if (u.username) return `@${u.username}`;
   if (u.first_name) return u.first_name;
   return `id ${u.telegram_id}`;
+}
+
+function isPendingPreorderOrder(order: DBOrder): boolean {
+  return (
+    order.status === 'paid' &&
+    typeof order.delivered_items === 'string' &&
+    order.delivered_items.startsWith('Preorder pending')
+  );
 }
 
 /**
@@ -932,6 +2433,11 @@ adminBot.callbackQuery(/^adm:ord:v:(\d+)$/, async (ctx) => {
   if (buyer) {
     kb.text('👤 Open Buyer', `adm:usr:v:${order.user_id}`).row();
   }
+  if (isPendingPreorderOrder(order)) {
+    kb.text('🛑 Cancel Auto Send', `adm:ord:precancel:${order.id}`)
+      .text('⚡ Auto Send Now', `adm:ord:presend:${order.id}`)
+      .row();
+  }
   if (order.product_id !== null) {
     kb.text('🧾 More buyers of this product', `adm:ord:p:${order.product_id}:0`).row();
   }
@@ -940,6 +2446,55 @@ adminBot.callbackQuery(/^adm:ord:v:(\d+)$/, async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: kb,
   });
+});
+
+adminBot.callbackQuery(/^adm:ord:precancel:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const order = await getOrder(id);
+  if (!order || !isPendingPreorderOrder(order)) {
+    await ctx.answerCallbackQuery({ text: 'This preorder is not pending anymore.', show_alert: true });
+    return;
+  }
+  await setOrderDeliveredItems(
+    id,
+    'Preorder auto-send cancelled by admin. Manual delivery required.',
+  );
+  await ctx.answerCallbackQuery({ text: 'Auto-send cancelled for this preorder.', show_alert: true });
+  const kb = new InlineKeyboard()
+    .text('🔎 View Order', `adm:ord:v:${id}`)
+    .row()
+    .text('⬅️ Back to orders', 'adm:ord:0');
+  await ctx.editMessageText(
+    `🛑 <b>Preorder Auto-Send Cancelled</b>\n\nOrder <code>#${id}</code> will no longer auto-deliver after restock. Deliver it manually when ready.`,
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:ord:presend:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const order = await getOrder(id);
+  if (!order || !isPendingPreorderOrder(order) || order.product_id === null) {
+    await ctx.answerCallbackQuery({ text: 'This preorder cannot auto-send now.', show_alert: true });
+    return;
+  }
+  ctx.session.adminFlow = { type: 'preorder_manual_send', step: 'items', data: { order_id: id } };
+  await ctx.answerCallbackQuery({ text: 'Send the product details now.', show_alert: true });
+  const kb = new InlineKeyboard()
+    .text('🔎 View Order', `adm:ord:v:${id}`)
+    .row()
+    .text('⬅️ Back to orders', 'adm:ord:0');
+  await ctx.editMessageText(
+    [
+      '⚡ <b>Auto Send Now</b>',
+      '',
+      `Order <code>#${id}</code> is ready for manual auto-send.`,
+      'Send the product details/items now.',
+      '',
+      'One account/link/code per line is best.',
+      'Send /cancel to abort.',
+    ].join('\n'),
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
 });
 
 // ---------- Reload / Clear cache ----------
@@ -1104,6 +2659,7 @@ async function showProductList(ctx: AppCtx, page: number): Promise<void> {
       )
       .row();
     kb.text(p.active ? `👁 Hide #${p.id}` : `👁 Show #${p.id}`, `adm:prod:tog:${p.id}:${page}`)
+      .text(`🆔 ID #${p.id}`, `adm:prod:id:set:${p.id}:${page}`)
       .text(`🗑 #${p.id}`, `adm:prod:del:${p.id}:${page}`)
       .row();
     // Per-product Add Items / Edit Pool shortcuts. Both reuse the
@@ -1270,6 +2826,11 @@ async function showProductEditor(
   product_id: number,
   page: number,
 ): Promise<void> {
+  const supplierLink = await getSupplierProductLinkByProduct(product_id).catch((err) => {
+    if (isSupplierMigrationError(err)) return null;
+    logger.warn({ err, product_id }, 'showProductEditor supplier link lookup failed');
+    return null;
+  });
   // Re-align `products.stock` with the live pool count before reading
   // the product so the editor card always reflects reality.
   // `addProductItems()` already calls `syncProductStockToPool` after a
@@ -1281,12 +2842,14 @@ async function showProductEditor(
   // Doing the sync here is idempotent and cheap (two indexed queries),
   // and guarantees the admin-facing card and the buyer-facing stock
   // gate stay consistent after every bulk-add Confirm.
-  await syncProductStockToPool(product_id).catch((err) => {
-    logger.error(
-      { err, product_id },
-      'showProductEditor: syncProductStockToPool failed',
-    );
-  });
+  if (!supplierLink) {
+    await syncProductStockToPool(product_id).catch((err) => {
+      logger.error(
+        { err, product_id },
+        'showProductEditor: syncProductStockToPool failed',
+      );
+    });
+  }
   const p = await getProduct(product_id);
   if (!p) {
     await ctx.editMessageText('⚠️ Product not found.', {
@@ -1299,7 +2862,7 @@ async function showProductEditor(
   // product isn't unlimited — the products.stock column is just a
   // denormalised mirror, the truth is `countAvailableProductItems()`.
   // This keeps the card honest even if a sync ever misses.
-  const stockCell = p.unlimited_stock ? '∞' : String(itemsCount);
+  const stockCell = p.unlimited_stock ? '∞' : supplierLink ? String(p.stock) : String(itemsCount);
   // Per-product custom-price override count — surfaced inline + drives
   // the "Clear all custom prices" button label. Cheap (one head-count
   // query) and lets the admin see at a glance whether any user has a
@@ -1326,12 +2889,23 @@ async function showProductEditor(
   const deliveryVendorLabel = p.delivery_vendor_chat_id
     ? '`' + (p.delivery_vendor_label || p.delivery_vendor_chat_id) + '`'
     : '_unset_';
+  const referralLabel =
+    p.referral_required_count > 0
+      ? `*${p.referral_required_count} referral${p.referral_required_count === 1 ? '' : 's'}*`
+      : '_OFF_';
+  const productColor = getProductColor(p.id);
   const lines = [
     `✏️ *Edit Product #${p.id}*`,
     '',
     `*Name:* ${p.name}`,
     `*Price:* ${Number(p.price).toFixed(2)} USDT`,
     `*Stock:* ${stockCell}`,
+    supplierLink
+      ? `*Supplier link:* \`${supplierLink.supplier_product_id}\` · stock sync *${supplierLink.auto_sync_stock ? 'ON' : 'OFF'}*`
+      : null,
+    `*Referral Pay:* ${referralLabel}`,
+    `*Select Button Color:* ${productColor ? `*${productColor}*` : '_Default / inherited_'}`,
+    `*Warranty:* ${p.warranty ? '`set`' : '_unset_'}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
     `*Description:* ${p.description ? '`set`' : '_unset_'}`,
     `*Note Text:* ${p.note ? '`set`' : '_unset_'}`,
@@ -1344,7 +2918,7 @@ async function showProductEditor(
     `*Delivery vendor:* ${deliveryVendorLabel}`,
     '',
     '_Tap a button to edit. For "Set Premium Emoji" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
-  ];
+  ].filter((x): x is string => x !== null);
   const kb = new InlineKeyboard();
   kb.text('🎬 Set Premium Emoji', `adm:prod:emoji:set:${p.id}:${page}`)
     .text('🧹 Clear Emoji', `adm:prod:emoji:clr:${p.id}:${page}`)
@@ -1354,6 +2928,9 @@ async function showProductEditor(
     .row();
   kb.text('📄 Edit Description', `adm:prod:desc:set:${p.id}:${page}`)
     .text('🧹 Clear Desc', `adm:prod:desc:clr:${p.id}:${page}`)
+    .row();
+  kb.text('⭐ Edit Warranty', `adm:prod:war:set:${p.id}:${page}`)
+    .text('🧹 Clear Warranty', `adm:prod:war:clr:${p.id}:${page}`)
     .row();
   kb.text('📘 Tutorial Text', `adm:prod:tut:settxt:${p.id}:${page}`)
     .text('🎞 Tutorial File', `adm:prod:tut:setfile:${p.id}:${page}`)
@@ -1387,9 +2964,16 @@ async function showProductEditor(
       `adm:prod:pin:${p.id}:${page}`,
     )
     .row();
+  kb.text(
+    `🎨 Select Button Color: ${productColor ?? 'Default'}`,
+    `adm:prod:color:${p.id}:${page}`,
+  ).row();
   kb.text('💰 Edit Price', `adm:prod:price:set:${p.id}:${page}`)
     .text('🔢 Edit Stock', `adm:prod:stock:set:${p.id}:${page}`)
     .text('🅰️ Edit Name', `adm:prod:name:set:${p.id}:${page}`)
+    .row();
+  kb.text('🎁 Referral Pay', `adm:prod:ref:set:${p.id}:${page}`)
+    .text('🧹 Disable Referral Pay', `adm:prod:ref:clr:${p.id}:${page}`)
     .row();
   // One-click wipe of every user's custom-price override for this
   // product so they all fall back to the default Price above. Hidden
@@ -1435,6 +3019,66 @@ adminBot.callbackQuery(/^adm:prod:edit:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   await showProductEditor(ctx, Number(ctx.match[1]), Number(ctx.match[2]));
 });
+
+// --- Per-product catalog select-button color ---
+adminBot.callbackQuery(/^adm:prod:color:(\d+):(\d+)$/, async (ctx) => {
+  const productId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const product = await getProduct(productId);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'Product not found.', show_alert: true });
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  const current = getProductColor(productId);
+  const kb = new InlineKeyboard();
+  const modes: Array<{ mode: ColorMode; label: string }> = [
+    { mode: 'blue', label: '🔵 Blue' },
+    { mode: 'green', label: '🟢 Green' },
+    { mode: 'red', label: '🔴 Red' },
+  ];
+  for (const { mode, label } of modes) {
+    kb.text(`${current === mode ? '✓ ' : ''}${label}`, `adm:prod:color:set:${productId}:${page}:${mode}`);
+    const style = colorModeToStyle(mode);
+    if (style) kb.style(style);
+  }
+  kb.row()
+    .text(
+      `${current === undefined ? '✓ ' : ''}Default / Inherit`,
+      `adm:prod:color:set:${productId}:${page}:default`,
+    )
+    .row()
+    .text('⬅️ Back to product', `adm:prod:edit:${productId}:${page}`);
+  await ctx.editMessageText(
+    [
+      `🎨 <b>Select Button Color</b>`,
+      '',
+      `<b>Product:</b> ${escapeHtml(product.name)}`,
+      `<b>Current:</b> ${current ?? 'Default / inherited'}`,
+      '',
+      'This changes only this product button in the Available Products list.',
+      'Out-of-stock products still show red.',
+    ].join('\n'),
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(
+  /^adm:prod:color:set:(\d+):(\d+):(default|blue|green|red)$/,
+  async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    const page = Number(ctx.match[2]);
+    const selected = ctx.match[3]!;
+    if (selected === 'default') {
+      await clearProductColor(productId);
+      await ctx.answerCallbackQuery({ text: 'Product color reset to inherited default.' });
+    } else {
+      await setProductColor(productId, selected as ColorMode, ctx.from!.id);
+      await ctx.answerCallbackQuery({ text: `Product button color set to ${selected}.` });
+    }
+    await showProductEditor(ctx, productId, page);
+  },
+);
 
 // --- Premium emoji ---
 adminBot.callbackQuery(/^adm:prod:emoji:set:(\d+):(\d+)$/, async (ctx) => {
@@ -1501,6 +3145,52 @@ adminBot.callbackQuery(/^adm:prod:desc:set:(\d+):(\d+)$/, async (ctx) => {
 adminBot.callbackQuery(/^adm:prod:desc:clr:(\d+):(\d+)$/, async (ctx) => {
   const id = Number(ctx.match[1]);
   await updateProduct(id, { description: null });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Warranty ---
+adminBot.callbackQuery(/^adm:prod:war:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_warranty',
+    step: 'text',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '⭐ Send the new *warranty* text now. Send `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:war:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, { warranty: null });
+  await ctx.answerCallbackQuery({ text: 'Cleared' });
+  await showProductEditor(ctx, id, Number(ctx.match[2]));
+});
+
+// --- Referral Pay ---
+adminBot.callbackQuery(/^adm:prod:ref:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  ctx.session.adminFlow = {
+    type: 'edit_product_referral_required',
+    step: 'count',
+    data: { product_id, page },
+  };
+  await ctx.reply(
+    '🎁 Send the referrals required to buy this product with Referral Pay (0 = disabled). Send `/cancel` to abort.',
+    { parse_mode: 'Markdown' },
+  );
+});
+
+adminBot.callbackQuery(/^adm:prod:ref:clr:(\d+):(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  await updateProduct(id, { referral_required_count: 0 });
   await ctx.answerCallbackQuery({ text: 'Cleared' });
   await showProductEditor(ctx, id, Number(ctx.match[2]));
 });
@@ -1933,6 +3623,8 @@ adminBot.callbackQuery(/^adm:prod:items:confirm:(\d+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: `Adding ${staged.length} item(s)…` });
   try {
     await addProductItems(product_id, staged);
+    await autoFulfillPreordersAfterRestock(ctx, product_id);
+    await notifyPublicStockAdded(ctx, product_id, staged.length);
   } catch (err) {
     logger.error({ err, product_id }, 'bulk addProductItems failed');
     await ctx.reply('❌ Could not save items — see logs for details.');
@@ -2255,7 +3947,8 @@ adminBot.callbackQuery('adm:pay', async (ctx) => {
     .text('🔵 Add USDT (TON)', 'adm:pay:add:usdt_ton')
     .text('⚪ Add LTC', 'adm:pay:add:ltc')
     .row()
-    .text('🟡 Add Binance Pay', 'adm:pay:add:binance_pay');
+    .text('🟡 Add Binance Pay', 'adm:pay:add:binance_pay')
+    .text('Add Bybit Pay', 'adm:pay:add:bybit_pay');
   backRow(kb);
   await ctx.editMessageText(
     [
@@ -2356,6 +4049,25 @@ adminBot.callbackQuery('adm:pay:add:binance_pay', async (ctx) => {
   );
 });
 
+adminBot.callbackQuery('adm:pay:add:bybit_pay', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = {
+    type: 'add_bybit_payment',
+    step: 'name',
+    data: {},
+  };
+  await ctx.editMessageText(
+    [
+      '*Add Bybit Pay*',
+      '',
+      'Send the *display name* shown in the user-facing payment menu (e.g. `Bybit Pay`).',
+      '',
+      'Or `/cancel` to abort.',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
 adminBot.callbackQuery('adm:pay:list', async (ctx) => {
   await ctx.answerCallbackQuery();
   await showPaymentList(ctx);
@@ -2383,13 +4095,20 @@ async function showPaymentList(ctx: AppCtx): Promise<void> {
               ? 'auto • TON'
               : m.provider === 'ltc'
                 ? 'auto • LTC'
+                : m.provider === 'bybit_pay'
+                  ? 'auto • Bybit Pay'
                 : 'auto • Binance Pay';
     lines.push(`#${m.id}  ${m.name} — _${tag}_`);
     if (m.address) {
-      const addrLabel = m.provider === 'binance_pay' ? 'Pay ID' : 'addr';
+      const addrLabel =
+        m.provider === 'binance_pay'
+          ? 'Pay ID'
+          : m.provider === 'bybit_pay'
+            ? 'Bybit UID'
+            : 'addr';
       lines.push(`     ${addrLabel}: \`${m.address}\``);
     }
-    if (m.provider === 'binance_pay' && m.pay_name) {
+    if ((m.provider === 'binance_pay' || m.provider === 'bybit_pay') && m.pay_name) {
       lines.push(`     Pay Name: \`${m.pay_name}\``);
     }
     // Per-method chrome controls. The button row reads "🎨 Color"
@@ -3480,7 +5199,7 @@ type AnnounceBuy = {
 function announceBroadcastKeyboard(buy?: AnnounceBuy): InlineKeyboard | undefined {
   if (!buy) return undefined;
   const kb = new InlineKeyboard();
-  kb.text(buy.label, `prod:${buy.product_id}`);
+  kb.url(buy.label, publicFeed.publicFeedBotUrl(`prod_${buy.product_id}`));
   if (buy.icon_custom_emoji_id) kb.icon(buy.icon_custom_emoji_id);
   const style = colorModeToStyle(buy.color);
   if (style !== undefined) kb.style(style);
@@ -3513,19 +5232,34 @@ async function showAnnounceConfirm(ctx: AppCtx): Promise<void> {
   // Always normalize to step:'confirm' on entry — callers may have
   // landed here from any of the buy_* sub-steps.
   const buy = (flow.data as { buy?: AnnounceBuy }).buy;
-  ctx.session.adminFlow = { type: 'announce', step: 'confirm', data: { text: flow.data.text, buy } };
+  ctx.session.adminFlow = {
+    type: 'announce',
+    step: 'confirm',
+    data: { text: flow.data.text, format: flow.data.format, buy },
+  };
   const recipients = await listUsersForAnnouncement();
-  const previewHtml = renderMdHtml(flow.data.text);
+  const previewHtml =
+    flow.data.format === 'html'
+      ? renderHtmlTemplate(flow.data.text)
+      : renderMdHtml(flow.data.text);
   const buyLine = buy
     ? `\n\n🛒 <b>Buy button:</b> <code>${escapeHtml(buy.label)}</code>` +
       `\n   • Product: <code>${escapeHtml(buy.product_name)}</code> (id=${buy.product_id})` +
       `\n   • Color: <code>${buy.color}</code>` +
       `\n   • Icon: ${buy.icon_unicode ? `${buy.icon_unicode} (premium)` : '<i>none</i>'}`
     : '\n\n<i>No Buy button attached. Tap “Add Buy Button” to deep-link an announcement to a specific product.</i>';
-  await ctx.reply(previewHtml, {
-    parse_mode: 'HTML',
-    reply_markup: announceBroadcastKeyboard(buy),
-  });
+  try {
+    await ctx.reply(previewHtml, {
+      parse_mode: 'HTML',
+      reply_markup: announceBroadcastKeyboard(buy),
+    });
+  } catch (err) {
+    logger.warn({ err }, 'announce preview render failed; retrying without custom emoji tags');
+    await ctx.reply(stripCustomEmojiTags(previewHtml), {
+      parse_mode: 'HTML',
+      reply_markup: announceBroadcastKeyboard(buy),
+    });
+  }
   await ctx.reply(`📣 <b>Confirm broadcast</b>${buyLine}`, {
     parse_mode: 'HTML',
     reply_markup: announceConfirmKeyboard(recipients.length, buy),
@@ -3584,7 +5318,7 @@ async function showAnnounceBuyEdit(ctx: AppCtx): Promise<void> {
     return;
   }
   const previewKb = new InlineKeyboard();
-  previewKb.text(buy.label, `prod:${buy.product_id}`);
+  previewKb.url(buy.label, publicFeed.publicFeedBotUrl(`prod_${buy.product_id}`));
   if (buy.icon_custom_emoji_id) previewKb.icon(buy.icon_custom_emoji_id);
   const style = colorModeToStyle(buy.color);
   if (style !== undefined) previewKb.style(style);
@@ -3664,7 +5398,7 @@ adminBot.callbackQuery(/^adm:ann:buy:set:(\d+)$/, async (ctx) => {
   // icon) when the admin swaps to a different product. Defaults are
   // only applied on the very first product pick (no prior `buy`).
   const prior = (flow.data as { buy?: AnnounceBuy }).buy;
-  const defaultIconId = '5440841102871517055';
+  const defaultIconId = '5312361253610475399';
   const defaultIconUnicode = undefined;
   const buy: AnnounceBuy = prior
     ? { ...prior, product_id: product.id, product_name: product.name }
@@ -3679,7 +5413,7 @@ adminBot.callbackQuery(/^adm:ann:buy:set:(\d+)$/, async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'confirm',
-    data: { text: flow.data.text, buy },
+    data: { text: flow.data.text, format: flow.data.format, buy },
   };
   await showAnnounceBuyEdit(ctx);
 });
@@ -3725,7 +5459,7 @@ adminBot.callbackQuery('adm:ann:buy:remove', async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'confirm',
-    data: { text: flow.data.text },
+    data: { text: flow.data.text, format: flow.data.format },
   };
   await showAnnounceConfirm(ctx);
 });
@@ -3745,7 +5479,7 @@ adminBot.callbackQuery('adm:ann:buy:label', async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'buy_label',
-    data: { text: flow.data.text, buy },
+    data: { text: flow.data.text, format: flow.data.format, buy },
   };
   await ctx.editMessageText(
     `📝 *Edit Buy button label*\n\nCurrent: \`${buy.label}\`\n\n` +
@@ -3799,7 +5533,7 @@ adminBot.callbackQuery(/^adm:ann:buy:color:(.+)$/, async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'confirm',
-    data: { text: flow.data.text, buy: { ...buy, color } },
+    data: { text: flow.data.text, format: flow.data.format, buy: { ...buy, color } },
   };
   await showAnnounceBuyEdit(ctx);
 });
@@ -3819,7 +5553,7 @@ adminBot.callbackQuery('adm:ann:buy:icon', async (ctx) => {
   ctx.session.adminFlow = {
     type: 'announce',
     step: 'buy_icon',
-    data: { text: flow.data.text, buy },
+    data: { text: flow.data.text, format: flow.data.format, buy },
   };
   await ctx.editMessageText(
     '✨ *Set Buy button icon*\n\n' +
@@ -3844,35 +5578,73 @@ adminBot.callbackQuery('adm:ann:send', async (ctx) => {
   }
   await ctx.answerCallbackQuery();
   const body = flow.data.text;
+  const format = flow.data.format ?? 'md';
   const buy = flow.data.buy;
   const recipients = await listUsersForAnnouncement();
-  await ctx.editMessageText(`📣 Broadcasting to ${recipients.length} user(s)…`);
-  // Render once: HTML output expands `{tokens}` AND auto-wraps any
-  // unicode emoji that has a configured premium custom_emoji_id.
-  const html = renderMdHtml(body);
-  let ok = 0;
-  let fail = 0;
-  for (const r of recipients) {
-    try {
-      // Build a fresh keyboard per recipient — the underlying
-      // grammyjs InlineKeyboard is mutable, and reusing the same
-      // instance across `sendMessage` calls is unsafe.
-      const reply_markup = announceBroadcastKeyboard(buy);
-      await ctx.api.sendMessage(r.telegram_id, html, {
-        parse_mode: 'HTML',
-        ...(reply_markup ? { reply_markup } : {}),
-      });
-      ok++;
-    } catch (err) {
-      fail++;
-      logger.warn({ err, user: r.telegram_id }, 'announce send failed');
-    }
-  }
+  const api = ctx.api;
+  const statusChatId = ctx.chat?.id;
+  const statusMessageId = ctx.callbackQuery.message?.message_id;
   ctx.session.adminFlow = undefined;
   await ctx.editMessageText(
-    `✅ Done. Delivered: *${ok}*, failed: *${fail}*.`,
-    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+    `📣 Broadcast started for ${recipients.length} user(s).\n\nBot commands stay active while this runs.`,
+    { reply_markup: backRow(new InlineKeyboard()) },
   );
+
+  void (async () => {
+    // Render once: HTML output expands `{tokens}` AND auto-wraps any
+    // unicode emoji that has a configured premium custom_emoji_id.
+    const html = format === 'html' ? renderHtmlTemplate(body) : renderMdHtml(body);
+    let ok = 0;
+    let fail = 0;
+    await publicFeed.notifyAnnouncement(api, {
+      text: body,
+      format,
+      ...(buy
+        ? {
+            button: {
+              text: buy.label,
+              productId: buy.product_id,
+              iconKey: 'broadcast_shop_now',
+            },
+          }
+        : {}),
+    });
+    for (const r of recipients) {
+      try {
+        // Build a fresh keyboard per recipient — the underlying
+        // grammyjs InlineKeyboard is mutable, and reusing the same
+        // instance across `sendMessage` calls is unsafe.
+        const reply_markup = announceBroadcastKeyboard(buy);
+        try {
+          await api.sendMessage(r.telegram_id, html, {
+            parse_mode: 'HTML',
+            ...(reply_markup ? { reply_markup } : {}),
+          });
+        } catch (err) {
+          logger.warn({ err, user: r.telegram_id }, 'announce send HTML failed; retrying without custom emoji tags');
+          await api.sendMessage(r.telegram_id, stripCustomEmojiTags(html), {
+            parse_mode: 'HTML',
+            ...(reply_markup ? { reply_markup } : {}),
+          });
+        }
+        ok++;
+      } catch (err) {
+        fail++;
+        logger.warn({ err, user: r.telegram_id }, 'announce send failed');
+      }
+      if ((ok + fail) % 25 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
+    }
+    if (statusChatId && statusMessageId) {
+      await api.editMessageText(
+        statusChatId,
+        statusMessageId,
+        `✅ Done. Delivered: *${ok}*, failed: *${fail}*.`,
+        { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+      ).catch((err) => logger.warn({ err }, 'announce final status edit failed'));
+    }
+  })().catch((err) => logger.error({ err }, 'announce background worker failed'));
 });
 
 // ---------- Users ----------
@@ -4071,6 +5843,214 @@ adminBot.callbackQuery(/^adm:usr:unban:(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: '♻️ User unbanned.' });
   const u = await findUserById(id);
   if (u) await showUserCard(ctx, u);
+});
+
+// ============================================================
+// Referral Admin — view/correct available referral balances.
+// ============================================================
+
+const REFERRAL_ADMIN_PER_PAGE = 7;
+
+function referralUserLabel(user: DBUser): string {
+  if (user.username) return `@${user.username}`;
+  if (user.first_name) return user.first_name;
+  return `id ${user.telegram_id}`;
+}
+
+async function showReferralAdminList(ctx: AppCtx, page: number): Promise<void> {
+  ctx.session.adminFlow = undefined;
+  const { rows, total } = await listReferralAdminRows(page, REFERRAL_ADMIN_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(total / REFERRAL_ADMIN_PER_PAGE));
+  const lines = [
+    '🎁 <b>Referral Control</b>',
+    '',
+    'View available refs, correct balances, or reset used Referral Pay records.',
+    'The + / - buttons require migration <code>0039_referral_admin_adjustments.sql</code>.',
+    '',
+  ];
+  const kb = new InlineKeyboard();
+  for (const row of rows) {
+    const label = referralUserLabel(row.user);
+    lines.push(
+      `<code>${row.user.telegram_id}</code> ${escapeHtml(label)}  •  ` +
+        `available <b>${row.balance.available}</b> / total ${row.balance.total} / used ${row.balance.spent}`,
+    );
+    kb.text(
+      `${label.slice(0, 18)} • ${row.balance.available} refs`,
+      `adm:refs:v:${row.user.telegram_id}`,
+    ).row();
+  }
+  if (rows.length === 0) lines.push('<i>No users found.</i>');
+  if (page > 0) kb.text('◀️ Prev', `adm:refs:${page - 1}`);
+  if (page + 1 < totalPages) kb.text('Next ▶️', `adm:refs:${page + 1}`);
+  if (totalPages > 1) kb.row();
+  kb.text('🔍 Find User', 'adm:refs:find')
+    .text('♻️ Delete All Used Refs', 'adm:refs:resetall:ask')
+    .row();
+  kb.text('🔄 Refresh', `adm:refs:${page}`).text('⬅️ Back', 'adm:root');
+  const body = lines.join('\n');
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(body, { parse_mode: 'HTML', reply_markup: kb });
+  } else {
+    await ctx.reply(body, { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+async function showReferralAdminUser(ctx: AppCtx, user: DBUser): Promise<void> {
+  const balance = await getReferralBalance(user.telegram_id);
+  const label = referralUserLabel(user);
+  const lines = [
+    '🎁 <b>Referral User</b>',
+    '',
+    `User: ${escapeHtml(label)}`,
+    `Telegram ID: <code>${user.telegram_id}</code>`,
+    '',
+    `Available Refs: <b>${balance.available}</b>`,
+    `Total Active Refs: <b>${balance.total}</b>`,
+    `Used / Converted: <b>${balance.spent}</b>`,
+    '',
+    'Use + / - for admin corrections. Reset removes this user\'s referral usage/adjustments, not the real invited-user rows.',
+  ];
+  const kb = new InlineKeyboard()
+    .text('➕ +1 Ref', `adm:refs:adj:${user.telegram_id}:1`)
+    .text('➖ -1 Ref', `adm:refs:adj:${user.telegram_id}:-1`)
+    .row()
+    .text('✍️ Custom +/-', `adm:refs:custom:${user.telegram_id}`)
+    .row()
+    .text('♻️ Delete User Used Refs', `adm:refs:reset:${user.telegram_id}:ask`)
+    .row()
+    .text('⬅️ Back to Referrals', 'adm:refs:0')
+    .text('🏠 Main', 'adm:root');
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  } else {
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+async function applyReferralAdjustmentAndShow(
+  ctx: AppCtx,
+  telegramId: number,
+  delta: number,
+): Promise<void> {
+  const user = await findUserById(telegramId);
+  if (!user) {
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: 'User not found.', show_alert: true });
+    } else {
+      await ctx.reply('User not found.');
+    }
+    return;
+  }
+  try {
+    await addReferralAdjustment({
+      user_id: telegramId,
+      delta,
+      reason: `admin ${delta > 0 ? 'add' : 'deduct'} referral balance`,
+      created_by: ctx.from!.id,
+    });
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: `Referral balance ${delta > 0 ? '+' : ''}${delta}` });
+    }
+    await showReferralAdminUser(ctx, user);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const text =
+      msg === 'REFERRAL_ADJUSTMENTS_MIGRATION_REQUIRED'
+        ? 'Run migration 0039_referral_admin_adjustments.sql first.'
+        : 'Could not adjust referral balance.';
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text, show_alert: true });
+    } else {
+      await ctx.reply(`❌ ${text}`);
+    }
+  }
+}
+
+adminBot.callbackQuery(/^adm:refs:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showReferralAdminList(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery('adm:refs:find', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'referral_find_user', step: 'query', data: {} };
+  await ctx.editMessageText(
+    '🔍 <b>Find Referral User</b>\n\nSend Telegram numeric ID or @username.\n\nSend /cancel to abort.',
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery(/^adm:refs:v:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const user = await findUserById(Number(ctx.match[1]));
+  if (!user) {
+    await ctx.editMessageText('User not found.', { reply_markup: backRow(new InlineKeyboard()) });
+    return;
+  }
+  await showReferralAdminUser(ctx, user);
+});
+
+adminBot.callbackQuery(/^adm:refs:adj:(\d+):(-?\d+)$/, async (ctx) => {
+  await applyReferralAdjustmentAndShow(ctx, Number(ctx.match[1]), Number(ctx.match[2]));
+});
+
+adminBot.callbackQuery(/^adm:refs:custom:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const telegramId = Number(ctx.match[1]);
+  ctx.session.adminFlow = { type: 'referral_adjust', step: 'delta', data: { telegram_id: telegramId } };
+  await ctx.editMessageText(
+    `✍️ <b>Custom Referral Adjustment</b>\n\nUser: <code>${telegramId}</code>\nSend an integer like <code>5</code> or <code>-3</code>.\n\nSend /cancel to abort.`,
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery(/^adm:refs:reset:(\d+):ask$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const telegramId = Number(ctx.match[1]);
+  const kb = new InlineKeyboard()
+    .text('✅ Yes, delete this user used refs', `adm:refs:reset:${telegramId}:do`)
+    .row()
+    .text('⬅️ Cancel', `adm:refs:v:${telegramId}`);
+  await ctx.editMessageText(
+    `⚠️ <b>Reset referral usage?</b>\n\nThis clears used Referral Pay records, conversions, and admin adjustments for <code>${telegramId}</code>. Real invited-user rows stay untouched.`,
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:refs:reset:(\d+):do$/, async (ctx) => {
+  const telegramId = Number(ctx.match[1]);
+  const user = await findUserById(telegramId);
+  if (!user) {
+    await ctx.answerCallbackQuery({ text: 'User not found.', show_alert: true });
+    return;
+  }
+  const result = await resetReferralUsage(telegramId);
+  await ctx.answerCallbackQuery({
+    text: `Reset ${result.redemptions + result.conversions + result.adjustments} row(s).`,
+  });
+  await showReferralAdminUser(ctx, user);
+});
+
+adminBot.callbackQuery('adm:refs:resetall:ask', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const kb = new InlineKeyboard()
+    .text('✅ Yes, delete ALL used refs', 'adm:refs:resetall:do')
+    .row()
+    .text('⬅️ Cancel', 'adm:refs:0');
+  await ctx.editMessageText(
+    '⚠️ <b>Reset ALL referral usage?</b>\n\nThis clears every user\'s Referral Pay usage, referral conversions, and admin adjustments. Real invited-user rows stay untouched.',
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:refs:resetall:do', async (ctx) => {
+  const result = await resetReferralUsage();
+  await ctx.answerCallbackQuery({
+    text: `Reset ${result.redemptions + result.conversions + result.adjustments} row(s).`,
+    show_alert: true,
+  });
+  await showReferralAdminList(ctx, 0);
 });
 
 // ============================================================
@@ -4704,7 +6684,9 @@ async function sendOrEdit(
   reply_markup: InlineKeyboard,
 ): Promise<void> {
   const opts = { parse_mode: 'Markdown' as const, reply_markup };
+  // Answer callback immediately before editing to stop loading spinner
   if (ctx.callbackQuery) {
+    await ctx.answerCallbackQuery().catch(() => {});
     try {
       await ctx.editMessageText(text, opts);
       return;
@@ -4736,11 +6718,30 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
   }
   // Hydrate side-tables in parallel — none of them block on each
   // other and only the first three are guaranteed to fire.
+  // Use timeout wrapper to prevent hangs if a query stalls.
+  const withTimeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+
   const [product, targetUser, actorUser, impact] = await Promise.all([
-    p.product_id !== null ? getProduct(p.product_id) : Promise.resolve(null),
-    p.telegram_id !== null ? findUserById(p.telegram_id) : Promise.resolve(null),
-    p.created_by !== null ? findUserById(p.created_by) : Promise.resolve(null),
-    getPromoImpact(p.id),
+    withTimeout(
+      p.product_id !== null ? getProduct(p.product_id) : Promise.resolve(null),
+      5000,
+      null,
+    ),
+    withTimeout(
+      p.telegram_id !== null ? findUserById(p.telegram_id) : Promise.resolve(null),
+      5000,
+      null,
+    ),
+    withTimeout(
+      p.created_by !== null ? findUserById(p.created_by) : Promise.resolve(null),
+      5000,
+      null,
+    ),
+    withTimeout(getPromoImpact(p.id), 5000, { orders: 0, total_discount: 0, last_used: null }),
   ]);
 
   const scope = promoScopeLabel({ ...p, product_name: product?.name ?? null });
@@ -4862,8 +6863,17 @@ async function showPromoCard(ctx: AppCtx, promo_id: number): Promise<void> {
 }
 
 adminBot.callbackQuery(/^adm:promo:v:(\d+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
-  await showPromoCard(ctx, Number(ctx.match[1]));
+  const id = Number(ctx.match[1]);
+  // Answer immediately to stop loading spinner - before any async work
+  await ctx.answerCallbackQuery().catch(() => {});
+  try {
+    await showPromoCard(ctx, id);
+  } catch (err) {
+    logger.error({ err, promo_id: id }, 'adm:promo:v failed');
+    try {
+      await ctx.answerCallbackQuery({ text: 'Failed to load promo', show_alert: true });
+    } catch { /* noop */ }
+  }
 });
 
 adminBot.callbackQuery(/^adm:promo:toggle:(\d+)$/, async (ctx) => {
@@ -5481,6 +7491,29 @@ adminBot.callbackQuery('adm:promo:nameSkip', async (ctx) => {
 // Multi-step input handler — fired for any text msg from admin
 // when session.adminFlow is set.
 // ============================================================
+function telegramQuoteToMarkdown(
+  raw: string,
+  entities: ReadonlyArray<MessageEntity> | undefined | null,
+): string | null {
+  const quoteEntities = (entities ?? [])
+    .filter((entity) => entity.type === 'blockquote' || entity.type === 'expandable_blockquote')
+    .sort((a, b) => b.offset - a.offset);
+  if (quoteEntities.length === 0) return null;
+
+  let out = raw;
+  for (const entity of quoteEntities) {
+    const start = Math.max(0, Math.min(entity.offset, out.length));
+    const end = Math.max(start, Math.min(entity.offset + entity.length, out.length));
+    const body = out.slice(start, end);
+    const quoted = body
+      .split(/\r?\n/)
+      .map((line) => (line.startsWith('>') ? line : `> ${line}`))
+      .join('\n');
+    out = `${out.slice(0, start)}${quoted}${out.slice(end)}`;
+  }
+  return out.trim();
+}
+
 adminBot.on('message:text', async (ctx, next) => {
   const flow = ctx.session.adminFlow;
   if (!flow) return next();
@@ -5510,6 +7543,15 @@ adminBot.on('message:text', async (ctx, next) => {
     ctx.message.text,
     ctx.message.entities,
   ).trim();
+  const productRichText = (() => {
+    const entities = ctx.message.entities ?? [];
+    const hasTelegramFormatting = entities.some(
+      (entity) => FORMAT_ENTITY_TYPES.has(entity.type) || entity.type === 'custom_emoji',
+    );
+    return hasTelegramFormatting
+      ? entitiesToHtml(ctx.message.text, entities).trim()
+      : text;
+  })();
 
   if (text === '/cancel') {
     ctx.session.adminFlow = undefined;
@@ -5523,74 +7565,232 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 
   try {
-    // ── API Connect flow ──────────────────────────────────────
-    if (flow.type === 'api_connect' && flow.step === 'key') {
-      ctx.session.adminFlow = undefined;
-      const { decodeConnectionCode, testConnection: apiTest, saveConnection: apiSave }
-        = await import('../../services/apiConnect.js');
-      try {
-        const { api_key, api_url } = decodeConnectionCode(text);
-        await ctx.reply('⏳ جاري اختبار الاتصال...');
-        const result = await apiTest(api_key, api_url);
-        if (result.ok) {
-          await apiSave(api_key, api_url);
-          try {
-            const { syncProducts } = await import('../../services/apiShop.js');
-            await syncProducts();
-          } catch (syncErr) {
-            logger.error({ err: syncErr }, 'api_connect auto-sync failed');
-          }
-          await ctx.reply(
-            `✅ <b>Connected & Synced!</b>\n\n` +
-            `📦 <b>${result.productCount}</b> products found.\n\n` +
-            `اضغط /api للتحكم.`,
-            { parse_mode: 'HTML', reply_markup: rootMenu() },
-          );
-        } else {
-          await ctx.reply(
-            `❌ <b>Connection Failed</b>\n\n${result.error}`,
-            { parse_mode: 'HTML', reply_markup: rootMenu() },
-          );
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        await ctx.reply(
-          `❌ <b>Invalid Code</b>\n\n${msg}`,
-          { parse_mode: 'HTML', reply_markup: rootMenu() },
+    if (flow.type === 'preorder_manual_send') {
+      const order = await getOrder(flow.data.order_id);
+      if (!order || !isPendingPreorderOrder(order) || order.product_id === null) {
+        ctx.session.adminFlow = undefined;
+        await ctx.reply('⚠️ This preorder is not pending anymore.', {
+          reply_markup: rootMenu(),
+        });
+        return;
+      }
+
+      const items = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      if (items.length === 0) {
+        await ctx.reply('⚠️ Send at least one product detail/link/code line, or /cancel.');
+        return;
+      }
+
+      const product = await getProduct(order.product_id);
+      const buyer = await findUserById(order.user_id);
+      const lang = buyer?.language ?? env.DEFAULT_LANG;
+      const tr = (key: string, vars?: Record<string, string | number>) =>
+        translate(lang, key, vars);
+      const publicId = publicOrderId(order);
+      const deliveredText = items.join('\n');
+      await setOrderDeliveredItems(order.id, deliveredText);
+
+      const chunks = buildOrderDeliveredChunks(items);
+      const firstChunkBlock = chunks[0]?.inlineBlock ?? `> ${deliveredText}`;
+      const deliveredKb = new InlineKeyboard();
+      inlineBtn(deliveredKb, lang, 'using_method', `tut:${order.product_id}`);
+      deliveredKb.row();
+      inlineBtn(deliveredKb, lang, 'send_note_txt', `order:txt:${order.id}`);
+
+      const headerHasKeyboard = chunks.length <= 1;
+      await ctx.api.sendMessage(
+        order.user_id,
+        renderMdHtml(
+          tr('shop.buy.order_auto_delivered', {
+            order_id: publicId,
+            name: order.product_name,
+            qty: order.qty,
+            total: Number(order.total).toFixed(2),
+            items: firstChunkBlock,
+          }),
+        ),
+        headerHasKeyboard
+          ? { parse_mode: 'HTML', reply_markup: deliveredKb }
+          : { parse_mode: 'HTML' },
+      );
+
+      for (let i = 1; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        if (!chunk) continue;
+        await ctx.api.sendMessage(
+          order.user_id,
+          renderMdHtml(chunk.inlineBlock),
+          chunk.isLast
+            ? { parse_mode: 'HTML', reply_markup: deliveredKb }
+            : { parse_mode: 'HTML' },
         );
       }
+
+      if (product) {
+        await maybeStartDeliveryFormFromApi({
+          api: ctx.api,
+          product,
+          orderId: order.id,
+          orderPublicId: publicId,
+          buyerTelegramId: order.user_id,
+          buyerLang: lang,
+        }).catch((err) => {
+          logger.warn(
+            { err, orderId: order.id, productId: order.product_id },
+            'admin preorder manual send delivery form failed',
+          );
+        });
+      }
+
+      void adminLog
+        .logOrderCreated(ctx.api, {
+          user: {
+            telegram_id: order.user_id,
+            username: buyer?.username ?? null,
+            first_name: buyer?.first_name ?? null,
+            email: buyer?.email ?? null,
+          },
+          orderDbId: order.id,
+          orderPublicId: publicId,
+          productId: order.product_id,
+          productName: order.product_name,
+          qty: order.qty,
+          unitPrice: Number(order.unit_price),
+          total: Number(order.total),
+          paidVia: 'Manual preorder auto-send',
+          balanceAfter: Number((buyer?.balance ?? 0).toFixed(3)),
+          lifecycle: 'auto_delivered',
+        })
+        .catch((err) => logger.warn({ err }, 'admin preorder manual send log failed'));
+
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Auto-sent preorder <code>${escapeHtml(publicId)}</code> to buyer.\n\nItems sent: <b>${items.length}</b>`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard()
+            .text('🔎 View Order', `adm:ord:v:${order.id}`)
+            .row()
+            .text('⬅️ Back to orders', 'adm:ord:0'),
+        },
+      );
       return;
     }
 
-    // ── API Set Field flow ─────────────────────────────────────
-    if ((flow as Record<string, unknown>).type === 'api_set_field') {
-      const f = flow as unknown as { type: string; step: string; data: { productId: string; field: string } };
-      ctx.session.adminFlow = undefined;
-
-      const { setProductField } = await import('../../services/apiShop.js');
-
-      if (f.data.field === 'sell_price') {
-        const price = parseFloat(text.trim());
-        if (isNaN(price) || price < 0) {
-          await ctx.reply('❌ أدخل رقم صحيح (مثل: 5.00)');
-          return;
-        }
-        await setProductField(f.data.productId, 'sell_price', price);
-        await ctx.reply(`✅ تم تحديث السعر: <b>$${price.toFixed(2)}</b>`, { parse_mode: 'HTML' });
-      } else if (f.data.field === 'label' && f.data.productId === '__button__') {
-        // تغيير اسم الزر في القائمة الرئيسية
-        const { getButtonConfig: gbc, setButtonConfig: sbc } = await import('../../services/apiShop.js');
-        const cfg = await gbc();
-        await sbc(text.trim(), cfg.position, cfg.enabled);
-        await ctx.reply(`✅ تم تغيير الزر إلى: <b>${text.trim()}</b>`, { parse_mode: 'HTML' });
-      } else if (f.data.field === 'custom_desc' && text.trim() === '-') {
-        await setProductField(f.data.productId, 'custom_desc', '');
-        await ctx.reply('✅ تم حذف الوصف');
-      } else {
-        const val = text.trim();
-        await setProductField(f.data.productId, f.data.field as 'emoji' | 'custom_name' | 'custom_desc', val);
-        await ctx.reply(`✅ تم التحديث!`);
+    if (flow.type === 'supplier_reseller_add') {
+      const rawKey = ctx.message.text.trim();
+      const key =
+        rawKey.match(/\b(rsk_live_[a-zA-Z0-9_-]{24,})\b/)?.[1] ??
+        rawKey.match(/\b(stapi_[a-zA-Z0-9_-]{24,})\b/)?.[1] ??
+        rawKey.match(/bearer\s+([a-zA-Z0-9_-]{24,})/i)?.[1] ??
+        rawKey;
+      if (key.length < 24) {
+        await ctx.reply('❌ Send the full reseller API key, or `/cancel`.', {
+          parse_mode: 'Markdown',
+        });
+        return;
       }
+      const source = await createSupplierApiSource(supabaseResellerSupplierConfig(key));
+      ctx.session.adminFlow = undefined;
+      let testLine = 'Saved. Tap Test Connection if you want to retry the live check.';
+      try {
+        const test = await testSupplierConnection(source);
+        testLine = test.ok
+          ? `Live test OK: ${test.balance === null ? 'balance unknown' : `balance ${apiMoney(test.balance)}`} · ${test.productsSeen} products`
+          : `Saved, but live test needs attention: ${test.error ?? 'unknown error'}`;
+      } catch (err) {
+        testLine = `Saved, but live test failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await ctx.reply(
+        `✅ Reseller API supplier saved: *${escapeMd(source.name)}* (#${source.id})\n\n${escapeMd(testLine)}\n\nTap *Browse Products* to import by button.`,
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
+      return;
+    }
+
+    if (flow.type === 'supplier_canboso_add') {
+      const key = ctx.message.text.trim();
+      if (key.length < 12) {
+        await ctx.reply('❌ Send the full Canboso API key, or `/cancel`.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      const source = await createSupplierApiSource(canbosoSupplierConfig(key));
+      ctx.session.adminFlow = undefined;
+      let testLine = 'Saved. Tap Test Connection if you want to retry the live check.';
+      try {
+        const test = await testSupplierConnection(source);
+        testLine = test.ok
+          ? `Live test OK: ${test.balance === null ? 'balance unknown' : `balance ${apiMoney(test.balance)}`} · ${test.productsSeen} products`
+          : `Saved, but live test needs attention: ${test.error ?? 'unknown error'}`;
+      } catch (err) {
+        testLine = `Saved, but live test failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await ctx.reply(
+        `✅ Canboso supplier saved: *${escapeMd(source.name)}* (#${source.id})\n\n${escapeMd(testLine)}\n\nTap *Browse Products* to import by button.`,
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
+      return;
+    }
+
+    if (flow.type === 'supplier_api_add') {
+      const cfg = parseSupplierSourceConfig(ctx.message.text.trim());
+      const source = await createSupplierApiSource(cfg);
+      ctx.session.adminFlow = undefined;
+      let testLine = 'Tap Test Connection to verify balance/products.';
+      try {
+        const test = await testSupplierConnection(source);
+        testLine = test.ok
+          ? `Test OK: ${test.balance === null ? 'balance —' : `balance ${apiMoney(test.balance)}`} · ${test.productsSeen} products`
+          : `Saved, but test needs attention: ${test.error ?? 'unknown error'}`;
+      } catch (err) {
+        testLine = `Saved, but test failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await ctx.reply(
+        `✅ Supplier API saved: *${escapeMd(source.name)}* (#${source.id})\n\n${escapeMd(testLine)}`,
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
+      return;
+    }
+
+    if (flow.type === 'supplier_product_link_add') {
+      const cfg = parseSupplierLinkConfig(ctx.message.text.trim(), flow.data.supplier_id);
+      const source = await getSupplierApiSource(cfg.supplier_id);
+      if (!source) {
+        await ctx.reply('❌ Supplier not found. Check `supplier_id` and try again.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      const product = await getProduct(cfg.local_product_id);
+      if (!product) {
+        await ctx.reply('❌ Local product not found. Check `local_product_id` and try again.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      const link = await upsertSupplierProductLink(cfg);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        [
+          '✅ Supplier product mapped.',
+          '',
+          `Local: *${escapeMd(product.name)}* (#${product.id})`,
+          `Supplier: *${escapeMd(source.name)}* (#${source.id})`,
+          `Supplier product id: \`${escapeMd(link.supplier_product_id)}\``,
+          '',
+          'Run *Sync Links* to pull supplier stock/price into this product.',
+        ].join('\n'),
+        { parse_mode: 'Markdown' },
+      );
+      await showSupplierDetail(ctx, source.id);
       return;
     }
 
@@ -5694,7 +7894,7 @@ adminBot.on('message:text', async (ctx, next) => {
         ctx.session.adminFlow = {
           type: 'add_product',
           step: 'note',
-          data: { ...flow.data, description: text },
+          data: { ...flow.data, description: productRichText },
         };
         const kb = new InlineKeyboard().text('Skip', 'adm:prod:skip:note');
         await ctx.reply(
@@ -5705,7 +7905,7 @@ adminBot.on('message:text', async (ctx, next) => {
         ctx.session.adminFlow = {
           type: 'add_product',
           step: 'items',
-          data: { ...flow.data, note: text },
+          data: { ...flow.data, note: productRichText },
         };
         const kb = new InlineKeyboard()
           .text('🔌 Use API Product', 'adm:prod:items:api')
@@ -5764,16 +7964,23 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
     if (flow.type === 'edit_product_note_text') {
-      await updateProduct(flow.data.product_id, { note: text });
+      await updateProduct(flow.data.product_id, { note: productRichText });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Note text saved.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
     if (flow.type === 'edit_product_description') {
-      await updateProduct(flow.data.product_id, { description: text });
+      await updateProduct(flow.data.product_id, { description: productRichText });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Description saved.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_warranty') {
+      await updateProduct(flow.data.product_id, { warranty: text });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply('✅ Warranty saved.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
@@ -5839,7 +8046,14 @@ adminBot.on('message:text', async (ctx, next) => {
         await ctx.reply('❌ Bad stock. Send an integer ≥ 0.');
         return;
       }
+      const before = await getProduct(flow.data.product_id);
       await updateProduct(flow.data.product_id, { stock });
+      await autoFulfillPreordersAfterRestock(ctx, flow.data.product_id);
+      await notifyPublicStockAdded(
+        ctx,
+        flow.data.product_id,
+        Math.max(0, stock - Number(before?.stock ?? 0)),
+      );
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Stock updated.');
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
@@ -5849,6 +8063,21 @@ adminBot.on('message:text', async (ctx, next) => {
       await updateProduct(flow.data.product_id, { name: text });
       ctx.session.adminFlow = undefined;
       await ctx.reply('✅ Name updated.');
+      await showProductEditor(ctx, flow.data.product_id, flow.data.page);
+      return;
+    }
+    if (flow.type === 'edit_product_referral_required') {
+      const trimmed = text.trim().toLowerCase();
+      const count = trimmed === 'clear' || trimmed === 'off' ? 0 : Number(text);
+      if (!Number.isInteger(count) || count < 0) {
+        await ctx.reply('❌ Bad number. Send an integer ≥ 0.');
+        return;
+      }
+      await updateProduct(flow.data.product_id, { referral_required_count: count });
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        count > 0 ? `✅ Referral Pay set: ${count} referrals required.` : '✅ Referral Pay disabled.',
+      );
       await showProductEditor(ctx, flow.data.product_id, flow.data.page);
       return;
     }
@@ -6052,6 +8281,79 @@ adminBot.on('message:text', async (ctx, next) => {
           parse_mode: 'Markdown',
           reply_markup: rootMenu(),
         });
+      }
+      return;
+    }
+
+    if (flow.type === 'add_bybit_payment') {
+      if (flow.step === 'name') {
+        if (!text || text.length < 2 || text.length > 60) {
+          await ctx.reply('❌ Name must be 2–60 chars. Try again or `/cancel`.');
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_bybit_payment',
+          step: 'bybit_id',
+          data: { name: text },
+        };
+        await ctx.reply(
+          [
+            'Send the *Bybit UID / ID* users should pay inside Bybit.',
+            '',
+            'Users will send USDT to this ID, then paste their Bybit internal transfer TXID for auto-verify.',
+          ].join('\n'),
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'bybit_id') {
+        const cleaned = text.replace(/\s+/g, '');
+        if (!/^\d{4,20}$/.test(cleaned)) {
+          await ctx.reply(
+            '❌ Bybit UID / ID should be 4–20 digits, no spaces. Try again or `/cancel`.',
+          );
+          return;
+        }
+        ctx.session.adminFlow = {
+          type: 'add_bybit_payment',
+          step: 'bybit_name',
+          data: { name: flow.data.name, bybit_id: cleaned },
+        };
+        await ctx.reply(
+          'Send the *Bybit Name* shown near your UID / ID. Users see this on the deposit screen so they know they are paying the right account.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      if (flow.step === 'bybit_name') {
+        const trimmed = text.trim();
+        if (!trimmed || trimmed.length < 2 || trimmed.length > 64) {
+          await ctx.reply(
+            '❌ Bybit Name must be 2–64 chars. Try again or `/cancel`.',
+          );
+          return;
+        }
+        const m = await addPaymentMethod({
+          name: flow.data.name,
+          instructions: '(auto-verify - Bybit internal transfer instructions are rendered by the bot)',
+          min_amount: 0,
+          provider: 'bybit_pay',
+          address: flow.data.bybit_id,
+          pay_name: trimmed,
+        });
+        ctx.session.adminFlow = undefined;
+        await ctx.reply(
+          [
+            `✅ *${m.name}* added (id=${m.id})`,
+            'Provider: `bybit_pay`',
+            `Bybit UID: \`${flow.data.bybit_id}\``,
+            `Bybit Name: \`${trimmed}\``,
+            '',
+            'Set `BYBIT_API_KEY` and `BYBIT_API_SECRET` in Railway before users pay with it.',
+          ].join('\n'),
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
+        return;
       }
       return;
     }
@@ -6335,6 +8637,17 @@ adminBot.on('message:text', async (ctx, next) => {
           );
         }
       }
+      return;
+    }
+
+    if (flow.type === 'stats_custom_days') {
+      const days = Number(text);
+      if (!Number.isInteger(days) || days < 1 || days > 365) {
+        await ctx.reply('⚠️ Send a whole number between 1 and 365.');
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await showAdminStats(ctx, days);
       return;
     }
 
@@ -6676,10 +8989,17 @@ adminBot.on('message:text', async (ctx, next) => {
 
     if (flow.type === 'announce') {
       if (flow.step === 'text') {
+        const hasFormatEntities = (ctx.message.entities ?? []).some((entity) =>
+          FORMAT_ENTITY_TYPES.has(entity.type),
+        );
+        const format: 'md' | 'html' = hasFormatEntities ? 'html' : 'md';
+        const body = hasFormatEntities
+          ? entitiesToHtml(ctx.message.text, ctx.message.entities).trim()
+          : text;
         ctx.session.adminFlow = {
           type: 'announce',
           step: 'confirm',
-          data: { text },
+          data: { text: body, format },
         };
         await showAnnounceConfirm(ctx);
         return;
@@ -6702,7 +9022,11 @@ adminBot.on('message:text', async (ctx, next) => {
         ctx.session.adminFlow = {
           type: 'announce',
           step: 'confirm',
-          data: { text: flow.data.text, buy: { ...flow.data.buy, label: trimmed } },
+          data: {
+            text: flow.data.text,
+            format: flow.data.format,
+            buy: { ...flow.data.buy, label: trimmed },
+          },
         };
         await ctx.reply(`✅ Label updated → \`${trimmed}\``, { parse_mode: 'Markdown' });
         await showAnnounceBuyEdit(ctx);
@@ -6719,6 +9043,7 @@ adminBot.on('message:text', async (ctx, next) => {
             step: 'confirm',
             data: {
               text: flow.data.text,
+              format: flow.data.format,
               buy: {
                 ...flow.data.buy,
                 icon_unicode: undefined,
@@ -6754,6 +9079,7 @@ adminBot.on('message:text', async (ctx, next) => {
           step: 'confirm',
           data: {
             text: flow.data.text,
+            format: flow.data.format,
             buy: {
               ...flow.data.buy,
               icon_unicode: unicode,
@@ -6799,6 +9125,33 @@ adminBot.on('message:text', async (ctx, next) => {
         return;
       }
       await showUserCard(ctx, user);
+      return;
+    }
+
+    if (flow.type === 'referral_find_user') {
+      const query = text.replace(/^@/, '');
+      const user = /^\d+$/.test(query)
+        ? await findUserById(Number(query))
+        : await findUserByUsername(query);
+      ctx.session.adminFlow = undefined;
+      if (!user) {
+        await ctx.reply('No user found.', { reply_markup: rootMenu() });
+        return;
+      }
+      await showReferralAdminUser(ctx, user);
+      return;
+    }
+
+    if (flow.type === 'referral_adjust') {
+      const delta = Number(text);
+      if (!Number.isInteger(delta) || delta === 0) {
+        await ctx.reply('❌ Send a non-zero integer, like `5` or `-3`.', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await applyReferralAdjustmentAndShow(ctx, flow.data.telegram_id, delta);
       return;
     }
 
@@ -7282,14 +9635,15 @@ adminBot.on('message:text', async (ctx, next) => {
     const isPaymentFlow =
       flow.type === 'add_payment' ||
       flow.type === 'add_chain_payment' ||
-      flow.type === 'add_binance_payment';
+      flow.type === 'add_binance_payment' ||
+      flow.type === 'add_bybit_payment';
     if (isPaymentFlow && (e?.code === '42P01' || e?.code === '42703')) {
       await ctx.reply(
         '⚠️ *Payment-methods schema not migrated*\n\n' +
           `The database is missing a column or table needed for this provider: \`${escapeHtml(
             e.message ?? '',
           )}\`.\n\nRun the latest \`supabase/migrations/*.sql\` files (in particular ` +
-          '`0020_binance_pay_restore.sql`) on your Supabase project, then retry.',
+          '`0035_bybit_pay_provider.sql`) on your Supabase project, then retry.',
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;
@@ -7300,7 +9654,7 @@ adminBot.on('message:text', async (ctx, next) => {
       await ctx.reply(
         '⚠️ *Provider not allowed by the database*\n\n' +
           'The Postgres CHECK constraint on `payment_methods.provider` rejected this row. ' +
-          'Apply the latest migration (`0020_binance_pay_restore.sql`) so the constraint includes `binance_pay`.',
+          'Apply the latest migration (`0035_bybit_pay_provider.sql`) so the constraint includes `bybit_pay`.',
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;
@@ -7312,6 +9666,30 @@ adminBot.on('message:text', async (ctx, next) => {
           `\`\`\`\n${detail.slice(0, 500)}\n\`\`\`\n` +
           (e?.hint ? `_Hint: ${escapeHtml(e.hint)}_\n` : '') +
           '\nCheck the bot logs for the full stack trace.',
+        { parse_mode: 'Markdown', reply_markup: rootMenu() },
+      );
+      return;
+    }
+    if (
+      flow.type === 'supplier_api_add' ||
+      flow.type === 'supplier_canboso_add' ||
+      flow.type === 'supplier_reseller_add' ||
+      flow.type === 'supplier_product_link_add'
+    ) {
+      if (isSupplierMigrationError(err)) {
+        await ctx.reply(
+          '⚠️ *Supplier APIs Not Ready*\n\n' +
+            'Run `supabase/migrations/0037_supplier_apis.sql` and `0038_supplier_easy_import.sql` in Supabase SQL Editor, ' +
+            'then try this setup again.',
+          { parse_mode: 'Markdown', reply_markup: rootMenu() },
+        );
+        return;
+      }
+      const detail = e?.message ?? String(err);
+      await ctx.reply(
+        '⚠️ *Supplier setup failed*\n\n' +
+          `\`\`\`\n${detail.slice(0, 700)}\n\`\`\`\n` +
+          '\nFix the JSON/API details and retry.',
         { parse_mode: 'Markdown', reply_markup: rootMenu() },
       );
       return;
@@ -7951,18 +10329,14 @@ async function finalizeProduct(
   },
   items: string[] = [],
 ): Promise<void> {
-  // Strip fields that are NOT database columns before inserting.
-  // - api_product_id: only used for the confirmation message
-  // - unlimited: wizard-only flag; the real column is unlimited_stock,
-  //   set via updateProduct() below.
-  const { api_product_id: _apiId, unlimited: _unl, ...dbData } = data;
-  const product = await addProduct(dbData);
+  const { unlimited, ...payload } = data;
+  const product = await addProduct(payload);
   // If admin chose "Unlimited" earlier, persist the flag now that we
   // have a product id. addProduct() doesn't know about the new
   // column, so we do this as a follow-up update — graceful no-op
   // when migration 0015 isn't applied (updateProduct will just throw
   // and we log/swallow).
-  if (data.unlimited === true) {
+  if (unlimited === true) {
     try {
       await updateProduct(product.id, { unlimited_stock: true });
     } catch (err) {
@@ -7972,13 +10346,15 @@ async function finalizeProduct(
   if (items.length > 0) {
     try {
       await addProductItems(product.id, items);
+      await autoFulfillPreordersAfterRestock(ctx, product.id);
+      await notifyPublicStockAdded(ctx, product.id, items.length);
     } catch (err) {
       logger.error({ err, product_id: product.id }, 'addProductItems on create failed');
     }
   }
   ctx.session.adminFlow = undefined;
   cache.del('cats');
-  const stockBlurb = data.unlimited
+  const stockBlurb = unlimited
     ? 'stock ∞'
     : `stock ${product.stock}`;
 
@@ -8217,6 +10593,8 @@ adminBot.command('addproductitems', async (ctx) => {
     return;
   }
   const inserted = await addProductItems(id, payloads);
+  await autoFulfillPreordersAfterRestock(ctx, id);
+  await notifyPublicStockAdded(ctx, id, inserted);
   const remaining = await countAvailableProductItems(id);
   await ctx.reply(`✅ Added ${inserted} items to product #${id}. Pool now has ${remaining} unconsumed.`);
 });

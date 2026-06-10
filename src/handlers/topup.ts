@@ -74,7 +74,9 @@ function topupExitCallback(ctx: AppCtx): string {
 function tutButtonKeyFor(
   provider: PaymentProvider,
 ): 'where_txid' | 'where_order_id' {
-  return provider === 'binance_pay' ? 'where_order_id' : 'where_txid';
+  return provider === 'binance_pay' || provider === 'bybit_pay'
+    ? 'where_order_id'
+    : 'where_txid';
 }
 
 /**
@@ -251,6 +253,55 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       return;
     }
 
+    if (m.provider === 'bybit_pay') {
+      if (!m.address) {
+        await ctx.editMessageText(
+          renderMdHtml(
+            'Warning: This Bybit Pay method has no Bybit UID / ID configured. Please contact support.',
+          ),
+          {
+            parse_mode: 'HTML',
+            reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
+          },
+        );
+        return;
+      }
+      let deposit_id: number;
+      try {
+        const dep = await createDeposit({
+          user_id: ctx.user.telegram_id,
+          method: m.name,
+          amount: 0.01,
+          note: 'Bybit Pay screen opened - awaiting internal transfer txid',
+        });
+        deposit_id = dep.id;
+      } catch (err) {
+        logger.error({ err }, 'Bybit Pay: pre-deposit insert failed');
+        await ctx.editMessageText(
+          'Warning: Could not start the Bybit Pay top-up. Please try again or contact support.',
+        );
+        return;
+      }
+      ctx.session.userFlow = {
+        type: 'bybit_pay_topup',
+        step: 'tx_id',
+        data: {
+          method_id: m.id,
+          method_name: m.name,
+          bybit_id: m.address,
+          bybit_name: m.pay_name,
+          deposit_id,
+          opened_at_ms: Date.now(),
+          instruction_message_id: ctx.callbackQuery?.message?.message_id,
+        },
+      };
+      await ctx.editMessageText(renderMdHtml(buildBybitPayTopupScreen(m)), {
+        parse_mode: 'HTML',
+        reply_markup: topupInstructionKeyboard(ctx, m),
+      });
+      return;
+    }
+
     if (m.provider === 'ltc') {
       if (!m.address) {
         await ctx.editMessageText(
@@ -377,6 +428,10 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     }
     if (flow.type === 'binance_pay_topup') {
       await handleBinancePayOrderId(ctx, flow, text);
+      return;
+    }
+    if (flow.type === 'bybit_pay_topup') {
+      await handleBybitPayTxId(ctx, flow, text);
       return;
     }
     if (flow.type === 'ltc_topup') {
@@ -953,6 +1008,176 @@ function buildBinancePayTopupScreen(m: DBPaymentMethod): string {
   ].join('\n');
 }
 
+function buildBybitPayTopupScreen(m: DBPaymentMethod): string {
+  return [
+    '*Bybit Pay Deposit*',
+    '',
+    `*Bybit UID / ID:* \`${m.address ?? '(not set)'}\``,
+    `*Bybit Name:* \`${m.pay_name ?? '(not set)'}\``,
+    '',
+    `${PE.bullet_send} Send any USDT amount inside Bybit to the ID above`,
+    `${PE.bullet_paste} Paste your *Bybit internal transfer TXID* below`,
+    '',
+    `${PE.note} _Only successful USDT internal transfers are auto-verified._`,
+    '',
+    '⏰ _Only payments started after opening this screen and completed within 30 minutes will be credited._',
+    '',
+    '*Please send your Bybit TXID below:*',
+  ].join('\n');
+}
+
+async function handleBybitPayTxId(
+  ctx: AppCtx,
+  flow: Extract<
+    NonNullable<AppCtx['session']['userFlow']>,
+    { type: 'bybit_pay_topup' }
+  >,
+  text: string,
+): Promise<void> {
+  const cleaned = text.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9_-]{6,100}$/.test(cleaned)) {
+    await ctx.reply(
+      renderMdHtml(
+        "That doesn't look like a Bybit internal transfer TXID. Paste the full TXID from your Bybit transfer receipt.",
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  const txId = cleaned;
+  const depId = flow.data.deposit_id;
+
+  const rl = await consume(`bybit_pay:${ctx.user.telegram_id}`, 5, 60_000);
+  if (!rl.ok) {
+    await ctx.reply(
+      renderMdHtml(
+        `⏱ Too many Bybit TXID attempts. Please try again in ${formatRetryAfter(rl.retryAfterMs)}.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  ctx.session.userFlow = undefined;
+
+  const dep = await getDeposit(depId);
+  if (!dep) {
+    await ctx.reply('Warning: deposit row missing. Please reopen the Bybit Pay screen.');
+    return;
+  }
+  if (dep.status !== 'pending') {
+    await ctx.reply(
+      renderMdHtml(
+        `Warning: This deposit has already been ${dep.status}. Open a fresh Bybit Pay screen to submit a new TXID.`,
+      ),
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+  await setDepositNote(depId, `Bybit internal transfer TXID submitted: ${txId}`).catch(() => undefined);
+
+  const verifying = await startVerifyingMessage({
+    api: ctx.api,
+    chatId: ctx.chat!.id,
+    txId,
+  });
+
+  let result;
+  try {
+    result = await verifyAndCreditDeposit({
+      api: ctx.api,
+      deposit: dep,
+      submission: { orderId: txId },
+      openedAtMs: flow.data.opened_at_ms,
+      logUser: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, depId, txId }, 'bybit_pay auto-verify threw');
+    result = {
+      ok: false as const,
+      reason: `verifier crashed: ${(err as Error)?.message ?? String(err)}`,
+    };
+  }
+
+  if (result.ok) {
+    await verifying.done({
+      text: [
+        `✅ *Bybit Payment Confirmed!* (#${depId})`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        `Credited: *$${result.amount.toFixed(3)}*`,
+        `New balance: *$${Number(result.newBalance).toFixed(2)}*`,
+      ].join('\n'),
+      reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
+    });
+    if (flow.data.instruction_message_id) {
+      ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
+    }
+    return;
+  }
+
+  const klass = classifyReason(result.reason);
+  await setDepositNote(depId, `auto-verify failed: ${result.reason} (bybit txid ${txId})`).catch(() => undefined);
+  if (klass === 'duplicate') {
+    await verifying.done({
+      text: [
+        `❌ *Already-used Bybit TXID (#${depId}).*`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        '_This Bybit transfer has already been used to credit a previous deposit. Each TXID can only be used once._',
+      ].join('\n'),
+      reply_markup: successKeyboard(ctx.lang, topupExitCallback(ctx)),
+    });
+  } else if (klass === 'reject') {
+    await setDepositStatus(depId, 'rejected').catch(() => undefined);
+    await verifying.done({
+      text: [
+        `❌ *Disapproved (#${depId}).*`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        `_${friendlyReason(result.reason)}_`,
+        '',
+        'This transfer did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
+      ].join('\n'),
+      reply_markup: rejectionKeyboard(
+        ctx.lang,
+        depId,
+        txId,
+        result.reason,
+        topupExitCallback(ctx),
+      ),
+    });
+  } else {
+    await verifying.done({
+      text: [
+        `⏳ *Submitted (#${depId}) - pending admin review.*`,
+        '',
+        `Bybit TXID: \`${txId}\``,
+        `_${friendlyReason(result.reason)}_`,
+        '',
+        'Admin will check your payment manually and credit your wallet shortly.',
+      ].join('\n'),
+      reply_markup: manualReviewKeyboard(ctx.lang, depId, txId, topupExitCallback(ctx)),
+    });
+    void adminLog.logTopupSubmitted(ctx.api, {
+      user: {
+        telegram_id: ctx.user.telegram_id,
+        username: ctx.user.username ?? null,
+        first_name: ctx.user.first_name ?? null,
+        email: ctx.user.email ?? null,
+      },
+      depositDbId: depId,
+      method: flow.data.method_name,
+      reference: txId,
+      reason: result.reason,
+    });
+  }
+}
+
 async function handleBinancePayOrderId(
   ctx: AppCtx,
   flow: Extract<
@@ -1177,7 +1402,7 @@ function buildLtcUsdAmountScreen(m: DBPaymentMethod): string {
   ].join('\n');
 }
 
-async function showTopupMenu(ctx: AppCtx, asEdit = false) {
+export async function showTopupMenu(ctx: AppCtx, asEdit = false) {
   const methods = await listPaymentMethods();
   if (methods.length === 0) {
     const text = renderMdHtml(ctx.t('topup.no_methods'));

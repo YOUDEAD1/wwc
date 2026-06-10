@@ -32,6 +32,9 @@ const DEFAULT_LOG_CHAT = '@homlanderstore';
  */
 const DEFAULT_ORDER_LOG_CHAT = '@homlanderstore';
 
+/** Public shop feed / watcher group. Empty means reuse the working order-log chat. */
+const DEFAULT_PUBLIC_FEED_CHAT = '';
+
 /**
  * Shared transformer for the `LOG_CHAT_ID` family of env vars. Each
  * one accepts the same input shapes — `@channelusername` (with or
@@ -61,6 +64,7 @@ const schema = z.object({
   BOT_MODE: z.enum(['polling', 'webhook']).default('polling'),
   WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
   WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  PUBLIC_BASE_URL: z.string().url().optional().or(z.literal('')),
   PORT: z.coerce.number().int().default(3000),
 
   DEFAULT_LANG: z.enum(['en', 'ar', 'vi']).default('en'),
@@ -146,6 +150,24 @@ const schema = z.object({
     .transform(logChannelTransformer(DEFAULT_ORDER_LOG_CHAT)),
 
   // ----------------------------------------------------------------
+  //  Referral notifications channel
+  // ----------------------------------------------------------------
+  // Telegram chat that receives new referral notifications.
+  // Same input shapes as `LOG_CHAT_ID` (`@username`, numeric `-100…`).
+  BOT_REFERS_CHANNEL: z
+    .string()
+    .trim()
+    .optional()
+    .transform(logChannelTransformer('')),
+
+  // Public shop feed / watcher group (sold, stock and announcement cards).
+  PUBLIC_FEED_CHAT_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform(logChannelTransformer(DEFAULT_PUBLIC_FEED_CHAT)),
+
+  // ----------------------------------------------------------------
   //  TonCenter (TON USDT jetton verification)
   // ----------------------------------------------------------------
   // Optional API key for https://toncenter.com . Without it the
@@ -198,11 +220,9 @@ const schema = z.object({
   // NOTE: `api.binance.com` returns HTTP 451 from many cloud
   // regions (Azure / Railway included). This integration assumes
   // outbound traffic from the bot host is routed through a VPN to
-  // an exit IP Binance allows (e.g. ProtonVPN Netherlands). See
-  // README "VPN sidecar" section for the Railway setup.
+  // an exit IP Binance allows (e.g. ProtonVPN Netherlands).
   BINANCE_PAY_API_KEY: z.string().optional().or(z.literal('')),
   BINANCE_PAY_API_SECRET: z.string().optional().or(z.literal('')),
-
   // ----------------------------------------------------------------
   //  External API (API Manager)
   // ----------------------------------------------------------------
@@ -210,6 +230,38 @@ const schema = z.object({
   // مثال: https://your-server.com/8f71aedd3494e042bb06408f50b7f938
   // يُستخدم من قبل API Manager للاتصال بالمتجر الأساسي.
   API_BASE_URL: z.string().url().optional().or(z.literal('')),
+
+  // Optional comma-separated Binance REST base URLs. Defaults to the
+  // official api/api-gcp/api1-api4 rotation when unset.
+  BINANCE_API_BASE_URLS: z.string().optional().or(z.literal('')),
+  // Optional proxy used ONLY for Binance Pay API requests. Use an
+  // HTTP(S) proxy URL (e.g. http://proxy.example.com:8080). Leave
+  // blank to connect directly.
+  BINANCE_PROXY_URL: z.string().url().optional().or(z.literal('')),
+  // Optional comma-separated failover list. When set, Binance Pay
+  // verification tries each proxy first, then falls back to direct.
+  BINANCE_PROXY_URLS: z.string().optional().or(z.literal('')),
+
+  // ----------------------------------------------------------------
+  //  Bybit internal-transfer auto-verify
+  // ----------------------------------------------------------------
+  // Users send USDT inside Bybit to the configured Bybit UID / ID,
+  // then paste the internal transfer TXID. The bot checks
+  // GET /v5/asset/deposit/query-internal-record against the API-key
+  // owner's deposit records. Requires an API key with asset/wallet
+  // read access.
+  BYBIT_API_KEY: z.string().optional().or(z.literal('')),
+  BYBIT_API_SECRET: z.string().optional().or(z.literal('')),
+  // Optional comma-separated Bybit REST base URLs. Defaults to
+  // https://api.bybit.com and https://api.bytick.com.
+  BYBIT_API_BASE_URL: z.string().url().optional().or(z.literal('')),
+  BYBIT_API_BASE_URLS: z.string().optional().or(z.literal('')),
+  // Optional proxy URL used ONLY for Bybit Pay API calls. Use this
+  // when Bybit/CloudFront blocks Railway's direct country/IP.
+  BYBIT_PROXY_URL: z.string().url().optional().or(z.literal('')),
+  // Optional comma-separated failover proxies. The bot tries these
+  // first, then BYBIT_PROXY_URL, then direct.
+  BYBIT_PROXY_URLS: z.string().optional().or(z.literal('')),
 });
 
 // Provide a stable alias `BOT_TOKEN` on the parsed env for consumers.

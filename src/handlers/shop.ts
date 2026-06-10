@@ -1,16 +1,28 @@
 import type { Composer } from 'grammy';
-import { InlineKeyboard } from 'grammy';
-import { PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN } from '../../config/index.js';
+import { InlineKeyboard, InputFile } from 'grammy';
+import {
+  LOCALES,
+  PRODUCTS_PER_PAGE,
+  QTY_MAX,
+  QTY_MIN,
+  type Lang,
+} from '../../config/index.js';
+import { formatPriceWithCurrency } from '../../config/currencies.js';
 import {
   createOrder,
   decrementProductStock,
   incrementProductStock,
   getProduct,
+  getOrder,
+  getReferralBalance,
+  InsufficientReferralBalanceError,
   listActiveProducts,
   claimProductItems,
+  spendReferralBalance,
   setOrderDeliveredItems,
   readSetting,
 } from '../db/queries.js';
+import { supabase } from '../db/supabase.js';
 import {
   applyUserPriceToProduct,
   applyUserPriceToProducts,
@@ -35,14 +47,19 @@ import {
   clampForTelegram,
   escapeAttr,
   htmlToPlain,
+  renderHtmlTemplate,
   renderMdHtml,
   sanitizeButtonUrl,
+  stripCustomEmojiTags,
 } from '../services/premium.js';
 import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
 import { buildOrderDeliveredChunks } from '../services/orderRender.js';
+import { trySupplierAutoOrder } from '../services/supplierApi.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
+import { sendInvoiceEmail } from '../services/mailer.js';
+import { t as translate } from '../i18n/index.js';
 import {
   handleDeliveryFormMessage,
   maybeStartDeliveryFormForCtx,
@@ -77,16 +94,42 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   // total counts live in the keyboard footer where they don't
   // clutter the body copy.
   const html = renderMdHtml(ctx.t('shop.home.header'));
-  
   // Read layout style dynamically from settings (defaults to list)
   const layout = await readSetting('shop_layout_style') as 'list' | 'grid' ?? 'list';
   
-  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages, layout);
+  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages, layout, ctx.user.currency ?? 'USDT');
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {
     await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
+}
+
+const STORED_HTML_RX =
+  /<tg-emoji\b|<a\b[^>]*href="[^"]*"[^>]*>[\s\S]*<\/a>|<(b|blockquote|code|del|em|i|pre|s|span|strong|tg-spoiler|u)\b[^>]*>[\s\S]*<\/\1>/i;
+
+function htmlBlockquoteToMarkdown(raw: string): string | null {
+  if (!/<blockquote\b/i.test(raw)) return null;
+  const replaced = raw.replace(
+    /<blockquote(?:\s+expandable)?[^>]*>([\s\S]*?)<\/blockquote>/gi,
+    (_match, body: string) => {
+      const plainBody = htmlToPlain(body).trim();
+      if (!plainBody) return '';
+      return plainBody
+        .split(/\r?\n/)
+        .map((line) => `> ${line}`)
+        .join('\n');
+    },
+  );
+  return htmlToPlain(replaced).trim() || null;
+}
+
+function renderStoredProductText(raw: string | null | undefined, fallbackMarkdown: string): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return renderMdHtml(fallbackMarkdown);
+  return STORED_HTML_RX.test(trimmed)
+    ? renderHtmlTemplate(trimmed)
+    : renderMdHtml(trimmed);
 }
 
 /**
@@ -115,17 +158,20 @@ function productPageText(
   // screen so the buy page stays focused on the price / qty / total
   // trio.
   const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
-  const emojiStr = p.emoji_id
+  const productEmoji = p.emoji_id
     ? `<tg-emoji emoji-id="${p.emoji_id}">${p.emoji || '📦'}</tg-emoji>`
-    : (p.emoji ?? '');
+    : (p.emoji === '🛒' ? '' : (p.emoji ?? ''));
   const lines: string[] = [
-    ctx.t('shop.product.line.name', { name: p.name, emoji: emojiStr }),
+    ctx.t('shop.product.line.name', { name: p.name, emoji: productEmoji }),
   ];
   lines.push(
-    ctx.t('shop.product.line.price', { price: p.price }),
+    ctx.t('shop.product.line.price', { price: formatPriceWithCurrency(p.price, ctx.user.currency) }),
     ctx.t('shop.product.line.stock', { stock: stockLabel }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
+  if (!p.unlimited_stock && p.stock <= 0) {
+    lines.push(ctx.t('shop.product.line.preorder_notice'));
+  }
   // Teaser line under Warranty.
   //   - Always shows when there is no active promo yet but an
   //     upcoming threshold exists (the original "Buy 10+ −$5 Off"
@@ -149,6 +195,7 @@ function productPageText(
       }),
     );
   }
+
   lines.push('', ctx.t('shop.product.line.qty', { qty }));
   // Total Amount: when a promo applies, render gross → effective as
   // a strikethrough so the buyer sees the saving inline. When no
@@ -156,15 +203,41 @@ function productPageText(
   if (eligible) {
     lines.push(
       ctx.t('shop.product.line.total.discounted', {
-        gross: gross.toFixed(2),
-        total: total.toFixed(2),
+        gross: formatPriceWithCurrency(gross, ctx.user.currency),
+        total: formatPriceWithCurrency(total, ctx.user.currency),
       }),
     );
   } else {
-    lines.push(ctx.t('shop.product.line.total', { total: total.toFixed(2) }));
+    lines.push(ctx.t('shop.product.line.total', { total: formatPriceWithCurrency(total, ctx.user.currency) }));
   }
-  lines.push(ctx.t('shop.product.line.balance', { balance: ctx.user.balance }));
+  lines.push(ctx.t('shop.product.line.balance', { balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency) }));
   return lines.join('\n');
+}
+
+const BLANK_TXT_PAYLOAD = ' ';
+const MANUAL_DELIVERY_PLACEHOLDER = 'Manual delivery — admin will follow up shortly.';
+
+function deliveryPendingValues(): Set<string> {
+  const values = new Set<string>();
+  for (const lang of Object.keys(LOCALES) as Lang[]) {
+    values.add(translate(lang, 'shop.buy.delivery_pending').trim());
+  }
+  values.add(MANUAL_DELIVERY_PLACEHOLDER);
+  return values;
+}
+
+function buildDeliveredItemsTxt(args: {
+  deliveredItems: string | null | undefined;
+  isOneToOne: boolean;
+}): string {
+  const trimmed = (args.deliveredItems ?? '').trim();
+  const pending = trimmed.length === 0 || deliveryPendingValues().has(trimmed);
+  if (args.isOneToOne || pending) return BLANK_TXT_PAYLOAD;
+  const lines = (args.deliveredItems ?? '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return lines.length > 0 ? lines.join('\n') + '\n' : BLANK_TXT_PAYLOAD;
 }
 
 /**
@@ -199,9 +272,389 @@ function renderPromoLine(
   return (
     ctx.t('shop.product.line.promo', {
       label,
-      discount: discount.toFixed(2),
+      discount: formatPriceWithCurrency(discount, ctx.user.currency),
     }) + '\n'
   );
+}
+
+type ReferralPaymentState = {
+  requiredPerUnit: number;
+  requiredTotal: number;
+  totalReferrals: number;
+  spentReferrals: number;
+  availableReferrals: number;
+  remaining: number;
+  eligible: boolean;
+};
+
+async function getReferralPaymentState(
+  ctx: AppCtx,
+  product: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
+  qty: number,
+): Promise<ReferralPaymentState | null> {
+  if (!product.referral_required_count || product.referral_required_count <= 0) return null;
+  const requiredPerUnit = product.referral_required_count;
+  const requiredTotal = requiredPerUnit * qty;
+  try {
+    const balance = await getReferralBalance(ctx.user.telegram_id);
+    const remaining = Math.max(0, requiredTotal - balance.available);
+    return {
+      requiredPerUnit,
+      requiredTotal,
+      totalReferrals: balance.total,
+      spentReferrals: balance.spent,
+      availableReferrals: balance.available,
+      remaining,
+      eligible: remaining <= 0,
+    };
+  } catch (err) {
+    logger.warn(
+      { err, product_id: product.id, user: ctx.user.telegram_id },
+      'getReferralPaymentState failed',
+    );
+    return {
+      requiredPerUnit,
+      requiredTotal,
+      totalReferrals: 0,
+      spentReferrals: 0,
+      availableReferrals: 0,
+      remaining: requiredTotal,
+      eligible: false,
+    };
+  }
+}
+
+async function showLowReferralBalance(
+  ctx: AppCtx,
+  product: NonNullable<Awaited<ReturnType<typeof getProduct>>>,
+  state: ReferralPaymentState,
+): Promise<void> {
+  try {
+    await ctx.answerCallbackQuery();
+  } catch {
+    // The callback may already have been acknowledged after a
+    // server-side balance recheck.
+  }
+  const kb = new InlineKeyboard();
+  inlineBtn(kb, ctx.lang, 'referral_earn_buy', `profile:refer:buy:${product.id}`);
+  kb.row();
+  inlineBtn(kb, ctx.lang, 'refresh', `pay:referral:${product.id}`);
+  kb.row();
+  inlineBtn(kb, ctx.lang, 'back', `buy:${product.id}`);
+  const html = renderMdHtml(
+    ctx.t('shop.referral.insufficient.card', {
+      required: state.requiredTotal,
+      available: state.availableReferrals,
+      remaining: state.remaining,
+    }),
+  );
+  if (ctx.callbackQuery?.message) {
+    await ctx.editMessageText(html, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+    return;
+  }
+  await ctx.reply(html, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+}
+
+async function finalizeOrderDelivery(args: {
+  ctx: AppCtx;
+  product: NonNullable<Awaited<ReturnType<typeof getProduct>>>;
+  qty: number;
+  total: number;
+  discount: number;
+  order: Awaited<ReturnType<typeof createOrder>>;
+  paidVia: string;
+  balanceAfter: number;
+  confirmationText: string;
+}): Promise<void> {
+  const { ctx, product: p, qty, total, discount, order, paidVia, balanceAfter, confirmationText } = args;
+  const preorder = isPreorder(p, qty);
+  if (!preorder) {
+    await decrementProductStock(p.id, qty);
+    // ── Stock alert: notify admin if stock depleted or low ──
+    if (!p.unlimited_stock) {
+      const remaining = p.stock - qty;
+      if (remaining <= 0) {
+        void adminLog.logStockAlert(ctx.api, {
+          productId: p.id,
+          productName: p.name,
+          remaining: Math.max(0, remaining),
+        }).catch((err) => logger.warn({ err }, 'logStockAlert failed'));
+      } else if (remaining <= 3) {
+        void adminLog.logStockAlert(ctx.api, {
+          productId: p.id,
+          productName: p.name,
+          remaining,
+        }).catch((err) => logger.warn({ err }, 'logStockAlert failed'));
+      }
+    }
+  }
+  delete ctx.session.qty[p.id];
+  const publicId = publicOrderId(order);
+  // Pull the actual delivery payload off the per-product items
+  // pool. When the pool is empty (or short), fall back to a
+  // "manual delivery" placeholder; the admin gets pinged via
+  // logOrderCreated either way.
+  const supplierOrder = preorder
+    ? null
+    : await trySupplierAutoOrder({
+        localProductId: p.id,
+        qty,
+        localOrderId: order.id,
+        onFailure: (failure) =>
+          adminLog.logSupplierOrderFailed(ctx.api, {
+            user: {
+              telegram_id: ctx.user.telegram_id,
+              username: ctx.user.username ?? null,
+              first_name: ctx.user.first_name ?? null,
+              email: ctx.user.email ?? null,
+            },
+            orderDbId: order.id,
+            orderPublicId: publicId,
+            productId: p.id,
+            productName: p.name,
+            qty,
+            total,
+            paidVia,
+            balanceAfter: Number(balanceAfter.toFixed(3)),
+            supplierName: failure.supplierName,
+            supplierProductId: failure.supplierProductId,
+            reason: failure.error,
+            lowBalance: failure.lowBalance,
+          }).catch((err) => logger.warn({ err }, 'supplier failure admin log failed')),
+      });
+  const claimed = preorder
+    ? []
+    : supplierOrder
+      ? supplierOrder.items
+      : await claimProductItems(p.id, qty, order.id);
+  // Items are rendered as Telegram blockquote pills (one `> line`
+  // per claimed link / account) — same style as the View Note
+  // "luli" / "Hey" pills the bot owner pointed to.
+  //
+  // For bulk orders (10/30/50/100+ links) we split the items
+  // across multiple messages of `ORDER_DELIVERED_CHUNK_SIZE` each
+  // (the bot owner's preferred 7-per-msg layout). The first
+  // chunk goes inside the Order Delivered header card; the
+  // remaining chunks are sent as plain blockquote messages right
+  // below. Only the last chunk's message carries the Using
+  // Method inline keyboard so the buyer scrolls to the bottom
+  // and finds it there. This replaces the previous .txt
+  // attachment workaround.
+  //
+  // The DB-stored copy keeps plain single-line separation so the
+  // existing /myorders renderer (and the /admin orders block)
+  // doesn't suddenly contain blockquote markers.
+  const deliveredChunks = buildOrderDeliveredChunks(claimed);
+  const pendingText = preorder
+    ? ctx.t('shop.buy.preorder_pending')
+    : ctx.t('shop.buy.delivery_pending');
+  const firstChunkBlock =
+    deliveredChunks[0]?.inlineBlock ?? `> ${pendingText}`;
+  const deliveredItemsForDb =
+    claimed.length > 0 ? claimed.join('\n') : pendingText;
+  // Always persist `delivered_items` — even the manual-delivery
+  // placeholder — so the My Orders detail screen can render the
+  // order without falling back to the legacy `delivery` blob.
+  // Without this, a bulk order whose item pool is empty or whose
+  // chat-render failed would leave `delivered_items` NULL, and
+  // tapping the order in /myorders would render a broken
+  // "Received: Order #N-37" line that confused buyers.
+  await setOrderDeliveredItems(order.id, deliveredItemsForDb);
+  await ctx.answerCallbackQuery();
+  // ---- Step 1: Payment Verified card (auto-deletes after 15s) ----
+  // We capture the message_id and schedule a delete via setTimeout
+  // so the chat stays clean: by the time the user finishes reading
+  // "Order Delivered!" the verified card has slid away.
+  const verifiedMsg = await ctx.reply(renderMdHtml(confirmationText), {
+    parse_mode: 'HTML',
+  });
+  const verifiedChatId = verifiedMsg.chat.id;
+  const verifiedMessageId = verifiedMsg.message_id;
+  setTimeout(() => {
+    // Fire-and-forget; if the user already deleted it manually
+    // or 48h have passed, Telegram will reject — we just swallow.
+    void ctx.api.deleteMessage(verifiedChatId, verifiedMessageId).catch((err) => {
+      logger.debug(
+        { err, chatId: verifiedChatId, messageId: verifiedMessageId },
+        'auto-delete of payment_verified message failed (likely already gone)',
+      );
+    });
+  }, 15_000);
+  // ---- Step 2: Order Delivered card -----------------------
+  // The keyboard carries only the per-product Using Method
+  // button — the standalone "View Invoice" button was removed
+  // per the bot owner's follow-up note. For bulk orders we send
+  // the keyboard with the LAST items message instead of the
+  // header card, so the buyer scrolls past every link before
+  // tapping Using Method.
+  const deliveredKb = new InlineKeyboard();
+  inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
+  deliveredKb.row();
+  inlineBtn(deliveredKb, ctx.lang, 'send_note_txt', `order:txt:${order.id}`);
+  const headerHasKeyboard = deliveredChunks.length <= 1;
+  await ctx.reply(
+    renderMdHtml(
+      ctx.t(preorder ? 'shop.buy.order_preordered' : 'shop.buy.order_delivered', {
+        order_id: publicId,
+        name: p.name,
+        qty,
+        total: total.toFixed(2),
+        items: firstChunkBlock,
+      }),
+    ),
+    headerHasKeyboard ? { parse_mode: 'HTML', reply_markup: deliveredKb } : { parse_mode: 'HTML' },
+  );
+  // Send the remaining 7-link chunks as plain blockquote
+  // follow-up messages. Only the very last one gets the inline
+  // keyboard. If a follow-up message fails to render we still
+  // press on so a single bad link doesn't keep the buyer from
+  // seeing the rest. The DB has the full list either way.
+  for (let i = 1; i < deliveredChunks.length; i++) {
+    const chunk = deliveredChunks[i];
+    if (!chunk) continue;
+    const opts = chunk.isLast
+      ? { parse_mode: 'HTML' as const, reply_markup: deliveredKb }
+      : { parse_mode: 'HTML' as const };
+    try {
+      await ctx.reply(renderMdHtml(chunk.inlineBlock), opts);
+    } catch (err) {
+      logger.warn(
+        {
+          err,
+          orderId: order.id,
+          chunkIndex: i,
+          chunkSize: deliveredChunks.length,
+        },
+        'order delivery — chunked items follow-up failed',
+      );
+    }
+  }
+  // ---- Step 2b: Post-purchase delivery form ---------------
+  // Some products require the buyer to send extra details
+  // (account email + password, recovery key, voucher code, …)
+  // BEFORE the seller can finish provisioning. When the product
+  // has `delivery_form_enabled` we drop an instruction message
+  // + a single in-place prompt card right under the items so
+  // the buyer can submit their details directly. Vendor DM +
+  // success / edit / admin-help buttons all live in the
+  // `postPurchaseDelivery` service.
+  try {
+    await maybeStartDeliveryFormForCtx({
+      ctx,
+      product: p,
+      orderId: order.id,
+      orderPublicId: publicId,
+      qty,
+    });
+  } catch (err) {
+    logger.warn(
+      { err, orderId: order.id, productId: p.id },
+      'order delivery — delivery form start failed',
+    );
+  }
+  // ---- Step 3: Email follow-up ----------------------------
+  // Two branches per the bot-owner spec:
+  //   a) No email → polite prompt with a `Set Email` deep link
+  //      that opens Settings → Email Settings → Set Email and
+  //      remembers `order.id` so once the email is saved we can
+  //      retroactively fire the invoice for THIS purchase.
+  //   b) Has email → single-line "invoice sent" card that
+  //      auto-deletes after 13 s + the polished invoice email.
+  if (!ctx.user.email) {
+    const noEmailKb = new InlineKeyboard();
+    // Tag the callback with `:post:<orderId>` so the profile
+    // handler knows this came from a post-purchase nudge (vs.
+    // Settings → Set Email) and can run the auto-delete +
+    // retroactive-invoice path.
+    inlineBtn(
+      noEmailKb,
+      ctx.lang,
+      'set_email_now',
+      `profile:email:set:post:${order.id}`,
+    );
+    await ctx.reply(renderMdHtml(ctx.t('shop.buy.add_email_prompt')), {
+      parse_mode: 'HTML',
+      reply_markup: noEmailKb,
+    });
+  } else {
+    // Single bold confirmation line — no spam-folder note, no
+    // Invoice-Email / Invoice-Link block, no inline buttons.
+    // Auto-deletes ~13 s later so the chat stays clean once the
+    // user has had time to read it.
+    const invoiceSentMsg = await ctx.reply(renderMdHtml(ctx.t('shop.buy.invoice_sent')), {
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+    });
+    const sentChatId = invoiceSentMsg.chat.id;
+    const sentMessageId = invoiceSentMsg.message_id;
+    setTimeout(() => {
+      void ctx.api.deleteMessage(sentChatId, sentMessageId).catch((err) => {
+        logger.debug(
+          { err, chatId: sentChatId, messageId: sentMessageId },
+          'auto-delete of invoice_sent message failed (likely already gone)',
+        );
+      });
+    }, 13_000);
+    // Fire-and-forget the professional invoice. Failure modes
+    // (transport down, bad address) are logged inside mailer.ts
+    // and never surface to the buyer — they already have the
+    // delivery card with the items in-chat.
+    const invoiceLink = env.BOT_USERNAME
+      ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
+      : '';
+    void sendInvoiceEmail({
+      email: ctx.user.email,
+      firstName: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+      orderPublicId: publicId,
+      orderDate: order.created_at,
+      productName: p.name,
+      qty,
+      unitPrice: p.price,
+      total,
+      discount,
+      paidVia,
+      items: claimed,
+      invoiceLink,
+    });
+  }
+  // ---- Step 4: remove the old product/payment card -----------
+  // The callback was triggered from the product/payment message.
+  // Once the order is delivered, delete that old card so the chat
+  // doesn't keep a stale product section above the delivered items.
+  try {
+    await ctx.deleteMessage();
+  } catch (err) {
+    logger.debug(
+      { err, productId: p.id, orderId: order.id },
+      'post-delivery old product/payment card delete failed (likely already gone)',
+    );
+  }
+  // Notify admin with the deep-detail order block.
+  void adminLog.logOrderCreated(ctx.api, {
+    user: {
+      telegram_id: ctx.user.telegram_id,
+      username: ctx.user.username ?? null,
+      first_name: ctx.user.first_name ?? null,
+      email: ctx.user.email ?? null,
+    },
+    orderDbId: order.id,
+    orderPublicId: publicOrderId(order),
+    productId: p.id,
+    productName: p.name,
+    qty,
+    unitPrice: p.price,
+    total,
+    paidVia,
+    balanceAfter: Number(balanceAfter.toFixed(3)),
+    lifecycle: preorder ? 'preorder' : 'delivered',
+  });
 }
 
 async function showProduct(ctx: AppCtx, productId: number) {
@@ -312,15 +765,32 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
 }
 
 /**
- * Validate a candidate quantity against `[1, min(QTY_MAX, stock)]`.
+ * For normal products, cap quantity at the live stock. For out-of-stock
+ * products, allow a preorder quantity up to QTY_MAX instead of blocking
+ * at zero.
+ */
+function qtyLimitForProduct(p: { unlimited_stock: boolean; stock: number }): number {
+  if (p.unlimited_stock) return QTY_MAX;
+  return p.stock > 0 ? Math.min(QTY_MAX, p.stock) : QTY_MAX;
+}
+
+function isPreorder(
+  p: { unlimited_stock: boolean; stock: number },
+  qty: number,
+): boolean {
+  return !p.unlimited_stock && p.stock < qty;
+}
+
+/**
+ * Validate a candidate quantity against `[1, max]`.
  * Returns the clamped integer on success or `null` if the input is
  * non-numeric / out of range — caller surfaces the premium-emoji
  * error message and keeps the keypad open.
  */
-function validateQty(candidate: string | number, stock: number): number | null {
+function validateQty(candidate: string | number, max: number): number | null {
   const n = typeof candidate === 'string' ? Number(candidate) : candidate;
   if (!Number.isFinite(n) || !Number.isInteger(n)) return null;
-  const ceiling = Math.min(QTY_MAX, Math.max(0, stock));
+  const ceiling = Math.max(0, max);
   if (n < QTY_MIN || n > ceiling) return null;
   return n;
 }
@@ -366,7 +836,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    const ceiling = Math.min(QTY_MAX, Math.max(0, p.stock));
+    const ceiling = qtyLimitForProduct(p);
     const current = ctx.session.qty[id] ?? QTY_MIN;
     const candidate = direction === 'inc' ? current + 1 : current - 1;
     if (candidate < QTY_MIN || candidate > ceiling) {
@@ -426,9 +896,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // same way as `max` so the user sees an explanation instead
       // of a no-op tap.
       const preset = Number(action.slice(2));
-      const ceiling = p.unlimited_stock
-        ? QTY_MAX
-        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = qtyLimitForProduct(p);
       if (ceiling < QTY_MIN) {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
@@ -443,7 +911,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // never represents a qty the user couldn't actually buy.
       // Trailing taps past the ceiling are silently dropped (the
       // ack still happens below, so Telegram doesn't show a spinner).
-      const ceiling = Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = qtyLimitForProduct(p);
       if (buf.length < 4) {
         const candidate = (buf + digit).replace(/^0+(\d)/, '$1');
         if (Number(candidate) <= ceiling) buf = candidate;
@@ -459,9 +927,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // toast on out-of-stock so the user understands why the
       // buffer didn't move. The action only updates the staged
       // buffer — the user still has to tap ✅ Confirm to apply.
-      const ceiling = p.unlimited_stock
-        ? QTY_MAX
-        : Math.min(QTY_MAX, Math.max(0, p.stock));
+      const ceiling = qtyLimitForProduct(p);
       if (ceiling < QTY_MIN) {
         await ctx.answerCallbackQuery({
           text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
@@ -471,10 +937,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
       }
       buf = String(ceiling);
     } else if (action === 'confirm') {
-      const next = validateQty(buf, p.stock);
+      const ceiling = qtyLimitForProduct(p);
+      const next = validateQty(buf, ceiling);
       if (next === null) {
         await ctx.answerCallbackQuery({
-          text: ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) }),
+          text: ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
           show_alert: true,
         });
         return;
@@ -521,14 +988,15 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // Strip non-digits so a stray space / punctuation doesn't
     // invalidate an otherwise-valid number ("11 " → "11").
     const digits = text.replace(/[^0-9]/g, '');
-    const next_ = digits ? validateQty(digits, p.stock) : null;
+    const ceiling = qtyLimitForProduct(p);
+    const next_ = digits ? validateQty(digits, ceiling) : null;
     if (next_ === null) {
       // Premium-emoji invalid warning. Sent to the chat (as opposed
       // to a callback popup) because the user typed a message — a
       // popup wouldn't surface here.
       const warn = await ctx.reply(
         renderMdHtml(
-          ctx.t('shop.qty.keypad.invalid', { max: Math.min(QTY_MAX, p.stock) }),
+          ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
         ),
         { parse_mode: 'HTML' },
       );
@@ -634,25 +1102,42 @@ export function registerShop(bot: Composer<AppCtx>): void {
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
     await ctx.answerCallbackQuery();
-    const noteText = (p.note ?? '').trim();
-    const desc = (p.description ?? '').trim();
-    const body = ctx.t('shop.note.full', {
-      name: p.name,
-      description: desc.length > 0 ? desc : ctx.t('shop.note.empty_description'),
-      note: noteText.length > 0 ? noteText : ctx.t('shop.note.empty'),
-    });
     const kb = new InlineKeyboard();
     inlineBtn(kb, ctx.lang, 'back', `prod:${p.id}`);
-    const html = renderMdHtml(body);
+    const html = [
+      renderMdHtml(`{note_premium} *View Note — ${p.name}*`),
+      '',
+      renderMdHtml('{note_desc} *Description:*'),
+      renderStoredProductText(p.description, ctx.t('shop.note.empty_description')),
+      '',
+      renderMdHtml('{note_text} *Note:*'),
+      renderStoredProductText(p.note, ctx.t('shop.note.empty')),
+    ].join('\n');
     // View Note is text-only: just edit the in-place message back
     // to the rendered note body (description + note + product name).
     // Per bot-owner request the per-product file attachment was
     // removed — this keeps the screen consistent and avoids
     // file_id-expiry edge cases.
-    await ctx.editMessageText(html, {
-      parse_mode: 'HTML',
-      reply_markup: kb,
-    });
+    const safeHtml = clampForTelegram(html);
+    try {
+      await ctx.editMessageText(safeHtml, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } catch (err) {
+      logger.warn({ err, productId: p.id }, 'View Note HTML render failed; falling back to plain text');
+      const noCustomEmojiHtml = clampForTelegram(stripCustomEmojiTags(safeHtml));
+      try {
+        await ctx.editMessageText(noCustomEmojiHtml, {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+        });
+      } catch (retryErr) {
+        logger.warn({ err: retryErr, productId: p.id }, 'View Note HTML retry failed; falling back to plain text');
+        const plain = htmlToPlain(safeHtml).slice(0, 3900);
+        await ctx.editMessageText(plain, { reply_markup: kb });
+      }
+    }
   });
 
   // ---- Using Method tutorial ----
@@ -763,10 +1248,183 @@ export function registerShop(bot: Composer<AppCtx>): void {
     }
   });
 
+  // ---- Download delivered items as TXT ----
+  bot.callbackQuery(/^order:txt:(\d+)$/, async (ctx) => {
+    const orderId = Number(ctx.match[1]);
+    const order = await getOrder(orderId);
+    if (!order || order.user_id !== ctx.from?.id) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action'), show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const product = order.product_id ? await getProduct(order.product_id) : null;
+    const contents = buildDeliveredItemsTxt({
+      deliveredItems: order.delivered_items,
+      isOneToOne: product?.delivery_form_enabled === true,
+    });
+    // Format: (quantity)x (product name) (buying time)
+    // e.g: 10x Gemini 18M 1:48Utc
+    const safeName = (order.product_name ?? 'Unknown')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const d = new Date(order.created_at);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const timeStr = `${hh}:${mm}Utc`;
+    const filename = `${order.qty}x ${safeName} ${timeStr}.txt`;
+    try {
+      await ctx.replyWithDocument(new InputFile(Buffer.from(contents, 'utf8'), filename));
+    } catch (err) {
+      logger.warn({ err, orderId }, 'order:txt download failed');
+    }
+  });
+
   // *Buy Now* on the product page no longer charges immediately —
   // it edits the message into a payment-method picker that lets the
   // user choose between paying with their wallet balance and topping
   // up first. The actual charge happens on `pay:wallet:<id>`.
+  bot.callbackQuery(/^pay:referral:(\d+)$/, async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    const raw = await getProduct(productId);
+    if (!raw) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    if (!p.referral_required_count || p.referral_required_count <= 0) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.disabled'),
+        show_alert: true,
+      });
+      return;
+    }
+    const qty = ctx.session.qty[productId] ?? QTY_MIN;
+    const referral = await getReferralPaymentState(ctx, p, qty);
+    if (!referral) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.disabled'),
+        show_alert: true,
+      });
+      return;
+    }
+    if (!referral.eligible) {
+      await showLowReferralBalance(ctx, p, referral);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    const text = ctx.t('shop.referral.confirm', {
+      name: p.name,
+      qty,
+      required: referral.requiredTotal,
+      available: referral.availableReferrals,
+      after: referral.availableReferrals - referral.requiredTotal,
+      emoji: p.emoji === '🛒' ? '' : (p.emoji ?? ''),
+    });
+    const kb = new InlineKeyboard();
+    inlineBtn(kb, ctx.lang, 'confirm_pay', `pay:referral:do:${productId}`);
+    kb.row();
+    inlineBtn(kb, ctx.lang, 'cancel_pay', `buy:${productId}`);
+    await ctx.editMessageText(renderMdHtml(text), {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  });
+
+  bot.callbackQuery(/^pay:referral:do:(\d+)$/, async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    const raw = await getProduct(productId);
+    if (!raw) {
+      await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
+      return;
+    }
+    const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
+    if (!p.referral_required_count || p.referral_required_count <= 0) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.disabled'),
+        show_alert: true,
+      });
+      return;
+    }
+    const qty = ctx.session.qty[productId] ?? QTY_MIN;
+    const referral = await getReferralPaymentState(ctx, p, qty);
+    if (!referral) {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('shop.referral.disabled'),
+        show_alert: true,
+      });
+      return;
+    }
+    if (!referral.eligible) {
+      await showLowReferralBalance(ctx, p, referral);
+      return;
+    }
+    await ctx.answerCallbackQuery();
+    try {
+      const total = 0;
+      const discount = p.price * qty;
+      const order = await createOrder({
+        user_id: ctx.from!.id,
+        product_id: productId,
+        product_name: p.name,
+        qty,
+        unit_price: p.price,
+        total,
+        discount,
+        promo_id: null,
+        delivery: ctx.t('shop.referral.delivery', { product_id: p.id, qty }),
+      });
+      try {
+        await spendReferralBalance({
+          user_id: ctx.user.telegram_id,
+          product_id: p.id,
+          order_id: order.id,
+          referral_cost: referral.requiredTotal,
+        });
+      } catch (spendErr) {
+        logger.warn(
+          { err: spendErr, order_id: order.id, product_id: p.id, user: ctx.user.telegram_id },
+          'referral payment failed - rolling back order',
+        );
+        await supabase.from('orders').delete().eq('id', order.id);
+        if (spendErr instanceof InsufficientReferralBalanceError) {
+          const latest = await getReferralPaymentState(ctx, p, qty);
+          if (latest) {
+            await showLowReferralBalance(ctx, p, latest);
+            return;
+          }
+        }
+        throw spendErr;
+      }
+      const confirmationText = ctx.t('shop.referral.confirmed', {
+        name: p.name,
+        qty,
+        spent: referral.requiredTotal,
+      });
+      await finalizeOrderDelivery({
+        ctx,
+        product: p,
+        qty,
+        total,
+        discount,
+        order,
+        paidVia: 'Referral Pay',
+        balanceAfter: ctx.user.balance,
+        confirmationText,
+      });
+    } catch (err) {
+      logger.error(
+        { err, product_id: productId, user: ctx.user.telegram_id },
+        'pay:referral failed',
+      );
+      try {
+        await ctx.reply(renderMdHtml(ctx.t('shop.referral.failed')), { parse_mode: 'HTML' });
+      } catch {
+        // noop
+      }
+    }
+  });
+
   bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
@@ -775,28 +1433,33 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
-      return;
-    }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
     const { discount, total } = priceBreakdown(p.price, qty, promo);
+    const referral = await getReferralPaymentState(ctx, p, qty);
     const emojiStr = p.emoji_id
       ? `<tg-emoji emoji-id="${p.emoji_id}">${p.emoji || '📦'}</tg-emoji>`
-      : (p.emoji ?? '');
+      : (p.emoji === '🛒' ? '' : (p.emoji ?? ''));
     const text = ctx.t('shop.pay.title', {
       name: p.name,
       qty,
-      total: total.toFixed(2),
-      balance: ctx.user.balance,
+      total: formatPriceWithCurrency(total, ctx.user.currency),
+      balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency),
       emoji: emojiStr,
       promo_line: renderPromoLine(ctx, promo, discount),
+      referral_line: referral
+        ? `${ctx.t('shop.pay.referral_line', {
+            required: referral.requiredTotal,
+            available: referral.availableReferrals,
+          })}`
+        : '',
     });
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: paymentMethodKeyboard(ctx.lang, p),
+      reply_markup: paymentMethodKeyboard(ctx.lang, p, {
+        showReferralPay: !!referral,
+      }),
     });
   });
 
@@ -812,13 +1475,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({
-        text: ctx.t('shop.buy.no_stock'),
-        show_alert: true,
-      });
-      return;
-    }
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
     const { discount, total } = priceBreakdown(p.price, qty, promo);
@@ -832,7 +1488,9 @@ export function registerShop(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
     const discountLine =
       discount > 0
-        ? ctx.t('shop.pay.confirm.discount_line', { discount: discount.toFixed(2) })
+        ? ctx.t('shop.pay.confirm.discount_line', {
+            discount: formatPriceWithCurrency(discount, ctx.user.currency),
+          })
         : '';
     const emojiStr = p.emoji_id
       ? `<tg-emoji emoji-id="${p.emoji_id}">${p.emoji || '📦'}</tg-emoji>`
@@ -840,8 +1498,8 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const text = ctx.t('shop.pay.confirm', {
       name: p.name,
       qty,
-      total: total.toFixed(2),
-      balance: Number(ctx.user.balance).toFixed(2),
+      total: formatPriceWithCurrency(total, ctx.user.currency),
+      balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency),
       emoji: emojiStr,
       discount_line: discountLine,
     });
@@ -868,10 +1526,6 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // so the price the user saw on the product page is the price
     // they're actually billed.
     const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
-    if (!p.unlimited_stock && p.stock <= 0) {
-      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.no_stock'), show_alert: true });
-      return;
-    }
     // Email is no longer a hard gate — the bot-owner spec relaxed
     // checkout so users without a saved email can still buy. The
     // 12-hour nag (see `services/emailNag.ts`) handles the soft
@@ -910,236 +1564,19 @@ export function registerShop(bot: Composer<AppCtx>): void {
         `order:${order.id}`,
       );
       ctx.user.balance = newBalance;
-      await decrementProductStock(id, qty);
-      // ── Stock alert: notify admin if stock depleted or low ──
-      if (!p.unlimited_stock) {
-        const remaining = p.stock - qty;
-        if (remaining <= 0) {
-          void adminLog.logStockAlert(ctx.api, {
-            productId: p.id,
-            productName: p.name,
-            remaining: Math.max(0, remaining),
-          });
-        } else if (remaining <= 3) {
-          void adminLog.logStockAlert(ctx.api, {
-            productId: p.id,
-            productName: p.name,
-            remaining,
-          });
-        }
-      }
-      delete ctx.session.qty[id];
-
-      // Check if it is an API product
-      const apiMatch = p.note ? p.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/) : null;
-      const apiProductId = apiMatch ? apiMatch[1] : null;
-
-      let claimed: string[] = [];
-
-      if (apiProductId) {
-        // Intercept with API purchase
-        const buyer = ctx.from?.username ? `@${ctx.from.username}` : String(ctx.from?.id ?? 'unknown');
-        const { purchaseProduct } = await import('../services/apiShop.js');
-        const apiRes = await purchaseProduct(apiProductId, qty, buyer);
-
-        if (!apiRes.ok) {
-          // Rollback: refund wallet & restore stock & delete order
-          const refundedBalance = await credit(ctx.from!.id, total, `refund:${order.id}`, 'purchase_refund');
-          ctx.user.balance = refundedBalance;
-          await incrementProductStock(id, qty);
-          const { supabase } = await import('../db/supabase.js');
-          await supabase.from('orders').delete().eq('id', order.id);
-
-          // Raise error to trigger the catch block with custom API error message
-          throw new Error(`API_ERROR: ${apiRes.error}`);
-        }
-
-        // Success: check if it's pending manual or has codes
-        if (apiRes.status === 'pending_manual') {
-          claimed = []; // will trigger delivery_pending
-        } else {
-          claimed = apiRes.codes ?? [];
-        }
-      } else {
-        // Standard flow: Pull the actual delivery payload off the per-product items pool.
-        claimed = await claimProductItems(p.id, qty, order.id);
-      }
-      const publicId = publicOrderId(order);
-      // Items are rendered as Telegram blockquote pills (one `> line`
-      // per claimed link / account) — same style as the View Note
-      // "luli" / "Hey" pills the bot owner pointed to.
-      //
-      // For bulk orders (10/30/50/100+ links) we split the items
-      // across multiple messages of `ORDER_DELIVERED_CHUNK_SIZE` each
-      // (the bot owner's preferred 7-per-msg layout). The first
-      // chunk goes inside the Order Delivered header card; the
-      // remaining chunks are sent as plain blockquote messages right
-      // below. Only the last chunk's message carries the Using
-      // Method inline keyboard so the buyer scrolls to the bottom
-      // and finds it there. This replaces the previous .txt
-      // attachment workaround.
-      //
-      // The DB-stored copy keeps plain single-line separation so the
-      // existing /myorders renderer (and the /admin orders block)
-      // doesn't suddenly contain blockquote markers.
-      const deliveredChunks = buildOrderDeliveredChunks(claimed);
-      const firstChunkBlock =
-        deliveredChunks[0]?.inlineBlock ??
-        `> ${ctx.t('shop.buy.delivery_pending')}`;
-      const deliveredItemsForDb =
-        claimed.length > 0
-          ? claimed.join('\n')
-          : ctx.t('shop.buy.delivery_pending');
-      // Always persist `delivered_items` — even the manual-delivery
-      // placeholder — so the My Orders detail screen can render the
-      // order without falling back to the legacy `delivery` blob.
-      // Without this, a bulk order whose item pool is empty or whose
-      // chat-render failed would leave `delivered_items` NULL, and
-      // tapping the order in /myorders would render a broken
-      // "Received: Order #N-37" line that confused buyers.
-      await setOrderDeliveredItems(order.id, deliveredItemsForDb);
-      await ctx.answerCallbackQuery();
-      // ---- Step 1: Payment Verified card (auto-deletes after 15s) ----
-      // We capture the message_id and schedule a delete via setTimeout
-      // so the chat stays clean: by the time the user finishes reading
-      // "Order Delivered!" the verified card has slid away.
-      const verifiedMsg = await ctx.reply(
-        renderMdHtml(
-          ctx.t('shop.buy.payment_verified', {
-            total: total.toFixed(2),
-          }),
-        ),
-        { parse_mode: 'HTML' },
-      );
-      const verifiedChatId = verifiedMsg.chat.id;
-      const verifiedMessageId = verifiedMsg.message_id;
-      setTimeout(() => {
-        // Fire-and-forget; if the user already deleted it manually
-        // or 48h have passed, Telegram will reject — we just swallow.
-        void ctx.api.deleteMessage(verifiedChatId, verifiedMessageId).catch((err) => {
-          logger.debug(
-            { err, chatId: verifiedChatId, messageId: verifiedMessageId },
-            'auto-delete of payment_verified message failed (likely already gone)',
-          );
-        });
-      }, 15_000);
-      // ---- Step 2: Order Delivered card -----------------------
-      // The keyboard carries only the per-product Using Method
-      // button — the standalone "View Invoice" button was removed
-      // per the bot owner's follow-up note. For bulk orders we send
-      // the keyboard with the LAST items message instead of the
-      // header card, so the buyer scrolls past every link before
-      // tapping Using Method.
-      const deliveredKb = new InlineKeyboard();
-      inlineBtn(deliveredKb, ctx.lang, 'using_method', `tut:${p.id}`);
-      const headerHasKeyboard = deliveredChunks.length <= 1;
-      await ctx.reply(
-        renderMdHtml(
-          ctx.t('shop.buy.order_delivered', {
-            order_id: publicId,
-            name: p.name,
-            qty,
-            total: total.toFixed(2),
-            items: firstChunkBlock,
-          }),
-        ),
-        headerHasKeyboard
-          ? { parse_mode: 'HTML', reply_markup: deliveredKb }
-          : { parse_mode: 'HTML' },
-      );
-      // Send the remaining 7-link chunks as plain blockquote
-      // follow-up messages. Only the very last one gets the inline
-      // keyboard. If a follow-up message fails to render we still
-      // press on so a single bad link doesn't keep the buyer from
-      // seeing the rest. The DB has the full list either way.
-      for (let i = 1; i < deliveredChunks.length; i++) {
-        const chunk = deliveredChunks[i];
-        if (!chunk) continue;
-        const opts = chunk.isLast
-          ? { parse_mode: 'HTML' as const, reply_markup: deliveredKb }
-          : { parse_mode: 'HTML' as const };
-        try {
-          await ctx.reply(renderMdHtml(chunk.inlineBlock), opts);
-        } catch (err) {
-          logger.warn(
-            {
-              err,
-              orderId: order.id,
-              chunkIndex: i,
-              chunkSize: deliveredChunks.length,
-            },
-            'pay:wallet — chunked items follow-up failed',
-          );
-        }
-      }
-      // ---- Step 2b: Post-purchase delivery form ---------------
-      // Some products require the buyer to send extra details
-      // (account email + password, recovery key, voucher code, …)
-      // BEFORE the seller can finish provisioning. When the product
-      // has `delivery_form_enabled` we drop an instruction message
-      // + a single in-place prompt card right under the items so
-      // the buyer can submit their details directly. Vendor DM +
-      // success / edit / admin-help buttons all live in the
-      // `postPurchaseDelivery` service.
-      try {
-        await maybeStartDeliveryFormForCtx({
-          ctx,
-          product: p,
-          orderId: order.id,
-          orderPublicId: publicId,
-          qty,
-        });
-      } catch (err) {
-        logger.warn(
-          { err, orderId: order.id, productId: p.id },
-          'pay:wallet — delivery form start failed',
-        );
-      }
-      // ---- Step 3: Email follow-up ----------------------------
-      // Two branches per the bot-owner spec:
-      //   a) No email → polite prompt with a `Set Email` deep link
-      //      that opens Settings → Email Settings → Set Email and
-      //      remembers `order.id` so once the email is saved we can
-      //      retroactively fire the invoice for THIS purchase.
-      //   b) Has email → single-line "invoice sent" card that
-      //      auto-deletes after 13 s + the polished invoice email.
-      if (!ctx.user.email) {
-      }
-      // ---- Step 4: revert the original Order summary message --
-      // The callback was triggered from the Order summary message
-      // (the one that contained Wallet Pay / Top Up / Back). After
-      // the new delivery + email cards are sent we edit THAT same
-      // message back to the product's quantity page so the user
-      // can immediately buy more or browse — instead of leaving a
-      // stale "Choose a payment method" card pinned in the chat.
-      try {
-        await showProduct(ctx, p.id);
-      } catch (err) {
-        // The original message could be gone (manual delete, 48h
-        // expiry, no longer the latest update) — that's fine; the
-        // delivery cards above are what the user actually needs.
-        logger.debug(
-          { err, productId: p.id, orderId: order.id },
-          'post-delivery revert to product page failed (likely message gone)',
-        );
-      }
-      // Notify admin with the deep-detail order block.
-      void adminLog.logOrderCreated(ctx.api, {
-        user: {
-          telegram_id: ctx.user.telegram_id,
-          username: ctx.user.username ?? null,
-          first_name: ctx.user.first_name ?? null,
-          email: ctx.user.email ?? null,
-        },
-        orderDbId: order.id,
-        orderPublicId: publicOrderId(order),
-        productId: p.id,
-        productName: p.name,
+      const confirmationText = ctx.t('shop.buy.payment_verified', {
+        total: total.toFixed(2),
+      });
+      await finalizeOrderDelivery({
+        ctx,
+        product: p,
         qty,
-        unitPrice: p.price,
         total,
+        discount,
+        order,
         paidVia: 'Wallet balance',
-        balanceAfter: Number(newBalance.toFixed(3)),
+        balanceAfter: newBalance,
+        confirmationText,
       });
     } catch (e: unknown) {
       const code = (e as { code?: string }).code;

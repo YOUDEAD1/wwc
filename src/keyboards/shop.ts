@@ -1,7 +1,13 @@
 import { InlineKeyboard } from 'grammy';
+import { formatPriceWithCurrency } from '../../config/currencies.js';
 import { EMOJI, colorModeToStyle, type Lang } from '../../config/index.js';
 import { inlineBtn, inlineCopyText } from './helpers.js';
-import { getStateColor, getCategoryColor } from '../services/settings.js';
+import {
+  getCategoryColor,
+  getCategoryDefaultColor,
+  getProductColor,
+  getStateColor,
+} from '../services/settings.js';
 import type { DBProduct } from '../types.js';
 
 /**
@@ -34,9 +40,11 @@ export function shopProductsKeyboard(
   page: number,
   totalPages: number,
   layoutStyle: 'list' | 'grid' = 'list',
+  currency = 'USDT',
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
+  const defaultInStockIcon = premiumIconId('orders_product');
   const oosIcon = premiumIconId('gift_invalid');
 
   if (layoutStyle === 'grid') {
@@ -48,20 +56,28 @@ export function shopProductsKeyboard(
       // Add p1 button (Left column)
       const inStock1 = p1.unlimited_stock || p1.stock > 0;
       const stockLabel1 = p1.unlimited_stock ? '∞' : String(p1.stock);
-      const namePrefix1 = p1.emoji ? `${p1.emoji} ` : '';
-      const label1 = `${namePrefix1}${p1.name.slice(0, 10)} - ${p1.price}$ (${stockLabel1})`;
+      const hasPremiumIcon1 = Boolean(p1.emoji_id);
+      const productEmoji1 = p1.emoji === '🛒' ? '' : (p1.emoji ?? '');
+      const namePrefix1 = hasPremiumIcon1 ? '' : (productEmoji1 ? `${productEmoji1} ` : '');
+      const label1 = `${namePrefix1}${p1.name.slice(0, 10)} - ${formatPriceWithCurrency(p1.price, currency)} (${stockLabel1})`;
       kb.text(label1, `prod:${p1.id}`);
       
       const iconId1 = inStock1
-        ? (p1.emoji_id ?? undefined)
+        ? (p1.emoji_id ?? defaultInStockIcon)
         : (p1.emoji_id ?? oosIcon);
       if (iconId1) kb.icon(iconId1);
       
-      let mode1 = getStateColor(inStock1 ? 'in_stock' : 'out_of_stock');
-      if (inStock1 && p1.category_id != null) {
-        const catMode = getCategoryColor(p1.category_id);
-        if (catMode !== 'none') mode1 = catMode;
-      }
+      const categoryMode1 = p1.category_id == null ? 'none' : getCategoryColor(p1.category_id);
+      const defaultCategoryMode1 = getCategoryDefaultColor();
+      const productMode1 = getProductColor(p1.id);
+      const mode1 = inStock1
+        ? productMode1 ??
+          (categoryMode1 !== 'none'
+            ? categoryMode1
+            : defaultCategoryMode1 !== 'none'
+              ? defaultCategoryMode1
+              : getStateColor('in_stock'))
+        : getStateColor('out_of_stock');
       const style1 = colorModeToStyle(mode1);
       if (style1 !== undefined) kb.style(style1);
 
@@ -69,20 +85,28 @@ export function shopProductsKeyboard(
         // Add p2 button (Right column)
         const inStock2 = p2.unlimited_stock || p2.stock > 0;
         const stockLabel2 = p2.unlimited_stock ? '∞' : String(p2.stock);
-        const namePrefix2 = p2.emoji ? `${p2.emoji} ` : '';
-        const label2 = `${namePrefix2}${p2.name.slice(0, 10)} - ${p2.price}$ (${stockLabel2})`;
+        const hasPremiumIcon2 = Boolean(p2.emoji_id);
+        const productEmoji2 = p2.emoji === '🛒' ? '' : (p2.emoji ?? '');
+        const namePrefix2 = hasPremiumIcon2 ? '' : (productEmoji2 ? `${productEmoji2} ` : '');
+        const label2 = `${namePrefix2}${p2.name.slice(0, 10)} - ${formatPriceWithCurrency(p2.price, currency)} (${stockLabel2})`;
         kb.text(label2, `prod:${p2.id}`);
         
         const iconId2 = inStock2
-          ? (p2.emoji_id ?? undefined)
+          ? (p2.emoji_id ?? defaultInStockIcon)
           : (p2.emoji_id ?? oosIcon);
         if (iconId2) kb.icon(iconId2);
         
-        let mode2 = getStateColor(inStock2 ? 'in_stock' : 'out_of_stock');
-        if (inStock2 && p2.category_id != null) {
-          const catMode = getCategoryColor(p2.category_id);
-          if (catMode !== 'none') mode2 = catMode;
-        }
+        const categoryMode2 = p2.category_id == null ? 'none' : getCategoryColor(p2.category_id);
+        const defaultCategoryMode2 = getCategoryDefaultColor();
+        const productMode2 = getProductColor(p2.id);
+        const mode2 = inStock2
+          ? productMode2 ??
+            (categoryMode2 !== 'none'
+              ? categoryMode2
+              : defaultCategoryMode2 !== 'none'
+                ? defaultCategoryMode2
+                : getStateColor('in_stock'))
+          : getStateColor('out_of_stock');
         const style2 = colorModeToStyle(mode2);
         if (style2 !== undefined) kb.style(style2);
         
@@ -98,21 +122,31 @@ export function shopProductsKeyboard(
     products.forEach((p) => {
       const inStock = p.unlimited_stock || p.stock > 0;
       const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
-      const namePrefix = p.emoji ? `${p.emoji} ` : '';
-      const label = `${namePrefix}${p.name} - ${p.price} USDT (Stock: ${stockLabel})`.trim();
+      const hasPremiumIcon = Boolean(p.emoji_id);
+      const productEmoji = p.emoji === '🛒' ? '' : (p.emoji ?? '');
+      const namePrefix = hasPremiumIcon ? '' : (productEmoji ? `${productEmoji} ` : '');
+      const label = `${namePrefix}${p.name} - ${formatPriceWithCurrency(p.price, currency)} (Stock: ${stockLabel})`.trim();
       kb.text(label, `prod:${p.id}`);
       const iconId = inStock
-        ? (p.emoji_id ?? undefined)
-        : (p.emoji_id ?? oosIcon);
+        ? p.emoji_id ?? defaultInStockIcon
+        : p.emoji_id ?? oosIcon;
       if (iconId) kb.icon(iconId);
       
-      let mode = getStateColor(inStock ? 'in_stock' : 'out_of_stock');
-      if (inStock && p.category_id != null) {
-        const catMode = getCategoryColor(p.category_id);
-        if (catMode !== 'none') mode = catMode;
-      }
+      const categoryMode = p.category_id == null ? 'none' : getCategoryColor(p.category_id);
+      const defaultCategoryMode = getCategoryDefaultColor();
+      const productMode = getProductColor(p.id);
+      const mode = inStock
+        ? productMode ??
+          (categoryMode !== 'none'
+            ? categoryMode
+            : defaultCategoryMode !== 'none'
+              ? defaultCategoryMode
+              : getStateColor('in_stock'))
+        : getStateColor('out_of_stock');
       const style = colorModeToStyle(mode);
       if (style !== undefined) kb.style(style);
+      kb.row();
+      // Add blank space between products
       kb.row();
     });
   }
@@ -184,32 +218,24 @@ export function productKeyboard(
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const inStock = product.unlimited_stock || product.stock > 0;
-  if (!inStock) {
-    // Out-of-stock UX: keyboard still shows a "Buy Now" button with
-    // the cross emoji per the bot-owner spec. Tapping it pops up
-    // the "contact admin to restock" alert instead of a silent ack.
-    inlineBtn(kb, lang, 'out_of_stock', 'noop:oos');
-    kb.row();
-  } else {
-    // Inline qty stepper first: ➖ on the left, the live qty in the
-    // middle (tap is a no-op — it's a label), ➕ on the right.
-    // Clamping to `[1, min(QTY_MAX, stock)]` happens in the
-    // callback handler so the keyboard stays presentation-only.
-    inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:dec`);
-    kb.text(String(qty), 'noop:qty');
-    inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
-    kb.row();
-    // Buy Now sits directly under the stepper so the user's tap
-    // path is "set qty → buy".
-    inlineBtn(kb, lang, 'buy_now', `buy:${product.id}`);
-    kb.row();
-    // 1) Refresh re-fetches and re-renders the product page so any
-    // out-of-band stock / wallet balance updates show up. 2) Custom
-    // Quantity opens the numeric keypad.
-    inlineBtn(kb, lang, 'refresh', `prod:${product.id}`);
-    inlineBtn(kb, lang, 'custom_qty', `qty:${product.id}:custom`);
-    kb.row();
-  }
+  // Inline qty stepper first: ➖ on the left, the live qty in the
+  // middle (tap is a no-op — it's a label), ➕ on the right.
+  // Out-of-stock products use the same controls as a preorder
+  // surface; handlers cap preorder qty at QTY_MAX instead of stock 0.
+  inlineBtn(kb, lang, 'qty_minus', `qty:${product.id}:dec`);
+  kb.text(String(qty), 'noop:qty');
+  inlineBtn(kb, lang, 'qty_plus', `qty:${product.id}:inc`);
+  kb.row();
+  // Buy Now / Pre Order sits directly under the stepper so the user's
+  // tap path is "set qty → buy".
+  inlineBtn(kb, lang, inStock ? 'buy_now' : 'pre_order', `buy:${product.id}`);
+  kb.row();
+  // 1) Refresh re-fetches and re-renders the product page so any
+  // out-of-band stock / wallet balance updates show up. 2) Custom
+  // Quantity opens the numeric keypad.
+  inlineBtn(kb, lang, 'refresh', `prod:${product.id}`);
+  inlineBtn(kb, lang, 'custom_qty', `qty:${product.id}:custom`);
+  kb.row();
   // Topup Wallet removed; replaced with a 1-tap *copy* link to
   // this product. Tapping copies the deep-link URL to the user's
   // clipboard with a "Copied" toast — no share-to-chat dialog, no
@@ -327,6 +353,7 @@ export function qtyKeypadKeyboard(
 export function paymentMethodKeyboard(
   lang: Lang,
   product: DBProduct,
+  options?: { showReferralPay?: boolean },
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, lang, 'pay_wallet', `pay:wallet:${product.id}`);
@@ -339,6 +366,10 @@ export function paymentMethodKeyboard(
   // them on the main menu.
   inlineBtn(kb, lang, 'pay_topup', `topup:open:from:buy:${product.id}`);
   kb.row();
+  if (options?.showReferralPay) {
+    inlineBtn(kb, lang, 'pay_referral', `pay:referral:${product.id}`);
+    kb.row();
+  }
   inlineBtn(kb, lang, 'back', `prod:${product.id}`);
   return kb;
 }

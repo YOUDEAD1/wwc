@@ -241,6 +241,166 @@ npm run lint
    Railway will route external traffic to `PORT` automatically.
 6. Trigger a deploy. The `worker` defined in the `Procfile` will start.
 
+### Binance Pay VPN Sidecar (Required for Auto-Verify)
+
+If you're using Binance Pay auto-verify and seeing `HTTP 451` errors, you need to route traffic through a VPN. Here's how to set it up on Railway:
+
+#### Step 1: Add VPN Config File
+
+Add the WireGuard VPN config file (`Binance_Config-NL-FREE-2.conf`) to your Railway project as a private service.
+
+#### Step 2: Create VPN Sidecar Service in Railway
+
+1. Go to Railway Dashboard → Your project
+2. Click **Add a Service** → **Private Service**
+3. Name it: `vpn-sidecar`
+4. Use Nixpacks with this Nix expression:
+
+```nix
+{ pkgs ? import <nixpkgs> {} }:
+pkgs.mkShell {
+  buildInputs = with pkgs; [ wireguard-tools ];
+  shellHook = ''
+    wg-quick up wg0 2>/dev/null || echo "VPN starting..."
+  '';
+}
+```
+
+5. Mount your WireGuard config file
+6. Set startup command: `wg-quick up wg0 && sleep infinity`
+
+#### Step 3: Connect Bot to VPN / Proxy
+
+1. Expose an HTTP proxy that exits through a Binance-allowed country.
+   For a WireGuard sidecar, run a tiny HTTP proxy inside the private
+   network and route that proxy through the VPN tunnel.
+2. Set `BINANCE_PROXY_URL` in your **bot** service variables (Railway →
+   Service → Variables), for example `http://vpn-sidecar:8080`.
+3. For failover, set `BINANCE_PROXY_URLS` to a comma-separated list:
+   `http://proxy-nl:8080,http://proxy-fr:8080,http://proxy-de:8080`.
+4. Redeploy the bot service so the env change takes effect.
+
+> `BINANCE_PROXY_URL` / `BINANCE_PROXY_URLS` are used only for Binance
+> Pay auto-verify calls. BEP20/TRC20/TON/LTC verification does not use
+> these proxies.
+
+### Bybit Pay Auto-Verify
+
+Bybit Pay in this bot uses Bybit internal deposit records. The buyer
+sends USDT inside Bybit to your Bybit UID / ID, then pastes the
+internal transfer TXID. The bot checks Bybit's
+`GET /v5/asset/deposit/query-internal-record` endpoint and credits only
+successful USDT deposits that landed in the API-key owner's account.
+
+1. Run the Supabase migration:
+
+   `supabase/migrations/0035_bybit_pay_provider.sql`
+
+   In Supabase SQL editor, paste the SQL file contents, not the file
+   path.
+
+### Reseller Product API
+
+Users can generate an API key from the bot with `/api`, `/apikey`, or
+the **API** main-menu button. The API lets another website/bot list
+your products, check the user's wallet balance, and place wallet-paid
+orders that deliver from this bot's stock.
+
+1. Run the Supabase migration:
+
+   `supabase/migrations/0036_reseller_api.sql`
+
+   In Supabase SQL editor, paste the SQL file contents, not the file
+   path.
+
+2. Set `PUBLIC_BASE_URL` in Railway to your public service domain,
+   for example:
+
+   ```env
+   PUBLIC_BASE_URL=https://your-app.up.railway.app
+   ```
+
+3. Redeploy the bot.
+
+Endpoints:
+
+```txt
+GET  /api
+GET  /api/products
+GET  /api/balance
+POST /api/order
+```
+
+Compatibility actions are also supported:
+
+```txt
+GET  /api?action=products
+GET  /api?action=balance
+POST /api?action=order
+```
+
+Send the API key as `Authorization: Bearer YOUR_KEY`, `x-api-key`, or
+`?api_key=YOUR_KEY`.
+
+Example order body:
+
+```json
+{
+  "product_id": 123,
+  "quantity": 1,
+  "request_id": "my-order-001"
+}
+```
+
+The API returns delivered items in JSON. The wallet is charged only
+after items are claimed and the order is created.
+
+2. Add Railway variables:
+
+   ```env
+   BYBIT_API_KEY=
+   BYBIT_API_SECRET=
+   BYBIT_API_BASE_URL=
+   BYBIT_API_BASE_URLS=
+   BYBIT_PROXY_URL=
+   BYBIT_PROXY_URLS=
+   ```
+
+   `BYBIT_API_BASE_URL` / `BYBIT_API_BASE_URLS` are optional. Leave
+   blank for the official mainnet hosts.
+
+   If Bybit returns CloudFront `403` / country-block errors from
+   Railway, set `BYBIT_PROXY_URL` or comma-separated
+   `BYBIT_PROXY_URLS` to an HTTP(S) proxy or VPN sidecar exit where
+   Bybit is reachable. The bot tries Bybit proxies first, then reuses
+   `BINANCE_PROXY_URLS` / `BINANCE_PROXY_URL` if present, then direct.
+
+3. Redeploy the Railway bot service.
+
+4. In Telegram admin panel, open Payment Methods, tap Add Bybit Pay,
+   then enter display name, Bybit UID / ID, and Bybit name.
+
+The Bybit API key should be read-only and must have access to asset /
+wallet deposit records. Do not enable trading or withdrawals for this
+bot key.
+
+#### Alternative: Use ProtonVPN Business (Easier)
+
+1. Buy ProtonVPN Business
+2. Get dedicated Netherlands IP
+3. Configure your Railway service to use it
+
+#### Testing VPN Connection
+
+```bash
+# SSH into your server (if using VPS)
+curl -I https://api.binance.com
+curl -I https://api1.binance.com
+
+# If you see HTTP 451, VPN is not working
+# If you see HTTP 200 or other, VPN is working
+```
+
 ### Alternative platforms
 
 The bot has no platform-specific code. Anywhere that runs `node dist/index.js`

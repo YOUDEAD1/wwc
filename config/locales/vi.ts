@@ -1,4 +1,4 @@
-/* Tiếng Việt — keep keys in sync with en.ts */
+﻿/* Tiếng Việt — keep keys in sync with en.ts */
 export const vi: Record<string, string> = {
   'welcome': 'Chào mừng đến với Homlander Store 👑',
   'welcome.title': 'Chào mừng đến với Homlander Store 👑',
@@ -31,6 +31,10 @@ export const vi: Record<string, string> = {
   'btn.prev': '◀️ Trước',
   'btn.refresh': '🔄 Làm mới',
   'btn.buy_now': '✅ Mua ngay',
+  'btn.pre_order': '🛍 Pre Order',
+  'btn.redeem_referral': '🎁 Thanh toán bằng giới thiệu',
+  'btn.referral_earn_buy': '🔗 Kiếm lượt giới thiệu & Mua',
+  'btn.convert_refers': '💱 Đổi Refers sang USDT',
   'btn.topup_wallet': '👛 Nạp ví',
   'btn.view_note': '📝 Xem ghi chú',
   'btn.qty_plus': '➕',
@@ -44,6 +48,7 @@ export const vi: Record<string, string> = {
   // sỉ muốn lấy hết lô mà không cần nhập từng chữ số.
   'btn.qty_keypad_max': '🎯 Tối đa',
   'btn.pay_wallet': '👛 Ví',
+  'btn.pay_referral': '🎁 Referral Pay',
   'btn.pay_direct': '💸 Trực tiếp',
   'btn.pay_topup': '🪙 Nạp',
   'btn.confirm_pay': '✅ Xác nhận',
@@ -67,7 +72,7 @@ export const vi: Record<string, string> = {
   'btn.qty.display': '📦 {qty} / {stock}',
   'btn.share_product': '🔗 Sao chép liên kết',
   'btn.view_note_file': '📥 Lưu ghi chú dạng TXT',
-  'btn.send_note_txt': '📥 Lưu dạng TXT',
+  'btn.send_note_txt': '📥 Tải TXT',
   'btn.out_of_stock': '❌ Hết hàng',
   'btn.my_orders': '🧾 Đơn hàng của tôi',
   'btn.refer': '🎁 Giới thiệu',
@@ -90,6 +95,7 @@ export const vi: Record<string, string> = {
   'btn.region.clear': '🚫 Xóa',
   'btn.deposit_history': '💳 Lịch sử nạp',
   'btn.channel': 'Kênh',
+  'btn.reseller_api': '🔑 Api Key',
   'btn.stats': '📊 Thống kê',
   'btn.stats_refresh': '🔄 Làm mới',
   'btn.stats_back': '◀️ Quay lại',
@@ -126,43 +132,52 @@ export const vi: Record<string, string> = {
     '{emoji} *{name}*\n' +
     '{prod_qty_selected} Số lượng: *{qty}*\n' +
     '{promo_line}' +
-    '{prod_total_amount} Tổng: *{total} USDT*\n' +
-    '{prod_wallet} Ví: *{balance} USDT*\n\n' +
+    '{prod_total_amount} Tổng: *{total}*\n' +
+    '{prod_wallet} Ví: *{balance}*\n' +
+    '{referral_line}' +
     'Chọn cách thanh toán:',
+  'shop.pay.referral_line':
+    '{prod_referral} Referral Pay:\n*{available} có sẵn* • *{required} cần*\n\n',
   // Thẻ xác nhận thanh toán bằng ví (trang 2).
   'shop.pay.confirm':
     '{prod_wallet} *Xác nhận Thanh toán*\n\n' +
     '{pay_summary} *Đơn hàng*\n' +
     '{emoji} *{name}* × *{qty}*\n' +
     '{discount_line}' +
-    '{prod_total_amount} *Tổng:* {total} USDT\n' +
-    '{prod_wallet} *Ví:* {balance} USDT\n\n' +
-    '_Trừ *{total} USDT* từ ví của bạn?_',
+    '{prod_total_amount} *Tổng:* {total}\n' +
+    '{prod_wallet} *Ví:* {balance}\n\n' +
+    '_Trừ *{total}* từ ví của bạn?_',
   'shop.pay.confirm.discount_line':
-    '{prod_promo} *Giảm giá:* −{discount} USDT\n',
+    '{prod_promo} *Giảm giá:* −{discount}\n',
   'shop.qty.editor.title':
     '🔢 *Chọn số lượng*\n\n' +
     '*{name}*\n' +
     'Tồn kho: *{stock}*\n' +
-    'Đơn giá: *{price} USDT*\n\n' +
+    'Đơn giá: *{price}*\n\n' +
     'Đã chọn: <code>{qty}</code>\n' +
-    'Tổng: *{total} USDT*',
+    'Tổng: *{total}*',
   'shop.empty_categories': 'Chưa có danh mục. Vui lòng quay lại sau.',
   'shop.empty_products': 'Chưa có sản phẩm trong danh mục này.',
   'shop.product.line.name': '{emoji} *{name}*',
-  'shop.product.line.price': '{prod_price_base} *Giá gốc:* {price} USDT',
+  'shop.product.line.price': '{prod_price_base} *Giá gốc:* {price}',
   'shop.product.line.stock': '{prod_stock} *Còn lại:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Bảo hành:* {warranty}',
+  'shop.product.line.referral.progress':
+    '{prod_referral} *Thanh toán giới thiệu:* Cần {required} • Có {total} • Thiếu {remaining}',
+  'shop.product.line.referral.ready':
+    '{prod_referral} *Thanh toán giới thiệu:* Cần {required} • Có {total} • Sẵn sàng',
+  'shop.product.line.referral.claimed':
+    '{prod_referral} *Thanh toán giới thiệu:* Số dư đã dùng ở đơn cũ',
   'shop.product.line.qty': '{prod_qty_selected} *Số lượng đã chọn:* {qty}',
-  'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total} USDT',
-  'shop.product.line.balance': '{prod_wallet} *Ví:* {balance} USDT',
+  'shop.product.line.total': '{prod_total_amount} *Tổng tiền:* {total}',
+  'shop.product.line.balance': '{prod_wallet} *Ví:* {balance}',
   'shop.product.line.promo':
-    '{prod_promo} *Khuyến mãi:* {label} — −{discount} USDT',
+    '{prod_promo} *Khuyến mãi:* {label} — −{discount}',
   'shop.product.line.promo.fallback_label': 'số lượng ≥ {min_qty}',
   'shop.product.line.promo.teaser':
     '{prod_promo} *Khuyến mãi:* Mua {min_qty}+ giảm −${discount}',
   'shop.product.line.total.discounted':
-    '{prod_total_amount} *Tổng tiền:* ~~{gross}~~ {total} USDT',
+    '{prod_total_amount} *Tổng tiền:* ~~{gross}~~ {total}',
   'shop.product.out_of_stock_popup':
     '❌ Sản phẩm này hiện đã hết hàng. Vui lòng liên hệ quản trị viên để bổ sung kho hoặc chọn sản phẩm tương tự.',
   'shop.note.title': '📝 *Ghi chú sản phẩm*',
@@ -170,7 +185,7 @@ export const vi: Record<string, string> = {
   'shop.note.full': [
     '*📝 Ghi chú sản phẩm — {name}*',
     '',
-    '*Giá:* `{price} USDT`',
+    '*Giá:* `{price}`',
     '*Kho:* `{stock}`',
     '*Bảo hành:* `{warranty}`',
     '',
@@ -185,6 +200,41 @@ export const vi: Record<string, string> = {
   'shop.buy.insufficient':
     '❌ Số dư ví không đủ. Cần *{need}* nhưng chỉ có *{have}*. Vui lòng nạp tiền trước.',
   'shop.buy.no_stock': '❌ Xin lỗi, sản phẩm đã hết hàng.',
+  'shop.referral.disabled': '❌ Referral Pay chưa được bật cho sản phẩm này.',
+  'shop.referral.already_redeemed': '✅ Referral Pay đã được dùng cho một đơn cũ.',
+  'shop.referral.insufficient':
+    '❌ Cần {required} lượt giới thiệu để đổi. Bạn có {total} (còn {remaining}).',
+  'shop.referral.insufficient.card': [
+    '⚠️ *Số dư Referral Pay thấp*',
+    '',
+    '{prod_referral} *Cần:* {required} lượt',
+    '{refer_user} *Hiện có:* {available} lượt',
+    '{qty_invalid} *Còn thiếu:* {remaining} lượt',
+    '',
+    '{refer_title} Mời thêm người bằng link giới thiệu, bấm làm mới, rồi thanh toán bằng Referral Pay.',
+  ].join('\n'),
+  'shop.referral.confirm': [
+    '{refer_title} *Xác nhận Referral Pay*',
+    '',
+    '{emoji} *{name}* × *{qty}*',
+    '{prod_referral} *Cần:* {required} lượt',
+    '{refer_user} *Hiện có:* {available} lượt',
+    '{delivery_check} *Sau khi trả:* {after} lượt',
+    '',
+    '_Dùng lượt giới thiệu đang có cho đơn này?_',
+  ].join('\n'),
+  'shop.referral.failed':
+    '❌ Không thể thanh toán bằng Referral Pay lúc này. Vui lòng thử lại hoặc liên hệ admin.',
+  'shop.referral.confirmed': [
+    '{refer_title} *Thanh toán Referral Pay thành công!*',
+    '',
+    '*Sản phẩm:* {name}',
+    '*Số lượng:* {qty}',
+    '*Đã dùng:* {spent} lượt',
+    '',
+    '{delivering} _Đang giao đơn hàng…_',
+  ].join('\n'),
+  'shop.referral.delivery': 'Referral Pay cho sản phẩm #{product_id} (SL: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*Sản phẩm có sẵn:*\n_{total} sản phẩm — trang {page}/{pages}_',
 
   'profile.title': '⚙️ *Cài đặt*',
@@ -204,17 +254,36 @@ export const vi: Record<string, string> = {
   // Màn hình Giới thiệu & Kiếm.
   'profile.refer.title': '{refer_title} *Giới thiệu & Kiếm*',
   'profile.refer.body':
-    '{refer_user} *Giới thiệu (24h):* {ref24h}\n' +
-    '{refer_user} *Giới thiệu (7n):* {ref7d}\n' +
-    '{refer_user} *Giới thiệu (Tổng):* {refTotal}\n\n' +
+    '{refer_prize_l} *Giới thiệu 10 người và thắng $0.50* {refer_prize_r}\n\n' +
+    '{refer_clicks} *Clicks:* {clicks}\n' +
+    '{refer_pending} *Pending:* {pending}\n' +
+    '{refer_active} *Active:* {active}\n' +
+    '{refer_left} *Left:* {left}\n' +
+    '{refer_total} *Giới thiệu (Tổng):* {refTotal}\n' +
     '{refer_coin} *Tổng đã kiếm:* {earnedTotal} USDT\n' +
-    '{refer_coin} *Khả dụng:* {available} USDT\n' +
-    '{refer_transferred} *Đã chuyển:* {transferred} USDT\n' +
     '{refer_withdrawn} *Đã rút:* {withdrawn} USDT\n\n' +
-    '> Kiếm 1% mỗi lần nạp của người bạn giới thiệu.\n' +
-    '> Tối đa $1.00 mỗi lần nạp.\n' +
+    '{prod_referral} *Số dư Referral Pay:* {refAvailable} lượt\n' +
+    '{refer_spent} *Đã dùng mua hàng:* {refSpent} lượt\n\n' +
     '> Chuyển lợi nhuận vào ví bất kỳ lúc nào. Rút tiền mặt liên hệ hỗ trợ (tối thiểu $1.00).\n\n' +
     '*Liên kết giới thiệu của bạn:*\n`{link}`',
+  'profile.refer.convert_success':
+    '💱 Đã đổi *{refs} refs* thành *{amount} USDT*.\n\n💳 Số dư ví: *{balance}*',
+  'profile.refer.convert_low':
+    '⚠️ Không đủ refs để đổi.\n\nBạn cần *20 refs hoạt động* để đổi thành *1 USDT*.\nSố dư Referral Pay hiện tại: *{available} refs*',
+  'profile.refer.convert_error':
+    '⚠️ Không thể đổi refs lúc này. Vui lòng thử lại.',
+  'btn.live_refers': '🔵 See Your Live Refers',
+  'btn.currency': '💱 Currency',
+  'btn.stats.24h': '24h',
+  'btn.stats.7d': '7d',
+  'btn.stats.30d': '30d',
+  'btn.stats.custom': 'Custom',
+  'profile.currency.title': '💱 *Choose Currency*',
+  'profile.currency.body':
+    'Your product prices will show your selected currency plus USDT. Payments still use USDT.',
+  'profile.currency.saved': '✅ Currency set to {currency}.',
+  'profile.currency.error':
+    '⚠️ Could not save currency yet. Please apply migration `0033_user_currency.sql` first.',
   'btn.copy_link': '📋 Sao chép',
   'btn.redeem': '🎁 Mã quà tặng',
   'profile.language.title': '{lang_left} *Chọn ngôn ngữ* {lang_right}',

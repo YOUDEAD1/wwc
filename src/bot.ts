@@ -10,6 +10,8 @@ import { registerProfile } from './handlers/profile.js';
 import { registerSupport, restoreLiveSupportSession } from './handlers/support.js';
 import { registerTopup } from './handlers/topup.js';
 import { registerDirectPay } from './handlers/directPay.js';
+import { registerResellerApi } from './handlers/resellerApi.js';
+import { registerPublicGroup } from './handlers/publicGroup.js';
 import { adminBot } from './handlers/admin/index.js';
 import { superAdminBot } from './handlers/superAdmin.js';
 
@@ -31,6 +33,8 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
   registerSupport(bot);
   registerTopup(bot);
   registerDirectPay(bot);
+  registerResellerApi(bot);
+  registerPublicGroup(bot);
   bot.use(adminBot);
 
   // Super Admin panel — فقط على البوت الرئيسي

@@ -6,6 +6,7 @@ export type DBUser = {
   first_name: string | null;
   last_name: string | null;
   language: Lang;
+  currency: string | null;
   balance: number;
   stock_alert: boolean;
   announcements: boolean;
@@ -52,6 +53,8 @@ export type DBProduct = {
   note: string | null;
   price: number;
   stock: number;
+  /** Referrals required to unlock a free redemption (0 = disabled). */
+  referral_required_count: number;
   warranty: string | null;
   emoji: string | null;
   /** Premium custom_emoji_id for the row icon. Falls back to `emoji`. */
@@ -161,6 +164,75 @@ export type DBUserPriceOverride = {
   created_at: string;
   updated_at: string;
   created_by: number | null;
+};
+
+export type SupplierAuthMode = 'none' | 'bearer' | 'x-api-key' | 'query';
+export type SupplierOrderMethod = 'GET' | 'POST';
+
+export type DBSupplierApiSource = {
+  id: number;
+  name: string;
+  base_url: string;
+  api_key: string;
+  auth_mode: SupplierAuthMode;
+  key_header: string;
+  key_query_param: string;
+  products_path: string;
+  balance_path: string;
+  order_path: string;
+  order_method: SupplierOrderMethod;
+  balance_json_path: string;
+  products_json_path: string;
+  product_id_json_path: string;
+  product_name_json_path: string;
+  product_price_json_path: string;
+  product_stock_json_path: string;
+  order_items_json_path: string;
+  order_status_json_path: string;
+  order_request_template: Record<string, unknown>;
+  enabled: boolean;
+  auto_import_new_products: boolean;
+  auto_import_active: boolean;
+  import_category_name: string | null;
+  markup_percent: number;
+  fixed_markup: number;
+  low_balance_threshold: number;
+  notes: string | null;
+  last_balance: number | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DBSupplierProductLink = {
+  id: number;
+  local_product_id: number;
+  supplier_id: number;
+  supplier_product_id: string;
+  supplier_product_name: string | null;
+  supplier_cost: number | null;
+  supplier_stock: number | null;
+  auto_order: boolean;
+  auto_sync_stock: boolean;
+  fallback_manual: boolean;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DBSupplierOrderLog = {
+  id: number;
+  supplier_id: number | null;
+  local_order_id: number | null;
+  local_product_id: number | null;
+  supplier_product_id: string | null;
+  status: 'pending' | 'success' | 'failed' | 'manual';
+  request_payload: Record<string, unknown>;
+  response_payload: Record<string, unknown>;
+  error: string | null;
+  created_at: string;
 };
 
 export type DBOrder = {
@@ -284,6 +356,15 @@ export type DBGiftCodeRedemption = {
   redeemed_at: string;
 };
 
+export type DBReferralRedemption = {
+  id: number;
+  user_id: number;
+  product_id: number;
+  order_id: number | null;
+  referral_cost: number;
+  redeemed_at: string;
+};
+
 export type DBWalletLedger = {
   id: number;
   user_id: number;
@@ -304,6 +385,11 @@ export type DBWalletLedger = {
  *                    merchant Pay ID) is stored in
  *                    `payment_methods.address`; the human-readable
  *                    Binance Pay Name is stored in `pay_name`.
+ *   - `bybit_pay`    Bybit internal deposit lookup
+ *                    `/v5/asset/deposit/query-internal-record`,
+ *                    matched by a user-pasted internal transfer TXID.
+ *                    The merchant Bybit UID / ID is stored in
+ *                    `payment_methods.address` for display.
  *   - `usdt_trc20`   TronGrid REST tx lookup (tx hash input)
  *   - `usdt_bep20`   BSC public RPC tx lookup (tx hash input)
  *   - `usdt_ton`     TonCenter REST tx lookup (tx hash input)
@@ -316,6 +402,7 @@ export type DBWalletLedger = {
 export type PaymentProvider =
   | 'manual'
   | 'binance_pay'
+  | 'bybit_pay'
   | 'usdt_trc20'
   | 'usdt_bep20'
   | 'usdt_ton'
@@ -333,13 +420,14 @@ export type DBPaymentMethod = {
    * Wallet / account address. Required for every non-manual
    * provider — chain providers verify the recipient against this.
    * For `binance_pay` rows this stores the merchant's 10-digit
-   * Binance Pay ID (e.g. `"1101801594"`).
+   * Binance Pay ID (e.g. `"1101801594"`). For `bybit_pay` rows
+   * this stores the merchant Bybit UID / ID shown to buyers.
    */
   address: string | null;
   /**
-   * Human-readable Binance Pay Name shown next to the Pay ID on the
-   * user-facing top-up screen (e.g. `"urweebboii"`). Only set for
-   * `binance_pay` provider rows; null for every other provider.
+   * Human-readable Pay Name shown next to the Pay ID on the
+   * user-facing top-up screen (e.g. `"urweebboii"`). Set for
+   * Binance Pay / Bybit Pay provider rows; null for other providers.
    */
   pay_name: string | null;
   /**

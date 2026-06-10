@@ -5,11 +5,41 @@ import { logger } from './logger.js';
 import { logMailerStatus } from './services/mailer.js';
 import { startAllTenantBots } from './tenants/manager.js';
 import { ensureTenantsTable } from './tenants/store.js';
+import {
+  handleHealthRequest,
+  handleResellerApiRequest,
+} from './services/resellerApiHttp.js';
+import { startSupplierStockSyncLoop } from './services/supplierAutoSync.js';
 
 async function main() {
   // البوت الرئيسي
   const bot = await buildBot({ isTenant: false });
   logMailerStatus();
+  startSupplierStockSyncLoop(bot.api);
+
+  const startHttpServer = (telegramHandler?: http.RequestListener) => {
+    const server = http.createServer((req, res) => {
+      void (async () => {
+        if (handleHealthRequest(req, res)) return;
+        if (await handleResellerApiRequest(req, res, bot.api)) return;
+        if (telegramHandler) {
+          telegramHandler(req, res);
+          return;
+        }
+        res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'not_found' }));
+      })().catch((err) => {
+        logger.error({ err }, 'HTTP request handler failed');
+        if (!res.headersSent) {
+          res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+        }
+        res.end(JSON.stringify({ ok: false, error: 'internal_error' }));
+      });
+    });
+    server.listen(env.PORT, '0.0.0.0', () => {
+      logger.info({ port: env.PORT, mode: env.BOT_MODE }, 'HTTP server started');
+    });
+  };
 
   // تهيئة جدول المستأجرين
   await ensureTenantsTable();
@@ -35,13 +65,9 @@ async function main() {
     const handler = webhookCallback(bot, 'http', {
       secretToken: env.WEBHOOK_SECRET || undefined,
     });
-    const server = http.createServer((req, res) => {
-      void handler(req, res);
-    });
-    server.listen(env.PORT, () => {
-      logger.info({ port: env.PORT, url: env.WEBHOOK_URL }, 'Webhook server started');
-    });
+    startHttpServer(handler);
   } else {
+    startHttpServer();
     await bot.api.deleteWebhook({ drop_pending_updates: true });
 
     const server = http.createServer((_, res) => {

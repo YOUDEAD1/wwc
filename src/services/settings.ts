@@ -19,7 +19,7 @@ export async function ensureLoaded(): Promise<void> {
   if (!loaded) await refreshSettings();
 }
 
-/** Override a text by i18n key — `text.<key>` in settings table. */
+/** Override a text by i18n key â€” `text.<key>` in settings table. */
 export function getTextOverride(key: string): string | undefined {
   const v = cache.get(`text.${key}`);
   return typeof v === 'string' ? v : undefined;
@@ -34,8 +34,8 @@ export function getButtonColor(key: keyof typeof DEFAULT_BUTTON_COLORS): ColorMo
 
 /**
  * Look up the prefix glyph for a color mode. Admins can override the
- * built-in glyph (🔵🟢🔴🟡) with any custom string via the
- * `color.prefix.<mode>` setting — useful for picking different
+ * built-in glyph (ðŸ”µðŸŸ¢ðŸ”´ðŸŸ¡) with any custom string via the
+ * `color.prefix.<mode>` setting â€” useful for picking different
  * symbols, alternative shapes, or suppressing the glyph entirely
  * (set to an empty string) without losing the underlying Bot API 9.4
  * style.
@@ -71,17 +71,13 @@ export function getStateColor(key: 'in_stock' | 'out_of_stock'): ColorMode {
 
 /**
  * Per-category button color (admin-editable via the Set Color picker).
- * Stored under `color.category.<id>` so categories added later
- * automatically pick up whatever color the admin assigns once. Falls
- * back to the optional `color.category.default` setting (so the admin
- * can paint every new category the same colour by default), then to
- * `'none'`.
+ * Stored under `color.category.<id>`. Falls back to `'none'` so the
+ * product list's normal in-stock blue stays the default until the
+ * admin paints a specific category.
  */
 export function getCategoryColor(id: number): ColorMode {
   const v = cache.get(`color.category.${id}`);
   if (typeof v === 'string' && v in COLOR_PREFIX) return v as ColorMode;
-  const def = cache.get('color.category.default');
-  if (typeof def === 'string' && def in COLOR_PREFIX) return def as ColorMode;
   return 'none';
 }
 
@@ -108,6 +104,28 @@ export async function setCategoryDefaultColor(
   const key = 'color.category.default';
   await setSetting(key, color, updated_by);
   cache.set(key, color);
+}
+
+/** Optional per-product catalog button color override. */
+export function getProductColor(id: number): ColorMode | undefined {
+  const v = cache.get(`color.product.${id}`);
+  return typeof v === 'string' && v in COLOR_PREFIX ? (v as ColorMode) : undefined;
+}
+
+export async function setProductColor(
+  id: number,
+  color: ColorMode,
+  updated_by?: number,
+): Promise<void> {
+  const key = `color.product.${id}`;
+  await setSetting(key, color, updated_by);
+  cache.set(key, color);
+}
+
+export async function clearProductColor(id: number): Promise<void> {
+  const key = `color.product.${id}`;
+  await deleteSetting(key);
+  cache.delete(key);
 }
 
 export function getEmoji(key: string): EmojiSpec {
@@ -158,7 +176,7 @@ export async function clearEmoji(key: string): Promise<void> {
 /**
  * Per-BUTTON premium-emoji icon override (Bot API 9.4
  * `icon_custom_emoji_id`). Stored under its own `btnicon.<key>`
- * namespace — separate from the shared `emoji.<key>` map — so
+ * namespace â€” separate from the shared `emoji.<key>` map â€” so
  * accidentally-bad `custom_emoji_id` values (e.g. emoji not owned by
  * the bot's owner) can't break the keyboard render path globally.
  *
@@ -232,7 +250,7 @@ export function getEmailPdfUrl(): string | null {
 
 /**
  * Direct-message URL for the admin / shop owner. Used by:
- *   - Settings → Redeem Gift Code → "Buy Code" button
+ *   - Settings â†’ Redeem Gift Code â†’ "Buy Code" button
  *   - any other screen that wants a 1-tap "contact admin" hop.
  *
  * Resolution order:
@@ -265,10 +283,10 @@ export function getAdminContactUrlWithPrefill(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-//  Bot Tutorial (Settings → Bot Tutorial)
+//  Bot Tutorial (Settings â†’ Bot Tutorial)
 //  Stored under the `bot_tutorial.*` namespace so the admin can edit
 //  it via /setsetting (or the dedicated admin flow). Each piece is
-//  independently optional — a tutorial may be text-only, file-only,
+//  independently optional â€” a tutorial may be text-only, file-only,
 //  or any mix of the four fields.
 // ---------------------------------------------------------------------------
 

@@ -31,6 +31,10 @@ export const ar: Record<string, string> = {
   'btn.prev': '◀️ السابق',
   'btn.refresh': '🔄 تحديث',
   'btn.buy_now': '✅ شراء الآن',
+  'btn.pre_order': '🛍 الطلب المسبق',
+  'btn.redeem_referral': '🎁 الدفع بالإحالات',
+  'btn.referral_earn_buy': '🔗 اكسب إحالات واشترِ',
+  'btn.convert_refers': '💱 تحويل الإحالات إلى USDT',
   'btn.topup_wallet': '💳 شحن الرصيد',
   'btn.view_note': '📝 عرض الملاحظة',
   'btn.qty_plus': '➕',
@@ -44,6 +48,7 @@ export const ar: Record<string, string> = {
   // الذي يرغب في شراء الكمية الكاملة دون إدخال الأرقام.
   'btn.qty_keypad_max': '🎯 الحد الأقصى',
   'btn.pay_wallet': '💳 المحفظة',
+  'btn.pay_referral': '🎁 دفع بالإحالات',
   'btn.pay_direct': '💸 دفع مباشر',
   'btn.pay_topup': '🪙 شحن',
   'btn.confirm_pay': '✅ تأكيد',
@@ -66,7 +71,7 @@ export const ar: Record<string, string> = {
   'btn.qty.display': '📦 {qty} / {stock}',
   'btn.share_product': '🔗 نسخ الرابط',
   'btn.view_note_file': '📥 حفظ كملف TXT',
-  'btn.send_note_txt': '📥 حفظ كـ TXT',
+  'btn.send_note_txt': '📥 تنزيل TXT',
   'btn.out_of_stock': '❌ غير متوفر',
   'btn.my_orders': '📊 طلباتي',
   'btn.refer': '✨ الإحالة والكسب',
@@ -89,6 +94,7 @@ export const ar: Record<string, string> = {
   'btn.region.clear': '🚫 مسح',
   'btn.deposit_history': '💳 سجل الإيداعات',
   'btn.channel': 'القناة',
+  'btn.reseller_api': '🔑 Api Key',
   'btn.stats': '📊 إحصائيات',
   'btn.stats_refresh': '🔄 تحديث',
   'btn.stats_back': '◀️ رجوع',
@@ -124,43 +130,52 @@ export const ar: Record<string, string> = {
     '{emoji} *{name}*\n' +
     '{prod_qty_selected} الكمية: *{qty}*\n' +
     '{promo_line}' +
-    '{prod_total_amount} الإجمالي: *{total} USDT*\n' +
-    '{prod_wallet} المحفظة: *{balance} USDT*\n\n' +
+    '{prod_total_amount} الإجمالي: *{total}*\n' +
+    '{prod_wallet} المحفظة: *{balance}*\n' +
+    '{referral_line}' +
     'اختر طريقة الدفع:',
+  'shop.pay.referral_line':
+    '{prod_referral} دفع الإحالات:\n*{available} متاح* • *{required} مطلوب*\n\n',
   // بطاقة تأكيد الدفع من المحفظة (الصفحة 2).
   'shop.pay.confirm':
     '{prod_wallet} *تأكيد الدفع*\n\n' +
     '{pay_summary} *الطلب*\n' +
     '{emoji} *{name}* × *{qty}*\n' +
     '{discount_line}' +
-    '{prod_total_amount} *الإجمالي:* {total} USDT\n' +
-    '{prod_wallet} *المحفظة:* {balance} USDT\n\n' +
-    '_خصم *{total} USDT* من محفظتك؟_',
+    '{prod_total_amount} *الإجمالي:* {total}\n' +
+    '{prod_wallet} *المحفظة:* {balance}\n\n' +
+    '_خصم *{total}* من محفظتك؟_',
   'shop.pay.confirm.discount_line':
-    '{prod_promo} *خصم:* −{discount} USDT\n',
+    '{prod_promo} *خصم:* −{discount}\n',
   'shop.qty.editor.title':
     '🔢 *اختر الكمية*\n\n' +
     '*{name}*\n' +
     'المخزون: *{stock}*\n' +
-    'السعر للوحدة: *{price} USDT*\n\n' +
+    'السعر للوحدة: *{price}*\n\n' +
     'المحدد: <code>{qty}</code>\n' +
-    'الإجمالي: *{total} USDT*',
+    'الإجمالي: *{total}*',
   'shop.empty_categories': 'لا توجد فئات بعد. يرجى التحقق لاحقًا.',
   'shop.empty_products': 'لا توجد منتجات في هذه الفئة بعد.',
   'shop.product.line.name': '{emoji} *{name}*',
-  'shop.product.line.price': '{prod_price_base} *السعر الأساسي:* {price} USDT',
+  'shop.product.line.price': '{prod_price_base} *السعر الأساسي:* {price}',
   'shop.product.line.stock': '{prod_stock} *المتوفر:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *الضمان:* {warranty}',
+  'shop.product.line.referral.progress':
+    '{prod_referral} *الدفع بالإحالات:* المطلوب {required} • المتاح {total} • الناقص {remaining}',
+  'shop.product.line.referral.ready':
+    '{prod_referral} *الدفع بالإحالات:* المطلوب {required} • المتاح {total} • جاهز',
+  'shop.product.line.referral.claimed':
+    '{prod_referral} *الدفع بالإحالات:* تم استخدام الرصيد في طلب قديم',
   'shop.product.line.qty': '{prod_qty_selected} *الكمية المختارة:* {qty}',
-  'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total} USDT',
-  'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance} USDT',
+  'shop.product.line.total': '{prod_total_amount} *الإجمالي:* {total}',
+  'shop.product.line.balance': '{prod_wallet} *المحفظة:* {balance}',
   'shop.product.line.promo':
-    '{prod_promo} *عرض ترويجي:* {label} — −{discount} USDT',
+    '{prod_promo} *عرض ترويجي:* {label} — −{discount}',
   'shop.product.line.promo.fallback_label': 'الكمية ≥ {min_qty}',
   'shop.product.line.promo.teaser':
     '{prod_promo} *عرض ترويجي:* اشترِ {min_qty}+ بخصم −${discount}',
   'shop.product.line.total.discounted':
-    '{prod_total_amount} *الإجمالي:* ~~{gross}~~ {total} USDT',
+    '{prod_total_amount} *الإجمالي:* ~~{gross}~~ {total}',
   'shop.product.out_of_stock_popup':
     '❌ هذا المنتج غير متوفر حاليًا. الرجاء التواصل مع الإدارة لإعادة تجديد المخزون أو اختيار منتج مشابه.',
   'shop.note.title': '📝 *ملاحظة المنتج*',
@@ -168,7 +183,7 @@ export const ar: Record<string, string> = {
   'shop.note.full': [
     '*📝 ملاحظة المنتج — {name}*',
     '',
-    '*السعر:* `{price} USDT`',
+    '*السعر:* `{price}`',
     '*المخزون:* `{stock}`',
     '*الضمان:* `{warranty}`',
     '',
@@ -182,6 +197,41 @@ export const ar: Record<string, string> = {
     '✅ تمت عملية الشراء!\n\nالمنتج: *{name}*\nالكمية: *{qty}*\nالإجمالي: *{total}*\n\nالتسليم:\n```\n{delivery}\n```',
   'shop.buy.insufficient': '❌ رصيد غير كافٍ. تحتاج *{need}* ولديك *{have}* فقط. يرجى الشحن أولاً.',
   'shop.buy.no_stock': '❌ عذرًا، هذا المنتج غير متوفر.',
+  'shop.referral.disabled': '❌ دفع الإحالات غير مفعّل لهذا المنتج.',
+  'shop.referral.already_redeemed': '✅ تم استخدام دفع الإحالات على طلب قديم.',
+  'shop.referral.insufficient':
+    '❌ تحتاج {required} إحالة للاستبدال. لديك {total} (باقي {remaining}).',
+  'shop.referral.insufficient.card': [
+    '⚠️ *رصيد الإحالات غير كافٍ*',
+    '',
+    '{prod_referral} *المطلوب:* {required} إحالات',
+    '{refer_user} *المتاح:* {available} إحالات',
+    '{qty_invalid} *المتبقي:* {remaining} إحالات',
+    '',
+    '{refer_title} ادعُ مستخدمين برابط الإحالة، ثم حدّث الصفحة وادفع بالإحالات.',
+  ].join('\n'),
+  'shop.referral.confirm': [
+    '{refer_title} *تأكيد دفع الإحالات*',
+    '',
+    '{emoji} *{name}* × *{qty}*',
+    '{prod_referral} *المطلوب:* {required} إحالات',
+    '{refer_user} *المتاح:* {available} إحالات',
+    '{delivery_check} *بعد الدفع:* {after} إحالات',
+    '',
+    '_استخدام إحالاتك النشطة لهذا الطلب؟_',
+  ].join('\n'),
+  'shop.referral.failed':
+    '❌ تعذر إكمال دفع الإحالات الآن. حاول مرة أخرى أو تواصل مع الإدارة.',
+  'shop.referral.confirmed': [
+    '{refer_title} *تم الدفع بالإحالات بنجاح!*',
+    '',
+    '*المنتج:* {name}',
+    '*الكمية:* {qty}',
+    '*الإحالات المستخدمة:* {spent}',
+    '',
+    '{delivering} _جارٍ تسليم طلبك…_',
+  ].join('\n'),
+  'shop.referral.delivery': 'دفع بالإحالات للمنتج #{product_id} (الكمية: {qty})',
   'shop.page.header': '🛒 *{category}*\n\n*المنتجات المتاحة:*\n_{total} منتج — صفحة {page}/{pages}_',
 
   'profile.title': '👑 *الحساب والضبط*',
@@ -201,17 +251,36 @@ export const ar: Record<string, string> = {
   // شاشة الإحالة والتربح.
   'profile.refer.title': '{refer_title} *إحالة وتربح*',
   'profile.refer.body':
-    '{refer_user} *الإحالات (24س):* {ref24h}\n' +
-    '{refer_user} *الإحالات (7أ):* {ref7d}\n' +
-    '{refer_user} *الإحالات (الإجمالي):* {refTotal}\n\n' +
+    '{refer_prize_l} *ادعُ 10 مستخدمين واربح $0.50* {refer_prize_r}\n\n' +
+    '{refer_clicks} *النقرات:* {clicks}\n' +
+    '{refer_pending} *المعلق:* {pending}\n' +
+    '{refer_active} *النشط:* {active}\n' +
+    '{refer_left} *المتبقي:* {left}\n' +
+    '{refer_total} *الإحالات (الإجمالي):* {refTotal}\n' +
     '{refer_coin} *إجمالي الأرباح:* {earnedTotal} USDT\n' +
-    '{refer_coin} *المتاح:* {available} USDT\n' +
-    '{refer_transferred} *المحول:* {transferred} USDT\n' +
     '{refer_withdrawn} *المسحوب:* {withdrawn} USDT\n\n' +
-    '> اربح 1٪ من كل شحن يقوم به مستخدموك المدعوون.\n' +
-    '> بحد أقصى 1$ لكل عملية شحن.\n' +
+    '{prod_referral} *رصيد دفع الإحالات:* {refAvailable} إحالات\n' +
+    '{refer_spent} *المستخدم للمشتريات:* {refSpent} إحالات\n\n' +
     '> حوّل الأرباح إلى المحفظة في أي وقت. للسحب النقدي تواصل مع الدعم (الحد الأدنى 1$).\n\n' +
     '*رابط الإحالة الخاص بك:*\n`{link}`',
+  'profile.refer.convert_success':
+    '💱 تم تحويل *{refs} إحالة* إلى *{amount} USDT*.\n\n💳 رصيد المحفظة: *{balance}*',
+  'profile.refer.convert_low':
+    '⚠️ لا يوجد رصيد إحالات كافٍ للتحويل.\n\nتحتاج *20 إحالة نشطة* للتحويل إلى *1 USDT*.\nرصيد Referral Pay الحالي: *{available} إحالة*',
+  'profile.refer.convert_error':
+    '⚠️ تعذر تحويل الإحالات الآن. حاول مرة أخرى.',
+  'btn.live_refers': '🔵 See Your Live Refers',
+  'btn.currency': '💱 Currency',
+  'btn.stats.24h': '24h',
+  'btn.stats.7d': '7d',
+  'btn.stats.30d': '30d',
+  'btn.stats.custom': 'Custom',
+  'profile.currency.title': '💱 *Choose Currency*',
+  'profile.currency.body':
+    'Your product prices will show your selected currency plus USDT. Payments still use USDT.',
+  'profile.currency.saved': '✅ Currency set to {currency}.',
+  'profile.currency.error':
+    '⚠️ Could not save currency yet. Please apply migration `0033_user_currency.sql` first.',
   'btn.copy_link': '📋 نسخ الرابط',
   'btn.redeem': '🎁 رمز هدية',
   'profile.language.title': '{lang_left} *اختر اللغة* {lang_right}',

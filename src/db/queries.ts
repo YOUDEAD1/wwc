@@ -20,6 +20,11 @@ import type {
   DeliveryFieldSpec,
   PaymentProvider,
   OrderIntent,
+  DBSupplierApiSource,
+  DBSupplierProductLink,
+  DBSupplierOrderLog,
+  SupplierAuthMode,
+  SupplierOrderMethod,
 } from '../types.js';
 import type { Lang } from '../../config/index.js';
 import { logger } from '../logger.js';
@@ -28,6 +33,43 @@ import { logger } from '../logger.js';
 
 function makeRefCode(id: number): string {
   return `R${id.toString(36).toUpperCase()}`;
+}
+
+async function resolveValidReferrer(
+  referrerId: number | null | undefined,
+  refereeId: number,
+): Promise<number | null> {
+  if (!referrerId || referrerId === refereeId) return null;
+  const { data, error } = await supabase
+    .from('users')
+    .select('telegram_id')
+    .eq('telegram_id', referrerId)
+    .maybeSingle();
+  if (error) {
+    logger.warn({ err: error, referrerId, refereeId }, 'referrer lookup failed');
+    return null;
+  }
+  return data ? referrerId : null;
+}
+
+async function ensureReferralRecord(
+  referrerId: number | null | undefined,
+  refereeId: number,
+): Promise<void> {
+  const validReferrer = await resolveValidReferrer(referrerId, refereeId);
+  if (!validReferrer) return;
+  const { error } = await supabase
+    .from('referrals')
+    .upsert(
+      { referrer_id: validReferrer, referee_id: refereeId },
+      { onConflict: 'referrer_id,referee_id', ignoreDuplicates: true },
+    );
+  if (error) {
+    logger.warn(
+      { err: error, referrerId: validReferrer, refereeId },
+      'ensureReferralRecord failed',
+    );
+  }
 }
 
 export async function getOrCreateUser(args: {
@@ -63,10 +105,12 @@ export async function getOrCreateUser(args: {
         (existing as { wallet_alert?: boolean }).wallet_alert ?? true,
     } as DBUser & { __just_created?: boolean };
     out.__just_created = false;
+    await ensureReferralRecord(out.referred_by, out.telegram_id);
     return out;
   }
 
   const ref_code = makeRefCode(args.telegram_id);
+  const validReferrer = await resolveValidReferrer(args.referred_by, args.telegram_id);
   const insert = {
     telegram_id: args.telegram_id,
     username: args.username ?? null,
@@ -74,7 +118,7 @@ export async function getOrCreateUser(args: {
     last_name: args.last_name ?? null,
     language: args.language,
     ref_code,
-    referred_by: args.referred_by ?? null,
+    referred_by: validReferrer,
   };
   const { data, error } = await supabase.from('users').insert(insert).select('*').single();
   if (error || !data) {
@@ -109,10 +153,7 @@ export async function confirmPendingReferral(telegram_id: number): Promise<void>
   const referrerId = user.pending_referral_by;
 
   // سجّل الإحالة الآن
-  await supabase
-    .from('referrals')
-    .insert({ referrer_id: referrerId, referee_id: telegram_id })
-    .then(() => {});
+  await ensureReferralRecord(referrerId, telegram_id);
 
   // امسح الـ pending وضع sub_verified
   await supabase
@@ -135,6 +176,17 @@ export async function cancelPendingReferral(telegram_id: number): Promise<void> 
 
 export async function setUserLanguage(telegram_id: number, language: Lang): Promise<void> {
   await supabase.from('users').update({ language }).eq('telegram_id', telegram_id);
+}
+
+export async function setUserCurrency(telegram_id: number, currency: string): Promise<void> {
+  const { error } = await supabase
+    .from('users')
+    .update({ currency })
+    .eq('telegram_id', telegram_id);
+  if (error) {
+    logger.error({ err: error, telegram_id, currency }, 'setUserCurrency failed');
+    throw error;
+  }
 }
 
 /**
@@ -293,11 +345,246 @@ export async function toggleNotification(
 }
 
 export async function countReferrals(telegram_id: number): Promise<number> {
-  const { count } = await supabase
+  const { count, error } = await supabase
     .from('referrals')
     .select('id', { count: 'exact', head: true })
     .eq('referrer_id', telegram_id);
+  if (error) {
+    logger.error({ err: error, telegram_id }, 'countReferrals failed');
+    throw error;
+  }
   return count ?? 0;
+}
+
+export type ReferralBalance = {
+  total: number;
+  spent: number;
+  available: number;
+};
+
+export type ReferralConversionResult = ReferralBalance & {
+  convertedAmount: number;
+  newBalance: number;
+};
+
+function isMissingReferralAdjustmentsError(error: unknown): boolean {
+  const msg =
+    error && typeof error === 'object'
+      ? String((error as { message?: unknown; code?: unknown }).message ?? '') +
+        String((error as { code?: unknown }).code ?? '')
+      : String(error ?? '');
+  return /referral_adjustments|42P01|PGRST205/i.test(msg);
+}
+
+async function getReferralAdjustmentTotal(user_id: number): Promise<number> {
+  const { data, error } = await supabase
+    .from('referral_adjustments')
+    .select('delta')
+    .eq('user_id', user_id);
+  if (error) {
+    if (isMissingReferralAdjustmentsError(error)) return 0;
+    logger.error({ err: error, user_id }, 'getReferralAdjustmentTotal failed');
+    throw error;
+  }
+  return (data ?? []).reduce(
+    (sum, row) => sum + Number((row as { delta?: number }).delta ?? 0),
+    0,
+  );
+}
+
+export async function getReferralBalance(user_id: number): Promise<ReferralBalance> {
+  const [total, spendRows, conversionRows] = await Promise.all([
+    countReferrals(user_id),
+    supabase
+      .from('referral_redemptions')
+      .select('referral_cost')
+      .eq('user_id', user_id),
+    supabase
+      .from('referral_conversions')
+      .select('refs_spent')
+      .eq('user_id', user_id),
+  ]);
+  if (spendRows.error) {
+    logger.error({ err: spendRows.error, user_id }, 'getReferralBalance failed');
+    throw spendRows.error;
+  }
+  if (conversionRows.error) {
+    logger.error({ err: conversionRows.error, user_id }, 'getReferralBalance conversions failed');
+    throw conversionRows.error;
+  }
+  const purchaseSpent = (spendRows.data ?? []).reduce(
+    (sum, row) => sum + Number((row as { referral_cost?: number }).referral_cost ?? 0),
+    0,
+  );
+  const convertedSpent = (conversionRows.data ?? []).reduce(
+    (sum, row) => sum + Number((row as { refs_spent?: number }).refs_spent ?? 0),
+    0,
+  );
+  const adjustment = await getReferralAdjustmentTotal(user_id);
+  const spent = purchaseSpent + convertedSpent;
+  const adjustedTotal = Math.max(0, total + adjustment);
+  return {
+    total: adjustedTotal,
+    spent,
+    available: Math.max(0, adjustedTotal - spent),
+  };
+}
+
+export type ReferralAdminRow = {
+  user: DBUser;
+  balance: ReferralBalance;
+};
+
+export async function listReferralAdminRows(
+  page: number,
+  perPage: number,
+): Promise<{ rows: ReferralAdminRow[]; total: number }> {
+  const users = await listRecentUsers(page, perPage);
+  const rows = await Promise.all(
+    users.rows.map(async (user) => ({
+      user,
+      balance: await getReferralBalance(user.telegram_id).catch((err) => {
+        logger.warn({ err, telegram_id: user.telegram_id }, 'listReferralAdminRows balance failed');
+        return { total: 0, spent: 0, available: 0 };
+      }),
+    })),
+  );
+  return { rows, total: users.total };
+}
+
+export async function addReferralAdjustment(args: {
+  user_id: number;
+  delta: number;
+  reason: string;
+  created_by: number;
+}): Promise<ReferralBalance> {
+  const rounded = Math.trunc(args.delta);
+  if (rounded === 0) return getReferralBalance(args.user_id);
+  const { error } = await supabase.from('referral_adjustments').insert({
+    user_id: args.user_id,
+    delta: rounded,
+    reason: args.reason,
+    created_by: args.created_by,
+  });
+  if (error) {
+    if (isMissingReferralAdjustmentsError(error)) {
+      throw new Error('REFERRAL_ADJUSTMENTS_MIGRATION_REQUIRED');
+    }
+    logger.error({ err: error, args }, 'addReferralAdjustment failed');
+    throw error;
+  }
+  return getReferralBalance(args.user_id);
+}
+
+export async function resetReferralUsage(user_id?: number): Promise<{
+  redemptions: number;
+  conversions: number;
+  adjustments: number;
+}> {
+  async function deleteRows(table: string): Promise<number> {
+    let q = supabase.from(table).delete({ count: 'exact' });
+    if (user_id !== undefined) q = q.eq('user_id', user_id);
+    const { count, error } = await q;
+    if (error) {
+      if (table === 'referral_adjustments' && isMissingReferralAdjustmentsError(error)) return 0;
+      logger.error({ err: error, table, user_id }, 'resetReferralUsage failed');
+      throw error;
+    }
+    return count ?? 0;
+  }
+  const [redemptions, conversions, adjustments] = await Promise.all([
+    deleteRows('referral_redemptions'),
+    deleteRows('referral_conversions'),
+    deleteRows('referral_adjustments'),
+  ]);
+  return { redemptions, conversions, adjustments };
+}
+
+export class InsufficientReferralBalanceError extends Error {
+  constructor() {
+    super('INSUFFICIENT_REFERRALS');
+    this.name = 'InsufficientReferralBalanceError';
+  }
+}
+
+export async function spendReferralBalance(args: {
+  user_id: number;
+  product_id: number;
+  order_id: number;
+  referral_cost: number;
+}): Promise<ReferralBalance> {
+  const { data, error } = await supabase.rpc('spend_referral_balance', {
+    p_user_id: args.user_id,
+    p_product_id: args.product_id,
+    p_order_id: args.order_id,
+    p_referral_cost: args.referral_cost,
+  });
+  if (error) {
+    if (error.message.includes('INSUFFICIENT_REFERRALS')) {
+      throw new InsufficientReferralBalanceError();
+    }
+    logger.error({ err: error, args }, 'spendReferralBalance failed');
+    throw error;
+  }
+  const result = (Array.isArray(data) ? data[0] : data) as
+    | {
+        total_referrals?: number;
+        spent_referrals?: number;
+        available_referrals?: number;
+      }
+    | null;
+  return {
+    total: Number(result?.total_referrals ?? 0),
+    spent: Number(result?.spent_referrals ?? 0),
+    available: Number(result?.available_referrals ?? 0),
+  };
+}
+
+export async function convertReferralBalance(args: {
+  user_id: number;
+  referral_cost: number;
+  amount: number;
+}): Promise<ReferralConversionResult> {
+  const { data, error } = await supabase.rpc('convert_referrals_to_wallet', {
+    p_user_id: args.user_id,
+    p_referral_cost: args.referral_cost,
+    p_usdt_amount: args.amount,
+  });
+  if (error) {
+    if (error.message.includes('INSUFFICIENT_REFERRALS')) {
+      throw new InsufficientReferralBalanceError();
+    }
+    logger.error({ err: error, args }, 'convertReferralBalance failed');
+    throw error;
+  }
+  const result = (Array.isArray(data) ? data[0] : data) as
+    | {
+        total_referrals?: number;
+        spent_referrals?: number;
+        available_referrals?: number;
+        converted_amount?: number;
+        new_balance?: number;
+      }
+    | null;
+  return {
+    total: Number(result?.total_referrals ?? 0),
+    spent: Number(result?.spent_referrals ?? 0),
+    available: Number(result?.available_referrals ?? 0),
+    convertedAmount: Number(result?.converted_amount ?? 0),
+    newBalance: Number(result?.new_balance ?? 0),
+  };
+}
+
+/**
+ * Get user by telegram_id. Returns null if not found.
+ */
+export async function getUserByTelegramId(telegram_id: number): Promise<DBUser | null> {
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .eq('telegram_id', telegram_id)
+    .single();
+  return data as DBUser | null;
 }
 
 /**
@@ -403,6 +690,20 @@ export async function addCategory(name: string, emoji?: string): Promise<DBCateg
   return data as DBCategory;
 }
 
+export async function getOrCreateCategory(
+  name: string,
+  emoji?: string,
+): Promise<DBCategory> {
+  const { data: existing, error: lookupError } = await supabase
+    .from('categories')
+    .select('*')
+    .ilike('name', name)
+    .limit(1)
+    .maybeSingle();
+  if (!lookupError && existing) return existing as DBCategory;
+  return addCategory(name, emoji);
+}
+
 // ---------- Products ----------
 
 export async function listProducts(
@@ -417,6 +718,7 @@ export async function listProducts(
     .select('*', { count: 'exact' })
     .eq('category_id', categoryId)
     .eq('active', true)
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);
@@ -429,7 +731,7 @@ export async function getProduct(id: number): Promise<DBProduct | null> {
 }
 
 export async function addProduct(p: {
-  category_id: number;
+  category_id: number | null;
   name: string;
   price: number;
   stock: number;
@@ -439,6 +741,7 @@ export async function addProduct(p: {
   emoji?: string | null;
   emoji_id?: string | null;
   unlimited_stock?: boolean;
+  referral_required_count?: number;
 }): Promise<DBProduct> {
   const { data, error } = await supabase.from('products').insert(p).select('*').single();
   if (error || !data) throw error ?? new Error('addProduct failed');
@@ -457,6 +760,7 @@ export async function updateProduct(
     name: string;
     price: number;
     stock: number;
+    referral_required_count: number;
     warranty: string | null;
     description: string | null;
     note: string | null;
@@ -534,8 +838,8 @@ export const OUT_OF_STOCK_SORT_ORDER = 1_000_000_000;
  * manually repositioned an out-of-stock row (no stock change → no
  * transition → no auto-move-to-end).
  *
- * No-op when the product is pinned (`is_pinned = true`) or marked
- * `unlimited_stock` (catalog renders ∞, never goes OOS).
+ * No-op when the product is marked `unlimited_stock` (catalog renders
+ * ∞, never goes OOS).
  */
 export async function applyStockTransition(
   product_id: number,
@@ -547,17 +851,15 @@ export async function applyStockTransition(
   if (wasInStock === isInStock) return;
   const { data } = await supabase
     .from('products')
-    .select('sort_order, stashed_sort_order, is_pinned, unlimited_stock')
+    .select('sort_order, stashed_sort_order, unlimited_stock')
     .eq('id', product_id)
     .maybeSingle();
   if (!data) return;
   const p = data as {
     sort_order: number;
     stashed_sort_order: number | null;
-    is_pinned: boolean | null;
     unlimited_stock: boolean | null;
   };
-  if (p.is_pinned === true) return;
   if (p.unlimited_stock === true) return;
   // OOS transition: stash the current admin-placed sort_order and
   // sink the row to the bottom of the catalog. The `stashed_sort_order
@@ -1085,6 +1387,281 @@ export async function incrementProductStock(id: number, qty: number): Promise<vo
       'applyStockTransition after incrementProductStock failed',
     );
   });
+}
+
+// ---------- Upstream supplier APIs ----------
+
+export type SupplierApiSourceInput = {
+  name: string;
+  base_url: string;
+  api_key?: string;
+  auth_mode?: SupplierAuthMode;
+  key_header?: string;
+  key_query_param?: string;
+  products_path?: string;
+  balance_path?: string;
+  order_path?: string;
+  order_method?: SupplierOrderMethod;
+  balance_json_path?: string;
+  products_json_path?: string;
+  product_id_json_path?: string;
+  product_name_json_path?: string;
+  product_price_json_path?: string;
+  product_stock_json_path?: string;
+  order_items_json_path?: string;
+  order_status_json_path?: string;
+  order_request_template?: Record<string, unknown>;
+  enabled?: boolean;
+  auto_import_new_products?: boolean;
+  auto_import_active?: boolean;
+  import_category_name?: string | null;
+  markup_percent?: number;
+  fixed_markup?: number;
+  low_balance_threshold?: number;
+  notes?: string | null;
+};
+
+export type SupplierProductLinkInput = {
+  local_product_id: number;
+  supplier_id: number;
+  supplier_product_id: string;
+  supplier_product_name?: string | null;
+  supplier_cost?: number | null;
+  supplier_stock?: number | null;
+  auto_order?: boolean;
+  auto_sync_stock?: boolean;
+  fallback_manual?: boolean;
+};
+
+export async function createSupplierApiSource(
+  input: SupplierApiSourceInput,
+): Promise<DBSupplierApiSource> {
+  const { data, error } = await supabase
+    .from('supplier_api_sources')
+    .insert(input)
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, input: { ...input, api_key: input.api_key ? '[redacted]' : '' } }, 'createSupplierApiSource failed');
+    throw error ?? new Error('createSupplierApiSource failed');
+  }
+  return data as DBSupplierApiSource;
+}
+
+export async function updateSupplierApiSource(
+  id: number,
+  patch: Partial<SupplierApiSourceInput> & {
+    last_balance?: number | null;
+    last_sync_at?: string | null;
+    last_error?: string | null;
+  },
+): Promise<void> {
+  const payload = { ...patch, updated_at: new Date().toISOString() };
+  const { error } = await supabase
+    .from('supplier_api_sources')
+    .update(payload)
+    .eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'updateSupplierApiSource failed');
+    throw error;
+  }
+}
+
+export async function listSupplierApiSources(
+  page = 0,
+  perPage = 20,
+): Promise<{ rows: DBSupplierApiSource[]; total: number }> {
+  const from = page * perPage;
+  const to = from + perPage - 1;
+  const { data, count, error } = await supabase
+    .from('supplier_api_sources')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  if (error) {
+    logger.error({ err: error }, 'listSupplierApiSources failed');
+    throw error;
+  }
+  return { rows: (data ?? []) as DBSupplierApiSource[], total: count ?? 0 };
+}
+
+export async function getSupplierApiSource(
+  id: number,
+): Promise<DBSupplierApiSource | null> {
+  const { data, error } = await supabase
+    .from('supplier_api_sources')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, id }, 'getSupplierApiSource failed');
+    throw error;
+  }
+  return (data as DBSupplierApiSource) ?? null;
+}
+
+export async function deleteSupplierApiSource(id: number): Promise<void> {
+  const { error } = await supabase.from('supplier_api_sources').delete().eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'deleteSupplierApiSource failed');
+    throw error;
+  }
+}
+
+export async function upsertSupplierProductLink(
+  input: SupplierProductLinkInput,
+): Promise<DBSupplierProductLink> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .upsert(input, { onConflict: 'local_product_id' })
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.error({ err: error, input }, 'upsertSupplierProductLink failed');
+    throw error ?? new Error('upsertSupplierProductLink failed');
+  }
+  return data as DBSupplierProductLink;
+}
+
+export async function updateSupplierProductLink(
+  id: number,
+  patch: Partial<Omit<SupplierProductLinkInput, 'local_product_id'>> & {
+    last_sync_at?: string | null;
+    last_error?: string | null;
+  },
+): Promise<void> {
+  const payload = { ...patch, updated_at: new Date().toISOString() };
+  const { error } = await supabase
+    .from('supplier_product_links')
+    .update(payload)
+    .eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'updateSupplierProductLink failed');
+    throw error;
+  }
+}
+
+export async function listSupplierProductLinks(
+  supplierId?: number,
+): Promise<DBSupplierProductLink[]> {
+  let q = supabase
+    .from('supplier_product_links')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (supplierId !== undefined) q = q.eq('supplier_id', supplierId);
+  const { data, error } = await q;
+  if (error) {
+    logger.error({ err: error, supplierId }, 'listSupplierProductLinks failed');
+    throw error;
+  }
+  return (data ?? []) as DBSupplierProductLink[];
+}
+
+export async function getSupplierProductLinkByProduct(
+  localProductId: number,
+): Promise<DBSupplierProductLink | null> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .select('*')
+    .eq('local_product_id', localProductId)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, localProductId }, 'getSupplierProductLinkByProduct failed');
+    throw error;
+  }
+  return (data as DBSupplierProductLink) ?? null;
+}
+
+export async function getSupplierProductLink(
+  id: number,
+): Promise<DBSupplierProductLink | null> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    logger.error({ err: error, id }, 'getSupplierProductLink failed');
+    throw error;
+  }
+  return (data as DBSupplierProductLink) ?? null;
+}
+
+export async function getSupplierProductLinkBySupplierProduct(
+  supplierId: number,
+  supplierProductId: string,
+): Promise<DBSupplierProductLink | null> {
+  const { data, error } = await supabase
+    .from('supplier_product_links')
+    .select('*')
+    .eq('supplier_id', supplierId)
+    .eq('supplier_product_id', supplierProductId)
+    .maybeSingle();
+  if (error) {
+    logger.error(
+      { err: error, supplierId, supplierProductId },
+      'getSupplierProductLinkBySupplierProduct failed',
+    );
+    throw error;
+  }
+  return (data as DBSupplierProductLink) ?? null;
+}
+
+export async function deleteSupplierProductLink(id: number): Promise<void> {
+  const { error } = await supabase.from('supplier_product_links').delete().eq('id', id);
+  if (error) {
+    logger.error({ err: error, id }, 'deleteSupplierProductLink failed');
+    throw error;
+  }
+}
+
+export async function recordSupplierOrderLog(input: {
+  supplier_id?: number | null;
+  local_order_id?: number | null;
+  local_product_id?: number | null;
+  supplier_product_id?: string | null;
+  status: DBSupplierOrderLog['status'];
+  request_payload?: Record<string, unknown>;
+  response_payload?: Record<string, unknown>;
+  error?: string | null;
+}): Promise<DBSupplierOrderLog> {
+  const { data, error } = await supabase
+    .from('supplier_order_logs')
+    .insert({
+      supplier_id: input.supplier_id ?? null,
+      local_order_id: input.local_order_id ?? null,
+      local_product_id: input.local_product_id ?? null,
+      supplier_product_id: input.supplier_product_id ?? null,
+      status: input.status,
+      request_payload: input.request_payload ?? {},
+      response_payload: input.response_payload ?? {},
+      error: input.error ?? null,
+    })
+    .select('*')
+    .single();
+  if (error || !data) {
+    logger.warn({ err: error, input }, 'recordSupplierOrderLog failed');
+    throw error ?? new Error('recordSupplierOrderLog failed');
+  }
+  return data as DBSupplierOrderLog;
+}
+
+export async function listSupplierOrderLogs(
+  supplierId?: number,
+  limit = 10,
+): Promise<DBSupplierOrderLog[]> {
+  let q = supabase
+    .from('supplier_order_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (supplierId !== undefined) q = q.eq('supplier_id', supplierId);
+  const { data, error } = await q;
+  if (error) {
+    logger.error({ err: error, supplierId }, 'listSupplierOrderLogs failed');
+    throw error;
+  }
+  return (data ?? []) as DBSupplierOrderLog[];
 }
 
 // ---------- Per-user price overrides ----------
@@ -1742,6 +2319,55 @@ export async function setOrderDeliveredItems(
   await supabase.from('orders').update({ delivered_items }).eq('id', order_id);
 }
 
+const PREORDER_PENDING_LIKE = 'Preorder pending%';
+const PREORDER_FULFILLING_MARKER = 'Preorder fulfilling...';
+
+export async function listPendingPreorderOrders(
+  product_id: number,
+  limit = 25,
+): Promise<DBOrder[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('product_id', product_id)
+    .eq('status', 'paid')
+    .like('delivered_items', PREORDER_PENDING_LIKE)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) {
+    logger.error({ err: error, product_id }, 'listPendingPreorderOrders failed');
+    throw error;
+  }
+  return (data ?? []) as DBOrder[];
+}
+
+export async function tryStartPreorderFulfillment(order_id: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ delivered_items: PREORDER_FULFILLING_MARKER })
+    .eq('id', order_id)
+    .eq('status', 'paid')
+    .like('delivered_items', PREORDER_PENDING_LIKE)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    logger.warn({ err: error, order_id }, 'tryStartPreorderFulfillment failed');
+    return false;
+  }
+  return Boolean(data);
+}
+
+export async function restorePreorderPending(
+  order_id: number,
+  pendingText: string,
+): Promise<void> {
+  await supabase
+    .from('orders')
+    .update({ delivered_items: pendingText })
+    .eq('id', order_id)
+    .eq('delivered_items', PREORDER_FULFILLING_MARKER);
+}
+
 export async function listOrders(user_id: number, limit = 10): Promise<DBOrder[]> {
   const { data } = await supabase
     .from('orders')
@@ -2166,6 +2792,112 @@ export async function getProductSales(limit = 50): Promise<ProductSalesRow[]> {
   return list.slice(0, limit);
 }
 
+export type RangeStats = {
+  days: number;
+  orders: number;
+  units: number;
+  revenue: number;
+  unique_buyers: number;
+  approved_deposits: number;
+  deposit_amount: number;
+  new_users: number;
+};
+
+export async function getRangeStats(days: number): Promise<RangeStats> {
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+  const since = new Date(Date.now() - safeDays * 86_400_000).toISOString();
+  const [ordersR, depositsR, usersR] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('user_id,qty,total,status,created_at')
+      .eq('status', 'paid')
+      .gte('created_at', since),
+    supabase
+      .from('deposits')
+      .select('amount,status,created_at')
+      .eq('status', 'approved')
+      .gte('created_at', since),
+    supabase
+      .from('users')
+      .select('telegram_id', { count: 'exact', head: true })
+      .gte('joined_at', since),
+  ]);
+  const orders = (ordersR.data ?? []) as Array<{
+    user_id: number;
+    qty: number | string;
+    total: number | string;
+  }>;
+  const deposits = (depositsR.data ?? []) as Array<{ amount: number | string }>;
+  const revenue = orders.reduce((sum, row) => sum + Number(row.total ?? 0), 0);
+  const units = orders.reduce((sum, row) => sum + Number(row.qty ?? 0), 0);
+  const depositAmount = deposits.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  return {
+    days: safeDays,
+    orders: orders.length,
+    units,
+    revenue: Number(revenue.toFixed(2)),
+    unique_buyers: new Set(orders.map((row) => row.user_id)).size,
+    approved_deposits: deposits.length,
+    deposit_amount: Number(depositAmount.toFixed(2)),
+    new_users: usersR.count ?? 0,
+  };
+}
+
+export async function getProductSalesSince(days: number, limit = 50): Promise<ProductSalesRow[]> {
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+  const since = new Date(Date.now() - safeDays * 86_400_000).toISOString();
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('product_id, product_name, qty, total, created_at, status')
+    .eq('status', 'paid')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false });
+  type OrderRow = Pick<
+    DBOrder,
+    'product_id' | 'product_name' | 'qty' | 'total' | 'created_at' | 'status'
+  >;
+  const rows = (orders ?? []) as OrderRow[];
+  const byKey = new Map<string, ProductSalesRow>();
+  for (const o of rows) {
+    const key =
+      o.product_id !== null ? `id:${o.product_id}` : `name:${o.product_name}`;
+    let row = byKey.get(key);
+    if (!row) {
+      row = {
+        product_id: o.product_id,
+        product_name: o.product_name,
+        units_sold: 0,
+        revenue: 0,
+        stock_left: null,
+        last_sold_at: o.created_at,
+      };
+      byKey.set(key, row);
+    }
+    row.units_sold += Number(o.qty);
+    row.revenue += Number(o.total);
+    if ((row.last_sold_at ?? '') < o.created_at) row.last_sold_at = o.created_at;
+  }
+  const productIds = Array.from(byKey.values())
+    .map((r) => r.product_id)
+    .filter((x): x is number => x !== null);
+  if (productIds.length > 0) {
+    const { data: prods } = await supabase
+      .from('products')
+      .select('id, stock')
+      .in('id', productIds);
+    const stockMap = new Map<number, number>();
+    for (const p of (prods ?? []) as Array<{ id: number; stock: number }>) {
+      stockMap.set(p.id, p.stock);
+    }
+    for (const row of byKey.values()) {
+      if (row.product_id !== null) row.stock_left = stockMap.get(row.product_id) ?? null;
+    }
+  }
+  const list = Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
+  for (const r of list) r.revenue = Number(r.revenue.toFixed(2));
+  return list.slice(0, limit);
+}
+
 /**
  * Daily revenue trend for the last `days` days (default 7), ordered
  * from oldest → newest. Days with no paid orders are returned with
@@ -2209,6 +2941,7 @@ export async function listAllProducts(
   const { data, count } = await supabase
     .from('products')
     .select('*', { count: 'exact' })
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);
@@ -2227,55 +2960,21 @@ export async function findAdjacentProduct(
   productId: number,
   direction: 'up' | 'down',
 ): Promise<DBProduct | null> {
-  const { data: cur } = await supabase
-    .from('products')
-    .select('sort_order')
-    .eq('id', productId)
-    .single();
-  if (!cur) return null;
-  const sort = Number(cur.sort_order);
-  // Find the strict neighbour on the requested side. We compare on
-  // the lexicographic (sort_order, id) tuple so ties on sort_order
-  // (very common for legacy rows that all default to 0) still
-  // produce a deterministic adjacency by id.
-  if (direction === 'up') {
-    const { data: tied } = await supabase
-      .from('products')
-      .select('*')
-      .eq('sort_order', sort)
-      .lt('id', productId)
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (tied) return tied as DBProduct;
-    const { data: above } = await supabase
-      .from('products')
-      .select('*')
-      .lt('sort_order', sort)
-      .order('sort_order', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return (above as DBProduct | null) ?? null;
-  }
-  const { data: tied } = await supabase
+  const { data } = await supabase
     .from('products')
     .select('*')
-    .eq('sort_order', sort)
-    .gt('id', productId)
-    .order('id', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (tied) return tied as DBProduct;
-  const { data: below } = await supabase
-    .from('products')
-    .select('*')
-    .gt('sort_order', sort)
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
-    .order('id', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  return (below as DBProduct | null) ?? null;
+    .order('id', { ascending: true });
+  const rows = (data ?? []) as DBProduct[];
+  const current = rows.find((row) => row.id === productId);
+  if (!current) return null;
+  const section = rows.filter(
+    (row) => Boolean(row.is_pinned) === Boolean(current.is_pinned),
+  );
+  const idx = section.findIndex((row) => row.id === productId);
+  if (idx < 0) return null;
+  return section[direction === 'up' ? idx - 1 : idx + 1] ?? null;
 }
 
 /**
@@ -2310,26 +3009,47 @@ export async function swapProductOrder(
 
 /**
  * Customer-facing all-products list. Filters on `active=true` so
- * the shop shopfront never surfaces hidden / draft products. Order
- * is `(sort_order ASC, id ASC)` so the admin's manual reordering
- * (PR #58) flows through to the customer-facing catalog, with
- * `id ASC` as the deterministic tie-breaker for legacy rows that
- * still share the default sort_order=0.
+ * the shop shopfront never surfaces hidden / draft products.
+ *
+ * Availability is sorted before pagination so every live-stock or
+ * unlimited product is guaranteed to appear before every out-of-
+ * stock product, even when an old row missed the sort-order stash or
+ * is pinned. Pin/manual order is preserved inside each availability
+ * section, and a restocked product automatically returns to the live
+ * section without requiring another database migration.
  */
 export async function listActiveProducts(
   page: number,
   perPage: number,
 ): Promise<{ rows: DBProduct[]; total: number }> {
-  const from = page * perPage;
-  const to = from + perPage - 1;
-  const { data, count } = await supabase
+  const { data, error } = await supabase
     .from('products')
-    .select('*', { count: 'exact' })
+    .select('*')
     .eq('active', true)
+    .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
-    .order('id', { ascending: true })
-    .range(from, to);
-  return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
+    .order('id', { ascending: true });
+  if (error) {
+    logger.error({ err: error }, 'listActiveProducts failed');
+    return { rows: [], total: 0 };
+  }
+  const all = ((data ?? []) as DBProduct[]).sort((a, b) => {
+    const aInStock = a.unlimited_stock || a.stock > 0;
+    const bInStock = b.unlimited_stock || b.stock > 0;
+    if (aInStock !== bInStock) return aInStock ? -1 : 1;
+    if (Boolean(a.is_pinned) !== Boolean(b.is_pinned)) {
+      return a.is_pinned ? -1 : 1;
+    }
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    return a.id - b.id;
+  });
+  const safePage = Math.max(0, Math.floor(page));
+  const safePerPage = Math.max(1, Math.floor(perPage));
+  const from = safePage * safePerPage;
+  return {
+    rows: all.slice(from, from + safePerPage),
+    total: all.length,
+  };
 }
 
 export async function deleteProduct(id: number): Promise<void> {

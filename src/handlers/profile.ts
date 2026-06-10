@@ -1,15 +1,18 @@
 import type { Composer } from 'grammy';
+import { getCurrency, normalizeCurrency } from '../../config/currencies.js';
 import { type Lang } from '../../config/index.js';
 import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/regions.js';
 import {
   adjustBalance,
-  countReferrals,
+  convertReferralBalance,
   countReferralsSince,
   countGiftCodeRedemptions,
   countGiftCodeRedemptionsByUser,
   findUserByEmail,
   getGiftCode,
+  InsufficientReferralBalanceError,
   getOrder,
+  getReferralBalance,
   getReferralEarnings,
   getUserStats,
   listAllProducts,
@@ -21,6 +24,7 @@ import {
   recordGiftCodeRedemption,
   recordLedger,
   setUserEmail,
+  setUserCurrency,
   setUserLanguage,
   setUserRegion,
   toggleEmailReports,
@@ -40,6 +44,7 @@ import {
   priceListKeyboard,
   referKeyboard,
   whyEmailKeyboard,
+  currencyKeyboard,
 } from '../keyboards/profile.js';
 import { regionPickerKeyboard } from '../keyboards/region.js';
 import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../keyboards/orders.js';
@@ -175,6 +180,11 @@ function profileText(ctx: AppCtx): string {
   lines.push(
     `{profile_balance} ${ctx.t('profile.row.balance', { balance: Number(u.balance).toFixed(3) })}`,
   );
+  lines.push(
+    `{refer_coin} ${ctx.t('profile.row.currency', {
+      currency: getCurrency(u.currency).code,
+    })}`,
+  );
   lines.push(`{profile_language} ${ctx.t('profile.row.language', { language: ctx.lang.toUpperCase() })}`);
   if (u.region && u.timezone) {
     const tz = u.timezone;
@@ -191,7 +201,7 @@ function profileText(ctx: AppCtx): string {
   return lines.join('\n');
 }
 
-async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
+export async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = {}) {
   // HTML render path: keeps Markdown styling AND auto-wraps any unicode
   // emoji whose key has a configured premium custom_emoji_id.
   const html = renderMdHtml(profileText(ctx));
@@ -312,6 +322,266 @@ async function showRegionPicker(ctx: AppCtx, page: number) {
   });
 }
 
+async function showCurrencyPicker(ctx: AppCtx, page = 0) {
+  const selected = normalizeCurrency(ctx.user.currency);
+  const text = [
+    ctx.t('profile.currency.title'),
+    '',
+    ctx.t('profile.currency.body'),
+    '',
+    `Current: *${selected}*`,
+  ].join('\n');
+  await ctx.editMessageText(renderMdHtml(text), {
+    parse_mode: 'HTML',
+    reply_markup: currencyKeyboard(ctx.lang, selected, page),
+  });
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Shared body for the three "Send PDF to Email" callbacks. We answer
+ * the callback query twice: once with a "sending..." toast (so the
+ * user sees feedback while we render the PDF + hit Resend) and once
+ * with the final success / failure popup. The screen the user
+ * triggered the action from is never edited — they remain on the
+ * same orders / deposits / stats list.
+ */
+async function sendReportPdfFromCallback(
+  ctx: AppCtx,
+  kind: ReportKind,
+): Promise<void> {
+  // Email Reports OFF blocks every Send-PDF button so we don't keep
+  // firing emails the user explicitly muted (per the bot-owner spec).
+  if (ctx.user.email_nag_disabled) {
+    await ctx.answerCallbackQuery({
+      text: ctx.t('profile.email.reports_off_popup'),
+      show_alert: true,
+    });
+    return;
+  }
+  const email = ctx.user.email;
+  if (!email) {
+    await ctx.answerCallbackQuery({
+      text: ctx.t('pdf.no_email_popup'),
+      show_alert: true,
+    });
+    return;
+  }
+  await ctx.answerCallbackQuery({
+    text: ctx.t('pdf.sending_popup', { email }),
+    show_alert: false,
+  });
+  try {
+    const reportUser = {
+      telegram_id: ctx.user.telegram_id,
+      first_name: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+      email,
+    };
+    let pdf: Buffer;
+    // Spreadsheet companion built from the same source data so a
+    // recipient can sort / filter / chart in Excel without retyping
+    // anything from the PDF.
+    let csv: Buffer;
+    let rowCount = 0;
+    if (kind === 'orders') {
+      const orders = await listOrders(ctx.user.telegram_id, 500);
+      rowCount = orders.length;
+      pdf = await buildOrdersPdf({ user: reportUser, orders });
+      csv = buildOrdersCsv({ user: reportUser, orders });
+    } else if (kind === 'deposits') {
+      const [deposits, ledger] = await Promise.all([
+        listDeposits(ctx.user.telegram_id, 500),
+        listWalletLedger(ctx.user.telegram_id, 500).catch(() => []),
+      ]);
+      rowCount = deposits.length + ledger.length;
+      pdf = await buildDepositsPdf({ user: reportUser, deposits, ledger });
+      csv = buildDepositsCsv({ user: reportUser, deposits, ledger });
+    } else {
+      const stats = await getUserStats(ctx.user.telegram_id);
+      rowCount = stats.orders;
+      pdf = await buildStatsPdf({ user: reportUser, stats });
+      csv = buildStatsCsv({ user: reportUser, stats });
+    }
+    const ok = await sendReportEmail({
+      email,
+      kind,
+      pdf,
+      csv,
+      firstName: ctx.user.first_name ?? null,
+      username: ctx.user.username ?? null,
+    });
+    if (ok) {
+      void adminLog.logPdfSent(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email,
+        },
+        kind,
+        destinationEmail: email,
+        rowCount,
+      });
+      // Surface success as a real chat message so the premium 📬
+      // custom emoji renders as a `<tg-emoji>` entity rather than a
+      // plain toast (Telegram strips custom_emoji from popup text).
+      // Auto-deleted 5 s later so the chat doesn't fill up with
+      // confirmations after multiple Send-PDF taps.
+      const sent = await ctx.reply(renderMdHtml(ctx.t('pdf.sent_message')), {
+        parse_mode: 'HTML',
+      });
+      const chatId = sent.chat.id;
+      const messageId = sent.message_id;
+      setTimeout(() => {
+        ctx.api.deleteMessage(chatId, messageId).catch((err) => {
+          logger.warn({ err, chatId, messageId }, 'pdf.sent_message auto-delete failed');
+        });
+      }, 5_000);
+    } else {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('pdf.failed_popup', { email }),
+        show_alert: true,
+      });
+    }
+  } catch (err) {
+    logger.error({ err, kind, telegram_id: ctx.user.telegram_id }, 'send-pdf flow failed');
+    await ctx.answerCallbackQuery({
+      text: ctx.t('pdf.failed_popup', { email }),
+      show_alert: true,
+    });
+  }
+}
+
+/**
+ * Send a backfilled invoice email for an order that was placed
+ * before the buyer had an email address on file. Triggered from the
+ * post-purchase Set-Email flow (`profile:email:set:post:<orderId>`)
+ * once the user finishes typing their address.
+ *
+ * Failure modes (order missing, product gone, transport down, bad
+ * address) are logged at `info` level and swallowed — the buyer
+ * already has the delivery card with the items in chat, and the
+ * confirmation message ("Email has been setuped") is what they're
+ * expecting to see; surfacing a transport error here would confuse
+ * the UX.
+ */
+async function sendRetroactiveInvoiceForOrder(args: {
+  telegramId: number;
+  orderId: number;
+  email: string;
+  firstName: string | null;
+  username: string | null;
+}): Promise<void> {
+  try {
+    const order = await getOrder(args.orderId);
+    if (!order) {
+      logger.info(
+        { orderId: args.orderId },
+        'retroactive invoice: order not found, skipping',
+      );
+      return;
+    }
+    if (order.user_id !== args.telegramId) {
+      logger.info(
+        { orderId: args.orderId, expectedUser: args.telegramId, actualUser: order.user_id },
+        'retroactive invoice: order belongs to another user, skipping',
+      );
+      return;
+    }
+    if (order.status !== 'paid') {
+      logger.info(
+        { orderId: args.orderId, status: order.status },
+        'retroactive invoice: order not paid, skipping',
+      );
+      return;
+    }
+    const items =
+      order.delivered_items && order.delivered_items.trim().length > 0
+        ? order.delivered_items
+            .split(/\r?\n/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+        : [];
+    const invoiceLink = env.BOT_USERNAME
+      ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicOrderId(order)}`
+      : '';
+    await sendInvoiceEmail({
+      email: args.email,
+      firstName: args.firstName,
+      username: args.username,
+      orderPublicId: publicOrderId(order),
+      orderDate: order.created_at,
+      productName: order.product_name,
+      qty: order.qty,
+      unitPrice: Number(order.unit_price),
+      total: Number(order.total),
+      discount: Number(order.discount ?? 0),
+      paidVia: 'Wallet balance',
+      items,
+      invoiceLink,
+    });
+    logger.info(
+      { orderId: args.orderId, telegramId: args.telegramId },
+      'retroactive invoice email queued',
+    );
+  } catch (err) {
+    logger.warn(
+      { err, orderId: args.orderId, telegramId: args.telegramId },
+      'retroactive invoice email failed',
+    );
+  }
+}
+
+export async function showReferScreen(
+  ctx: AppCtx,
+  options: { refreshCallback?: string; backCallback?: string; forceReply?: boolean } = {},
+): Promise<void> {
+  const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
+  const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
+  const DAY = 24 * 60 * 60 * 1000;
+  const [refBalance, ref24h, ref7d, earnings] = await Promise.all([
+    getReferralBalance(ctx.user.telegram_id),
+    countReferralsSince(ctx.user.telegram_id, DAY),
+    countReferralsSince(ctx.user.telegram_id, 7 * DAY),
+    getReferralEarnings(ctx.user.telegram_id),
+  ]);
+  const left = Math.max(0, 10 - refBalance.available);
+  const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
+  const body = ctx.t('profile.refer.body', {
+    link,
+    ref24h,
+    ref7d,
+    left,
+    refTotal: refBalance.total,
+    refSpent: refBalance.spent,
+    refAvailable: refBalance.available,
+    clicks: 0,
+    pending: 0,
+    active: refBalance.available,
+    earnedTotal: fmt(earnings.total),
+    available: fmt(earnings.available),
+    transferred: fmt(earnings.transferred),
+    withdrawn: fmt(earnings.withdrawn),
+  });
+  const referText = `${ctx.t('profile.refer.title')}\n\n${body}`;
+  const html = renderMdHtml(referText);
+  const reply_markup = referKeyboard(ctx.lang, link, options);
+  if (ctx.callbackQuery && !options.forceReply) {
+    await ctx.editMessageText(renderMdHtml(referText), {
+      parse_mode: 'HTML',
+      reply_markup,
+      link_preview_options: { is_disabled: true },
+    });
+  } else {
+    await ctx.reply(html, {
+      parse_mode: 'HTML',
+      reply_markup,
+      link_preview_options: { is_disabled: true },
+    });
+  }
+}
 
 export function registerProfile(bot: Composer<AppCtx>): void {
   bot.callbackQuery('profile:open', async (ctx) => {
@@ -333,6 +603,50 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     await showStats(ctx);
   });
 
+  bot.callbackQuery('profile:currency', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showCurrencyPicker(ctx);
+  });
+
+  bot.callbackQuery(/^profile:currency:p:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showCurrencyPicker(ctx, Number(ctx.match[1]));
+  });
+
+  bot.callbackQuery(/^profile:currency:set:([A-Z]{3,4}):(\d+)$/, async (ctx) => {
+    const code = normalizeCurrency(ctx.match[1]);
+    const page = Number(ctx.match[2] ?? 0);
+    try {
+      await setUserCurrency(ctx.user.telegram_id, code);
+      ctx.user.currency = code;
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.currency.saved', { currency: code }),
+      });
+      await showCurrencyPicker(ctx, page);
+    } catch {
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.currency.error'),
+        show_alert: true,
+      });
+    }
+  });
+
+  // ---- Send-PDF buttons (My Orders / Deposits / Stats screens) ----
+  // Each callback re-uses the same flow:
+  //   1. Bail with a popup if the user hasn't set their email yet.
+  //   2. Show a "sending" popup, generate the PDF, hand it to the
+  //      mailer, then update the popup with success / failure text.
+  // The list / detail message is not touched so the user can keep
+  // scrolling while the email is on its way.
+  bot.callbackQuery('profile:orders:pdf', async (ctx) => {
+    await sendReportPdfFromCallback(ctx, 'orders');
+  });
+  bot.callbackQuery('profile:deposits:pdf', async (ctx) => {
+    await sendReportPdfFromCallback(ctx, 'deposits');
+  });
+  bot.callbackQuery('profile:stats:pdf', async (ctx) => {
+    await sendReportPdfFromCallback(ctx, 'stats');
+  });
 
   // ---- My Orders (list) ----
   // Paginated 2-column grid: each row is [Product Name] [Active status]
@@ -404,6 +718,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       '',
       ctx.t('orders.detail.id', { id: pubId }),
       ctx.t('orders.detail.product', { name: order.product_name }),
+      '',
       ctx.t('orders.detail.type', { type: ctx.t('orders.detail.type.wallet') }),
       ctx.t('orders.detail.qty', { qty: order.qty }),
       ctx.t('orders.detail.total', { total }),
@@ -422,8 +737,18 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     // we ship as a `.txt` document right after the edited card, so
     // tapping a 37-link order in /myorders never fails on the 4096-
     // char limit.
+    // Format: (quantity)x (product name) (buying time)
+    const safeName = (order.product_name ?? 'Unknown')
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const d = new Date(order.created_at);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const timeStr = `${hh}:${mm}Utc`;
+    const txtFilename = `${order.qty}x ${safeName} ${timeStr}.txt`;
     const itemsRender = buildOrderDetailReceivedBlock(order.delivered_items, {
-      filename: `order-${pubId}-items.txt`,
+      filename: txtFilename,
     });
     if (itemsRender.inlineBlock) {
       lines.push(
@@ -618,32 +943,54 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   // blockquote, and a Copy Link button + Back row.
   bot.callbackQuery('profile:refer', async (ctx) => {
     await ctx.answerCallbackQuery();
-    const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
-    const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
-    const DAY = 24 * 60 * 60 * 1000;
-    const [refTotal, ref24h, ref7d, earnings] = await Promise.all([
-      countReferrals(ctx.user.telegram_id),
-      countReferralsSince(ctx.user.telegram_id, DAY),
-      countReferralsSince(ctx.user.telegram_id, 7 * DAY),
-      getReferralEarnings(ctx.user.telegram_id),
-    ]);
-    const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
-    const body = ctx.t('profile.refer.body', {
-      link,
-      ref24h,
-      ref7d,
-      refTotal,
-      earnedTotal: fmt(earnings.total),
-      available: fmt(earnings.available),
-      transferred: fmt(earnings.transferred),
-      withdrawn: fmt(earnings.withdrawn),
+    await showReferScreen(ctx);
+  });
+
+  bot.callbackQuery(/^profile:refer:buy:(\d+)$/, async (ctx) => {
+    const productId = Number(ctx.match[1]);
+    await ctx.answerCallbackQuery({ text: '🔄' });
+    await showReferScreen(ctx, {
+      refreshCallback: `profile:refer:buy:${productId}`,
+      backCallback: `buy:${productId}`,
     });
-    const referText = `${ctx.t('profile.refer.title')}\n\n${body}`;
-    await ctx.editMessageText(renderMdHtml(referText), {
-      parse_mode: 'HTML',
-      reply_markup: referKeyboard(ctx.lang, link),
-      link_preview_options: { is_disabled: true },
-    });
+  });
+
+  bot.callbackQuery('profile:refer:convert', async (ctx) => {
+    const REF_COST = 20;
+    const USDT_AMOUNT = 1;
+    try {
+      const result = await convertReferralBalance({
+        user_id: ctx.user.telegram_id,
+        referral_cost: REF_COST,
+        amount: USDT_AMOUNT,
+      });
+      ctx.user.balance = result.newBalance;
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.refer.convert_success', {
+          refs: REF_COST,
+          amount: USDT_AMOUNT.toFixed(2),
+          balance: result.newBalance.toFixed(2),
+        }),
+        show_alert: true,
+      });
+      await showReferScreen(ctx);
+    } catch (err) {
+      if (err instanceof InsufficientReferralBalanceError) {
+        const balance = await getReferralBalance(ctx.user.telegram_id).catch(() => null);
+        await ctx.answerCallbackQuery({
+          text: ctx.t('profile.refer.convert_low', {
+            available: balance?.available ?? 0,
+          }),
+          show_alert: true,
+        });
+        return;
+      }
+      logger.error({ err, user: ctx.user.telegram_id }, 'profile refer convert failed');
+      await ctx.answerCallbackQuery({
+        text: ctx.t('profile.refer.convert_error'),
+        show_alert: true,
+      });
+    }
   });
 
   // ---- Notifications submenu ----

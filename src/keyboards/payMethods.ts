@@ -105,6 +105,7 @@ export function paymentMethodsKeyboard(
   //
   //   [ Binance Pay              ]   ← full row
   //   [ USDT BEP-20              ]   ← full row
+  //   [ Bybit Pay                ]   ← full row
   //   [ USDT TON   ][ USDT TRC-20 ]  ← paired row (small)
   //   [ Others                    ]
   //   [ Back (red)                ]
@@ -119,10 +120,11 @@ export function paymentMethodsKeyboard(
   const PROVIDER_PRIORITY: Record<PaymentProvider, number> = {
     binance_pay: 0,
     usdt_bep20: 1,
-    usdt_ton: 2,
-    usdt_trc20: 3,
-    ltc: 4,
-    manual: 5,
+    bybit_pay: 2,
+    usdt_ton: 3,
+    usdt_trc20: 4,
+    ltc: 5,
+    manual: 6,
   };
   const sorted = methods.slice().sort((a, b) => {
     const pa = PROVIDER_PRIORITY[a.provider] ?? 99;

@@ -33,6 +33,10 @@ export const en: Record<string, string> = {
   'btn.prev': '◀️ Prev',
   'btn.refresh': '🔄 Refresh',
   'btn.buy_now': '✅ Buy Now',
+  'btn.pre_order': '🛍 Pre Order',
+  'btn.redeem_referral': '🎁 Pay with Referrals',
+  'btn.referral_earn_buy': '🔗 Earn Referrals & Buy',
+  'btn.convert_refers': '💱 Convert Refers to USDT',
   'btn.topup_wallet': '💳 Top-up Wallet',
   'btn.view_note': '📝 View Note',
   'btn.qty_plus': '➕',
@@ -49,6 +53,7 @@ export const en: Record<string, string> = {
   'btn.qty_keypad_max': '🎯 Max',
   // Buy-now payment-method screen.
   'btn.pay_wallet': '💳 Wallet',
+  'btn.pay_referral': '🎁 Referral Pay',
   'btn.pay_direct': '💸 Pay Direct',
   'btn.pay_topup': '🪙 Top-up',
   // Wallet-confirm card (page 2 of the buy flow). The Confirm
@@ -79,11 +84,11 @@ export const en: Record<string, string> = {
   'btn.qty.display': '📦 {qty} / {stock}',
   // Product-page extras.
   'btn.share_product': '🔗 Copy Link',
-  // `btn.view_note_file` / `btn.send_note_txt` are kept for backwards
-  // compat with /settext overrides; the new View Note screen no
-  // longer surfaces a Save button.
+  // `btn.view_note_file` is kept for backwards compat with /settext
+  // overrides. `btn.send_note_txt` is now reused for the Order
+  // Delivered "Download TXT" button.
   'btn.view_note_file': '📥 Save Note as TXT',
-  'btn.send_note_txt': '📥 Save as TXT',
+  'btn.send_note_txt': '📥 Download TXT',
   // Out-of-stock products still show a Buy Now button labelled with
   // a premium ❌ glyph — tapping it surfaces the "contact admin to
   // restock" popup (see `shop.product.out_of_stock_popup`).
@@ -131,6 +136,7 @@ export const en: Record<string, string> = {
   'btn.region.clear': '🚫 Clear',
   'btn.deposit_history': '💳 My Deposits',
   'btn.channel': 'Channel',
+  'btn.reseller_api': '🔑 Api Key',
   'btn.stats': '📊 Stats',
   'btn.stats_refresh': '🔄 Refresh',
   'btn.stats_back': '◀️ Back',
@@ -182,9 +188,12 @@ export const en: Record<string, string> = {
     '{emoji} *{name}*\n' +
     '{prod_qty_selected} Qty: *{qty}*\n' +
     '{promo_line}' +
-    '{prod_total_amount} Total: *{total} USDT*\n' +
-    '{prod_wallet} Wallet: *{balance} USDT*\n\n' +
+    '{prod_total_amount} Total: *{total}*\n' +
+    '{prod_wallet} Wallet: *{balance}*\n' +
+    '{referral_line}' +
     'Choose a pay method:',
+  'shop.pay.referral_line':
+    '{prod_referral} Referral Pay:\n*{available} available* • *{required} required*\n\n',
   // Wallet-pay confirmation card (page 2). Short labels with
   // premium emojis on every line. `{discount_line}` is filled in
   // by the caller (empty string when there is no active discount).
@@ -193,13 +202,13 @@ export const en: Record<string, string> = {
     '{pay_summary} *Order*\n' +
     '{emoji} *{name}* × *{qty}*\n' +
     '{discount_line}' +
-    '{prod_total_amount} *Total:* {total} USDT\n' +
-    '{prod_wallet} *Wallet:* {balance} USDT\n\n' +
-    '_Charge *{total} USDT* from your wallet?_',
+    '{prod_total_amount} *Total:* {total}\n' +
+    '{prod_wallet} *Wallet:* {balance}\n\n' +
+    '_Charge *{total}* from your wallet?_',
   // Optional discount row inside `shop.pay.confirm` — concatenated
   // by the caller when an active promo applies.
   'shop.pay.confirm.discount_line':
-    '{prod_promo} *Discount:* −{discount} USDT\n',
+    '{prod_promo} *Discount:* −{discount}\n',
   // Inline qty-editor screen body. Renders as a "big counter" with
   // the current selected qty in monospace, the product name, and
   // the running total cost.
@@ -207,9 +216,9 @@ export const en: Record<string, string> = {
     '🔢 *Select quantity*\n\n' +
     '*{name}*\n' +
     'In stock: *{stock}*\n' +
-    'Unit price: *{price} USDT*\n\n' +
+    'Unit price: *{price}*\n\n' +
     'Selected: <code>{qty}</code>\n' +
-    'Total: *{total} USDT*',
+    'Total: *{total}*',
   'shop.empty_categories': 'No categories yet. Please check back later.',
   'shop.empty_products': 'No products in this category yet.',
   // Product detail page — premium emojis prefix every label per
@@ -217,19 +226,27 @@ export const en: Record<string, string> = {
   // `<tg-emoji>` tag with the configured custom_emoji_id (animated
   // for premium subs, plain unicode for everyone else).
   'shop.product.line.name': '{emoji} *{name}*',
-  'shop.product.line.price': '{prod_price_base} *Price Base:* {price} USDT',
+  'shop.product.line.price': '{prod_price_base} *Price Base:* {price}',
   // `{stock}` may render as either a number or the ∞ glyph (for
   // products with `unlimited_stock = true`).
   'shop.product.line.stock': '{prod_stock} *Available Stock:* {stock}',
   'shop.product.line.warranty': '{prod_warranty} *Warranty:* {warranty}',
+  'shop.product.line.preorder_notice':
+    '{feed_title} *Order Will automatically sended with in second after restock*',
+  'shop.product.line.referral.progress':
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Missing {remaining}',
+  'shop.product.line.referral.ready':
+    '{prod_referral} *Referral Pay:* Required {required} • Available {total} • Ready',
+  'shop.product.line.referral.claimed':
+    '{prod_referral} *Referral Pay:* Legacy order already used this balance',
   'shop.product.line.qty': '{prod_qty_selected} *Selected Qty:* {qty}',
-  'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total} USDT',
-  'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance} USDT',
+  'shop.product.line.total': '{prod_total_amount} *Total Amount:* {total}',
+  'shop.product.line.balance': '{prod_wallet} *Wallet:* {balance}',
   // Optional bonus line shown above Total Amount when an active
   // promo applies. `label` is either the admin-set promo name or
   // the auto-fallback "qty ≥ N".
   'shop.product.line.promo':
-    '{prod_promo} *Promo:* {label} — −{discount} USDT',
+    '{prod_promo} *Promo:* {label} — −{discount}',
   'shop.product.line.promo.fallback_label': 'qty ≥ {min_qty}',
   // Teaser line under Warranty when a promo exists for this product
   // but the buyer hasn't reached the qty threshold yet. Hidden once
@@ -239,7 +256,7 @@ export const en: Record<string, string> = {
   // Strikethrough Total Amount line shown when an active promo
   // applies — gross (struck) → effective price.
   'shop.product.line.total.discounted':
-    '{prod_total_amount} *Total Amount:* ~~{gross}~~ {total} USDT',
+    '{prod_total_amount} *Total Amount:* ~~{gross}~~ {total}',
   'shop.product.out_of_stock_popup':
     '❌ This product is out of stock right now. Please contact admin to restock or pick a similar item.',
   'shop.note.title': '{note_premium} *Product Note*',
@@ -257,10 +274,10 @@ export const en: Record<string, string> = {
     '{note_premium} *View Note — {name}*',
     '',
     '{note_desc} *Description:*',
-    '> {description}',
+    '{description}',
     '',
     '{note_text} *Note:*',
-    '> {note}',
+    '{note}',
   ].join('\n'),
   // Legacy single-message confirmation — still used by /settext
   // overrides and by the deposit credit reply. The new wallet-pay
@@ -283,6 +300,28 @@ export const en: Record<string, string> = {
   // blockquote pill (matches the View Note "luli" / "Hey" look).
   'shop.buy.order_delivered': [
     '{order_delivered} *Order Delivered!*',
+    '',
+    '*Order ID#:* `{order_id}`',
+    '*Product:* {name}',
+    '*Quantity:* {qty}',
+    '*Total Paid:* {total} USDT',
+    '',
+    '{delivered_items} *Items:*',
+    '{items}',
+  ].join('\n'),
+  'shop.buy.order_preordered': [
+    '{feed_title} *Preorder Placed!*',
+    '',
+    '*Order ID#:* `{order_id}`',
+    '*Product:* {name}',
+    '*Quantity:* {qty}',
+    '*Total Paid:* {total} USDT',
+    '',
+    '{delivered_items} *Status:*',
+    '{items}',
+  ].join('\n'),
+  'shop.buy.order_auto_delivered': [
+    '{order_delivered} *Delivery has been automatically done!*',
     '',
     '*Order ID#:* `{order_id}`',
     '*Product:* {name}',
@@ -321,6 +360,8 @@ export const en: Record<string, string> = {
     '{debit_emoji} admin debited *${amount}* from your wallet.\n{balance_emoji} New balance: *${balance}*',
   'shop.buy.delivery_pending':
     'Coming soon — admin will deliver your items manually within 12h.',
+  'shop.buy.preorder_pending':
+    'Preorder pending — automatically deliver will be done after restock.',
   'shop.buy.insufficient':
     '❌ Insufficient wallet balance. You need *{need}* but only have *{have}*. Please top up first.',
   'shop.buy.no_stock': '❌ Sorry, this item is out of stock.',
@@ -329,6 +370,41 @@ export const en: Record<string, string> = {
   // network) so the loading spinner is always dismissed.
   'shop.buy.failed':
     '❌ Payment could not be completed right now. Please try again in a moment, or contact admin if it keeps happening.',
+  'shop.referral.disabled': '❌ Referral Pay is not enabled for this product.',
+  'shop.referral.already_redeemed': '✅ Referral Pay was already used on this legacy order.',
+  'shop.referral.insufficient':
+    '❌ Not enough referrals. Required: {required}. Available: {total}. Missing: {remaining}.',
+  'shop.referral.insufficient.card': [
+    '⚠️ *Referral Balance Is Low*',
+    '',
+    '{prod_referral} *Required:* {required} referrals',
+    '{refer_user} *Available:* {available} referrals',
+    '{qty_invalid} *Still Needed:* {remaining} referrals',
+    '',
+    '{refer_title} Invite users with your referral link, refresh this page, then pay with Referral Pay.',
+  ].join('\n'),
+  'shop.referral.confirm': [
+    '{refer_title} *Confirm Referral Pay*',
+    '',
+    '{emoji} *{name}* × *{qty}*',
+    '{prod_referral} *Required:* {required} referrals',
+    '{refer_user} *Available:* {available} referrals',
+    '{delivery_check} *After Pay:* {after} referrals',
+    '',
+    '_Use your active referrals for this order?_',
+  ].join('\n'),
+  'shop.referral.failed':
+    '❌ Referral payment could not be completed right now. Please try again or contact admin.',
+  'shop.referral.confirmed': [
+    '{refer_title} *Referral Payment Successful!*',
+    '',
+    '*Product:* {name}',
+    '*Qty:* {qty}',
+    '*Referrals Used:* {spent}',
+    '',
+    '{delivering} _Delivering your order…_',
+  ].join('\n'),
+  'shop.referral.delivery': 'Referral Pay for product #{product_id} (qty: {qty})',
   // Kept for backwards compat with any /settext overrides referencing
   // the old key, even though the email gate is no longer enforced.
   'shop.buy.email_required':
@@ -454,6 +530,7 @@ export const en: Record<string, string> = {
   'profile.row.email': 'Email: `{email}` — Has been Saved! {email_saved_check}',
   'profile.row.email_empty': 'Email: _not set_ — tap *Set Email* below',
   'profile.row.balance': 'Balance: *{balance} USDT*',
+  'profile.row.currency': 'Currency: *{currency}*',
   'profile.row.language': 'Language: *{language}*',
   'profile.row.region': 'Region: *{region}* — local time *{time}*',
   'profile.row.region_empty': 'Region: _not set_ — tap *Set Region*',
@@ -678,18 +755,37 @@ export const en: Record<string, string> = {
   // Refer & Earn screen.
   'profile.refer.title': '{refer_title} *Refer & Earn*',
   'profile.refer.body':
-    '{refer_user} *Referred (24h):* {ref24h}\n' +
-    '{refer_user} *Referred (7d):* {ref7d}\n' +
-    '{refer_user} *Referred (Total):* {refTotal}\n\n' +
+    '{refer_prize_l} *Refer 10 users and win $0.50* {refer_prize_r}\n\n' +
+    '{refer_clicks} *Clicks:* {clicks}\n' +
+    '{refer_pending} *Pending:* {pending}\n' +
+    '{refer_active} *Active:* {active}\n' +
+    '{refer_left} *Left:* {left}\n' +
+    '{refer_total} *Referred (Total):* {refTotal}\n' +
     '{refer_coin} *Total Earned:* {earnedTotal} USDT\n' +
-    '{refer_coin} *Available:* {available} USDT\n' +
-    '{refer_transferred} *Transferred:* {transferred} USDT\n' +
     '{refer_withdrawn} *Withdrawn:* {withdrawn} USDT\n\n' +
-    '> Earn 1% of every top-up by your referred users.\n' +
-    '> Max $1.00 per top-up.\n' +
+    '{prod_referral} *Referral Pay Balance:* {refAvailable} refs\n' +
+    '{refer_spent} *Used for Purchases:* {refSpent} refs\n\n' +
     '> Transfer earnings to wallet anytime. For cash withdrawal, contact support ($1.00 min).\n\n' +
     '*Your Referral Link:*\n`{link}`',
+  'profile.refer.convert_success':
+    '💱 Converted *{refs} refs* into *{amount} USDT*.\n\n💳 Wallet Balance: *{balance} USDT*',
+  'profile.refer.convert_low':
+    '⚠️ Not enough refs to convert.\n\nYou need *20 active refs* to convert into *1 USDT*.\nCurrent Referral Pay Balance: *{available} refs*',
+  'profile.refer.convert_error':
+    '⚠️ Could not convert refs right now. Please try again.',
   'btn.copy_link': '📋 Copy Link',
+  'btn.live_refers': '🔵 See Your Live Refers',
+  'btn.currency': '💱 Currency',
+  'btn.stats.24h': '24h',
+  'btn.stats.7d': '7d',
+  'btn.stats.30d': '30d',
+  'btn.stats.custom': 'Custom',
+  'profile.currency.title': '💱 *Choose Currency*',
+  'profile.currency.body':
+    'Your product prices will show your selected currency plus USDT. Payments still use USDT.',
+  'profile.currency.saved': '✅ Currency set to {currency}.',
+  'profile.currency.error':
+    '⚠️ Could not save currency yet. Please apply migration `0033_user_currency.sql` first.',
   'profile.orders.empty': 'You have no orders yet.',
   'profile.orders.title': '🧾 *My Orders*',
   'profile.orders.line': '#{id} • {name} ×{qty} • {total} • {date}',

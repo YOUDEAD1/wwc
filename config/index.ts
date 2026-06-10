@@ -87,6 +87,10 @@ export const BUTTON_KEYS = {
   prev: 'btn.prev',
   refresh: 'btn.refresh',
   buy_now: 'btn.buy_now',
+  pre_order: 'btn.pre_order',
+  redeem_referral: 'btn.redeem_referral',
+  referral_earn_buy: 'btn.referral_earn_buy',
+  convert_refers: 'btn.convert_refers',
   topup_wallet: 'btn.topup_wallet',
   view_note: 'btn.view_note',
   qty_plus: 'btn.qty_plus',
@@ -100,11 +104,17 @@ export const BUTTON_KEYS = {
   language: 'btn.language',
   deposit_history: 'btn.deposit_history',
   channel: 'btn.channel',
+  reseller_api: 'btn.reseller_api',
   back_to_settings: 'btn.back_to_settings',
   stats: 'btn.stats',
   stats_refresh: 'btn.stats_refresh',
+  stats_24h: 'btn.stats.24h',
+  stats_7d: 'btn.stats.7d',
+  stats_30d: 'btn.stats.30d',
+  stats_custom: 'btn.stats.custom',
   set_region: 'btn.set_region',
   set_email: 'btn.set_email',
+  currency: 'btn.currency',
 
   // ---- Email hub & sub-screens ---------------------------------
   email_settings: 'btn.email.settings',
@@ -131,6 +141,7 @@ export const BUTTON_KEYS = {
 
   // ---- Refer screen --------------------------------------------
   copy_link: 'btn.copy_link',
+  live_refers: 'btn.live_refers',
 
   // ---- Redeem Gift Code ---------------------------------------
   redeem: 'btn.redeem',
@@ -191,6 +202,7 @@ export const BUTTON_KEYS = {
   qty_keypad_max: 'btn.qty_keypad_max',
   // ---- Buy-now payment-method screen ----------------------------
   pay_wallet: 'btn.pay_wallet',
+  pay_referral: 'btn.pay_referral',
   pay_direct: 'btn.pay_direct',
   pay_topup: 'btn.pay_topup',
   // "Others" + "Back" rows on the shared payment-methods keyboard
@@ -273,6 +285,10 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   prev: 'none',
   refresh: 'none',
   buy_now: 'blue',
+  pre_order: 'red',
+  redeem_referral: 'green',
+  referral_earn_buy: 'green',
+  convert_refers: 'blue',
   topup_wallet: 'yellow',
   view_note: 'none',
   qty_plus: 'none',
@@ -286,11 +302,17 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   language: 'none',
   deposit_history: 'none',
   channel: 'blue',
+  reseller_api: 'blue',
   back_to_settings: 'none',
   stats: 'none',
   stats_refresh: 'none',
+  stats_24h: 'blue',
+  stats_7d: 'blue',
+  stats_30d: 'blue',
+  stats_custom: 'blue',
   set_region: 'none',
   set_email: 'none',
+  currency: 'blue',
 
   // Email hub: Set/Change blue, Delete red, Why neutral.
   email_settings: 'none',
@@ -317,6 +339,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 
   // Refer copy-link: green (positive action).
   copy_link: 'green',
+  live_refers: 'blue',
 
   // Redeem flow.
   redeem: 'none',
@@ -375,6 +398,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
 
   // Buy-now payment-method screen.
   pay_wallet: 'green',
+  pay_referral: 'blue',
   pay_direct: 'yellow',
   pay_topup: 'blue',
   // Payment-methods keyboard chrome — Others sits below the per-
@@ -490,6 +514,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   profile_language: { unicode: '🌐', custom_emoji_id: '5364021605578071936' },
   profile_region: { unicode: '🗺', custom_emoji_id: '5309748255637118475' },
   profile_joined: { unicode: '📅', custom_emoji_id: '5028418466000930064' },
+  api_key: { unicode: '🔑', custom_emoji_id: '5287480366330816274' },
 
   // ---- Welcome banner -------------------------------------------
   welcome_banner: { unicode: '👋', custom_emoji_id: '6003746779474956178' },
@@ -506,10 +531,23 @@ export const EMOJI: Record<string, EmojiSpec> = {
 
   // ---- Refer & Earn screen -------------------------------------
   refer_title: { unicode: '🎁', custom_emoji_id: '5053473385355412667' },
+  refer_prize_l: { unicode: '🏆', custom_emoji_id: '4909043075529048789' },
+  refer_prize_r: { unicode: '✨', custom_emoji_id: '6088990159334808217' },
+  refer_clicks: { unicode: '👁', custom_emoji_id: '5019759554234156094' },
+  refer_pending: { unicode: '⏳', custom_emoji_id: '5386367538735104399' },
+  refer_active: { unicode: '✅', custom_emoji_id: '6115971182542984044' },
+  refer_left: { unicode: '📌', custom_emoji_id: '6181467651395558500' },
+  refer_total: { unicode: '👤', custom_emoji_id: '5332724926216428039' },
   refer_user: { unicode: '👤', custom_emoji_id: '5332724926216428039' },
-  refer_coin: { unicode: '🪙', custom_emoji_id: '6325416826100519483' },
+  refer_coin: { unicode: '🪙', custom_emoji_id: '5264977499363746876' },
   refer_transferred: { unicode: '🔁', custom_emoji_id: '5832493956503442338' },
-  refer_withdrawn: { unicode: '💵', custom_emoji_id: '5841484860652263006' },
+  refer_withdrawn: { unicode: '💵', custom_emoji_id: '5201873447554145566' },
+  refer_spent: { unicode: '🧾', custom_emoji_id: '6276009124350138166' },
+
+  // ---- Public group feed ---------------------------------------
+  feed_title: { unicode: '🎉', custom_emoji_id: '6181381563071077485' },
+  feed_tap_buy: { unicode: '👉', custom_emoji_id: '6181460307001481584' },
+  feed_buy_button: { unicode: '🛒', custom_emoji_id: '5440841102871517055' },
 
   // ---- Language picker -----------------------------------------
   lang_left: { unicode: '🌐', custom_emoji_id: '5330422213860407355' },
@@ -571,6 +609,7 @@ export const EMOJI: Record<string, EmojiSpec> = {
   prod_qty_selected: { unicode: '🔢', custom_emoji_id: '5363964615657017717' },
   prod_total_amount: { unicode: '🧮', custom_emoji_id: '5366223171454278937' },
   prod_wallet: { unicode: '👛', custom_emoji_id: '6102840685835066490' },
+  prod_referral: { unicode: '🎁', custom_emoji_id: '4958699241137505132' },
   // Promo line (qty-threshold flat-USDT discount). Reuses the
   // existing 🎁 premium glyph from the gift-codes screen for
   // visual consistency.
@@ -613,6 +652,10 @@ export const EMOJI: Record<string, EmojiSpec> = {
   orders_note: { unicode: '📝', custom_emoji_id: '5778299625370817409' },
   orders_warranty: { unicode: '⏰', custom_emoji_id: '5280821895711697516' },
   orders_received: { unicode: '✅', custom_emoji_id: '5096035317257864249' },
+  // Download TXT button icon
+  btn_download_txt: { unicode: '📥', custom_emoji_id: '5318845185348626090' },
+  // Default premium icon for the broadcast "Shop Now" / "Buy Now" button.
+  broadcast_shop_now: { unicode: '🛍', custom_emoji_id: '5312361253610475399' },
 
   // ---- Find Order by ID prompt + invalid response --------------
   // The two glyphs below frame the "Send Your Order ID to find"
@@ -754,7 +797,11 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // viewers). Keys whose locale emoji has no exact premium twin are
   // left out so the original unicode emoji stays in the label.
   profile: 'profile_header',
-  buy_now: 'orders_received',
+  buy_now: 'feed_buy_button',
+  pre_order: 'broadcast_shop_now',
+  redeem_referral: 'refer_title',
+  referral_earn_buy: 'refer_title',
+  convert_refers: 'refer_coin',
   topup_wallet: 'deposits_wallet',
   view_note: 'orders_note',
   my_orders: 'orders_title',
@@ -767,8 +814,14 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   // restore a premium icon if you change your mind.
   stats: 'stats',
   stats_refresh: 'stats_refresh',
+  stats_24h: 'stats',
+  stats_7d: 'stats',
+  stats_30d: 'stats',
+  stats_custom: 'stats',
   set_region: 'profile_region',
   set_email: 'profile_email',
+  currency: 'refer_coin',
+  reseller_api: 'api_key',
 
   // Email hub & sub-screens
   email_settings: 'profile_email',
@@ -793,8 +846,12 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
   send_pdf_stats: 'pdf_sent_l',
   send_pdf_deposits: 'pdf_sent_l',
 
+  // Download TXT button
+  send_note_txt: 'btn_download_txt',
+
   // Refer copy-link
   copy_link: 'refer_transferred',
+  live_refers: 'profile_link',
 
   // Redeem
   redeem: 'gift_title',
@@ -843,6 +900,7 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
 
   // Buy-now payment-method screen — wallet on Pay, topup on Top Up.
   pay_wallet: 'prod_wallet',
+  pay_referral: 'refer_title',
   pay_direct: 'prod_total_amount',
   pay_topup: 'deposits_wallet',
   // Wallet-payment confirmation card (page 2): green check icon

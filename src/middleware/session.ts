@@ -96,6 +96,7 @@ export type AdminFlow =
   | { type: 'edit_product_emoji'; step: 'premium'; data: { product_id: number; page: number } }
   | { type: 'edit_product_note_text'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_description'; step: 'text'; data: { product_id: number; page: number } }
+  | { type: 'edit_product_warranty'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_text'; step: 'text'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_file'; step: 'file'; data: { product_id: number; page: number } }
   | { type: 'edit_product_tutorial_url'; step: 'url'; data: { product_id: number; page: number } }
@@ -129,6 +130,11 @@ export type AdminFlow =
   | { type: 'edit_product_stock'; step: 'stock'; data: { product_id: number; page: number } }
   | { type: 'edit_product_name'; step: 'name'; data: { product_id: number; page: number } }
   | { type: 'edit_product_id'; step: 'id'; data: { product_id: number; page: number } }
+  | {
+      type: 'edit_product_referral_required';
+      step: 'count';
+      data: { product_id: number; page: number };
+    }
   // -------- Per-product post-purchase delivery form editor --------
   // Each step waits for ONE message of the appropriate kind. The
   // message handler in `handlers/admin/index.ts` applies the patch,
@@ -187,11 +193,17 @@ export type AdminFlow =
   | { type: 'add_payment'; step: 'instructions'; data: { name: string } }
   | { type: 'set_text'; step: 'key'; data: Record<string, never> }
   | { type: 'set_text'; step: 'value'; data: { key: string } }
+  | { type: 'stats_custom_days'; step: 'days'; data: Record<string, never> }
   | { type: 'set_emoji'; step: 'key'; data: Record<string, never> }
   | { type: 'set_emoji'; step: 'value'; data: { key: string } }
   | { type: 'set_btnicon'; step: 'value'; data: { btnKey: string } }
   | { type: 'set_color'; step: 'value'; data: { key: string } }
   | { type: 'set_color_glyph'; step: 'value'; data: { mode: string } }
+  | { type: 'supplier_api_add'; step: 'json'; data: Record<string, never> }
+  | { type: 'supplier_canboso_add'; step: 'key'; data: Record<string, never> }
+  | { type: 'supplier_reseller_add'; step: 'key'; data: Record<string, never> }
+  | { type: 'supplier_product_link_add'; step: 'json'; data: { supplier_id?: number } }
+  | { type: 'preorder_manual_send'; step: 'items'; data: { order_id: number } }
   | { type: 'announce'; step: 'text'; data: Record<string, never> }
   | {
       // Confirm step + every callback-driven sub-step of the
@@ -204,6 +216,7 @@ export type AdminFlow =
       step: 'confirm';
       data: {
         text: string;
+        format?: 'md' | 'html';
         buy?: {
           product_id: number;
           product_name: string;
@@ -222,6 +235,7 @@ export type AdminFlow =
       step: 'buy_label';
       data: {
         text: string;
+        format?: 'md' | 'html';
         buy: {
           product_id: number;
           product_name: string;
@@ -240,6 +254,7 @@ export type AdminFlow =
       step: 'buy_icon';
       data: {
         text: string;
+        format?: 'md' | 'html';
         buy: {
           product_id: number;
           product_name: string;
@@ -253,6 +268,8 @@ export type AdminFlow =
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
+  | { type: 'referral_find_user'; step: 'query'; data: Record<string, never> }
+  | { type: 'referral_adjust'; step: 'delta'; data: { telegram_id: number } }
   | {
       // Step 1 of the Custom-Prices flow — admin entered the menu and
       // is being asked to identify which user the overrides apply to.
@@ -389,6 +406,21 @@ export type AdminFlow =
       type: 'add_binance_payment';
       step: 'pay_name';
       data: { name: string; pay_id: string };
+    }
+  | {
+      type: 'add_bybit_payment';
+      step: 'name';
+      data: Record<string, never>;
+    }
+  | {
+      type: 'add_bybit_payment';
+      step: 'bybit_id';
+      data: { name: string };
+    }
+  | {
+      type: 'add_bybit_payment';
+      step: 'bybit_name';
+      data: { name: string; bybit_id: string };
     };
 
 /**
@@ -509,6 +541,18 @@ export type UserFlow =
       };
     }
   | {
+      type: 'bybit_pay_topup';
+      step: 'tx_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        bybit_id: string;
+        bybit_name: string | null;
+        deposit_id: number;
+        opened_at_ms: number;
+        instruction_message_id?: number;
+      };
+    }  | {
       /**
        * LTC quote-on-display top-up — three steps:
        *   `usd_amount`  – user types the USD amount they want.
@@ -614,6 +658,19 @@ export type UserFlow =
       };
     }
   | {
+      type: 'direct_bybit';
+      step: 'tx_id';
+      data: {
+        method_id: number;
+        method_name: string;
+        bybit_id: string;
+        bybit_name: string | null;
+        deposit_id: number;
+        intent: import('../types.js').OrderIntent;
+        opened_at_ms: number;
+        instruction_message_id?: number;
+      };
+    }  | {
       /**
        * User is in a Live Support relay session. While this flow is
        * active, every non-command message they send is forwarded to
