@@ -10,6 +10,7 @@ import { escapeAttr, renderHtmlTemplate } from '../services/premium.js';
 import { logger } from '../logger.js';
 
 const BUY_BUTTON_ICON_ID = '5440841102871517055';
+const CART_FALLBACK = '\u{1F6D2}';
 
 function normalized(text: string): string {
   return text
@@ -27,6 +28,16 @@ function isConfiguredFeedChat(ctx: AppCtx): boolean {
   const wanted = configured.replace(/^@/, '').toLowerCase();
   const username = 'username' in chat ? chat.username?.toLowerCase() : undefined;
   return username === wanted;
+}
+
+function productIconHtml(product: { emoji?: string | null; emoji_id?: string | null }): string {
+  const glyph = product.emoji?.trim() ?? '';
+  if (product.emoji_id) {
+    const fallback = glyph || CART_FALLBACK;
+    return `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(fallback)}</tg-emoji>`;
+  }
+  if (!glyph || glyph === CART_FALLBACK) return '';
+  return escapeAttr(glyph);
 }
 
 export function registerPublicGroup(bot: Bot<AppCtx>): void {
@@ -72,7 +83,8 @@ export function registerPublicGroup(bot: Bot<AppCtx>): void {
       }
 
       const lines = matches.map(({ product }, index) => {
-        const name = escapeAttr(product.name);
+        const icon = productIconHtml(product);
+        const name = `${escapeAttr(product.name)}${icon ? ` ${icon}` : ''}`;
         const end = index === matches.length - 1 ? '!' : ',';
         return `<b>${name} available now${end}</b>`;
       });
