@@ -6,6 +6,7 @@
  */
 import { Composer, InlineKeyboard, InputFile, type MiddlewareFn } from 'grammy';
 import type { MessageEntity } from 'grammy/types';
+import { inlineBtn } from '../../keyboards/helpers.js';
 import {
   addCategory,
   addPaymentMethod,
@@ -147,6 +148,9 @@ import * as adminLog from '../../services/adminLog.js';
 import * as publicFeed from '../../services/publicFeed.js';
 import { describeMailerStatus, sendWelcomeEmail } from '../../services/mailer.js';
 import { fulfillPendingPreordersForProduct } from '../../services/preorder.js';
+import { buildOrderDeliveredChunks } from '../../services/orderRender.js';
+import { publicOrderId } from '../../services/orderId.js';
+import { maybeStartDeliveryFormFromApi } from '../../services/postPurchaseDelivery.js';
 import {
   apiBaseUrl,
   disableApiKey,
@@ -2271,17 +2275,22 @@ adminBot.callbackQuery(/^adm:ord:presend:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery({ text: 'This preorder cannot auto-send now.', show_alert: true });
     return;
   }
-  const result = await fulfillPendingPreordersForProduct(ctx.api, order.product_id, 50);
-  await ctx.answerCallbackQuery({
-    text: `Checked ${result.checked}. Delivered ${result.fulfilled}. Waiting ${result.waiting}.`,
-    show_alert: true,
-  });
+  ctx.session.adminFlow = { type: 'preorder_manual_send', step: 'items', data: { order_id: id } };
+  await ctx.answerCallbackQuery({ text: 'Send the product details now.', show_alert: true });
   const kb = new InlineKeyboard()
     .text('🔎 View Order', `adm:ord:v:${id}`)
     .row()
     .text('⬅️ Back to orders', 'adm:ord:0');
   await ctx.editMessageText(
-    `⚡ <b>Auto Send Checked</b>\n\nDelivered: <b>${result.fulfilled}</b>\nStill waiting: <b>${result.waiting}</b>`,
+    [
+      '⚡ <b>Auto Send Now</b>',
+      '',
+      `Order <code>#${id}</code> is ready for manual auto-send.`,
+      'Send the product details/items now.',
+      '',
+      'One account/link/code per line is best.',
+      'Send /cancel to abort.',
+    ].join('\n'),
     { parse_mode: 'HTML', reply_markup: kb },
   );
 });
@@ -7239,6 +7248,121 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 
   try {
+    if (flow.type === 'preorder_manual_send') {
+      const order = await getOrder(flow.data.order_id);
+      if (!order || !isPendingPreorderOrder(order) || order.product_id === null) {
+        ctx.session.adminFlow = undefined;
+        await ctx.reply('⚠️ This preorder is not pending anymore.', {
+          reply_markup: rootMenu(),
+        });
+        return;
+      }
+
+      const items = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      if (items.length === 0) {
+        await ctx.reply('⚠️ Send at least one product detail/link/code line, or /cancel.');
+        return;
+      }
+
+      const product = await getProduct(order.product_id);
+      const buyer = await findUserById(order.user_id);
+      const lang = buyer?.language ?? env.DEFAULT_LANG;
+      const tr = (key: string, vars?: Record<string, string | number>) =>
+        translate(lang, key, vars);
+      const publicId = publicOrderId(order);
+      const deliveredText = items.join('\n');
+      await setOrderDeliveredItems(order.id, deliveredText);
+
+      const chunks = buildOrderDeliveredChunks(items);
+      const firstChunkBlock = chunks[0]?.inlineBlock ?? `> ${deliveredText}`;
+      const deliveredKb = new InlineKeyboard();
+      inlineBtn(deliveredKb, lang, 'using_method', `tut:${order.product_id}`);
+      deliveredKb.row();
+      inlineBtn(deliveredKb, lang, 'send_note_txt', `order:txt:${order.id}`);
+
+      const headerHasKeyboard = chunks.length <= 1;
+      await ctx.api.sendMessage(
+        order.user_id,
+        renderMdHtml(
+          tr('shop.buy.order_auto_delivered', {
+            order_id: publicId,
+            name: order.product_name,
+            qty: order.qty,
+            total: Number(order.total).toFixed(2),
+            items: firstChunkBlock,
+          }),
+        ),
+        headerHasKeyboard
+          ? { parse_mode: 'HTML', reply_markup: deliveredKb }
+          : { parse_mode: 'HTML' },
+      );
+
+      for (let i = 1; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        if (!chunk) continue;
+        await ctx.api.sendMessage(
+          order.user_id,
+          renderMdHtml(chunk.inlineBlock),
+          chunk.isLast
+            ? { parse_mode: 'HTML', reply_markup: deliveredKb }
+            : { parse_mode: 'HTML' },
+        );
+      }
+
+      if (product) {
+        await maybeStartDeliveryFormFromApi({
+          api: ctx.api,
+          product,
+          orderId: order.id,
+          orderPublicId: publicId,
+          buyerTelegramId: order.user_id,
+          buyerLang: lang,
+        }).catch((err) => {
+          logger.warn(
+            { err, orderId: order.id, productId: order.product_id },
+            'admin preorder manual send delivery form failed',
+          );
+        });
+      }
+
+      void adminLog
+        .logOrderCreated(ctx.api, {
+          user: {
+            telegram_id: order.user_id,
+            username: buyer?.username ?? null,
+            first_name: buyer?.first_name ?? null,
+            email: buyer?.email ?? null,
+          },
+          orderDbId: order.id,
+          orderPublicId: publicId,
+          productId: order.product_id,
+          productName: order.product_name,
+          qty: order.qty,
+          unitPrice: Number(order.unit_price),
+          total: Number(order.total),
+          paidVia: 'Manual preorder auto-send',
+          balanceAfter: Number((buyer?.balance ?? 0).toFixed(3)),
+          lifecycle: 'auto_delivered',
+        })
+        .catch((err) => logger.warn({ err }, 'admin preorder manual send log failed'));
+
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(
+        `✅ Auto-sent preorder <code>${escapeHtml(publicId)}</code> to buyer.\n\nItems sent: <b>${items.length}</b>`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard()
+            .text('🔎 View Order', `adm:ord:v:${order.id}`)
+            .row()
+            .text('⬅️ Back to orders', 'adm:ord:0'),
+        },
+      );
+      return;
+    }
+
     if (flow.type === 'supplier_reseller_add') {
       const rawKey = ctx.message.text.trim();
       const key =

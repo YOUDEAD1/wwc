@@ -20,11 +20,13 @@ type FeedButton = {
 const CART_FALLBACK = '\u{1F6D2}';
 
 export function publicFeedBotUrl(payload: string): string {
-  return env.BOT_USERNAME ? `https://t.me/${env.BOT_USERNAME}?start=${payload}` : 'https://t.me/';
+  const username = env.BOT_USERNAME.replace(/^@+/, '').trim();
+  const start = encodeURIComponent(payload);
+  return username ? `https://t.me/${username}?start=${start}` : `https://t.me/?start=${start}`;
 }
 
 export function publicFeedChatId(): string | number | undefined {
-  return env.PUBLIC_FEED_CHAT_ID || env.ORDER_LOG_CHAT_ID || env.BOT_REFERS_CHANNEL;
+  return env.ORDER_LOG_CHAT_ID || env.PUBLIC_FEED_CHAT_ID || env.BOT_REFERS_CHANNEL;
 }
 
 function maskId(id: number): string {
