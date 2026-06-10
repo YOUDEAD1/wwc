@@ -82,9 +82,10 @@ export function registerPublicGroup(bot: Bot<AppCtx>): void {
         kb.style('primary').row();
       }
 
-      const lines = matches.map(({ product }) => {
+      const lines = matches.map(({ product }, index) => {
         const name = `${productIconHtml(product)}${escapeAttr(product.name)}`;
-        return `<b>${name} available now!</b>`;
+        const end = index === matches.length - 1 ? '!' : ',';
+        return `<b>${name} available now${end}</b>`;
       });
       const html = renderHtmlTemplate(
         [
