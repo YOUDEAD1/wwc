@@ -286,17 +286,15 @@ export async function logOrderCreated(api: Api, args: {
   // Orders go to the dedicated orders channel (`ORDER_LOG_CHAT_ID`),
   // falling back to `LOG_CHAT_ID` and finally the admin DM. Every
   // other event still goes straight to `LOG_CHAT_ID`.
-  if (!autoDelivered) {
-    void publicFeed.notifyPurchase(api, {
-      buyerId: args.user.telegram_id,
-      productId: args.productId,
-      productName: args.productName,
-      orderPublicId: args.orderPublicId,
-      qty: args.qty,
-      total: args.total,
-      paidVia: args.paidVia,
-    });
-  }
+  void publicFeed.notifyPurchase(api, {
+    buyerId: args.user.telegram_id,
+    productId: args.productId,
+    productName: args.productName,
+    orderPublicId: args.orderPublicId,
+    qty: args.qty,
+    total: args.total,
+    paidVia: args.paidVia,
+  });
   await send(api, body, 'orders');
 }
 
