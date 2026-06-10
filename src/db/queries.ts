@@ -2958,27 +2958,47 @@ export async function swapProductOrder(
 
 /**
  * Customer-facing all-products list. Filters on `active=true` so
- * the shop shopfront never surfaces hidden / draft products. Order
- * is `(sort_order ASC, id ASC)` so the admin's manual reordering
- * (PR #58) flows through to the customer-facing catalog, with
- * `id ASC` as the deterministic tie-breaker for legacy rows that
- * still share the default sort_order=0.
+ * the shop shopfront never surfaces hidden / draft products.
+ *
+ * Availability is sorted before pagination so every live-stock or
+ * unlimited product is guaranteed to appear before every out-of-
+ * stock product, even when an old row missed the sort-order stash or
+ * is pinned. Pin/manual order is preserved inside each availability
+ * section, and a restocked product automatically returns to the live
+ * section without requiring another database migration.
  */
 export async function listActiveProducts(
   page: number,
   perPage: number,
 ): Promise<{ rows: DBProduct[]; total: number }> {
-  const from = page * perPage;
-  const to = from + perPage - 1;
-  const { data, count } = await supabase
+  const { data, error } = await supabase
     .from('products')
-    .select('*', { count: 'exact' })
+    .select('*')
     .eq('active', true)
     .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
-    .order('id', { ascending: true })
-    .range(from, to);
-  return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
+    .order('id', { ascending: true });
+  if (error) {
+    logger.error({ err: error }, 'listActiveProducts failed');
+    return { rows: [], total: 0 };
+  }
+  const all = ((data ?? []) as DBProduct[]).sort((a, b) => {
+    const aInStock = a.unlimited_stock || a.stock > 0;
+    const bInStock = b.unlimited_stock || b.stock > 0;
+    if (aInStock !== bInStock) return aInStock ? -1 : 1;
+    if (Boolean(a.is_pinned) !== Boolean(b.is_pinned)) {
+      return a.is_pinned ? -1 : 1;
+    }
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    return a.id - b.id;
+  });
+  const safePage = Math.max(0, Math.floor(page));
+  const safePerPage = Math.max(1, Math.floor(perPage));
+  const from = safePage * safePerPage;
+  return {
+    rows: all.slice(from, from + safePerPage),
+    total: all.length,
+  };
 }
 
 export async function deleteProduct(id: number): Promise<void> {
