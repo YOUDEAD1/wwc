@@ -82,6 +82,7 @@ import {
   listAvailableProductItems,
   clearProductItems,
   deleteProductItem,
+  setOrderDeliveredItems,
   syncProductStockToPool,
   setDepositNote,
   changeProductId,
@@ -2047,6 +2048,14 @@ function buyerHandle(u: DBUser | null, fallback_id: number): string {
   return `id ${u.telegram_id}`;
 }
 
+function isPendingPreorderOrder(order: DBOrder): boolean {
+  return (
+    order.status === 'paid' &&
+    typeof order.delivered_items === 'string' &&
+    order.delivered_items.startsWith('Preorder pending')
+  );
+}
+
 /**
  * Render a paginated orders list. `scope` controls the header label
  * and the callback-data prefix used by the pagination + row buttons
@@ -2218,6 +2227,11 @@ adminBot.callbackQuery(/^adm:ord:v:(\d+)$/, async (ctx) => {
   if (buyer) {
     kb.text('👤 Open Buyer', `adm:usr:v:${order.user_id}`).row();
   }
+  if (isPendingPreorderOrder(order)) {
+    kb.text('🛑 Cancel Auto Send', `adm:ord:precancel:${order.id}`)
+      .text('⚡ Auto Send Now', `adm:ord:presend:${order.id}`)
+      .row();
+  }
   if (order.product_id !== null) {
     kb.text('🧾 More buyers of this product', `adm:ord:p:${order.product_id}:0`).row();
   }
@@ -2226,6 +2240,50 @@ adminBot.callbackQuery(/^adm:ord:v:(\d+)$/, async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: kb,
   });
+});
+
+adminBot.callbackQuery(/^adm:ord:precancel:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const order = await getOrder(id);
+  if (!order || !isPendingPreorderOrder(order)) {
+    await ctx.answerCallbackQuery({ text: 'This preorder is not pending anymore.', show_alert: true });
+    return;
+  }
+  await setOrderDeliveredItems(
+    id,
+    'Preorder auto-send cancelled by admin. Manual delivery required.',
+  );
+  await ctx.answerCallbackQuery({ text: 'Auto-send cancelled for this preorder.', show_alert: true });
+  const kb = new InlineKeyboard()
+    .text('🔎 View Order', `adm:ord:v:${id}`)
+    .row()
+    .text('⬅️ Back to orders', 'adm:ord:0');
+  await ctx.editMessageText(
+    `🛑 <b>Preorder Auto-Send Cancelled</b>\n\nOrder <code>#${id}</code> will no longer auto-deliver after restock. Deliver it manually when ready.`,
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery(/^adm:ord:presend:(\d+)$/, async (ctx) => {
+  const id = Number(ctx.match[1]);
+  const order = await getOrder(id);
+  if (!order || !isPendingPreorderOrder(order) || order.product_id === null) {
+    await ctx.answerCallbackQuery({ text: 'This preorder cannot auto-send now.', show_alert: true });
+    return;
+  }
+  const result = await fulfillPendingPreordersForProduct(ctx.api, order.product_id, 50);
+  await ctx.answerCallbackQuery({
+    text: `Checked ${result.checked}. Delivered ${result.fulfilled}. Waiting ${result.waiting}.`,
+    show_alert: true,
+  });
+  const kb = new InlineKeyboard()
+    .text('🔎 View Order', `adm:ord:v:${id}`)
+    .row()
+    .text('⬅️ Back to orders', 'adm:ord:0');
+  await ctx.editMessageText(
+    `⚡ <b>Auto Send Checked</b>\n\nDelivered: <b>${result.fulfilled}</b>\nStill waiting: <b>${result.waiting}</b>`,
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
 });
 
 // ---------- Reload / Clear cache ----------
