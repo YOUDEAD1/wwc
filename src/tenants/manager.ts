@@ -11,9 +11,9 @@ import { listActiveTenants, setTenantStatus, type Tenant } from './store.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// المسار الصحيح لـ tenant-worker.js بعد البناء
-// __dirname = dist/src/tenants/ → نرجع مستويين
-const WORKER_PATH = join(__dirname, '..', 'tenant-worker.js');
+// Detect if running TypeScript directly or compiled JavaScript
+const isTs = __filename.endsWith('.ts');
+const WORKER_PATH = join(__dirname, '..', isTs ? 'tenant-worker.ts' : 'tenant-worker.js');
 
 type RunningBot = {
   tenant: Tenant;
@@ -48,10 +48,15 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
     WEBHOOK_SECRET: '',
   };
 
-  const child = spawn(process.execPath, [WORKER_PATH], {
+  const args = [...process.execArgv, WORKER_PATH];
+  const child = spawn(process.execPath, args, {
     env: tenantEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
+  });
+
+  child.on('error', (err) => {
+    logger.error({ tenantId: tenant.id, err }, 'Failed to start tenant bot child process');
   });
 
   child.stdout?.on('data', (data: Buffer) => {
