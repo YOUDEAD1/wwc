@@ -159,6 +159,7 @@ create table if not exists public.referrals (
 );
 
 -- ---------- VIEW: products + category name + in_stock flag ----------
+drop view if exists public.products_view cascade;
 create or replace view public.products_view as
     select
         p.*,
