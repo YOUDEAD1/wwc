@@ -70,14 +70,6 @@ async function main() {
     startHttpServer();
     await bot.api.deleteWebhook({ drop_pending_updates: true });
 
-    const server = http.createServer((_, res) => {
-      res.writeHead(200);
-      res.end('OK');
-    });
-    server.listen(env.PORT, () => {
-      logger.info({ port: env.PORT }, 'Health server listening');
-    });
-
     logger.info('Starting main bot with long-polling…');
     await bot.start({
       onStart: (info) => logger.info({ username: info.username }, 'Main bot is online'),
