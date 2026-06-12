@@ -540,6 +540,8 @@ superAdminBot.on('message:text', async (ctx, next) => {
               `• Owner: <code>${tenant.owner_username ? `@${esc(tenant.owner_username)}` : tenant.owner_telegram_id}</code>`,
               `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
               `• Status: 🟢 Running`,
+              '',
+              '⚠️ <i>Ensure the owner runs the SQL from <code>supabase/schema.sql</code> in their Supabase SQL Editor if they are using a fresh database.</i>',
             ].join('\n'),
             {
               parse_mode: 'HTML',
@@ -557,6 +559,8 @@ superAdminBot.on('message:text', async (ctx, next) => {
                 '',
                 `• Bot: <code>@${esc(tenant.bot_username ?? '?')}</code>`,
                 `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
+                '',
+                '⚠️ <b>Important:</b> If this is a new Supabase database, you MUST run the database schema SQL in your Supabase SQL Editor to initialize the tables. You can get the schema file <code>supabase/schema.sql</code> from the bot repository.',
                 '',
                 'Your bot is now running. Use /admin inside your bot to manage it.',
               ].join('\n'),
