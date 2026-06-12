@@ -16,6 +16,7 @@ import {
   TENANTS_MIGRATION_SQL,
   type Tenant,
 } from '../tenants/store.js';
+import { initTenantDatabase } from '../tenants/dbInit.js';
 import {
   launchTenantBot,
   suspendTenant,
@@ -527,6 +528,23 @@ superAdminBot.on('message:text', async (ctx, next) => {
             notes,
           });
 
+          // Auto-initialize the tenant's Supabase database
+          await ctx.reply('⏳ Initializing tenant database…');
+          const initResult = await initTenantDatabase(
+            tenant.supabase_url,
+            tenant.supabase_service_key,
+            tenant.owner_telegram_id,
+          );
+
+          const dbStatus = initResult.success
+            ? '✅ Database initialized automatically'
+            : '⚠️ Database auto-init failed — run SQL manually in Supabase SQL Editor';
+
+          // Small delay to let PostgREST schema cache refresh
+          if (initResult.success) {
+            await new Promise((r) => setTimeout(r, 3000));
+          }
+
           try { await launchTenantBot(tenant); } catch (err) {
             logger.error({ err }, 'failed to launch tenant bot after creation');
           }
@@ -540,8 +558,13 @@ superAdminBot.on('message:text', async (ctx, next) => {
               `• Owner: <code>${tenant.owner_username ? `@${esc(tenant.owner_username)}` : tenant.owner_telegram_id}</code>`,
               `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
               `• Status: 🟢 Running`,
-              '',
-              '⚠️ <i>Ensure the owner runs the SQL from <code>supabase/schema.sql</code> in their Supabase SQL Editor if they are using a fresh database.</i>',
+              `• DB: ${dbStatus}`,
+              ...(initResult.success ? [] : [
+                '',
+                `❌ <i>Error: ${esc((initResult.error ?? 'unknown').slice(0, 200))}</i>`,
+                '',
+                '💡 <b>Run the full SQL from</b> <code>supabase/full_schema_for_tenant.sql</code> <b>in the tenant\'s Supabase SQL Editor.</b>',
+              ]),
             ].join('\n'),
             {
               parse_mode: 'HTML',
@@ -552,18 +575,29 @@ superAdminBot.on('message:text', async (ctx, next) => {
           );
 
           try {
+            const ownerMsg = initResult.success
+              ? [
+                  '🎉 <b>Your bot is ready!</b>',
+                  '',
+                  `• Bot: <code>@${esc(tenant.bot_username ?? '?')}</code>`,
+                  `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
+                  '',
+                  '✅ Database has been set up automatically.',
+                  'Your bot is now running. Use /admin inside your bot to manage it.',
+                ]
+              : [
+                  '🎉 <b>Your bot has been created!</b>',
+                  '',
+                  `• Bot: <code>@${esc(tenant.bot_username ?? '?')}</code>`,
+                  `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
+                  '',
+                  '⚠️ <b>Important:</b> Your database needs to be initialized manually. Please contact the admin for the SQL setup file.',
+                  '',
+                  'Once the database is set up, your bot will start working automatically.',
+                ];
             await ctx.api.sendMessage(
               tenant.owner_telegram_id,
-              [
-                '🎉 <b>Your bot is ready!</b>',
-                '',
-                `• Bot: <code>@${esc(tenant.bot_username ?? '?')}</code>`,
-                `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
-                '',
-                '⚠️ <b>Important:</b> If this is a new Supabase database, you MUST run the database schema SQL in your Supabase SQL Editor to initialize the tables. You can get the schema file <code>supabase/schema.sql</code> from the bot repository.',
-                '',
-                'Your bot is now running. Use /admin inside your bot to manage it.',
-              ].join('\n'),
+              ownerMsg.join('\n'),
               { parse_mode: 'HTML' },
             );
           } catch { /* ignore */ }
