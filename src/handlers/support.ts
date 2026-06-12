@@ -3,7 +3,7 @@ import { env } from '../env.js';
 import { inlineBtn, inlineUrl } from '../keyboards/helpers.js';
 import type { AppCtx } from '../middleware/user.js';
 import { renderMdHtml } from '../services/premium.js';
-import { getAdminContactUrlWithPrefill } from '../services/settings.js';
+import { getAdminContactUrlWithPrefill, getStoreName } from '../services/settings.js';
 import { logger } from '../logger.js';
 import type { Lang } from '../../config/index.js';
 import { deleteSetting, findUserById, readSetting, setSetting } from '../db/queries.js';
@@ -256,7 +256,7 @@ export function registerSupport(bot: Composer<AppCtx>): void {
     const text = `${ctx.t('support.title')}\n\n${ctx.t('support.body')}`;
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
-      reply_markup: supportKeyboard(getAdminContactUrlWithPrefill(ctx.t('support.contact_prefill')), ctx.lang),
+      reply_markup: supportKeyboard(getAdminContactUrlWithPrefill(ctx.t('support.contact_prefill', { storeName: getStoreName() })), ctx.lang),
     });
   });
 

@@ -394,7 +394,13 @@ export function getPriceListPromoFooter(): string | null {
 
 /** Get the store name — editable via /admin → Store Settings. */
 export function getStoreName(): string {
-  return readString('store.name') ?? 'SafwanTiger Shop';
+  return readString('text.store.name') ?? readString('store.name') ?? '';
+}
+
+/** Clear a text override key from both cache and DB. */
+export async function clearTextOverride(key: string): Promise<void> {
+  await deleteSetting(`text.${key}`);
+  cache.delete(`text.${key}`);
 }
 
 /** Get the log chat id override — editable via /admin → Bot Settings. */

@@ -11,6 +11,7 @@ import { ProxyAgent, fetch, type Response } from 'undici';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 import type { DBDeposit } from '../types.js';
+import { getTextOverride } from './settings.js';
 
 const DEFAULT_BASE_URLS = ['https://api.bybit.com', 'https://api.bytick.com'] as const;
 const ENDPOINT = '/v5/asset/deposit/query-internal-record';
@@ -60,8 +61,8 @@ export type BybitVerifyResult =
   | { ok: false; reason: string };
 
 function readCreds(): { apiKey: string; apiSecret: string } | null {
-  const apiKey = env.BYBIT_API_KEY;
-  const apiSecret = env.BYBIT_API_SECRET;
+  const apiKey = getTextOverride('bybit.api_key') ?? env.BYBIT_API_KEY;
+  const apiSecret = getTextOverride('bybit.api_secret') ?? env.BYBIT_API_SECRET;
   if (!apiKey || !apiSecret) return null;
   return { apiKey, apiSecret };
 }

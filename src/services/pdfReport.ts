@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
 import type { DBOrder, DBDeposit, DBWalletLedger, DBProduct, DBPromo } from '../types.js';
 import { logger } from '../logger.js';
+import { getStoreName } from './settings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -284,10 +285,10 @@ function renderPdf(
         size: 'LETTER',
         margins: { top: 96, bottom: 0, left: MARGIN_X, right: MARGIN_X },
         info: {
-          Title: `SafwanTiger Shop — ${title}`,
-          Author: 'SafwanTiger Shop',
+          Title: `${getStoreName()} — ${title}`,
+          Author: getStoreName(),
           Subject: `${title} report`,
-          Creator: 'SafwanTiger Shop Bot',
+          Creator: `${getStoreName()} Bot`,
         },
       });
       const chunks: Buffer[] = [];
@@ -383,7 +384,7 @@ function paintPageChrome(
     .fillColor(COLOR.gold)
     .font('Helvetica-Bold')
     .fontSize(9)
-    .text('SAFWANTIGER  SHOP', textX, 38, {
+    .text(getStoreName().toUpperCase(), textX, 38, {
       characterSpacing: 1.6,
       lineBreak: false,
     });
@@ -405,7 +406,7 @@ function paintPageChrome(
 
   // User identity (right side)
   const idLines = [
-    user.first_name ? user.first_name : 'SafwanTiger Shop user',
+    user.first_name ? user.first_name : `${getStoreName()} user`,
     user.username ? `@${user.username}` : null,
     `ID: ${user.telegram_id}`,
     user.email ? user.email : null,
@@ -427,7 +428,7 @@ function paintPageChrome(
     .font('Helvetica')
     .fontSize(8)
     .text(
-      'SafwanTiger Shop · @safwantigershopbot · shopbot@safwantiger.com',
+      `${getStoreName()}${process.env.BOT_USERNAME ? ` · @${process.env.BOT_USERNAME}` : ''}`,
       MARGIN_X,
       PAGE_H - 36,
       {
@@ -737,11 +738,11 @@ export async function buildInvoicePdf(args: {
     // an admin can re-enable this section later without a refactor.
     drawSectionHeader(doc, 'Notes');
     drawInfoBlock(doc, [
-      'Thanks for purchasing from SafwanTiger Shop. This invoice is your',
+      `Thanks for purchasing from ${getStoreName()}. This invoice is your`,
       'permanent receipt — keep it for your records.',
       '',
       'Need help with this order? Reply to this email or message',
-      '@safwantigershopbot on Telegram with your Order ID above.',
+      `@${process.env.BOT_USERNAME ?? 'bot'} on Telegram with your Order ID above.`,
     ]);
   });
 }
@@ -969,7 +970,7 @@ export async function buildPriceListPdf(args: {
 }): Promise<Buffer> {
   const reportUser: ReportUser = {
     telegram_id: 0,
-    first_name: 'SafwanTiger Shop',
+    first_name: getStoreName(),
     username: null,
     email: null,
   };

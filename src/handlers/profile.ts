@@ -86,6 +86,7 @@ import {
   getEmailPdfUrl,
   getAdminContactUrlWithPrefill,
   getBotTutorial,
+  getStoreName,
 } from '../services/settings.js';
 import * as adminLog from '../services/adminLog.js';
 import { InputFile } from 'grammy';
@@ -1252,12 +1253,13 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     const { rows } = await listAllProducts(0, 1000);
     if (rows.length === 0) return null;
     const promos = await listActivePromos();
-    const promoFooter = ctx.t('profile.pricelist.promo_footer');
+    const storeName = getStoreName();
+    const promoFooter = ctx.t('profile.pricelist.promo_footer', { storeName });
     return buildPriceListPdf({
       products: rows,
       promos,
       labels: {
-        reportTitle: ctx.t('profile.pricelist.pdf.title'),
+        reportTitle: ctx.t('profile.pricelist.pdf.title', { storeName }),
         sectionTitle: ctx.t('profile.pricelist.pdf.section'),
         status_in_stock: ctx.t('profile.pricelist.csv.status.in_stock'),
         status_out_of_stock: ctx.t('profile.pricelist.csv.status.out_of_stock'),
@@ -1288,7 +1290,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       });
       return;
     }
-    const filename = `SafwanTiger-Shop-PriceList-${new Date()
+    const storeName = getStoreName() || 'Shop';
+    const filename = `${storeName.replace(/\s+/g, '-')}-PriceList-${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
     await ctx.replyWithDocument(new InputFile(csv, filename));

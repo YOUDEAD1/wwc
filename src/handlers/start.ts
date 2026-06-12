@@ -17,6 +17,7 @@ import { inlineBtn } from '../keyboards/helpers.js';
 import { enforceSubscription } from '../services/forceSub.js';
 import { showProfile, showReferScreen } from './profile.js';
 import { showTopupMenu } from './topup.js';
+import { getStoreName } from '../services/settings.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -48,7 +49,7 @@ async function clearOldReplyKeyboard(ctx: AppCtx): Promise<void> {
  * styled glyph and everyone else sees the unicode fallback.
  */
 function buildWelcomeHtml(ctx: AppCtx): string {
-  const title = ctx.t('welcome.title');
+  const title = ctx.t('welcome.title', { storeName: getStoreName() });
   const balance = ctx.t('welcome.balance', { balance: Number(ctx.user.balance).toFixed(2) });
   const body = `{welcome_banner} *${title}*\n\n{welcome_balance} ${balance}`;
   return renderMdHtml(body, {

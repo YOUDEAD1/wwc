@@ -15,7 +15,15 @@ export function t(
   key: string,
   vars: Record<string, string | number> = {},
 ): string {
-  const override = getTextOverride(key);
+  let override = getTextOverride(key);
+  if (
+    override === 'Welcome to SafwanTiger Shop' ||
+    override === 'Welcome to SafwanTiger Shop!' ||
+    override === '🐯 *SafwanTiger Shop* — Main Menu' ||
+    override === '🐯 *متجر SafwanTiger* — القائمة الرئيسية'
+  ) {
+    override = undefined;
+  }
   const tpl = override ?? LOCALES[lang]?.[key] ?? LOCALES.en[key] ?? key;
   return tpl.replace(/\{(\w+)\}/g, (_, k: string) =>
     vars[k] !== undefined ? String(vars[k]) : `{${k}}`,

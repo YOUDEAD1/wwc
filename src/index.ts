@@ -14,6 +14,12 @@ import { startSupplierStockSyncLoop } from './services/supplierAutoSync.js';
 async function main() {
   // البوت الرئيسي
   const bot = await buildBot({ isTenant: false });
+  try {
+    const { refreshSettings } = await import('./services/settings.js');
+    await refreshSettings();
+  } catch (err) {
+    logger.error({ err }, 'Failed to load initial settings cache');
+  }
   logMailerStatus();
   startSupplierStockSyncLoop(bot.api);
 

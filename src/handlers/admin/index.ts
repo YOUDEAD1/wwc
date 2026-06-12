@@ -336,6 +336,8 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
   const orderLogId = getOrderLogChatIdOverride();
   const binanceKey = getTextOverride('binance.api_key');
   const binanceSecret = getTextOverride('binance.api_secret');
+  const bybitKey = getTextOverride('bybit.api_key');
+  const bybitSecret = getTextOverride('bybit.api_secret');
 
   // جلب username من Telegram إذا كان فيه ID محفوظ
   let logDisplay = '_(not set)_';
@@ -363,6 +365,8 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
     .row()
     .text('🟡 Binance Pay Credentials', 'adm:bot:binance')
     .row()
+    .text('🟡 Bybit API Credentials', 'adm:bot:bybit')
+    .row()
     .text('📘 Edit Bot Tutorial', 'adm:bot:tut')
     .row()
     .text('📢 Forced Subscription', 'adm:fsub')
@@ -377,6 +381,8 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
       `• Order Log Chat: ${orderLogDisplay}`,
       `• Binance API Key: ${binanceKey ? '`✅ Set`' : '`Not set`'}`,
       `• Binance API Secret: ${binanceSecret ? '`✅ Set`' : '`Not set`'}`,
+      `• Bybit API Key: ${bybitKey ? '`✅ Set`' : '`Not set`'}`,
+      `• Bybit API Secret: ${bybitSecret ? '`✅ Set`' : '`Not set`'}`,
     ].join('\n'),
     { parse_mode: 'Markdown', reply_markup: kb },
   );
@@ -530,6 +536,48 @@ adminBot.callbackQuery('adm:bot:binance_secret', async (ctx) => {
   );
 });
 
+adminBot.callbackQuery('adm:bot:bybit', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const { getTextOverride } = await import('../../services/settings.js');
+  const key = getTextOverride('bybit.api_key');
+  const secret = getTextOverride('bybit.api_secret');
+  const kb = new InlineKeyboard()
+    .text('🟡 Set API Key', 'adm:bot:bybit_key')
+    .row()
+    .text('🔐 Set API Secret', 'adm:bot:bybit_secret')
+    .row();
+  backRow(kb);
+  await ctx.editMessageText(
+    [
+      '🟡 *Bybit API Credentials*',
+      '',
+      `• API Key: ${key ? `\`${key.slice(0, 6)}••••${key.slice(-4)}\`` : '_Not set_'}`,
+      `• API Secret: ${secret ? '`✅ Set`' : '_Not set_'}`,
+      '',
+      'Get your credentials from:\nBybit → Profile → API Management',
+    ].join('\n'),
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:bybit_key', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'bybit.api_key' } };
+  await ctx.editMessageText(
+    '🟡 *Bybit API Key*\n\nSend your Bybit API Key.\n\nGet it from: Bybit → Profile → API Management\n\nSend `-` to clear, or `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
+adminBot.callbackQuery('adm:bot:bybit_secret', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'bybit.api_secret' } };
+  await ctx.editMessageText(
+    '🔐 *Bybit API Secret*\n\nSend your Bybit API Secret.\n\nSend `-` to clear, or `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
+  );
+});
+
 adminBot.callbackQuery('adm:bot:contact', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'admin.contact_url' } };
@@ -546,7 +594,7 @@ adminBot.callbackQuery('adm:bot:contact', async (ctx) => {
 adminBot.callbackQuery('adm:store', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = undefined;
-  const currentName = (await import('../../services/settings.js')).getTextOverride('store.name') ?? 'Homlander Store';
+  const currentName = (await import('../../services/settings.js')).getStoreName() || '(لم يتم التعيين)';
   const kb = new InlineKeyboard()
     .text('✏️ Edit Store Name', 'adm:store:name')
     .row();
@@ -8677,9 +8725,10 @@ adminBot.on('message:text', async (ctx, next) => {
           // تحديث اسم المتجر في كل المفاتيح ذات الصلة
           const name = text.trim();
           await setText('store.name', name, ctx.from!.id);
-          await setText('welcome', `Welcome to ${name}`, ctx.from!.id);
-          await setText('welcome.title', `Welcome to ${name}!`, ctx.from!.id);
-          await setText('menu.title', `🐯 *${name}* — Main Menu`, ctx.from!.id);
+          const { clearTextOverride } = await import('../../services/settings.js');
+          await clearTextOverride('welcome');
+          await clearTextOverride('welcome.title');
+          await clearTextOverride('menu.title');
           ctx.session.adminFlow = undefined;
           await ctx.reply(
             `✅ Store name updated to *${name}*.\n\nAll welcome messages and menus updated.`,
@@ -8748,8 +8797,18 @@ adminBot.on('message:text', async (ctx, next) => {
             ].filter(Boolean).join('\n'),
             { parse_mode: 'Markdown', reply_markup: rootMenu() },
           );
-        } else if (key === 'binance.api_key' || key === 'binance.api_secret') {
-          const label = key === 'binance.api_key' ? 'Binance API Key' : 'Binance API Secret';
+        } else if (
+          key === 'binance.api_key' ||
+          key === 'binance.api_secret' ||
+          key === 'bybit.api_key' ||
+          key === 'bybit.api_secret'
+        ) {
+          let label = '';
+          if (key === 'binance.api_key') label = 'Binance API Key';
+          else if (key === 'binance.api_secret') label = 'Binance API Secret';
+          else if (key === 'bybit.api_key') label = 'Bybit API Key';
+          else if (key === 'bybit.api_secret') label = 'Bybit API Secret';
+
           if (text === '-') {
             await setText(key, '', ctx.from!.id);
             ctx.session.adminFlow = undefined;
@@ -8758,7 +8817,9 @@ adminBot.on('message:text', async (ctx, next) => {
             await setText(key, text, ctx.from!.id);
             ctx.session.adminFlow = undefined;
             // نخفي القيمة في الرد
-            const preview = text.slice(0, 6) + '••••••' + text.slice(-4);
+            const preview = text.length > 10
+              ? text.slice(0, 6) + '••••••' + text.slice(-4)
+              : '••••••';
             await ctx.reply(
               `✅ *${label} updated*\n\`${preview}\``,
               { parse_mode: 'Markdown', reply_markup: rootMenu() },
