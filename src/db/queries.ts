@@ -127,10 +127,16 @@ export async function getOrCreateUser(args: {
   }
   if (args.referred_by && args.referred_by !== args.telegram_id) {
     // لا نسجل الإحالة الآن — نحفظها كـ pending حتى يتحقق الاشتراك
-    await supabase
+    const { error: pendErr } = await supabase
       .from('users')
       .update({ pending_referral_by: args.referred_by })
       .eq('telegram_id', args.telegram_id);
+    if (pendErr) {
+      // Column may not exist yet (migration 0040) — fall back to
+      // recording the referral immediately instead of deferring.
+      logger.warn({ err: pendErr }, 'pending_referral_by column missing, recording referral now');
+      await ensureReferralRecord(args.referred_by, args.telegram_id);
+    }
   }
   const created = data as DBUser & { __just_created?: boolean };
   created.__just_created = true;
@@ -142,13 +148,17 @@ export async function getOrCreateUser(args: {
  * تُستدعى بعد ما يثبت المستخدم اشتراكه في القناة
  */
 export async function confirmPendingReferral(telegram_id: number): Promise<void> {
-  const { data: user } = await supabase
+  const { data: user, error: selErr } = await supabase
     .from('users')
     .select('pending_referral_by, sub_verified')
     .eq('telegram_id', telegram_id)
     .single();
 
-  if (!user || user.sub_verified || !user.pending_referral_by) return;
+  // If the columns don't exist yet (migration 0040 not applied),
+  // silently bail — the referral was already recorded immediately
+  // in the getOrCreateUser fallback path.
+  if (selErr || !user) return;
+  if (user.sub_verified || !user.pending_referral_by) return;
 
   const referrerId = user.pending_referral_by;
 
@@ -167,10 +177,14 @@ export async function confirmPendingReferral(telegram_id: number): Promise<void>
  * المحيل لا يكسب شيئاً
  */
 export async function cancelPendingReferral(telegram_id: number): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('users')
     .update({ pending_referral_by: null, sub_verified: true })
     .eq('telegram_id', telegram_id);
+  if (error) {
+    // Column may not exist yet — non-critical, just log.
+    logger.warn({ err: error, telegram_id }, 'cancelPendingReferral failed (migration 0040?)');
+  }
 }
 
 

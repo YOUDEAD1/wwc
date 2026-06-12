@@ -26,8 +26,6 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
   inlineBtn(kb, lang, 'currency', 'profile:currency');
   inlineBtn(kb, lang, 'send_price_list', 'profile:pricelist');
   kb.row();
-  inlineBtn(kb, lang, 'reseller_api', 'api:open');
-  kb.row();
   inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
 }

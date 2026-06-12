@@ -542,12 +542,22 @@ export async function showReferScreen(
   const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
   const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
   const DAY = 24 * 60 * 60 * 1000;
-  const [refBalance, ref24h, ref7d, earnings] = await Promise.all([
-    getReferralBalance(ctx.user.telegram_id),
-    countReferralsSince(ctx.user.telegram_id, DAY),
-    countReferralsSince(ctx.user.telegram_id, 7 * DAY),
-    getReferralEarnings(ctx.user.telegram_id),
-  ]);
+  const defaultBalance = { total: 0, spent: 0, available: 0 };
+  const defaultEarnings = { total: 0, available: 0, transferred: 0, withdrawn: 0 };
+  let refBalance = defaultBalance;
+  let ref24h = 0;
+  let ref7d = 0;
+  let earnings = defaultEarnings;
+  try {
+    [refBalance, ref24h, ref7d, earnings] = await Promise.all([
+      getReferralBalance(ctx.user.telegram_id),
+      countReferralsSince(ctx.user.telegram_id, DAY),
+      countReferralsSince(ctx.user.telegram_id, 7 * DAY),
+      getReferralEarnings(ctx.user.telegram_id),
+    ]);
+  } catch {
+    // Tables may be missing — show zeroes instead of crashing.
+  }
   const left = Math.max(0, 10 - refBalance.available);
   const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
   const body = ctx.t('profile.refer.body', {
