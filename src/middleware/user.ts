@@ -51,7 +51,7 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   ctx.t = (key, vars) => translate(ctx.lang, key, vars);
 
   // Fire-and-forget the 12h email nag.
-  void maybeSendEmailNag(ctx);
+  // void maybeSendEmailNag(ctx);
 
   // If this is a newly created user with a referrer, notify the referrer
   // directly and mirror it to the admin channel when configured.

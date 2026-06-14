@@ -2,7 +2,7 @@
  * Super Admin Panel — لوحة تحكم المالك الرئيسي
  * تظهر فقط للـ ADMIN_USER_ID
  */
-import { Composer, InlineKeyboard } from 'grammy';
+import { Composer, InlineKeyboard, InputFile } from 'grammy';
 import type { AppCtx } from '../middleware/user.js';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
@@ -540,8 +540,6 @@ superAdminBot.on('message:text', async (ctx, next) => {
               `• Owner: <code>${tenant.owner_username ? `@${esc(tenant.owner_username)}` : tenant.owner_telegram_id}</code>`,
               `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
               `• Status: 🟢 Running`,
-              '',
-              '⚠️ <i>Ensure the owner runs the SQL from <code>supabase/schema.sql</code> in their Supabase SQL Editor if they are using a fresh database.</i>',
             ].join('\n'),
             {
               parse_mode: 'HTML',
@@ -551,22 +549,69 @@ superAdminBot.on('message:text', async (ctx, next) => {
             },
           );
 
+          // Send SQL file and instructions to the super admin
+          try {
+            await ctx.replyWithDocument(new InputFile('supabase/schema.sql'), {
+              caption: '📄 <b>ملف تهيئة قاعدة بيانات البوت الجديد (schema.sql)</b>\nيرجى إرسال هذا الملف والملاحظة التالية للعميل.',
+              parse_mode: 'HTML',
+            });
+
+            const instructions = [
+              '📝 <b>خطوات تهيئة قاعدة البيانات للعميل (قم بتوجيهها للعميل):</b>',
+              '',
+              '1️⃣ افتح لوحة تحكم <b>Supabase</b> واذهب إلى مشروعك الجديد.',
+              '2️⃣ من القائمة الجانبية اليسرى، اضغط على <b>SQL Editor</b>.',
+              '3️⃣ اضغط على زر <b>New Query</b> (استعلام جديد).',
+              '4️⃣ قم بسحب وإفلات ملف <code>schema.sql</code> المرفق أعلاه داخل الصفحة، أو افتحه وانسخ محتواه والصقه بالكامل.',
+              '5️⃣ اضغط على زر <b>Run</b> في الأسفل لتشغيل الاستعلام.',
+              '6️⃣ بعد انتهاء التشغيل بنجاح، اذهب إلى <b>Settings</b> ⚙️ -> <b>API</b> واضغط على تحديث كاش المخطط (<b>Reload Schema Cache</b>).',
+              '',
+              '💡 <i>بمجرد إتمام هذه الخطوات، سيعمل البوت تلقائياً وبشكل مستقل!</i>'
+            ].join('\n');
+            await ctx.reply(instructions, { parse_mode: 'HTML' });
+          } catch (err) {
+            logger.error({ err }, 'failed to send SQL file/instructions to super admin');
+          }
+
+          // Send SQL file and instructions directly to the owner/client
           try {
             await ctx.api.sendMessage(
               tenant.owner_telegram_id,
               [
-                '🎉 <b>Your bot is ready!</b>',
+                '🎉 <b>تم تجهيز البوت الخاص بك بنجاح!</b>',
                 '',
-                `• Bot: <code>@${esc(tenant.bot_username ?? '?')}</code>`,
-                `• Subscription: <b>${flow.data.subscription_days} days</b> (until ${end})`,
+                `• البوت: <code>@${esc(tenant.bot_username ?? '?')}</code>`,
+                `• مدة الاشتراك: <b>${flow.data.subscription_days} يوم</b> (حتى ${end})`,
                 '',
-                '⚠️ <b>Important:</b> If this is a new Supabase database, you MUST run the database schema SQL in your Supabase SQL Editor to initialize the tables. You can get the schema file <code>supabase/schema.sql</code> from the bot repository.',
-                '',
-                'Your bot is now running. Use /admin inside your bot to manage it.',
+                '⚠️ <b>هام جداً:</b> يجب تهيئة قاعدة بيانات Supabase الخاصة بك أولاً لكي يبدأ البوت بالعمل. يرجى تنزيل ملف الـ SQL المرفق أدناه وتشغيله في مشروعك.',
               ].join('\n'),
               { parse_mode: 'HTML' },
             );
-          } catch { /* ignore */ }
+
+            await ctx.api.sendDocument(
+              tenant.owner_telegram_id,
+              new InputFile('supabase/schema.sql'),
+              {
+                caption: '📄 <b>ملف تهيئة قاعدة البيانات (schema.sql)</b>',
+                parse_mode: 'HTML',
+              }
+            );
+
+            const ownerInstructions = [
+              '📝 <b>خطوات تشغيل ملف الـ SQL:</b>',
+              '',
+              '1️⃣ افتح مشروعك في <b>Supabase</b>.',
+              '2️⃣ اذهب إلى <b>SQL Editor</b> واضغط <b>New Query</b>.',
+              '3️⃣ انسخ محتوى ملف <code>schema.sql</code> المرفق بالكامل والصقه في المحرر.',
+              '4️⃣ اضغط على زر <b>Run</b> لتشغيل السكربت.',
+              '5️⃣ اذهب إلى <b>Settings</b> ⚙️ -> <b>API</b> واضغط <b>Reload Schema Cache</b>.',
+              '',
+              '💡 <i>بمجرد إتمام الخطوات سيبدأ بوتك بالعمل تلقائياً!</i>'
+            ].join('\n');
+            await ctx.api.sendMessage(tenant.owner_telegram_id, ownerInstructions, { parse_mode: 'HTML' });
+          } catch (err) {
+            logger.warn({ err, owner_id: tenant.owner_telegram_id }, 'failed to send welcome/SQL to tenant owner');
+          }
           break;
         }
       }
