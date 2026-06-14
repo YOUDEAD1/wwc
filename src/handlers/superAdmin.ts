@@ -72,7 +72,8 @@ async function showSuperRoot(ctx: AppCtx): Promise<void> {
     .text('📊 Stats Overview', 'sa:stats')
     .text('🔄 Running Bots', 'sa:running')
     .row()
-    .text('🗄 Run Migration', 'sa:migrate');
+    .text('🗄 Run Migration', 'sa:migrate')
+    .text('📥 SQL Schema', 'sa:get_sql');
 
   const text = [
     '🔱 <b>Super Admin Panel</b>',
@@ -375,6 +376,37 @@ superAdminBot.callbackQuery('sa:migrate', async (ctx) => {
     `<b>Run this SQL in your Supabase SQL Editor:</b>\n\n<pre>${esc(TENANTS_MIGRATION_SQL)}</pre>`,
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('⬅️ Back', 'sa:root') },
   );
+});
+
+// =====================================================================
+// Get SQL Schema File
+// =====================================================================
+superAdminBot.callbackQuery('sa:get_sql', async (ctx) => {
+  if (!isSuperAdmin(ctx)) { await ctx.answerCallbackQuery(); return; }
+  await ctx.answerCallbackQuery({ text: 'Sending SQL schema...' });
+  try {
+    await ctx.replyWithDocument(new InputFile('supabase/schema.sql'), {
+      caption: '📄 <b>ملف تهيئة قاعدة بيانات البوت الجديد (schema.sql)</b>\nيرجى إرسال هذا الملف والملاحظة التالية للعميل.',
+      parse_mode: 'HTML',
+    });
+
+    const instructions = [
+      '📝 <b>خطوات تهيئة قاعدة البيانات للعميل (قم بتوجيهها للعميل):</b>',
+      '',
+      '1️⃣ افتح لوحة تحكم <b>Supabase</b> واذهب إلى مشروعك الجديد.',
+      '2️⃣ من القائمة الجانبية اليسرى، اضغط على <b>SQL Editor</b>.',
+      '3️⃣ اضغط على زر <b>New Query</b> (استعلام جديد).',
+      '4️⃣ قم بسحب وإفلات ملف <code>schema.sql</code> المرفق أعلاه داخل الصفحة، أو افتحه وانسخ محتواه والصقه بالكامل.',
+      '5️⃣ اضغط على زر <b>Run</b> في الأسفل لتشغيل الاستعلام.',
+      '6️⃣ بعد انتهاء التشغيل بنجاح، اذهب إلى <b>Settings</b> ⚙️ -> <b>API</b> واضغط على تحديث كاش المخطط (<b>Reload Schema Cache</b>).',
+      '',
+      '💡 <i>بمجرد إتمام هذه الخطوات، سيعمل البوت تلقائياً وبشكل مستقل!</i>'
+    ].join('\n');
+    await ctx.reply(instructions, { parse_mode: 'HTML' });
+  } catch (err) {
+    logger.error({ err }, 'failed to send SQL file/instructions in sa:get_sql');
+    await ctx.reply(`❌ Failed to send SQL file: ${(err as Error).message}`);
+  }
 });
 
 // =====================================================================
