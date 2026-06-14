@@ -1518,6 +1518,8 @@ create table if not exists public.reseller_api_keys (
     revoked_at timestamptz
 );
 
+alter table public.reseller_api_keys add column if not exists active boolean not null default true;
+
 create index if not exists reseller_api_keys_user_active_idx
     on public.reseller_api_keys(user_id, active);
 
