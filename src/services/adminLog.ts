@@ -30,6 +30,7 @@ import { InlineKeyboard } from 'grammy';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 import { getLogChatIdOverride, getOrderLogChatIdOverride } from './settings.js';
+import { getContextAdminId } from '../db/db_context.js';
 import * as publicFeed from './publicFeed.js';
 
 /**
@@ -168,7 +169,7 @@ function chatChain(channel: LogChannel): ChatId[] {
   } else {
     push(getLogChatIdOverride() ?? env.LOG_CHAT_ID);
   }
-  push(env.ADMIN_USER_ID);
+  push(getContextAdminId());
   return chain;
 }
 

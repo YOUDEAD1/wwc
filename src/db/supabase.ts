@@ -1,8 +1,16 @@
 import { type SupabaseClient } from '@supabase/supabase-js';
-import { getDefaultClient } from './context.js';
+import { getDb } from './db_context.js';
 
-// للكود الذي يستورد supabase مباشرة — يستخدم الـ default client
-// الـ tenant client يُمرر عبر ctx.db في كل request
-export const supabase: SupabaseClient = getDefaultClient();
+// Proxy dynamically routes all queries to the tenant's Supabase client if run inside a tenant context.
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(target, prop, receiver) {
+    const db = getDb();
+    const value = Reflect.get(db, prop, receiver);
+    if (typeof value === 'function') {
+      return value.bind(db);
+    }
+    return value;
+  },
+});
 
-export { getDefaultClient as getDb };
+export { getDb };
