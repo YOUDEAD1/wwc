@@ -159,7 +159,7 @@ function productPageText(
   // trio.
   const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
   const productEmoji = p.emoji_id
-    ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}`
+    ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}}`
     : (p.emoji === '🛒' ? '' : (p.emoji ?? ''));
   const lines: string[] = [
     ctx.t('shop.product.line.name', { name: p.name, emoji: productEmoji }),
@@ -1374,7 +1374,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const { discount, total } = priceBreakdown(p.price, qty, promo);
     const referral = await getReferralPaymentState(ctx, p, qty);
     const emojiStr = p.emoji_id
-      ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}`
+      ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}}`
       : (p.emoji === '🛒' ? '' : (p.emoji ?? ''));
     const text = ctx.t('shop.pay.title', {
       name: p.name,
@@ -1429,7 +1429,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
           })
         : '';
     const emojiStr = p.emoji_id
-      ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}`
+      ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}}`
       : (p.emoji ?? '');
     const text = ctx.t('shop.pay.confirm', {
       name: p.name,
