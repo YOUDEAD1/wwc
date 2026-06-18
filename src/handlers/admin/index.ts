@@ -7610,6 +7610,71 @@ adminBot.on('message:text', async (ctx, next) => {
   }
 
   try {
+    if (flow.type === 'api_connect') {
+      ctx.session.adminFlow = undefined;
+      const { decodeConnectionCode } = await import('../../services/apiConnect.js');
+      try {
+        const { api_key, api_url } = decodeConnectionCode(text);
+        await ctx.reply('⏳ جاري اختبار الاتصال بالـ API...');
+        const result = await apiTestConnection(api_key, api_url);
+        if (result.ok) {
+          await apiSaveConnection(api_key, api_url);
+          try {
+            const { syncProducts } = await import('../../services/apiShop.js');
+            await syncProducts();
+          } catch (syncErr) {
+            logger.error({ err: syncErr }, 'api_connect auto-sync failed');
+          }
+          await ctx.reply(
+            `✅ <b>Connected Successfully!</b>\n\n` +
+            `📦 <b>${result.productCount}</b> products found.\n\n` +
+            `اضغط 🔌 API Manager للتحكم.`,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        } else {
+          await ctx.reply(
+            `❌ <b>Connection Failed</b>\n\n${result.error}`,
+            { parse_mode: 'HTML', reply_markup: rootMenu() },
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await ctx.reply(`❌ <b>Invalid Code</b>\n\n${msg}`, { parse_mode: 'HTML', reply_markup: rootMenu() });
+      }
+      return;
+    }
+
+    if (flow.type === 'api_set_field') {
+      const { productId, field } = flow.data as { productId: string; field: string };
+      ctx.session.adminFlow = undefined;
+      
+      if (productId === '__button__' && field === 'label') {
+        const cfg = await apiGetButtonConfig();
+        await apiSetButtonConfig(text, cfg.position, cfg.enabled);
+        const kb = new InlineKeyboard().text('⬅️ Back', 'adm:api:btn');
+        await ctx.reply(`✅ تم تغيير اسم الزر إلى <b>${escapeHtml(text)}</b>`, { parse_mode: 'HTML', reply_markup: kb });
+        return;
+      }
+      
+      let val: string | number = text;
+      if (field === 'sell_price') {
+        const num = Number(text);
+        if (!Number.isFinite(num) || num < 0) {
+          await ctx.reply('❌ سعر غير صالح. أرسل رقماً موجباً.');
+          return;
+        }
+        val = num;
+      } else if (field === 'custom_desc' && text === '-') {
+        val = '';
+      }
+      
+      await apiSetProductField(productId, field as any, val);
+      
+      const kb = new InlineKeyboard().text('⬅️ Back', `adm:api:edit:${productId}`);
+      await ctx.reply('✅ تم حفظ التعديل بنجاح!', { reply_markup: kb });
+      return;
+    }
+
     if (flow.type === 'preorder_manual_send') {
       const order = await getOrder(flow.data.order_id);
       if (!order || !isPendingPreorderOrder(order) || order.product_id === null) {
