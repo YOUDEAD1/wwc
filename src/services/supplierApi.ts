@@ -12,6 +12,7 @@ import {
   updateSupplierProductLink,
   upsertSupplierProductLink,
 } from '../db/queries.js';
+import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
 import type {
   DBSupplierApiSource,
@@ -470,6 +471,35 @@ export async function importSupplierProduct(args: {
     }
   }
 
+  // Smart Matching: See if an orphaned product with the exact same name already exists in this database context
+  const { data: matchedProducts } = await supabase
+    .from('products')
+    .select('*')
+    .eq('name', args.product.name);
+  const matchedLocal = matchedProducts?.[0];
+
+  if (matchedLocal) {
+    const link = await upsertSupplierProductLink({
+      local_product_id: matchedLocal.id,
+      supplier_id: args.source.id,
+      supplier_product_id: args.product.id,
+      supplier_product_name: args.product.name,
+      supplier_cost: args.product.price,
+      supplier_stock: args.product.stock,
+      auto_order: true,
+      auto_sync_stock: true,
+      fallback_manual: true,
+    });
+    const stock = args.product.stock ?? 0;
+    const unlimited = args.product.stock === null;
+    await updateProduct(matchedLocal.id, {
+      stock,
+      unlimited_stock: unlimited,
+    });
+    logger.info({ localProductId: matchedLocal.id, supplierProductId: args.product.id }, 'Smart-matched supplier product to existing local product by name');
+    return { localProductId: matchedLocal.id, created: false, link };
+  }
+
   const category = await getOrCreateCategory(
     args.categoryName ?? args.source.import_category_name ?? `Supplier - ${args.source.name}`,
     '🔌',
@@ -486,7 +516,7 @@ export async function importSupplierProduct(args: {
     warranty: 'Supplier auto delivery',
     description,
     emoji: '',
-    unlimited_stock: false,
+    unlimited_stock: args.product.stock === null,
   });
   if (args.active === false || (args.active === undefined && args.source.auto_import_active === false)) {
     await setProductActive(local.id, false);
@@ -750,8 +780,12 @@ export async function syncSupplierProductLink(link: DBSupplierProductLink): Prom
   });
   let updatedLocal = false;
   const local = await getProduct(link.local_product_id);
-  if (local && link.auto_sync_stock && matched.stock !== null) {
-    await updateProduct(link.local_product_id, { stock: matched.stock });
+  if (local && link.auto_sync_stock) {
+    if (matched.stock === null) {
+      await updateProduct(link.local_product_id, { unlimited_stock: true, stock: 0 });
+    } else {
+      await updateProduct(link.local_product_id, { unlimited_stock: false, stock: matched.stock });
+    }
     updatedLocal = true;
   }
   return { matched, updatedLocal };

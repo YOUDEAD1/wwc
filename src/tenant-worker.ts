@@ -7,6 +7,7 @@ import { logger } from './logger.js';
 import { logMailerStatus } from './services/mailer.js';
 import { refreshSettings } from './services/settings.js';
 import { restoreLiveSupportSession } from './handlers/support.js';
+import { startSupplierStockSyncLoop } from './services/supplierAutoSync.js';
 
 async function main() {
   const tenantId = process.env.TENANT_ID ?? 'unknown';
@@ -16,6 +17,7 @@ async function main() {
   logMailerStatus();
   await refreshSettings();
   await restoreLiveSupportSession();
+  startSupplierStockSyncLoop(bot.api);
 
   await bot.api.deleteWebhook({ drop_pending_updates: true });
 
