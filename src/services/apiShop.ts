@@ -239,6 +239,25 @@ export async function setProductField(
   if (config.products[id]) {
     (config.products[id] as Record<string, unknown>)[field] = value;
     await saveShopConfig(config);
+
+    // Sync to products table immediately
+    try {
+      const { data: matchingProds } = await supabase
+        .from('products')
+        .select('id')
+        .like('note', `%[API_PRODUCT_ID:${id}]%`);
+      const existingProd = matchingProds?.[0];
+      if (existingProd) {
+        const updatePayload: Record<string, any> = {};
+        if (field === 'sell_price') updatePayload.price = Number(value);
+        if (field === 'custom_name') updatePayload.name = String(value);
+        if (field === 'custom_desc') updatePayload.description = String(value);
+        if (field === 'emoji') updatePayload.emoji = String(value);
+        await supabase.from('products').update(updatePayload).eq('id', existingProd.id);
+      }
+    } catch (err) {
+      logger.error({ err, id, field }, 'Failed to sync setProductField to products table');
+    }
   }
 }
 

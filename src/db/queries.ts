@@ -826,6 +826,54 @@ export async function updateProduct(
       );
     });
   }
+
+  // Keep api_shop_config settings in sync for API Shop products
+  try {
+    const { data: currentProd } = await supabase
+      .from('products')
+      .select('note')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (currentProd?.note && currentProd.note.includes('[API_PRODUCT_ID:')) {
+      const match = currentProd.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+      const apiId = match ? match[1] : null;
+      if (apiId) {
+        const { getShopConfig, saveShopConfig } = await import('../services/apiShop.js');
+        const config = await getShopConfig();
+        if (config.products[apiId]) {
+          const s = config.products[apiId]!;
+          let changed = false;
+          if (patch.price !== undefined) {
+            s.sell_price = Number(patch.price);
+            changed = true;
+          }
+          if (patch.name !== undefined) {
+            s.custom_name = String(patch.name);
+            changed = true;
+          }
+          if (patch.description !== undefined) {
+            s.custom_desc = String(patch.description || '');
+            changed = true;
+          }
+          if (patch.emoji !== undefined) {
+            s.emoji = String(patch.emoji || '');
+            changed = true;
+          }
+          if (patch.emoji_id !== undefined) {
+            s.emoji_id = patch.emoji_id || undefined;
+            changed = true;
+          }
+          if (changed) {
+            await saveShopConfig(config);
+            logger.info({ id, apiId, patch }, 'Synced updateProduct changes back to api_shop_config');
+          }
+        }
+      }
+    }
+  } catch (err) {
+    logger.error({ err, id }, 'Failed to sync updateProduct changes back to api_shop_config');
+  }
 }
 
 // =====================================================================
@@ -1298,19 +1346,35 @@ export async function deleteProductItem(item_id: number): Promise<number | null>
  * the `unlimited_stock` column.
  */
 export async function syncProductStockToPool(product_id: number): Promise<void> {
-  const remaining = await countAvailableProductItems(product_id);
   let unlimited = false;
   let beforeStock = 0;
+  let note = '';
   const { data: full, error: fullErr } = await supabase
     .from('products')
-    .select('stock, unlimited_stock')
+    .select('stock, unlimited_stock, note')
     .eq('id', product_id)
     .maybeSingle();
   if (!fullErr && full) {
     unlimited = Boolean((full as { unlimited_stock?: boolean }).unlimited_stock);
     beforeStock = Number((full as { stock?: number }).stock ?? 0);
+    note = String((full as { note?: string | null }).note ?? '');
+  } else {
+    return;
   }
   if (unlimited) return;
+
+  // Skip syncing stock to pool for API products
+  if (note.includes('[API_PRODUCT_ID:')) return;
+
+  // Skip syncing stock to pool for supplier-linked products
+  try {
+    const link = await getSupplierProductLinkByProduct(product_id);
+    if (link) return;
+  } catch (err) {
+    // Ignore migration or transient database errors
+  }
+
+  const remaining = await countAvailableProductItems(product_id);
   await supabase.from('products').update({ stock: remaining }).eq('id', product_id);
   await applyStockTransition(product_id, beforeStock, remaining).catch((err) => {
     logger.warn(
