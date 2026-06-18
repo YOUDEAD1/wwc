@@ -230,9 +230,33 @@ export async function testConnection(
 export async function fetchProducts(
   conn: ApiConnection,
 ): Promise<{ ok: true; products: ApiProduct[] } | { ok: false; error: string }> {
-  const res = await apiGet<{ success: boolean; products: ApiProduct[] }>(conn, '/products');
+  const res = await apiGet<{ success: boolean; products: any[] }>(conn, '/products');
   if (!res.ok) return { ok: false, error: res.error };
-  return { ok: true, products: res.data.products ?? [] };
+  
+  const mapped: ApiProduct[] = (res.data.products ?? []).map((p: any) => {
+    const yourPrice = p.your_price !== null && p.your_price !== undefined ? Number(p.your_price) : Number(p.store_price);
+    const basePrice = Number(p.store_price);
+    let stock = -1;
+    if (p.stock !== 'unlimited' && p.stock !== null && p.stock !== undefined) {
+      const parsedStock = Number(p.stock);
+      if (Number.isFinite(parsedStock)) {
+        stock = parsedStock;
+      }
+    }
+    return {
+      id: String(p.id),
+      name_en: p.name_en || '',
+      name_ar: p.name_ar || undefined,
+      base_price: basePrice,
+      your_price: yourPrice,
+      stock,
+      is_manual: Boolean(p.is_manual),
+      emoji: p.emoji || undefined,
+      emoji_id: p.custom_emoji_id || undefined,
+      description: p.desc_en || p.description || undefined,
+    };
+  });
+  return { ok: true, products: mapped };
 }
 
 /** Fetch a single product by ID. */
@@ -240,9 +264,31 @@ export async function fetchProduct(
   conn: ApiConnection,
   productId: string,
 ): Promise<{ ok: true; product: ApiProduct } | { ok: false; error: string }> {
-  const res = await apiGet<{ success: boolean; product: ApiProduct }>(conn, `/product/${productId}`);
+  const res = await apiGet<{ success: boolean; product: any }>(conn, `/product/${productId}`);
   if (!res.ok) return { ok: false, error: res.error };
-  return { ok: true, product: res.data.product };
+  const p = res.data.product;
+  const yourPrice = p.your_price !== null && p.your_price !== undefined ? Number(p.your_price) : Number(p.store_price);
+  const basePrice = Number(p.store_price);
+  let stock = -1;
+  if (p.stock !== 'unlimited' && p.stock !== null && p.stock !== undefined) {
+    const parsedStock = Number(p.stock);
+    if (Number.isFinite(parsedStock)) {
+      stock = parsedStock;
+    }
+  }
+  const mapped: ApiProduct = {
+    id: String(p.id),
+    name_en: p.name_en || '',
+    name_ar: p.name_ar || undefined,
+    base_price: basePrice,
+    your_price: yourPrice,
+    stock,
+    is_manual: Boolean(p.is_manual),
+    emoji: p.emoji || undefined,
+    emoji_id: p.custom_emoji_id || undefined,
+    description: p.desc_en || p.description || undefined,
+  };
+  return { ok: true, product: mapped };
 }
 
 /** Fetch current API key balance. */
