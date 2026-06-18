@@ -138,12 +138,18 @@ export async function syncProducts(): Promise<
       const s = config.products[p.id];
       if (!s) continue;
 
-      const { data: existingProd } = await supabase
+      const { data: matchingProds } = await supabase
         .from('products')
         .select('id, emoji, emoji_id')
         .eq('category_id', categoryId)
-        .like('note', `%[API_PRODUCT_ID:${p.id}]%`)
-        .maybeSingle();
+        .like('note', `%[API_PRODUCT_ID:${p.id}]%`);
+
+      const existingProd = matchingProds && matchingProds.length > 0 ? matchingProds[0] : null;
+
+      if (matchingProds && matchingProds.length > 1) {
+        const idsToDelete = matchingProds.slice(1).map((x) => x.id);
+        await supabase.from('products').delete().in('id', idsToDelete);
+      }
 
       // Determine stock and unlimited status safely to prevent null PostgreSQL database violations
       const isUnlimited = p.stock === null || p.stock === undefined || p.stock < 0;
@@ -152,13 +158,20 @@ export async function syncProducts(): Promise<
         stockVal = 0;
       }
 
+      // Safely determine price to prevent null database constraint violations
+      const rawPrice = s.sell_price ?? p.your_price ?? p.base_price ?? 0;
+      let priceVal = Number(rawPrice);
+      if (isNaN(priceVal) || !isFinite(priceVal) || priceVal < 0) {
+        priceVal = 0;
+      }
+
       if (existingProd) {
         // Sync API stock, price, enabled state, name and descriptions to standard products table
         await supabase
           .from('products')
           .update({
             name: s.custom_name || p.name_en,
-            price: s.sell_price,
+            price: priceVal,
             stock: stockVal,
             active: s.enabled,
             description: s.custom_desc || p.description || '',
@@ -173,7 +186,7 @@ export async function syncProducts(): Promise<
         await addProduct({
           category_id: categoryId,
           name: s.custom_name || p.name_en,
-          price: s.sell_price,
+          price: priceVal,
           stock: stockVal,
           description: s.custom_desc || p.description || '',
           note: noteTag,
