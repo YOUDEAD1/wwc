@@ -319,6 +319,7 @@ export type DBDeposit = {
   order_intent: OrderIntent | null;
   created_at: string;
   updated_at: string;
+  unique_amount_tag: string | null;
 };
 
 /**

@@ -1853,3 +1853,12 @@ grant execute on function public.spend_referral_balance(bigint, bigint, bigint, 
 
 grant execute on function public.convert_referrals_to_wallet(bigint, int, numeric)
     to service_role;
+
+-- ---------- UNIQUE AMOUNT TAG ----------
+alter table public.deposits
+  add column if not exists unique_amount_tag text;
+
+create unique index if not exists deposits_unique_amount_tag_idx
+  on public.deposits (unique_amount_tag)
+  where unique_amount_tag is not null;
+
