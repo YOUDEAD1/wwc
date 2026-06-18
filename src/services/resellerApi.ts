@@ -22,6 +22,8 @@ import { applyUserPriceToProduct, applyUserPriceToProducts } from './pricing.js'
 import { priceBreakdown, resolvePromo } from './promo.js';
 import { charge } from './wallet.js';
 import * as adminLog from './adminLog.js';
+import { trySupplierAutoOrder } from './supplierApi.js';
+import { purchaseProduct } from './apiShop.js';
 
 const API_KEY_PREFIX = 'stapi_';
 const API_KEY_BYTES = 32;
@@ -219,10 +221,12 @@ function productToApi(
   const unlimited = Boolean(p.unlimited_stock);
   let stock: number | 'unlimited' = 'unlimited';
   if (!unlimited) {
-    const isSupplier = supplierProductIds.has(p.id);
-    const isApiShop = p.note && p.note.includes('[API_PRODUCT_ID:');
-    stock = (isSupplier || isApiShop) ? Number(p.stock ?? 0) : (poolStockMap.get(p.id) ?? 0);
+    stock = Number(p.stock ?? 0);
   }
+  const hasLocalPool = (poolStockMap.get(p.id) ?? 0) > 0;
+  const isSupplier = supplierProductIds.has(p.id);
+  const isApiShop = !!(p.note && p.note.includes('[API_PRODUCT_ID:'));
+  const isManual = !isSupplier && !isApiShop && !hasLocalPool;
   const customEmojiId = p.emoji_id || null;
 
   return {
@@ -235,7 +239,7 @@ function productToApi(
     your_price: yourPrice,
     price_locked: priceLocked,
     stock,
-    is_manual: false,
+    is_manual: isManual,
     discount_tiers: [],
     custom_emoji_id: customEmojiId,
     has_premium_emoji: !!customEmojiId,
@@ -982,8 +986,19 @@ export async function placeApiOrder(args: {
   if (!product.unlimited_stock && product.stock < qty) {
     throw new ApiError(409, 'out_of_stock', 'Product does not have enough stock.');
   }
+  // Determine product delivery types
+  const isApiShop = !!(product.note && product.note.includes('[API_PRODUCT_ID:'));
+  const { data: supplierLink } = await supabase
+    .from('supplier_product_links')
+    .select('id')
+    .eq('local_product_id', product.id)
+    .maybeSingle();
+  const isSupplier = !!supplierLink;
+
   const availableItems = await countAvailableProductItems(product.id);
-  if (availableItems < qty) {
+  const isAutomatic = !isSupplier && !isApiShop && availableItems > 0;
+
+  if (isAutomatic && availableItems < qty) {
     throw new ApiError(
       409,
       'delivery_not_ready',
@@ -1013,11 +1028,41 @@ export async function placeApiOrder(args: {
     delivery: `API order #${product.id}-${qty}`,
   });
 
-  const claimed = await claimProductItems(product.id, qty, order.id);
-  if (claimed.length < qty) {
-    await rollbackClaimedItems(order.id);
-    await deleteOrder(order.id);
-    throw new ApiError(409, 'delivery_race', 'Stock was just taken. Please retry.');
+  let claimed: string[] = [];
+  if (isSupplier) {
+    const supplierOrder = await trySupplierAutoOrder({
+      localProductId: product.id,
+      qty,
+      localOrderId: order.id,
+    });
+    if (!supplierOrder) {
+      await deleteOrder(order.id);
+      throw new ApiError(503, 'supplier_order_failed', 'Supplier API order failed to deliver.');
+    }
+    claimed = supplierOrder.items;
+  } else if (isApiShop) {
+    const match = product.note!.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+    const apiProductId = match ? match[1]! : null;
+    if (!apiProductId) {
+      await deleteOrder(order.id);
+      throw new ApiError(500, 'api_shop_error', 'Invalid API Shop product ID note.');
+    }
+    const apiShopRes = await purchaseProduct(apiProductId, qty, `api_order:${order.id}`);
+    if (!apiShopRes.ok) {
+      await deleteOrder(order.id);
+      throw new ApiError(503, 'api_shop_order_failed', `API Shop order failed: ${apiShopRes.error}`);
+    }
+    claimed = apiShopRes.codes;
+  } else if (isAutomatic) {
+    claimed = await claimProductItems(product.id, qty, order.id);
+    if (claimed.length < qty) {
+      await rollbackClaimedItems(order.id);
+      await deleteOrder(order.id);
+      throw new ApiError(409, 'delivery_race', 'Stock was just taken. Please retry.');
+    }
+  } else {
+    // Manual delivery
+    claimed = ['Manual delivery — admin will follow up shortly.'];
   }
 
   let balanceAfter = currentBalance;
