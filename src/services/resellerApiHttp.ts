@@ -128,11 +128,11 @@ async function resolveTenantForGateway(requestGateway: string): Promise<CachedTe
   const cached = gatewayCache.get(requestGateway);
   if (cached) return cached;
 
-  // 2. Check main bot's secret path
+  // 2. Check main bot's secret path or backward-compatible 'api' gateway
   const mainSecret = await getApiSecretPath();
-  if (mainSecret === requestGateway) {
-    const info = { isMain: true, tenant: null, secretPath: mainSecret };
-    gatewayCache.set(mainSecret, info);
+  if (requestGateway === 'api' || mainSecret === requestGateway) {
+    const info = { isMain: true, tenant: null, secretPath: requestGateway };
+    gatewayCache.set(requestGateway, info);
     return info;
   }
 
