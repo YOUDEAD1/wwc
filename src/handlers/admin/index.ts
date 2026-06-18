@@ -270,13 +270,10 @@ function rootMenu(): InlineKeyboard {
     .text('📊 Stats', 'adm:stats')
     .text('🏪 Store Settings', 'adm:store')
     .row()
-    .text('🔌 API', 'adm:api')
     .text('💸 Promos', 'adm:promo')
-    .row()
     .text('🎁 Gift Codes', 'adm:gift')
     .row()
     .text('💎 Custom Prices', 'adm:price')
-    .row()
     .text('🔌 API Manager', 'adm:api')
     .row()
     .text('🏠 Main Menu', 'adm:close');
@@ -1096,7 +1093,7 @@ async function showAdminApiOverview(ctx: AppCtx): Promise<void> {
   }
 }
 
-adminBot.callbackQuery('adm:api', async (ctx) => {
+adminBot.callbackQuery('adm:reseller_api', async (ctx) => {
   await ctx.answerCallbackQuery();
   await showAdminApiOverview(ctx);
 });

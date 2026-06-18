@@ -3054,8 +3054,7 @@ export async function listActiveProducts(
     if (Boolean(a.is_pinned) !== Boolean(b.is_pinned)) {
       return a.is_pinned ? -1 : 1;
     }
-    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
-    return a.id - b.id;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
   });
   const safePage = Math.max(0, Math.floor(page));
   const safePerPage = Math.max(1, Math.floor(perPage));

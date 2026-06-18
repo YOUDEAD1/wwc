@@ -192,7 +192,7 @@ on conflict (telegram_id) do nothing;
 
 -- Default settings seeds
 insert into public.settings (key, value) values
-    ('color.in_stock',     '"blue"'::jsonb),
+    ('color.in_stock',     '"green"'::jsonb),
     ('color.out_of_stock', '"red"'::jsonb),
     ('text.welcome',       '"Welcome to SafwanTiger Shop"'::jsonb),
     ('text.menu_button',   '"Main Menu"'::jsonb)

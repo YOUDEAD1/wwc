@@ -65,8 +65,11 @@ export async function clearColorPrefix(mode: ColorMode): Promise<void> {
 /** Get color mode for a state-based key like in_stock / out_of_stock. */
 export function getStateColor(key: 'in_stock' | 'out_of_stock'): ColorMode {
   const v = cache.get(`color.${key}`);
-  if (typeof v === 'string' && v in COLOR_PREFIX) return v as ColorMode;
-  return key === 'in_stock' ? 'blue' : 'red';
+  if (typeof v === 'string' && v in COLOR_PREFIX) {
+    if (key === 'in_stock' && v === 'blue') return 'green';
+    return v as ColorMode;
+  }
+  return key === 'in_stock' ? 'green' : 'red';
 }
 
 /**

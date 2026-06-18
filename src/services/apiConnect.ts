@@ -37,6 +37,7 @@ export type ApiProduct = {
   is_manual: boolean;
   emoji?: string;
   emoji_id?: string;
+  description?: string;
 };
 
 export type ApiPurchaseResult = {
