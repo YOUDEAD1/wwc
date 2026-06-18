@@ -125,8 +125,6 @@ export function statsKeyboard(lang: Lang): InlineKeyboard {
   inlineBtn(kb, lang, 'stats_30d', 'profile:stats:range:30');
   inlineBtn(kb, lang, 'stats_custom', 'profile:stats:custom');
   kb.row();
-  inlineBtn(kb, lang, 'send_pdf_stats', 'profile:stats:pdf');
-  kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }

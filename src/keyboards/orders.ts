@@ -52,8 +52,6 @@ export function ordersListKeyboard(
   }
   inlineBtn(kb, lang, 'find_order_by_id', 'profile:orders:find');
   kb.row();
-  inlineBtn(kb, lang, 'send_pdf_orders', 'profile:orders:pdf');
-  kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }
