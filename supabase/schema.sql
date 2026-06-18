@@ -1854,6 +1854,11 @@ grant execute on function public.spend_referral_balance(bigint, bigint, bigint, 
 grant execute on function public.convert_referrals_to_wallet(bigint, int, numeric)
     to service_role;
 
+-- ---------- PENDING REFERRAL COLUMNS ----------
+alter table public.users
+  add column if not exists pending_referral_by bigint default null,
+  add column if not exists sub_verified boolean not null default false;
+
 -- ---------- UNIQUE AMOUNT TAG ----------
 alter table public.deposits
   add column if not exists unique_amount_tag text;
