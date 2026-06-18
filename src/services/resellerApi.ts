@@ -220,7 +220,8 @@ function productToApi(
   let stock: number | 'unlimited' = 'unlimited';
   if (!unlimited) {
     const isSupplier = supplierProductIds.has(p.id);
-    stock = isSupplier ? Number(p.stock ?? 0) : (poolStockMap.get(p.id) ?? 0);
+    const isApiShop = p.note && p.note.includes('[API_PRODUCT_ID:');
+    stock = (isSupplier || isApiShop) ? Number(p.stock ?? 0) : (poolStockMap.get(p.id) ?? 0);
   }
   const customEmojiId = p.emoji_id || null;
 
