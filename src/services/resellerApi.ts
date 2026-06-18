@@ -201,6 +201,8 @@ function productToApi(
   p: DBProduct,
   pricingRows: any[] = [],
   hiddenIds: Set<number> = new Set(),
+  poolStockMap: Map<number, number> = new Map(),
+  supplierProductIds: Set<number> = new Set(),
 ): ApiProduct | null {
   if (hiddenIds.has(p.id)) return null;
 
@@ -215,7 +217,11 @@ function productToApi(
   const descAr = custom?.desc_ar || null;
 
   const unlimited = Boolean(p.unlimited_stock);
-  const stock = unlimited ? 'unlimited' : Number(p.stock ?? 0);
+  let stock: number | 'unlimited' = 'unlimited';
+  if (!unlimited) {
+    const isSupplier = supplierProductIds.has(p.id);
+    stock = isSupplier ? Number(p.stock ?? 0) : (poolStockMap.get(p.id) ?? 0);
+  }
   const customEmojiId = p.emoji_id || null;
 
   return {
@@ -591,16 +597,44 @@ export async function listApiProducts(args: {
   const { rows, total } = await listActiveProducts(page, limit);
   const priced = await applyUserPriceToProducts(args.userId, rows);
 
-  const [{ data: pricingRows }, { data: hiddenRows }] = await Promise.all([
+  const [
+    { data: pricingRows },
+    { data: hiddenRows },
+    supplierLinksResult,
+    poolCountsResult,
+  ] = await Promise.all([
     supabase.from('reseller_api_pricing').select('*').eq('api_key_id', args.apiKeyId),
     supabase.from('reseller_api_hidden').select('product_id').eq('api_key_id', args.apiKeyId),
+    supabase.from('supplier_product_links').select('local_product_id').then(
+      (r) => ({ ok: true as const, data: r.data }),
+      () => ({ ok: false as const, data: null })
+    ),
+    supabase.from('product_items').select('product_id').is('consumed_at', null).then(
+      (r) => ({ ok: true as const, data: r.data }),
+      () => ({ ok: false as const, data: null })
+    ),
   ]);
 
   const pricing = pricingRows ?? [];
   const hiddenIds = new Set((hiddenRows ?? []).map((h) => Number(h.product_id)));
 
+  const supplierProductIds = new Set<number>();
+  if (supplierLinksResult.ok && supplierLinksResult.data) {
+    for (const link of supplierLinksResult.data) {
+      supplierProductIds.add(Number(link.local_product_id));
+    }
+  }
+
+  const poolStockMap = new Map<number, number>();
+  if (poolCountsResult.ok && poolCountsResult.data) {
+    for (const item of poolCountsResult.data) {
+      const pId = Number(item.product_id);
+      poolStockMap.set(pId, (poolStockMap.get(pId) ?? 0) + 1);
+    }
+  }
+
   const products = priced
-    .map((p) => productToApi(p, pricing, hiddenIds))
+    .map((p) => productToApi(p, pricing, hiddenIds, poolStockMap, supplierProductIds))
     .filter((p): p is ApiProduct => p !== null);
 
   return { products, total: products.length };
@@ -617,15 +651,38 @@ export async function getApiProduct(args: {
   }
   const product = await applyUserPriceToProduct(args.userId, raw);
 
-  const [{ data: pricingRows }, { data: hiddenRows }] = await Promise.all([
+  const [
+    { data: pricingRows },
+    { data: hiddenRows },
+    supplierLinksResult,
+    poolCountsResult,
+  ] = await Promise.all([
     supabase.from('reseller_api_pricing').select('*').eq('api_key_id', args.apiKeyId),
     supabase.from('reseller_api_hidden').select('product_id').eq('api_key_id', args.apiKeyId),
+    supabase.from('supplier_product_links').select('local_product_id').eq('local_product_id', args.productId).then(
+      (r) => ({ ok: true as const, data: r.data }),
+      () => ({ ok: false as const, data: null })
+    ),
+    supabase.from('product_items').select('product_id').eq('product_id', args.productId).is('consumed_at', null).then(
+      (r) => ({ ok: true as const, data: r.data }),
+      () => ({ ok: false as const, data: null })
+    ),
   ]);
 
   const pricing = pricingRows ?? [];
   const hiddenIds = new Set((hiddenRows ?? []).map((h) => Number(h.product_id)));
 
-  const mapped = productToApi(product, pricing, hiddenIds);
+  const supplierProductIds = new Set<number>();
+  if (supplierLinksResult.ok && supplierLinksResult.data && supplierLinksResult.data.length > 0) {
+    supplierProductIds.add(args.productId);
+  }
+
+  const poolStockMap = new Map<number, number>();
+  if (poolCountsResult.ok && poolCountsResult.data) {
+    poolStockMap.set(args.productId, poolCountsResult.data.length);
+  }
+
+  const mapped = productToApi(product, pricing, hiddenIds, poolStockMap, supplierProductIds);
   if (!mapped) {
     throw new ApiError(404, 'product_not_found', 'Product is hidden.');
   }
