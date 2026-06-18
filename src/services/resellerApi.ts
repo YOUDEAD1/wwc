@@ -10,6 +10,8 @@ import {
   getProduct,
   listActiveProducts,
   setOrderDeliveredItems,
+  readSetting,
+  setSetting,
 } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
 import { env } from '../env.js';
@@ -49,14 +51,27 @@ export type ApiStatus = {
 };
 
 export type ApiProduct = {
-  id: number;
-  name: string;
-  price: number;
-  stock: number | null;
-  available: boolean;
-  unlimited_stock: boolean;
-  warranty: string | null;
-  description: string | null;
+  id: string;
+  name_ar: string | null;
+  name_en: string;
+  desc_ar: string | null;
+  desc_en: string | null;
+  store_price: number;
+  your_price: number;
+  price_locked: boolean;
+  stock: number | 'unlimited';
+  is_manual: boolean;
+  discount_tiers: Array<{ min_qty: number; price: number }>;
+  custom_emoji_id: string | null;
+  has_premium_emoji: boolean;
+  name_ar_html: string;
+  name_en_html: string;
+  desc_ar_html: string;
+  desc_en_html: string;
+  emoji_guide: {
+    parse_mode: 'HTML';
+    note: string;
+  };
 };
 
 export type ApiOrderResult = {
@@ -176,18 +191,55 @@ function keyPrefix(key: string): string {
   return key.slice(0, 14);
 }
 
-function productToApi(p: DBProduct): ApiProduct {
+function buildHtmlField(text: string | null, emojiId: string | null): string {
+  if (!text) return '';
+  if (!emojiId) return text;
+  return `<tg-emoji emoji-id="${emojiId}">✨</tg-emoji> ${text}`;
+}
+
+function productToApi(
+  p: DBProduct,
+  pricingRows: any[] = [],
+  hiddenIds: Set<number> = new Set(),
+): ApiProduct | null {
+  if (hiddenIds.has(p.id)) return null;
+
+  const custom = pricingRows.find((r) => Number(r.product_id) === p.id);
+  const storePrice = Number(p.price);
+  const yourPrice = custom ? Number(custom.sell_price) : storePrice;
+  const priceLocked = !!custom;
+
+  const nameEn = custom?.name_en || p.name;
+  const nameAr = custom?.name_ar || null;
+  const descEn = custom?.desc_en || p.description || null;
+  const descAr = custom?.desc_ar || null;
+
   const unlimited = Boolean(p.unlimited_stock);
-  const stock = unlimited ? null : Number(p.stock ?? 0);
+  const stock = unlimited ? 'unlimited' : Number(p.stock ?? 0);
+  const customEmojiId = p.emoji_id || null;
+
   return {
-    id: p.id,
-    name: p.name,
-    price: Number(p.price),
+    id: String(p.id),
+    name_ar: nameAr,
+    name_en: nameEn,
+    desc_ar: descAr,
+    desc_en: descEn,
+    store_price: storePrice,
+    your_price: yourPrice,
+    price_locked: priceLocked,
     stock,
-    available: unlimited || Number(p.stock ?? 0) > 0,
-    unlimited_stock: unlimited,
-    warranty: p.warranty ?? null,
-    description: p.description ?? null,
+    is_manual: false,
+    discount_tiers: [],
+    custom_emoji_id: customEmojiId,
+    has_premium_emoji: !!customEmojiId,
+    name_ar_html: buildHtmlField(nameAr, customEmojiId),
+    name_en_html: buildHtmlField(nameEn, customEmojiId),
+    desc_ar_html: buildHtmlField(descAr, customEmojiId),
+    desc_en_html: buildHtmlField(descEn, customEmojiId),
+    emoji_guide: {
+      parse_mode: 'HTML',
+      note: 'All _html fields are ready to send via Telegram with parse_mode=HTML',
+    },
   };
 }
 
@@ -517,8 +569,19 @@ export async function authenticateApiKey(rawKey: string): Promise<{
   return { key, user };
 }
 
+export async function getApiSecretPath(): Promise<string> {
+  const existing = await readSetting('api_secret_path');
+  if (typeof existing === 'string' && existing.trim()) {
+    return existing.trim();
+  }
+  const secret = crypto.randomBytes(16).toString('hex');
+  await setSetting('api_secret_path', secret);
+  return secret;
+}
+
 export async function listApiProducts(args: {
   userId: number;
+  apiKeyId: number;
   limit?: number;
   offset?: number;
 }): Promise<{ products: ApiProduct[]; total: number }> {
@@ -527,7 +590,289 @@ export async function listApiProducts(args: {
   const page = Math.floor(offset / limit);
   const { rows, total } = await listActiveProducts(page, limit);
   const priced = await applyUserPriceToProducts(args.userId, rows);
-  return { products: priced.map(productToApi), total };
+
+  const [{ data: pricingRows }, { data: hiddenRows }] = await Promise.all([
+    supabase.from('reseller_api_pricing').select('*').eq('api_key_id', args.apiKeyId),
+    supabase.from('reseller_api_hidden').select('product_id').eq('api_key_id', args.apiKeyId),
+  ]);
+
+  const pricing = pricingRows ?? [];
+  const hiddenIds = new Set((hiddenRows ?? []).map((h) => Number(h.product_id)));
+
+  const products = priced
+    .map((p) => productToApi(p, pricing, hiddenIds))
+    .filter((p): p is ApiProduct => p !== null);
+
+  return { products, total: products.length };
+}
+
+export async function getApiProduct(args: {
+  productId: number;
+  userId: number;
+  apiKeyId: number;
+}): Promise<ApiProduct> {
+  const raw = await getProduct(args.productId);
+  if (!raw || !raw.active) {
+    throw new ApiError(404, 'product_not_found', 'Product not found.');
+  }
+  const product = await applyUserPriceToProduct(args.userId, raw);
+
+  const [{ data: pricingRows }, { data: hiddenRows }] = await Promise.all([
+    supabase.from('reseller_api_pricing').select('*').eq('api_key_id', args.apiKeyId),
+    supabase.from('reseller_api_hidden').select('product_id').eq('api_key_id', args.apiKeyId),
+  ]);
+
+  const pricing = pricingRows ?? [];
+  const hiddenIds = new Set((hiddenRows ?? []).map((h) => Number(h.product_id)));
+
+  const mapped = productToApi(product, pricing, hiddenIds);
+  if (!mapped) {
+    throw new ApiError(404, 'product_not_found', 'Product is hidden.');
+  }
+  return mapped;
+}
+
+export async function getApiPrices(apiKeyId: number): Promise<any[]> {
+  const { data: pricingRows, error } = await supabase
+    .from('reseller_api_pricing')
+    .select('*')
+    .eq('api_key_id', apiKeyId);
+  if (error) throw error;
+
+  const results: any[] = [];
+  for (const row of pricingRows ?? []) {
+    const p = await getProduct(Number(row.product_id));
+    if (!p) continue;
+    const storePrice = Number(p.price);
+    const yourPrice = Number(row.sell_price);
+    results.push({
+      product_id: String(p.id),
+      original_name: p.name,
+      your_name_ar: row.name_ar || null,
+      your_name_en: row.name_en || null,
+      store_price_now: storePrice,
+      store_price_when_set: storePrice,
+      your_price: yourPrice,
+      profit_per_unit: Math.max(0, yourPrice - storePrice),
+      price_locked: true,
+      price_set_at: row.updated_at,
+    });
+  }
+  return results;
+}
+
+export async function getApiStats(userId: number): Promise<{
+  total_orders: number;
+  completed_orders: number;
+  pending_orders: number;
+  total_revenue: number;
+  balance: number;
+}> {
+  const status = await getApiStatus(userId);
+  const { data: orders } = await supabase
+    .from('reseller_api_orders')
+    .select('total')
+    .eq('user_id', userId);
+
+  const totalOrders = orders?.length ?? 0;
+  const totalSpent = (orders ?? []).reduce((sum, o) => sum + Number(o.total ?? 0), 0);
+
+  return {
+    total_orders: totalOrders,
+    completed_orders: totalOrders,
+    pending_orders: 0,
+    total_revenue: Number(totalSpent.toFixed(3)),
+    balance: status.balance,
+  };
+}
+
+export async function setApiPrice(args: {
+  apiKeyId: number;
+  productId: number;
+  price: number;
+  userId: number;
+}): Promise<any> {
+  const p = await getProduct(args.productId);
+  if (!p || !p.active) {
+    throw new ApiError(404, 'product_not_found', 'Product not found.');
+  }
+  const priced = await applyUserPriceToProduct(args.userId, p);
+  const storePrice = Number(priced.price);
+  if (args.price < storePrice) {
+    throw new ApiError(400, 'invalid_price', `Price cannot be lower than wholesale price: $${storePrice.toFixed(2)}`);
+  }
+
+  const { error } = await supabase
+    .from('reseller_api_pricing')
+    .upsert({
+      api_key_id: args.apiKeyId,
+      product_id: args.productId,
+      sell_price: args.price,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'api_key_id,product_id' });
+
+  if (error) throw error;
+
+  return {
+    product_id: String(args.productId),
+    base_price: storePrice,
+    your_price: args.price,
+    profit_per_unit: Math.max(0, args.price - storePrice),
+    note: 'Your price is locked. Store price changes will NOT affect it.',
+  };
+}
+
+export async function setApiProduct(args: {
+  apiKeyId: number;
+  productId: number;
+  userId: number;
+  name_ar?: string;
+  name_en?: string;
+  desc_ar?: string;
+  desc_en?: string;
+  price?: number;
+}): Promise<any> {
+  const p = await getProduct(args.productId);
+  if (!p || !p.active) {
+    throw new ApiError(404, 'product_not_found', 'Product not found.');
+  }
+  const priced = await applyUserPriceToProduct(args.userId, p);
+  const storePrice = Number(priced.price);
+
+  let sellPrice = storePrice;
+  if (args.price !== undefined) {
+    if (args.price < storePrice) {
+      throw new ApiError(400, 'invalid_price', `Price cannot be lower than wholesale price: $${storePrice.toFixed(2)}`);
+    }
+    sellPrice = args.price;
+  }
+
+  const { data: existing } = await supabase
+    .from('reseller_api_pricing')
+    .select('*')
+    .eq('api_key_id', args.apiKeyId)
+    .eq('product_id', args.productId)
+    .maybeSingle();
+
+  const finalSellPrice = args.price !== undefined ? sellPrice : (existing ? Number(existing.sell_price) : storePrice);
+
+  const { error } = await supabase
+    .from('reseller_api_pricing')
+    .upsert({
+      api_key_id: args.apiKeyId,
+      product_id: args.productId,
+      sell_price: finalSellPrice,
+      name_ar: args.name_ar !== undefined ? args.name_ar : (existing?.name_ar || null),
+      name_en: args.name_en !== undefined ? args.name_en : (existing?.name_en || null),
+      desc_ar: args.desc_ar !== undefined ? args.desc_ar : (existing?.desc_ar || null),
+      desc_en: args.desc_en !== undefined ? args.desc_en : (existing?.desc_en || null),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'api_key_id,product_id' });
+
+  if (error) throw error;
+
+  const updatedFields: string[] = [];
+  if (args.name_ar !== undefined) updatedFields.push('name_ar');
+  if (args.name_en !== undefined) updatedFields.push('name_en');
+  if (args.desc_ar !== undefined) updatedFields.push('desc_ar');
+  if (args.desc_en !== undefined) updatedFields.push('desc_en');
+  if (args.price !== undefined) updatedFields.push('price');
+
+  return {
+    success: true,
+    product_id: String(args.productId),
+    updated: updatedFields,
+  };
+}
+
+export async function getApiOrder(orderIdStr: string, userId: number): Promise<any> {
+  const prefix = 'order_';
+  let dbId = 0;
+  if (orderIdStr.startsWith(prefix)) {
+    dbId = Number(orderIdStr.slice(prefix.length));
+  } else {
+    dbId = Number(orderIdStr);
+  }
+  if (isNaN(dbId) || dbId <= 0) {
+    throw new ApiError(404, 'order_not_found', 'Order not found.');
+  }
+
+  const { data: apiOrder } = await supabase
+    .from('reseller_api_orders')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('order_id', dbId)
+    .maybeSingle();
+
+  if (!apiOrder) {
+    throw new ApiError(404, 'order_not_found', 'Order not found.');
+  }
+
+  const { data: order } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', dbId)
+    .maybeSingle();
+
+  if (!order) {
+    throw new ApiError(404, 'order_not_found', 'Order not found.');
+  }
+
+  const codes = (order.delivered_items || '').split('\n').filter(Boolean);
+
+  return {
+    order_id: orderIdStr,
+    product_id: String(order.product_id),
+    product_name: order.product_name,
+    qty: order.qty,
+    unit_price: Number(order.unit_price),
+    total_price: Number(order.total),
+    codes,
+    codes_count: codes.length,
+    status: 'completed',
+    buyer_info: apiOrder.request_id || '',
+    date: order.created_at,
+  };
+}
+
+export async function listApiOrders(args: {
+  userId: number;
+  limit?: number;
+  offset?: number;
+}): Promise<any[]> {
+  const limit = Math.min(Math.max(Number(args.limit ?? 20), 1), 100);
+  const offset = Math.max(Number(args.offset ?? 0), 0);
+
+  const { data: apiOrders } = await supabase
+    .from('reseller_api_orders')
+    .select('*')
+    .eq('user_id', args.userId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  const results: any[] = [];
+  for (const row of apiOrders ?? []) {
+    const { data: order } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', row.order_id)
+      .maybeSingle();
+    if (!order) continue;
+    const codes = (order.delivered_items || '').split('\n').filter(Boolean);
+    results.push({
+      order_id: publicOrderId(order),
+      product_id: String(order.product_id),
+      product_name: order.product_name,
+      qty: order.qty,
+      unit_price: Number(order.unit_price),
+      total_price: Number(order.total),
+      codes,
+      status: 'completed',
+      buyer_info: row.request_id || '',
+      date: order.created_at,
+    });
+  }
+  return results;
 }
 
 async function rollbackClaimedItems(orderId: number): Promise<void> {

@@ -7,6 +7,7 @@ import {
   disableApiKey,
   generateApiKey,
   getApiStatus,
+  getApiSecretPath,
   type ApiStatus,
 } from '../services/resellerApi.js';
 import { renderMdHtml } from '../services/premium.js';
@@ -151,8 +152,15 @@ async function showApiError(ctx: AppCtx, err: unknown): Promise<void> {
   });
 }
 
-function apiPanelText(status: ApiStatus, newKey?: string): string {
-  const endpoint = apiBaseUrl();
+function buildConnectionCode(apiKey: string, gateway: string): string {
+  const base = `${apiBaseUrl().replace(/\/api$/, '')}/${gateway}`;
+  const payload = JSON.stringify({ k: apiKey, u: base });
+  const b64 = Buffer.from(payload, 'utf-8').toString('base64');
+  return `conn_${b64}`;
+}
+
+function apiPanelText(status: ApiStatus, gateway: string, newKey?: string): string {
+  const base = `${apiBaseUrl().replace(/\/api$/, '')}/${gateway}`;
   const lines = [
     '{api_key} *Reseller Product API*',
     '',
@@ -165,18 +173,22 @@ function apiPanelText(status: ApiStatus, newKey?: string): string {
     `{api_key} *Current Key:* \`${mask(status.keyPrefix)}\``,
     '',
     '*Available actions*',
-    '{orders_title} Product list: `GET /api/products`',
-    '{profile_balance} Balance check: `GET /api/balance`',
-    '{deposits_wallet} Place order: `POST /api/order`',
+    `{orders_title} Product list: \`GET /${gateway}/products\``,
+    `{profile_balance} Balance check: \`GET /${gateway}/balance\``,
+    `{deposits_wallet} Place order: \`POST /${gateway}/purchase\``,
     '',
     '*Endpoint URL*',
-    `\`${endpoint}\``,
+    `\`${base}\``,
   ];
   if (newKey) {
+    const connCode = buildConnectionCode(newKey, gateway);
     lines.push(
       '',
       '{api_key} *Your new API key*',
-      `> ${newKey}`,
+      `> \`${newKey}\``,
+      '',
+      '{api_key} *Connection Code*',
+      `\`${connCode}\``,
       '',
       '_Copy it now. For safety, the full key is shown only once._',
     );
@@ -184,8 +196,8 @@ function apiPanelText(status: ApiStatus, newKey?: string): string {
   return lines.join('\n');
 }
 
-function docsText(): string {
-  const endpoint = apiBaseUrl();
+function docsText(gateway: string): string {
+  const base = `${apiBaseUrl().replace(/\/api$/, '')}/${gateway}`;
   return [
     '{api_key} *API Documentation*',
     '',
@@ -196,25 +208,51 @@ function docsText(): string {
     '{api_key} `?api_key=YOUR_KEY`',
     '',
     '{orders_title} *Product List*',
-    `GET \`${endpoint}/products\``,
+    `GET \`${base}/products\``,
+    '',
+    '{orders_title} *Product Detail*',
+    `GET \`${base}/product/{id}\``,
     '',
     '{profile_balance} *Balance*',
-    `GET \`${endpoint}/balance\``,
+    `GET \`${base}/balance\``,
+    '',
+    '{orders_title} *Orders list*',
+    `GET \`${base}/orders\``,
+    '',
+    '{orders_title} *Order detail*',
+    `GET \`${base}/order/{order_id}\``,
+    '',
+    '{orders_title} *Custom prices*',
+    `GET \`${base}/my_prices\``,
+    '',
+    '{orders_title} *Statistics*',
+    `GET \`${base}/stats\``,
     '',
     '{deposits_wallet} *Place Order*',
-    `POST \`${endpoint}/order\``,
+    `POST \`${base}/purchase\``,
     '',
     '*JSON body:*',
     '`{ "product_id": 123, "quantity": 1, "request_id": "my-order-001" }`',
     '',
-    'The API returns delivered items in JSON. Wallet balance is deducted only when the order is completed.',
+    '{deposits_wallet} *Lock Price*',
+    `POST \`${base}/set_price\``,
+    '',
+    '*JSON body:*',
+    '`{ "product_id": 123, "price": 7.50 }`',
+    '',
+    '{deposits_wallet} *Customize Product*',
+    `POST \`${base}/set_product\``,
+    '',
+    '*JSON body:*',
+    '`{ "product_id": 123, "name_ar": "...", "price": 7.50 }`',
   ].join('\n');
 }
 
 async function showApiPanel(ctx: AppCtx, newKey?: string): Promise<void> {
   try {
     const status = await getApiStatus(ctx.user.telegram_id);
-    const html = renderMdHtml(apiPanelText(status, newKey));
+    const gateway = await getApiSecretPath();
+    const html = renderMdHtml(apiPanelText(status, gateway, newKey));
     const reply_markup = panelKeyboard(status);
     if (ctx.callbackQuery) {
       await ctx.editMessageText(html, {
@@ -267,13 +305,14 @@ export function registerResellerApi(bot: Composer<AppCtx>): void {
 
   bot.callbackQuery('api:docs', async (ctx) => {
     await ctx.answerCallbackQuery();
+    const gateway = await getApiSecretPath();
     const kb = new InlineKeyboard();
     kb.text('API Panel', 'api:open');
     premiumButtonId(kb, API_BUTTON_ICON_IDS.key, 'primary');
     kb.row();
     kb.text('Back to Settings', 'profile:open');
     premiumButton(kb, 'profile_header', 'primary');
-    await ctx.editMessageText(renderMdHtml(docsText()), {
+    await ctx.editMessageText(renderMdHtml(docsText(gateway)), {
       parse_mode: 'HTML',
       reply_markup: kb,
       link_preview_options: { is_disabled: true },
