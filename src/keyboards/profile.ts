@@ -26,6 +26,12 @@ export function profileKeyboard(lang: Lang): InlineKeyboard {
   inlineBtn(kb, lang, 'currency', 'profile:currency');
   inlineBtn(kb, lang, 'send_price_list', 'profile:pricelist');
   kb.row();
+  inlineBtn(kb, lang, 'language', 'profile:lang');
+  inlineBtn(kb, lang, 'notifications', 'profile:notifications');
+  kb.row();
+  inlineBtn(kb, lang, 'set_region', 'profile:region');
+  inlineBtn(kb, lang, 'redeem', 'profile:redeem');
+  kb.row();
   inlineBtn(kb, lang, 'back', 'main:open');
   return kb;
 }
