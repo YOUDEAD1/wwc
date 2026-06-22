@@ -39,10 +39,13 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
     SUPABASE_URL: tenant.supabase_url,
     SUPABASE_SERVICE_ROLE_KEY: tenant.supabase_service_key,
     ADMIN_USER_ID: String(tenant.owner_telegram_id),
+    OWNER_USERNAME: tenant.owner_username ?? '',
     BOT_USERNAME: tenant.bot_username ?? 'bot',
     BOT_MODE: 'polling',
     IS_TENANT: 'true',
     TENANT_ID: tenant.id,
+    SUBSCRIPTION_END: tenant.subscription_end,
+    MASTER_CONTACT_URL: process.env.ADMIN_CONTACT_URL ?? 'https://t.me/lara_v2',
     // منع webhook في tenant
     WEBHOOK_URL: '',
     WEBHOOK_SECRET: '',

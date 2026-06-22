@@ -137,6 +137,7 @@ import {
   getProductColor,
   setProductColor,
   clearProductColor,
+  getMasterContactUrl,
 } from '../../services/settings.js';
 import {
   FORMAT_ENTITY_TYPES,
@@ -251,7 +252,7 @@ const PER_PAGE = 8;
 const ROOT_TEXT = '🛠 *Admin Panel*\n\nTap a section to manage it.';
 
 function rootMenu(): InlineKeyboard {
-  return new InlineKeyboard()
+  const kb = new InlineKeyboard()
     .text('📦 Products', 'adm:prod')
     .text('🗂 Categories', 'adm:cat')
     .row()
@@ -275,8 +276,26 @@ function rootMenu(): InlineKeyboard {
     .row()
     .text('💎 Custom Prices', 'adm:price')
     .text('🔌 API Manager', 'adm:api')
-    .row()
-    .text('🏠 Main Menu', 'adm:close');
+    .row();
+
+  if (process.env.IS_TENANT === 'true') {
+    const subEndStr = process.env.SUBSCRIPTION_END;
+    let daysLeft = 0;
+    if (subEndStr) {
+      const end = new Date(subEndStr);
+      const diffMs = end.getTime() - Date.now();
+      daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    }
+    const renewalUrl = getMasterContactUrl();
+    const renewalUrlWithPrefill = `${renewalUrl}${renewalUrl.includes('?') ? '&' : '?'}text=${encodeURIComponent('Hi, I want to renew my bot subscription.')}`;
+
+    kb.text(`⏳ باقي ${daysLeft} يوم على انتهاء الاشتراك`, 'adm:sub:info')
+      .url('🔄 تجديد الاشتراك', renewalUrlWithPrefill)
+      .row();
+  }
+
+  kb.text('🏠 Main Menu', 'adm:close');
+  return kb;
 }
 
 const backRow = (kb: InlineKeyboard) => kb.row().text('⬅️ Back', 'adm:root');
@@ -318,6 +337,29 @@ adminBot.callbackQuery('adm:close', async (ctx) => {
   // the expected behaviour of the new "🏠 Main Menu" button on the
   // panel root, replacing the old "❌ Close".
   await ctx.api.sendMessage(ctx.chat?.id ?? ctx.from!.id, '/start');
+});
+
+adminBot.callbackQuery('adm:sub:info', async (ctx) => {
+  const subEndStr = process.env.SUBSCRIPTION_END;
+  let dateFmt = 'غير معروف';
+  if (subEndStr) {
+    try {
+      dateFmt = new Date(subEndStr).toLocaleDateString('ar-EG', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      dateFmt = subEndStr;
+    }
+  }
+  await ctx.answerCallbackQuery({
+    text: `📅 ينتهي الاشتراك بتاريخ:\n\n${dateFmt}`,
+    show_alert: true,
+  });
 });
 
 // ---------- Bot Settings ----------

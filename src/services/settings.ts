@@ -263,13 +263,31 @@ export function getEmailPdfUrl(): string | null {
  */
 export function getAdminContactUrl(): string {
   const v = cache.get('text.admin.contact_url') ?? cache.get('admin.contact_url');
-  const raw = (typeof v === 'string' && v.length > 0)
-    ? v
-    : (process.env.ADMIN_CONTACT_URL ?? 'https://t.me/lara_v2');
+  let raw: string;
+
+  if (typeof v === 'string' && v.length > 0) {
+    raw = v;
+  } else if (process.env.IS_TENANT === 'true') {
+    const ownerUser = process.env.OWNER_USERNAME;
+    if (ownerUser && ownerUser.length > 0) {
+      raw = ownerUser;
+    } else {
+      raw = `tg://user?id=${process.env.ADMIN_USER_ID}`;
+    }
+  } else {
+    raw = process.env.ADMIN_CONTACT_URL ?? 'https://t.me/lara_v2';
+  }
 
   // إصلاح تلقائي: لو بدأ بـ @ حوّله لـ https://t.me/
   if (raw.startsWith('@')) return `https://t.me/${raw.slice(1)}`;
   // لو مجرد يوزرنيم بدون @ أو https
+  if (!raw.startsWith('http') && !raw.startsWith('tg://')) return `https://t.me/${raw}`;
+  return raw;
+}
+
+export function getMasterContactUrl(): string {
+  const raw = process.env.MASTER_CONTACT_URL ?? process.env.ADMIN_CONTACT_URL ?? 'https://t.me/lara_v2';
+  if (raw.startsWith('@')) return `https://t.me/${raw.slice(1)}`;
   if (!raw.startsWith('http')) return `https://t.me/${raw}`;
   return raw;
 }
