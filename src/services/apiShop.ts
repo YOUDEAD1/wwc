@@ -141,8 +141,7 @@ export async function syncProducts(): Promise<
       const { data: matchingProds } = await supabase
         .from('products')
         .select('id, emoji, emoji_id')
-        .eq('category_id', categoryId)
-        .like('note', `%[API_PRODUCT_ID:${p.id}]%`);
+        .eq('note', `[API_PRODUCT_ID:${p.id}]`);
 
       const existingProd = matchingProds && matchingProds.length > 0 ? matchingProds[0] : null;
 
@@ -249,7 +248,7 @@ export async function setProductField(
       const { data: matchingProds } = await supabase
         .from('products')
         .select('id')
-        .like('note', `%[API_PRODUCT_ID:${id}]%`);
+        .eq('note', `[API_PRODUCT_ID:${id}]`);
       const existingProd = matchingProds?.[0];
       if (existingProd) {
         const updatePayload: Record<string, any> = {};
