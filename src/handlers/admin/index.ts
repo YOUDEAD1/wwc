@@ -11171,9 +11171,10 @@ adminBot.callbackQuery(/^adm:api:products:(\d+)$/, async (ctx) => {
     '',
   ];
   for (const p of slice) {
+    const isUnlimited = p.stock === 'unlimited' || (typeof p.stock === 'number' && p.stock < 0);
     const isOutOfStock = p.stock === 0;
     const stockIcon = isOutOfStock ? '🔴' : '🟢';
-    const stockVal = p.stock < 0 ? '♾️ Unlimited' : p.stock;
+    const stockVal = isUnlimited ? '♾️ Unlimited' : p.stock;
     const manualTag = p.is_manual ? ' [Manual]' : '';
 
     // If API returns emoji_id, render animated <tg-emoji> tag, otherwise fallback

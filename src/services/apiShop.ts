@@ -152,7 +152,11 @@ export async function syncProducts(): Promise<
       }
 
       // Determine stock and unlimited status safely to prevent null PostgreSQL database violations
-      const isUnlimited = p.stock === null || p.stock === undefined || p.stock < 0;
+      const isUnlimited =
+        p.stock === null ||
+        p.stock === undefined ||
+        p.stock === 'unlimited' ||
+        (typeof p.stock === 'number' && p.stock < 0);
       let stockVal = isUnlimited ? 0 : Number(p.stock);
       if (isNaN(stockVal)) {
         stockVal = 0;

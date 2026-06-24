@@ -14,7 +14,7 @@ import {
 } from './supplierApi.js';
 import { syncProducts as syncApiShopProducts } from './apiShop.js';
 
-const DEFAULT_SUPPLIER_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_SUPPLIER_SYNC_INTERVAL_MS = 1 * 60 * 1000;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
@@ -34,6 +34,7 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
 }> {
   if (running) return { checked: 0, updated: 0, imported: 0, fulfilled: 0, failed: 0 };
   running = true;
+  logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background auto sync loop started');
   let checked = 0;
   let updated = 0;
   let imported = 0;
@@ -105,9 +106,13 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
 
     // --- API Shop background sync ---
     try {
-      await syncApiShopProductsOnce();
+      logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync started');
+      const res = await syncApiShopProductsOnce();
+      if (res.ok) {
+        logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync finished successfully');
+      }
     } catch (apiShopErr) {
-      logger.warn({ err: apiShopErr }, 'background API Shop sync failed');
+      logger.warn({ err: apiShopErr, tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync failed');
     }
 
     if (checked > 0 || imported > 0 || fulfilled > 0 || failed > 0) {
@@ -119,6 +124,7 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
     return { checked, updated, imported, fulfilled, failed };
   } finally {
     running = false;
+    logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background auto sync loop completed');
   }
 }
 

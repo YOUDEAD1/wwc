@@ -33,7 +33,7 @@ export type ApiProduct = {
   name_ar?: string;
   base_price: number;
   your_price: number;
-  stock: number;
+  stock: number | 'unlimited';
   is_manual: boolean;
   emoji?: string;
   emoji_id?: string;
