@@ -37,6 +37,7 @@ import * as adminLog from './adminLog.js';
 import { renderMdHtml } from './premium.js';
 import { buildOrderDeliveredChunks } from './orderRender.js';
 import { trySupplierAutoOrder } from './supplierApi.js';
+import { tryApiShopAutoOrder } from './apiShop.js';
 import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
 import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { t as translate } from '../i18n/index.js';
@@ -144,34 +145,65 @@ export async function fulfilOrderForDeposit(args: {
   }
   const publicId = publicOrderId(order);
   const paidVia = paidViaLabel(provider, methodName);
+  const apiProductIdMatch = product.note?.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+  const apiProductId = apiProductIdMatch ? apiProductIdMatch[1] : null;
+
   const supplierOrder = preorder
     ? null
-    : await trySupplierAutoOrder({
-        localProductId: intent.product_id,
-        qty: intent.qty,
-        localOrderId: order.id,
-        onFailure: (failure) =>
-          adminLog.logSupplierOrderFailed(api, {
-            user: {
-              telegram_id: deposit.user_id,
-              username: user?.username ?? null,
-              first_name: user?.first_name ?? null,
-              email: user?.email ?? null,
-            },
-            orderDbId: order.id,
-            orderPublicId: publicId,
-            productId: intent.product_id,
-            productName: intent.product_name,
-            qty: intent.qty,
-            total: intent.total,
-            paidVia,
-            balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
-            supplierName: failure.supplierName,
-            supplierProductId: failure.supplierProductId,
-            reason: failure.error,
-            lowBalance: failure.lowBalance,
-          }).catch((err) => logger.warn({ err }, 'direct-pay: supplier failure admin log failed')),
-      });
+    : apiProductId
+      ? await tryApiShopAutoOrder({
+          localProductId: intent.product_id,
+          qty: intent.qty,
+          localOrderId: order.id,
+          buyerInfo: user?.username ? `@${user.username}` : `tg_${deposit.user_id}`,
+          onFailure: (failure) =>
+            adminLog.logSupplierOrderFailed(api, {
+              user: {
+                telegram_id: deposit.user_id,
+                username: user?.username ?? null,
+                first_name: user?.first_name ?? null,
+                email: user?.email ?? null,
+              },
+              orderDbId: order.id,
+              orderPublicId: publicId,
+              productId: intent.product_id,
+              productName: intent.product_name,
+              qty: intent.qty,
+              total: intent.total,
+              paidVia,
+              balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+              supplierName: 'API Shop',
+              supplierProductId: apiProductId,
+              reason: failure.error,
+              lowBalance: failure.lowBalance,
+            }).catch((err) => logger.warn({ err }, 'direct-pay: API Shop failure admin log failed')),
+        })
+      : await trySupplierAutoOrder({
+          localProductId: intent.product_id,
+          qty: intent.qty,
+          localOrderId: order.id,
+          onFailure: (failure) =>
+            adminLog.logSupplierOrderFailed(api, {
+              user: {
+                telegram_id: deposit.user_id,
+                username: user?.username ?? null,
+                first_name: user?.first_name ?? null,
+                email: user?.email ?? null,
+              },
+              orderDbId: order.id,
+              orderPublicId: publicId,
+              productId: intent.product_id,
+              productName: intent.product_name,
+              qty: intent.qty,
+              total: intent.total,
+              paidVia,
+              balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+              supplierName: failure.supplierName,
+              supplierProductId: failure.supplierProductId,
+              reason: failure.error,
+              lowBalance: failure.lowBalance,
+            }).catch((err) => logger.warn({ err }, 'direct-pay: supplier failure admin log failed')),
+        });
   const claimed = preorder
     ? []
     : supplierOrder

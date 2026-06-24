@@ -12,6 +12,7 @@ import {
   isSupplierMigrationError,
   syncSupplierProductLink,
 } from './supplierApi.js';
+import { syncProducts as syncApiShopProducts } from './apiShop.js';
 
 const DEFAULT_SUPPLIER_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -102,6 +103,13 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
       }
     }
 
+    // --- API Shop background sync ---
+    try {
+      await syncApiShopProductsOnce();
+    } catch (apiShopErr) {
+      logger.warn({ err: apiShopErr }, 'background API Shop sync failed');
+    }
+
     if (checked > 0 || imported > 0 || fulfilled > 0 || failed > 0) {
       logger.info(
         { checked, updated, imported, fulfilled, failed },
@@ -111,6 +119,21 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
     return { checked, updated, imported, fulfilled, failed };
   } finally {
     running = false;
+  }
+}
+
+export async function syncApiShopProductsOnce(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await syncApiShopProducts();
+    if (!res.ok) {
+      logger.warn({ error: res.error }, 'api shop background sync failed');
+      return { ok: false, error: res.error };
+    }
+    return { ok: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    logger.warn({ err }, 'api shop background sync crashed');
+    return { ok: false, error };
   }
 }
 

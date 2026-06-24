@@ -56,6 +56,7 @@ import { env } from '../env.js';
 import { publicOrderId } from '../services/orderId.js';
 import { buildOrderDeliveredChunks } from '../services/orderRender.js';
 import { trySupplierAutoOrder } from '../services/supplierApi.js';
+import { tryApiShopAutoOrder } from '../services/apiShop.js';
 import * as adminLog from '../services/adminLog.js';
 import { logger } from '../logger.js';
 import { sendInvoiceEmail } from '../services/mailer.js';
@@ -400,34 +401,65 @@ async function finalizeOrderDelivery(args: {
   // pool. When the pool is empty (or short), fall back to a
   // "manual delivery" placeholder; the admin gets pinged via
   // logOrderCreated either way.
+  const apiProductIdMatch = p.note?.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+  const apiProductId = apiProductIdMatch ? apiProductIdMatch[1] : null;
+
   const supplierOrder = preorder
     ? null
-    : await trySupplierAutoOrder({
-        localProductId: p.id,
-        qty,
-        localOrderId: order.id,
-        onFailure: (failure) =>
-          adminLog.logSupplierOrderFailed(ctx.api, {
-            user: {
-              telegram_id: ctx.user.telegram_id,
-              username: ctx.user.username ?? null,
-              first_name: ctx.user.first_name ?? null,
-              email: ctx.user.email ?? null,
-            },
-            orderDbId: order.id,
-            orderPublicId: publicId,
-            productId: p.id,
-            productName: p.name,
-            qty,
-            total,
-            paidVia,
-            balanceAfter: Number(balanceAfter.toFixed(3)),
-            supplierName: failure.supplierName,
-            supplierProductId: failure.supplierProductId,
-            reason: failure.error,
-            lowBalance: failure.lowBalance,
-          }).catch((err) => logger.warn({ err }, 'supplier failure admin log failed')),
-      });
+    : apiProductId
+      ? await tryApiShopAutoOrder({
+          localProductId: p.id,
+          qty,
+          localOrderId: order.id,
+          buyerInfo: ctx.user.username ? `@${ctx.user.username}` : `tg_${ctx.user.telegram_id}`,
+          onFailure: (failure) =>
+            adminLog.logSupplierOrderFailed(ctx.api, {
+              user: {
+                telegram_id: ctx.user.telegram_id,
+                username: ctx.user.username ?? null,
+                first_name: ctx.user.first_name ?? null,
+                email: ctx.user.email ?? null,
+              },
+              orderDbId: order.id,
+              orderPublicId: publicId,
+              productId: p.id,
+              productName: p.name,
+              qty,
+              total,
+              paidVia,
+              balanceAfter: Number(balanceAfter.toFixed(3)),
+              supplierName: 'API Shop',
+              supplierProductId: apiProductId,
+              reason: failure.error,
+              lowBalance: failure.lowBalance,
+            }).catch((err) => logger.warn({ err }, 'API Shop failure admin log failed')),
+        })
+      : await trySupplierAutoOrder({
+          localProductId: p.id,
+          qty,
+          localOrderId: order.id,
+          onFailure: (failure) =>
+            adminLog.logSupplierOrderFailed(ctx.api, {
+              user: {
+                telegram_id: ctx.user.telegram_id,
+                username: ctx.user.username ?? null,
+                first_name: ctx.user.first_name ?? null,
+                email: ctx.user.email ?? null,
+              },
+              orderDbId: order.id,
+              orderPublicId: publicId,
+              productId: p.id,
+              productName: p.name,
+              qty,
+              total,
+              paidVia,
+              balanceAfter: Number(balanceAfter.toFixed(3)),
+              supplierName: failure.supplierName,
+              supplierProductId: failure.supplierProductId,
+              reason: failure.error,
+              lowBalance: failure.lowBalance,
+            }).catch((err) => logger.warn({ err }, 'supplier failure admin log failed')),
+        });
   const claimed = preorder
     ? []
     : supplierOrder

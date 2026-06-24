@@ -22,6 +22,7 @@ import { publicOrderId } from './orderId.js';
 import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { renderMdHtml } from './premium.js';
 import { isSupplierMigrationError, trySupplierAutoOrder } from './supplierApi.js';
+import { tryApiShopAutoOrder } from './apiShop.js';
 
 export type PreorderFulfillResult = {
   fulfilled: number;
@@ -86,16 +87,15 @@ export async function fulfillPendingPreordersForProduct(
           break;
         }
       } else {
-        const supplierLink = await getSupplierProductLinkByProduct(productId).catch((err) => {
-          if (isSupplierMigrationError(err)) return null;
-          logger.warn({ err, productId }, 'preorder: supplier link lookup failed');
-          return null;
-        });
-        if (supplierLink?.auto_order) {
-          const supplierOrder = await trySupplierAutoOrder({
+        const apiProductIdMatch = product?.note?.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+        const apiProductId = apiProductIdMatch ? apiProductIdMatch[1] : null;
+
+        if (apiProductId) {
+          const supplierOrder = await tryApiShopAutoOrder({
             localProductId: productId,
             qty: order.qty,
             localOrderId: order.id,
+            buyerInfo: user?.username ? `@${user.username}` : `tg_${order.user_id}`,
             onFailure: (failure) =>
               adminLog.logSupplierOrderFailed(api, {
                 user: {
@@ -112,17 +112,56 @@ export async function fulfillPendingPreordersForProduct(
                 total: Number(order.total),
                 paidVia: paidViaForPreorder(Number(order.total)),
                 balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
-                supplierName: failure.supplierName,
-                supplierProductId: failure.supplierProductId,
+                supplierName: 'API Shop',
+                supplierProductId: apiProductId,
                 reason: failure.error,
                 lowBalance: failure.lowBalance,
-              }).catch((err) => logger.warn({ err }, 'preorder: supplier failure admin log failed')),
+              }).catch((err) => logger.warn({ err }, 'preorder: API Shop failure admin log failed')),
           });
           if (!supplierOrder || supplierOrder.items.length === 0) {
             await restorePreorderPending(order.id, preorderPendingText);
             break;
           }
           deliveredItems = supplierOrder.items;
+        } else {
+          const supplierLink = await getSupplierProductLinkByProduct(productId).catch((err) => {
+            if (isSupplierMigrationError(err)) return null;
+            logger.warn({ err, productId }, 'preorder: supplier link lookup failed');
+            return null;
+          });
+          if (supplierLink?.auto_order) {
+            const supplierOrder = await trySupplierAutoOrder({
+              localProductId: productId,
+              qty: order.qty,
+              localOrderId: order.id,
+              onFailure: (failure) =>
+                adminLog.logSupplierOrderFailed(api, {
+                  user: {
+                    telegram_id: order.user_id,
+                    username: user?.username ?? null,
+                    first_name: user?.first_name ?? null,
+                    email: user?.email ?? null,
+                  },
+                  orderDbId: order.id,
+                  orderPublicId: publicId,
+                  productId,
+                  productName: order.product_name,
+                  qty: order.qty,
+                  total: Number(order.total),
+                  paidVia: paidViaForPreorder(Number(order.total)),
+                  balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+                  supplierName: failure.supplierName,
+                  supplierProductId: failure.supplierProductId,
+                  reason: failure.error,
+                  lowBalance: failure.lowBalance,
+                }).catch((err) => logger.warn({ err }, 'preorder: supplier failure admin log failed')),
+            });
+            if (!supplierOrder || supplierOrder.items.length === 0) {
+              await restorePreorderPending(order.id, preorderPendingText);
+              break;
+            }
+            deliveredItems = supplierOrder.items;
+          }
         }
       }
 

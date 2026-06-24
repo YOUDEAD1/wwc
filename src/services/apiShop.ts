@@ -5,7 +5,7 @@
  * Stored in Supabase `settings` table under key `api_shop_config`.
  */
 
-import { readSetting, setSetting, addCategory, addProduct } from '../db/queries.js';
+import { readSetting, setSetting, addCategory, addProduct, getProduct } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
 import { getProductEmoji } from '../../config/index.js';
@@ -380,4 +380,48 @@ export async function checkBalance(): Promise<
   const conn = await getConnection();
   if (!conn) return { ok: false, error: 'Not connected' };
   return apiFetchBalance(conn);
+}
+
+export async function tryApiShopAutoOrder(args: {
+  localProductId: number;
+  qty: number;
+  localOrderId: number;
+  buyerInfo: string;
+  onFailure?: (failure: { error: string; lowBalance: boolean }) => void | Promise<void>;
+}): Promise<{ items: string[]; status: string | null; supplierName: string } | null> {
+  const product = await getProduct(args.localProductId).catch(() => null);
+  if (!product || !product.note) return null;
+
+  const match = product.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+  if (!match) return null;
+
+  const apiProductId = match[1];
+  if (!apiProductId) return null;
+  try {
+    const res = await purchaseProduct(apiProductId, args.qty, args.buyerInfo);
+    if (!res.ok) {
+      const isLowBalance =
+        res.error.toLowerCase().includes('balance') ||
+        res.error.toLowerCase().includes('insufficient') ||
+        res.balance !== undefined;
+      await args.onFailure?.({
+        error: res.error,
+        lowBalance: isLowBalance,
+      });
+      return null;
+    }
+    return {
+      items: res.codes,
+      status: res.status,
+      supplierName: 'API Shop',
+    };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    logger.error({ err, localProductId: args.localProductId, orderId: args.localOrderId }, 'tryApiShopAutoOrder failed');
+    await args.onFailure?.({
+      error,
+      lowBalance: false,
+    });
+    return null;
+  }
 }
