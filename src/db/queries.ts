@@ -756,6 +756,7 @@ export async function addProduct(p: {
   emoji_id?: string | null;
   unlimited_stock?: boolean;
   referral_required_count?: number;
+  active?: boolean;
 }): Promise<DBProduct> {
   const { data, error } = await supabase.from('products').insert(p).select('*').single();
   if (error || !data) throw error ?? new Error('addProduct failed');

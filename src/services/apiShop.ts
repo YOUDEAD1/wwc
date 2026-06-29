@@ -93,7 +93,7 @@ export async function syncProducts(): Promise<
   for (const p of res.products) {
     if (!config.products[p.id]) {
       config.products[p.id] = {
-        enabled: false,
+        enabled: true,
         sell_price: p.your_price,
         custom_name: p.name_en,
         custom_desc: p.description || '',
@@ -196,7 +196,37 @@ export async function syncProducts(): Promise<
           emoji: s.emoji || p.emoji || getProductEmoji(p.name_en),
           emoji_id: s.emoji_id || p.emoji_id || null,
           unlimited_stock: isUnlimited,
+          active: s.enabled,
         });
+      }
+    }
+
+    // Deactivate local products that are no longer returned by the API
+    const activeApiProductIds = new Set(res.products.map((p) => String(p.id)));
+    const { data: localApiProducts } = await supabase
+      .from('products')
+      .select('id, note, active')
+      .eq('category_id', categoryId);
+
+    if (localApiProducts) {
+      for (const localP of localApiProducts) {
+        if (!localP.note) continue;
+        const match = localP.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+        if (match) {
+          const apiId = match[1];
+          if (apiId && !activeApiProductIds.has(apiId)) {
+            if (localP.active) {
+              await supabase
+                .from('products')
+                .update({ active: false })
+                .eq('id', localP.id);
+              logger.info(
+                { localProductId: localP.id, apiProductId: apiId },
+                'Deactivated local API Shop product because it was hidden/removed upstream',
+              );
+            }
+          }
+        }
       }
     }
   } catch (syncErr) {
