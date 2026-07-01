@@ -2749,6 +2749,14 @@ export async function listUsersForAnnouncement(): Promise<{ telegram_id: number 
   return (data ?? []) as { telegram_id: number }[];
 }
 
+export async function listUsersForStockAlert(): Promise<{ telegram_id: number }[]> {
+  const { data } = await supabase
+    .from('users')
+    .select('telegram_id')
+    .eq('stock_alert', true);
+  return (data ?? []) as { telegram_id: number }[];
+}
+
 // ---------- Admin: stats / management ----------
 
 export type Stats = {

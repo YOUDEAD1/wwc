@@ -107,7 +107,7 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
     // --- API Shop background sync ---
     try {
       logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync started');
-      const res = await syncApiShopProductsOnce();
+      const res = await syncApiShopProductsOnce(api);
       if (res.ok) {
         logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync finished successfully');
       }
@@ -128,9 +128,9 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
   }
 }
 
-export async function syncApiShopProductsOnce(): Promise<{ ok: boolean; error?: string }> {
+export async function syncApiShopProductsOnce(api?: Api): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await syncApiShopProducts();
+    const res = await syncApiShopProducts(api);
     if (!res.ok) {
       logger.warn({ error: res.error }, 'api shop background sync failed');
       return { ok: false, error: res.error };

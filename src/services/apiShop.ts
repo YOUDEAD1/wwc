@@ -1,14 +1,10 @@
-/**
- * API Shop Config — manages external API products in the local shop.
- * Each product can be customized: emoji, name, description, price, sort order.
- *
- * Stored in Supabase `settings` table under key `api_shop_config`.
- */
-
-import { readSetting, setSetting, addCategory, addProduct, getProduct } from '../db/queries.js';
+import { InlineKeyboard, type Api } from 'grammy';
+import { readSetting, setSetting, addCategory, addProduct, getProduct, listUsersForAnnouncement, listUsersForStockAlert } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
 import { getProductEmoji } from '../../config/index.js';
+import { publicFeedBotUrl } from './publicFeed.js';
+import { stripCustomEmojiTags } from './premium.js';
 import {
   getConnection,
   fetchProducts as apiFetchProducts,
@@ -31,6 +27,7 @@ export type ApiShopProduct = {
   sort_order: number;         // ترتيب العرض
   // بيانات من API (لا يعدّلها الأدمن)
   original_name: string;
+  original_desc?: string;     // الوصف الأصلي من الـ API لمزامنة التغييرات
   base_price: number;
   is_manual: boolean;
 };
@@ -75,7 +72,9 @@ export type MergedProduct = ApiProduct & {
   sort_order: number;
 };
 
-export async function syncProducts(): Promise<
+export async function syncProducts(
+  api?: Api,
+): Promise<
   { ok: true; products: MergedProduct[] } | { ok: false; error: string }
 > {
   const conn = await getConnection();
@@ -96,11 +95,12 @@ export async function syncProducts(): Promise<
         enabled: true,
         sell_price: p.your_price,
         custom_name: p.name_en,
-        custom_desc: p.description || '',
+        custom_desc: '',
         emoji: p.emoji || getProductEmoji(p.name_en),
         emoji_id: p.emoji_id || undefined,
         sort_order: nextOrder++,
         original_name: p.name_en,
+        original_desc: p.description || '',
         base_price: p.base_price,
         is_manual: p.is_manual,
       };
@@ -108,7 +108,20 @@ export async function syncProducts(): Promise<
       // Update API-side data
       const existing = config.products[p.id];
       if (existing) {
+        if (existing.custom_name === existing.original_name) {
+          existing.custom_name = p.name_en;
+        }
+
+        if (existing.original_desc === undefined) {
+          existing.original_desc = existing.custom_desc;
+        }
+
+        if (existing.custom_desc === existing.original_desc) {
+          existing.custom_desc = '';
+        }
+
         existing.original_name = p.name_en;
+        existing.original_desc = p.description || '';
         existing.base_price = p.base_price;
         existing.is_manual = p.is_manual;
         existing.emoji = p.emoji || getProductEmoji(p.name_en);
@@ -140,7 +153,7 @@ export async function syncProducts(): Promise<
 
       const { data: matchingProds } = await supabase
         .from('products')
-        .select('id, emoji, emoji_id')
+        .select('id, emoji, emoji_id, price, stock, active')
         .eq('note', `[API_PRODUCT_ID:${p.id}]`);
 
       const existingProd = matchingProds && matchingProds.length > 0 ? matchingProds[0] : null;
@@ -169,6 +182,10 @@ export async function syncProducts(): Promise<
       }
 
       if (existingProd) {
+        const oldPrice = Number(existingProd.price);
+        const oldStock = Number(existingProd.stock);
+        const wasActive = Boolean(existingProd.active);
+
         // Sync API stock, price, enabled state, name and descriptions to standard products table
         await supabase
           .from('products')
@@ -183,10 +200,18 @@ export async function syncProducts(): Promise<
             unlimited_stock: isUnlimited,
           })
           .eq('id', existingProd.id);
+
+        if (api) {
+          if ((oldStock <= 0 || !wasActive) && stockVal > 0 && s.enabled) {
+            await handleProductSyncAlerts(api, 'restock', existingProd.id, s.custom_name || p.name_en, priceVal);
+          } else if (wasActive && s.enabled && priceVal < oldPrice) {
+            await handleProductSyncAlerts(api, 'discount', existingProd.id, s.custom_name || p.name_en, priceVal, oldPrice);
+          }
+        }
       } else {
         // Insert as a new standard local database product
         const noteTag = `[API_PRODUCT_ID:${p.id}]`;
-        await addProduct({
+        const newProd = await addProduct({
           category_id: categoryId,
           name: s.custom_name || p.name_en,
           price: priceVal,
@@ -198,6 +223,10 @@ export async function syncProducts(): Promise<
           unlimited_stock: isUnlimited,
           active: s.enabled,
         });
+
+        if (api && s.enabled) {
+          await handleProductSyncAlerts(api, 'new', newProd.id, s.custom_name || p.name_en, priceVal);
+        }
       }
     }
 
@@ -456,5 +485,114 @@ export async function tryApiShopAutoOrder(args: {
       lowBalance: false,
     });
     return null;
+  }
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function makeProductButton(productId: number, text: string): InlineKeyboard {
+  const url = publicFeedBotUrl(`prod_${productId}`);
+  return new InlineKeyboard().url(text, url);
+}
+
+async function sendBroadcast(
+  api: Api,
+  recipients: { telegram_id: number }[],
+  html: string,
+  replyMarkup?: InlineKeyboard,
+) {
+  let ok = 0;
+  let fail = 0;
+  for (const r of recipients) {
+    try {
+      await api.sendMessage(r.telegram_id, html, {
+        parse_mode: 'HTML',
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      });
+      ok++;
+    } catch (err) {
+      try {
+        await api.sendMessage(r.telegram_id, stripCustomEmojiTags(html), {
+          parse_mode: 'HTML',
+          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+        });
+        ok++;
+      } catch (retryErr) {
+        fail++;
+        logger.warn({ err: retryErr, user: r.telegram_id }, 'API Shop product broadcast failed');
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 35));
+  }
+  logger.info({ ok, fail }, 'API Shop product broadcast finished');
+}
+
+export async function handleProductSyncAlerts(
+  api: Api,
+  type: 'new' | 'restock' | 'discount',
+  productId: number,
+  productName: string,
+  price: number,
+  oldPrice?: number,
+) {
+  let html = '';
+  let buttonText = '';
+
+  if (type === 'new') {
+    html = [
+      '🎉 <b>منتج جديد متوفر الآن!</b>',
+      '',
+      '✨ تم إضافة منتج جديد إلى المتجر:',
+      `📦 <b>المنتج:</b> <b>${escapeHtml(productName)}</b>`,
+      `💵 <b>السعر:</b> <b>${price.toFixed(2)} USDT</b>`,
+      '',
+      '👇 اضغط على الزر أدناه لعرض المنتج والشراء مباشرة:',
+    ].join('\n');
+    buttonText = '🛒 شراء الآن | Buy Now';
+  } else if (type === 'restock') {
+    html = [
+      '⚡️ <b>إعادة توفر المنتج!</b>',
+      '',
+      '🔥 تم إعادة تعبئة المخزون للمنتج:',
+      `📦 <b>المنتج:</b> <b>${escapeHtml(productName)}</b>`,
+      `💵 <b>السعر:</b> <b>${price.toFixed(2)} USDT</b>`,
+      '',
+      '👇 اضغط على الزر أدناه لعرض المنتج والشراء مباشرة:',
+    ].join('\n');
+    buttonText = '🛒 شراء الآن | Buy Now';
+  } else if (type === 'discount') {
+    html = [
+      '📉 <b>تخفيض كبير في السعر!</b>',
+      '',
+      '💸 تم تخفيض سعر المنتج:',
+      `📦 <b>المنتج:</b> <b>${escapeHtml(productName)}</b>`,
+      `💰 <b>السعر الجديد:</b> <b>${price.toFixed(2)} USDT</b> (سابقاً: ${oldPrice?.toFixed(2)} USDT)`,
+      '',
+      '👇 اضغط على الزر أدناه لعرض المنتج والاستفادة من العرض:',
+    ].join('\n');
+    buttonText = '💸 عرض المنتج | View Offer';
+  }
+
+  const replyMarkup = makeProductButton(productId, buttonText);
+
+  let recipients: { telegram_id: number }[] = [];
+  if (type === 'discount') {
+    recipients = await listUsersForAnnouncement().catch(() => []);
+  } else {
+    recipients = await listUsersForStockAlert().catch(() => []);
+  }
+
+  if (recipients.length > 0) {
+    logger.info({ type, productId, recipientsCount: recipients.length }, 'Starting background product broadcast');
+    void sendBroadcast(api, recipients, html, replyMarkup).catch((err) => {
+      logger.error({ err }, 'sendBroadcast background execution failed');
+    });
   }
 }
