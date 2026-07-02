@@ -202,10 +202,11 @@ export async function syncProducts(
           .eq('id', existingProd.id);
 
         if (api) {
+          const premiumEmojiId = s.emoji_id || p.emoji_id || existingProd.emoji_id || null;
           if ((oldStock <= 0 || !wasActive) && stockVal > 0 && s.enabled) {
-            await handleProductSyncAlerts(api, 'restock', existingProd.id, s.custom_name || p.name_en, priceVal);
+            await handleProductSyncAlerts(api, 'restock', existingProd.id, s.custom_name || p.name_en, priceVal, undefined, premiumEmojiId);
           } else if (wasActive && s.enabled && priceVal < oldPrice) {
-            await handleProductSyncAlerts(api, 'discount', existingProd.id, s.custom_name || p.name_en, priceVal, oldPrice);
+            await handleProductSyncAlerts(api, 'discount', existingProd.id, s.custom_name || p.name_en, priceVal, oldPrice, premiumEmojiId);
           }
         }
       } else {
@@ -225,7 +226,8 @@ export async function syncProducts(
         });
 
         if (api && s.enabled) {
-          await handleProductSyncAlerts(api, 'new', newProd.id, s.custom_name || p.name_en, priceVal);
+          const premiumEmojiId = s.emoji_id || p.emoji_id || null;
+          await handleProductSyncAlerts(api, 'new', newProd.id, s.custom_name || p.name_en, priceVal, undefined, premiumEmojiId);
         }
       }
     }
@@ -497,9 +499,14 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
-function makeProductButton(productId: number, text: string): InlineKeyboard {
+function makeProductButton(productId: number, text: string, emojiId?: string | null): InlineKeyboard {
   const url = publicFeedBotUrl(`prod_${productId}`);
-  return new InlineKeyboard().url(text, url);
+  const kb = new InlineKeyboard().url(text, url);
+  kb.style('success');
+  if (emojiId) {
+    kb.icon(emojiId);
+  }
+  return kb;
 }
 
 async function sendBroadcast(
@@ -541,46 +548,47 @@ export async function handleProductSyncAlerts(
   productName: string,
   price: number,
   oldPrice?: number,
+  emojiId?: string | null,
 ) {
   let html = '';
   let buttonText = '';
 
   if (type === 'new') {
     html = [
-      '🎉 <b>منتج جديد متوفر الآن!</b>',
+      '🎉 <b>New Product Available Now!</b>',
       '',
-      '✨ تم إضافة منتج جديد إلى المتجر:',
-      `📦 <b>المنتج:</b> <b>${escapeHtml(productName)}</b>`,
-      `💵 <b>السعر:</b> <b>${price.toFixed(2)} USDT</b>`,
+      '✨ A new product has been added to the shop:',
+      `📦 <b>Product:</b> <b>${escapeHtml(productName)}</b>`,
+      `💵 <b>Price:</b> <b>${price.toFixed(2)} USDT</b>`,
       '',
-      '👇 اضغط على الزر أدناه لعرض المنتج والشراء مباشرة:',
+      '👇 Tap the button below to view the product and buy directly:',
     ].join('\n');
-    buttonText = '🛒 شراء الآن | Buy Now';
+    buttonText = '🛒 Buy Now';
   } else if (type === 'restock') {
     html = [
-      '⚡️ <b>إعادة توفر المنتج!</b>',
+      '⚡️ <b>Product Restocked!</b>',
       '',
-      '🔥 تم إعادة تعبئة المخزون للمنتج:',
-      `📦 <b>المنتج:</b> <b>${escapeHtml(productName)}</b>`,
-      `💵 <b>السعر:</b> <b>${price.toFixed(2)} USDT</b>`,
+      '🔥 The stock has been replenished for:',
+      `📦 <b>Product:</b> <b>${escapeHtml(productName)}</b>`,
+      `💵 <b>Price:</b> <b>${price.toFixed(2)} USDT</b>`,
       '',
-      '👇 اضغط على الزر أدناه لعرض المنتج والشراء مباشرة:',
+      '👇 Tap the button below to view the product and buy directly:',
     ].join('\n');
-    buttonText = '🛒 شراء الآن | Buy Now';
+    buttonText = '🛒 Buy Now';
   } else if (type === 'discount') {
     html = [
-      '📉 <b>تخفيض كبير في السعر!</b>',
+      '📉 <b>Big Price Drop!</b>',
       '',
-      '💸 تم تخفيض سعر المنتج:',
-      `📦 <b>المنتج:</b> <b>${escapeHtml(productName)}</b>`,
-      `💰 <b>السعر الجديد:</b> <b>${price.toFixed(2)} USDT</b> (سابقاً: ${oldPrice?.toFixed(2)} USDT)`,
+      '💸 The price has been discounted for:',
+      `📦 <b>Product:</b> <b>${escapeHtml(productName)}</b>`,
+      `💰 <b>New Price:</b> <b>${price.toFixed(2)} USDT</b> (Previously: ${oldPrice?.toFixed(2)} USDT)`,
       '',
-      '👇 اضغط على الزر أدناه لعرض المنتج والاستفادة من العرض:',
+      '👇 Tap the button below to view the product and grab the offer:',
     ].join('\n');
-    buttonText = '💸 عرض المنتج | View Offer';
+    buttonText = '💸 View Offer';
   }
 
-  const replyMarkup = makeProductButton(productId, buttonText);
+  const replyMarkup = makeProductButton(productId, buttonText, emojiId);
 
   let recipients: { telegram_id: number }[] = [];
   if (type === 'discount') {
