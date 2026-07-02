@@ -49,6 +49,11 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
     // منع webhook في tenant
     WEBHOOK_URL: '',
     WEBHOOK_SECRET: '',
+    // تعطيل القنوات والمسارات التلقائية للمشتركين لمنع التداخل وحظر البوتات
+    LOG_CHAT_ID: 'off',
+    ORDER_LOG_CHAT_ID: 'off',
+    BOT_REFERS_CHANNEL: 'off',
+    PUBLIC_FEED_CHAT_ID: 'off',
   };
 
   const args = [...process.execArgv, WORKER_PATH];

@@ -439,3 +439,9 @@ export function getOrderLogChatIdOverride(): number | null {
   const n = Number(v);
   return Number.isFinite(n) && n !== 0 ? n : null;
 }
+
+/** Get the public feed chat id override — editable via /admin → Bot Settings. */
+export function getPublicFeedChatIdOverride(): string | null {
+  const v = readString('public_feed.chat_id');
+  return v && v.trim() !== '' ? v.trim() : null;
+}

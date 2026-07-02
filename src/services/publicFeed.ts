@@ -9,7 +9,7 @@ import {
   renderMdHtml,
   stripCustomEmojiTags,
 } from './premium.js';
-import { getEmoji } from './settings.js';
+import { getEmoji, getPublicFeedChatIdOverride } from './settings.js';
 
 type FeedButton = {
   text: string;
@@ -26,8 +26,20 @@ export function publicFeedBotUrl(payload: string): string {
   return username ? `https://t.me/${username}?start=${start}` : `https://t.me/?start=${start}`;
 }
 
-export function publicFeedChatId(): string {
-  return TIGER_STOCK_CHAT;
+export function publicFeedChatId(): number | string {
+  const override = getPublicFeedChatIdOverride();
+  if (override !== null) {
+    if (/^-?\d+$/.test(override)) return Number(override);
+    return override;
+  }
+
+  const custom = env.PUBLIC_FEED_CHAT_ID;
+  if (custom === undefined) return '';
+  if (custom === '') {
+    if (process.env.IS_TENANT === 'true') return '';
+    return TIGER_STOCK_CHAT;
+  }
+  return custom;
 }
 
 function maskId(id: number): string {
