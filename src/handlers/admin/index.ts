@@ -381,21 +381,9 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
   const bybitKey = getTextOverride('bybit.api_key');
   const bybitSecret = getTextOverride('bybit.api_secret');
 
-  // جلب username من Telegram إذا كان فيه ID محفوظ
-  let logDisplay = '_(not set)_';
-  let orderLogDisplay = '_(not set)_';
-  if (logId) {
-    try {
-      const chat = await ctx.api.getChat(logId);
-      logDisplay = 'username' in chat && chat.username ? `@${chat.username}` : `\`${logId}\``;
-    } catch { logDisplay = `\`${logId}\``; }
-  }
-  if (orderLogId) {
-    try {
-      const chat = await ctx.api.getChat(orderLogId);
-      orderLogDisplay = 'username' in chat && chat.username ? `@${chat.username}` : `\`${orderLogId}\``;
-    } catch { orderLogDisplay = `\`${orderLogId}\``; }
-  }
+  // عرض القيمة المحفوظة مباشرة دون طلب خارجي لمنع التعليق
+  const logDisplay = logId ? `\`${logId}\`` : '_(not set)_';
+  const orderLogDisplay = orderLogId ? `\`${orderLogId}\`` : '_(not set)_';
   const kb = new InlineKeyboard()
     .text('🔗 Set Channel URL', 'adm:cust:channel')
     .row()
