@@ -3,7 +3,7 @@ import { buildBot } from './bot.js';
 import { env } from './env.js';
 import { logger } from './logger.js';
 import { logMailerStatus } from './services/mailer.js';
-import { startAllTenantBots } from './tenants/manager.js';
+import { startAllTenantBots, handleTenantWebhookRequest } from './tenants/manager.js';
 import { ensureTenantsTable } from './tenants/store.js';
 import {
   handleHealthRequest,
@@ -27,6 +27,7 @@ async function main() {
     const server = http.createServer((req, res) => {
       void (async () => {
         if (handleHealthRequest(req, res)) return;
+        if (await handleTenantWebhookRequest(req, res)) return;
         if (await handleResellerApiRequest(req, res, bot.api)) return;
         if (telegramHandler) {
           telegramHandler(req, res);

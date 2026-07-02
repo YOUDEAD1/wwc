@@ -2,11 +2,12 @@
  * Tenant Manager — يشغل كل tenant bot كـ child process منفصل
  * كل process له env خاص = قاعدة بيانات منفصلة تماماً
  */
+import type http from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { logger } from '../logger.js';
-import { listActiveTenants, setTenantStatus, type Tenant } from './store.js';
+import { listActiveTenants, setTenantStatus, getTenantByToken, type Tenant } from './store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -41,7 +42,7 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
     ADMIN_USER_ID: String(tenant.owner_telegram_id),
     OWNER_USERNAME: tenant.owner_username ?? '',
     BOT_USERNAME: tenant.bot_username ?? 'bot',
-    BOT_MODE: 'polling',
+    BOT_MODE: process.env.PUBLIC_BASE_URL ? 'webhook' : 'polling',
     IS_TENANT: 'true',
     TENANT_ID: tenant.id,
     SUBSCRIPTION_END: tenant.subscription_end,
@@ -59,7 +60,7 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
   const args = [...process.execArgv, WORKER_PATH];
   const child = spawn(process.execPath, args, {
     env: tenantEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     detached: false,
   });
 
@@ -175,4 +176,61 @@ export async function checkExpiredTenants(): Promise<void> {
       } catch { /* ignore */ }
     }
   }
+}
+
+export async function handleTenantWebhookRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<boolean> {
+  const url = req.url ?? '';
+  if (!url.startsWith('/webhook/tenant/')) return false;
+
+  const token = url.split('/').pop()?.trim();
+  if (!token) {
+    res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'missing_token' }));
+    return true;
+  }
+
+  let bodyStr = '';
+  try {
+    for await (const chunk of req) {
+      bodyStr += chunk;
+    }
+  } catch (err) {
+    logger.error({ err }, 'Error reading tenant webhook request body');
+    res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'read_error' }));
+    return true;
+  }
+
+  try {
+    const update = JSON.parse(bodyStr);
+    const tenant = await getTenantByToken(token);
+    if (!tenant) {
+      res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'tenant_not_found' }));
+      return true;
+    }
+
+    const entry = running.get(tenant.id);
+    if (!entry) {
+      res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'tenant_not_running' }));
+      return true;
+    }
+
+    if (entry.process.connected) {
+      entry.process.send({ type: 'telegram_update', update });
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true }));
+    } else {
+      res.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'tenant_process_disconnected' }));
+    }
+  } catch (err) {
+    res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'invalid_json' }));
+  }
+  return true;
 }

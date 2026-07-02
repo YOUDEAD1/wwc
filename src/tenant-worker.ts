@@ -19,12 +19,27 @@ async function main() {
   await restoreLiveSupportSession();
   startSupplierStockSyncLoop(bot.api);
 
-  await bot.api.deleteWebhook({ drop_pending_updates: true });
-
-  logger.info({ tenantId }, 'Starting tenant bot with long-polling…');
-  await bot.start({
-    onStart: (info) => logger.info({ username: info.username, tenantId }, 'Tenant bot is online'),
-  });
+  const isWebhook = process.env.BOT_MODE === 'webhook';
+  if (isWebhook && process.env.PUBLIC_BASE_URL) {
+    const webhookUrl = `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/webhook/tenant/${process.env.BOT_TOKEN}`;
+    await bot.api.setWebhook(webhookUrl, {
+      drop_pending_updates: true,
+    });
+    process.on('message', (msg: any) => {
+      if (msg && msg.type === 'telegram_update') {
+        void bot.handleUpdate(msg.update).catch((err) => {
+          logger.error({ err, tenantId }, 'Error handling tenant webhook update');
+        });
+      }
+    });
+    logger.info({ tenantId }, 'Tenant bot is online and listening for webhook updates via IPC');
+  } else {
+    await bot.api.deleteWebhook({ drop_pending_updates: true });
+    logger.info({ tenantId }, 'Starting tenant bot with long-polling…');
+    await bot.start({
+      onStart: (info) => logger.info({ username: info.username, tenantId }, 'Tenant bot is online'),
+    });
+  }
 }
 
 main().catch((err) => {
