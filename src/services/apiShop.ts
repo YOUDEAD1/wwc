@@ -563,7 +563,7 @@ export async function handleProductSyncAlerts(
       '',
       '👇 Tap the button below to view the product and buy directly:',
     ].join('\n');
-    buttonText = '🛒 Buy Now';
+    buttonText = `Buy ${productName}`.slice(0, 64);
   } else if (type === 'restock') {
     html = [
       '⚡️ <b>Product Restocked!</b>',
@@ -574,7 +574,7 @@ export async function handleProductSyncAlerts(
       '',
       '👇 Tap the button below to view the product and buy directly:',
     ].join('\n');
-    buttonText = '🛒 Buy Now';
+    buttonText = `Buy ${productName}`.slice(0, 64);
   } else if (type === 'discount') {
     html = [
       '📉 <b>Big Price Drop!</b>',
@@ -585,7 +585,7 @@ export async function handleProductSyncAlerts(
       '',
       '👇 Tap the button below to view the product and grab the offer:',
     ].join('\n');
-    buttonText = '💸 View Offer';
+    buttonText = `Buy ${productName}`.slice(0, 64);
   }
 
   const replyMarkup = makeProductButton(productId, buttonText, emojiId);
