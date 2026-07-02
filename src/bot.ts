@@ -63,6 +63,92 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
   bot.use(userMiddleware);
   bot.use(banMiddleware);
 
+  // ===== Forced Subscription Middleware =====
+  bot.use(async (ctx, next) => {
+    // Only intercept messages and callback queries
+    if (!ctx.message && !ctx.callbackQuery) {
+      return next();
+    }
+
+    // Bypass if the user is an admin
+    const userId = ctx.from?.id;
+    if (userId) {
+      const { isAdmin } = await import('./db/queries.js');
+      const admin = await isAdmin(userId).catch(() => false);
+      if (admin) return next();
+    }
+
+    // Allow start command and forcesub check callback
+    const text = ctx.message?.text ?? '';
+    if (text.startsWith('/start')) {
+      return next();
+    }
+    const data = ctx.callbackQuery?.data ?? '';
+    if (data === 'forcesub:check') {
+      return next();
+    }
+
+    // Check subscription
+    if (userId) {
+      const { enforceSubscription } = await import('./services/forceSub.js');
+      const subCheck = await enforceSubscription(ctx.api, userId);
+      if (!subCheck.pass) {
+        if (ctx.callbackQuery) {
+          await ctx.answerCallbackQuery({
+            text: '⛔ يجب الاشتراك في القناة أولاً لتتمكن من استخدام البوت!',
+            show_alert: true,
+          });
+        } else {
+          const { InlineKeyboard } = await import('grammy');
+          const { renderMdHtml } = await import('./services/premium.js');
+          const kb = new InlineKeyboard();
+          let idx = 1;
+          for (const ch of subCheck.channels) {
+            const channelLink = ch.startsWith('@')
+              ? `https://t.me/${ch.slice(1)}`
+              : `https://t.me/c/${ch.replace('-100', '')}`;
+            kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
+          }
+          kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+          await ctx.reply(
+            renderMdHtml(subCheck.message),
+            { parse_mode: 'HTML', reply_markup: kb },
+          );
+        }
+        return;
+      }
+    }
+
+    return next();
+  });
+
+  // ===== Chat Member Leave Handler =====
+  bot.on('chat_member', async (ctx) => {
+    const update = ctx.chatMember;
+    const oldStatus = update.old_chat_member.status;
+    const newStatus = update.new_chat_member.status;
+    const targetUserId = update.new_chat_member.user.id;
+    const channelId = update.chat.id;
+
+    const leftStatuses = ['left', 'kicked'];
+    const isLeft = leftStatuses.includes(newStatus) && !leftStatuses.includes(oldStatus);
+
+    if (isLeft) {
+      const { getForceSub } = await import('./services/forceSub.js');
+      const config = await getForceSub();
+      
+      const isFsubChannel = 
+        config.channelId === String(channelId) || 
+        (config.channels && config.channels.some(c => c === String(channelId) || c === `@${update.chat.username}`));
+
+      if (isFsubChannel) {
+        logger.info({ userId: targetUserId, channelId }, 'User left forced subscription channel, invalidating referral');
+        const { invalidateReferral } = await import('./services/forceSub.js');
+        await invalidateReferral(ctx.api, targetUserId);
+      }
+    }
+  });
+
   registerStart(bot);
   registerShop(bot);
   registerProfile(bot);

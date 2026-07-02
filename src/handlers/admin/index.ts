@@ -658,15 +658,22 @@ async function showFSubMenu(ctx: AppCtx): Promise<void> {
   const config = await getForceSub();
   const statusEmoji = config.enabled ? '✅' : '❌';
   const statusText = config.enabled ? 'مفعّل' : 'معطّل';
-  const channelText = config.channelId ?? '_(لم يتم التعيين)_';
+
+  const channelsList = config.channels && config.channels.length > 0
+    ? config.channels.map((c, i) => `${i + 1}. \`${c}\``).join('\n')
+    : '_(لا يوجد قنوات)_';
 
   const lines = [
     '📢 *الاشتراك الإجباري*',
     '',
     `• الحالة: ${statusEmoji} *${statusText}*`,
-    `• القناة: \`${channelText}\``,
+    '',
+    '*القنوات الحالية:*',
+    channelsList,
     '',
     '*الرسالة عند الاشتراك:*',
+    config.message ?? '⛔ *الاشتراك مطلوب*\n\nيجب الاشتراك في قناتنا أولاً للوصول إلى البوت.\n\nبعد الاشتراك بنجاح في جميع القنوات، اضغط على زر التحقق.',
+    '',
     '_(اضغط تعديل الرسالة لتغييرها)_',
   ];
 
@@ -677,7 +684,8 @@ async function showFSubMenu(ctx: AppCtx): Promise<void> {
     kb.text('✅ تفعيل', 'adm:fsub:on');
   }
   kb.row()
-    .text('🔗 تعيين القناة', 'adm:fsub:setchannel')
+    .text('➕ إضافة قناة', 'adm:fsub:addchannel')
+    .text('🗑️ مسح القنوات', 'adm:fsub:clearchannels')
     .row()
     .text('✏️ تعديل الرسالة', 'adm:fsub:setmsg')
     .row()
@@ -699,9 +707,9 @@ adminBot.callbackQuery('adm:fsub', async (ctx) => {
 // تفعيل
 adminBot.callbackQuery('adm:fsub:on', async (ctx) => {
   const config = await getForceSub();
-  if (!config.channelId) {
+  if (!config.channels || config.channels.length === 0) {
     await ctx.answerCallbackQuery({
-      text: '❌ عيّن القناة أولاً!',
+      text: '❌ أضف قناة واحدة على الأقل أولاً!',
       show_alert: true,
     });
     return;
@@ -718,18 +726,27 @@ adminBot.callbackQuery('adm:fsub:off', async (ctx) => {
   await showFSubMenu(ctx);
 });
 
-// تعيين القناة
-adminBot.callbackQuery('adm:fsub:setchannel', async (ctx) => {
+// تعيين أو إضافة قناة
+adminBot.callbackQuery('adm:fsub:addchannel', async (ctx) => {
   await ctx.answerCallbackQuery();
-  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'fsub.channel_id' } } as any;
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'fsub.add_channel' } } as any;
   await ctx.editMessageText(
-    '🔗 *تعيين القناة الإجبارية*\n\n' +
+    '➕ *إضافة قناة إجبارية*\n\n' +
     'أرسل معرف القناة، مثال:\n' +
     '• `@myChannel` — قناة عامة\n' +
     '• `-1001234567890` — قناة خاصة\n\n' +
-    '_ملاحظة: يجب إضافة البوت كأدمن في القناة._',
+    '⚠️ *تنبيه مهم:* يجب إضافة البوت كأدمن في القناة أولاً لتفعيل التحقق، وإلا سيرفض البوت إضافتها.',
     { parse_mode: 'Markdown', reply_markup: backRow(new InlineKeyboard()) },
   );
+});
+
+// مسح القنوات
+adminBot.callbackQuery('adm:fsub:clearchannels', async (ctx) => {
+  await supabase.from('settings').delete().eq('key', 'fsub.channels');
+  await supabase.from('settings').delete().eq('key', 'fsub.channel_id');
+  await supabase.from('settings').delete().eq('key', 'force_sub.channel_id');
+  await ctx.answerCallbackQuery({ text: '✅ تم مسح جميع القنوات' });
+  await showFSubMenu(ctx);
 });
 
 // تعديل رسالة الاشتراك الإجباري
@@ -5995,6 +6012,8 @@ async function showReferralAdminList(ctx: AppCtx, page: number): Promise<void> {
   if (totalPages > 1) kb.row();
   kb.text('🔍 Find User', 'adm:refs:find')
     .text('♻️ Delete All Used Refs', 'adm:refs:resetall:ask')
+    .row()
+    .text('⚙️ Settings', 'adm:refs:settings')
     .row();
   kb.text('🔄 Refresh', `adm:refs:${page}`).text('⬅️ Back', 'adm:root');
   const body = lines.join('\n');
@@ -6004,6 +6023,69 @@ async function showReferralAdminList(ctx: AppCtx, page: number): Promise<void> {
     await ctx.reply(body, { parse_mode: 'HTML', reply_markup: kb });
   }
 }
+
+adminBot.callbackQuery('adm:refs:settings', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const { getReferralCost, getReferralAmount, getReferralLimitPerDay } = await import('../../services/settings.js');
+  const cost = getReferralCost();
+  const amount = getReferralAmount();
+  const limit = getReferralLimitPerDay();
+
+  const lines = [
+    '⚙️ <b>Referral Settings</b>',
+    '',
+    `• Required Refs count to convert: <b>${cost} refs</b>`,
+    `• Conversion Reward Amount: <b>${amount} USDT</b>`,
+    `• Max referrals per user per day: <b>${limit === 0 ? 'Unlimited' : `${limit} refs/day`}</b>`,
+    '',
+    'Click a setting below to modify it.',
+  ];
+
+  const kb = new InlineKeyboard()
+    .text('🔢 Set Required Refs Count', 'adm:refs:set:cost')
+    .row()
+    .text('💵 Set Reward Amount', 'adm:refs:set:amount')
+    .row()
+    .text('⏳ Set Daily Limit', 'adm:refs:set:limit')
+    .row()
+    .text('⬅️ Back', 'adm:refs:0');
+
+  await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb });
+});
+
+adminBot.callbackQuery('adm:refs:set:cost', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'referral.cost' } };
+  await ctx.editMessageText(
+    '🔢 <b>Set Required Refs Count</b>\n\n' +
+      'Send the number of referrals needed to convert (e.g. `10` or `20`).\n\n' +
+      'Send `/cancel` to abort.',
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) }
+  );
+});
+
+adminBot.callbackQuery('adm:refs:set:amount', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'referral.amount' } };
+  await ctx.editMessageText(
+    '💵 <b>Set Reward Amount</b>\n\n' +
+      'Send the reward amount in USDT (e.g. `0.50` or `1.00`).\n\n' +
+      'Send `/cancel` to abort.',
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) }
+  );
+});
+
+adminBot.callbackQuery('adm:refs:set:limit', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'referral.limit_per_day' } };
+  await ctx.editMessageText(
+    '⏳ <b>Set Daily Limit</b>\n\n' +
+      'Send the maximum number of referrals a user can invite per day.\n' +
+      'Send `0` for unlimited.\n\n' +
+      'Send `/cancel` to abort.',
+    { parse_mode: 'HTML', reply_markup: backRow(new InlineKeyboard()) }
+  );
+});
 
 async function showReferralAdminUser(ctx: AppCtx, user: DBUser): Promise<void> {
   const balance = await getReferralBalance(user.telegram_id);
@@ -8840,6 +8922,88 @@ adminBot.on('message:text', async (ctx, next) => {
             `✅ تم تعيين القناة: \`${text.trim()}\`\n\nتأكد من إضافة البوت كأدمن في القناة.`,
             { parse_mode: 'Markdown', reply_markup: rootMenu() },
           );
+        } else if (key === 'fsub.add_channel') {
+          const raw = text.trim();
+          let chatId: number | string = raw;
+          let botIsAdmin = false;
+          try {
+            const chat = await ctx.api.getChat(raw.startsWith('-') || /^\d/.test(raw) ? Number(raw) : raw);
+            chatId = chat.id;
+            const me = await ctx.api.getMe();
+            const member = await ctx.api.getChatMember(chatId, me.id);
+            botIsAdmin = ['administrator', 'creator'].includes(member.status);
+          } catch (err) {
+            ctx.session.adminFlow = undefined;
+            await ctx.reply(
+              `❌ فشل التحقق من القناة! يرجى التأكد من:\n` +
+              `• كتابة معرف أو يوزر القناة بشكل صحيح.\n` +
+              `• إضافة البوت كأدمن في القناة أولاً.\n\n` +
+              `الخطأ: \`${(err as Error).message?.slice(0, 100)}\``,
+              { reply_markup: rootMenu() }
+            );
+            return;
+          }
+
+          if (!botIsAdmin) {
+            ctx.session.adminFlow = undefined;
+            await ctx.reply(
+              '❌ البوت ليس أدمن في هذه القناة! يرجى ترقية البوت إلى أدمن في القناة أولاً ثم المحاولة مجدداً.',
+              { reply_markup: rootMenu() }
+            );
+            return;
+          }
+
+          const config = await getForceSub();
+          const updatedChannels = [...config.channels];
+          const newChanStr = String(chatId).startsWith('-') ? String(chatId) : raw;
+          if (!updatedChannels.includes(newChanStr)) {
+            updatedChannels.push(newChanStr);
+          }
+
+          await supabase.from('settings').upsert({ key: 'fsub.channels', value: updatedChannels });
+          await supabase.from('settings').upsert({ key: 'fsub.channel_id', value: newChanStr });
+          await supabase.from('settings').upsert({ key: 'force_sub.channel_id', value: newChanStr });
+
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(`✅ تم إضافة القناة بنجاح كقناة إجبارية:\n\`${newChanStr}\``, {
+            reply_markup: rootMenu(),
+          });
+        } else if (key === 'referral.cost') {
+          const cost = parseInt(text.trim(), 10);
+          if (isNaN(cost) || cost <= 0) {
+            await ctx.reply('❌ قيمة غير صالحة. يرجى إرسال عدد صحيح موجب.');
+            return;
+          }
+          await setText(key, String(cost), ctx.from!.id);
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(`✅ تم تحديد عدد الإحالات المطلوبة للتحويل: <b>${cost} إحالة</b>`, {
+            parse_mode: 'HTML',
+            reply_markup: rootMenu(),
+          });
+        } else if (key === 'referral.amount') {
+          const amount = parseFloat(text.trim());
+          if (isNaN(amount) || amount <= 0) {
+            await ctx.reply('❌ قيمة غير صالحة. يرجى إرسال مبلغ موجب (مثال: 0.50).');
+            return;
+          }
+          await setText(key, String(amount), ctx.from!.id);
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(`✅ تم تحديد مكافأة التحويل: <b>${amount.toFixed(2)} USDT</b>`, {
+            parse_mode: 'HTML',
+            reply_markup: rootMenu(),
+          });
+        } else if (key === 'referral.limit_per_day') {
+          const limit = parseInt(text.trim(), 10);
+          if (isNaN(limit) || limit < 0) {
+            await ctx.reply('❌ قيمة غير صالحة. يرجى إرسال 0 أو عدد موجب.');
+            return;
+          }
+          await setText(key, String(limit), ctx.from!.id);
+          ctx.session.adminFlow = undefined;
+          await ctx.reply(`✅ تم تحديد الحد اليومي للإحالات: <b>${limit === 0 ? 'غير محدود' : `${limit} إحالة/يوم`}</b>`, {
+            parse_mode: 'HTML',
+            reply_markup: rootMenu(),
+          });
         } else if (key === 'fsub.message') {
           await supabase.from('settings').upsert({ key: 'fsub.message', value: text });
           ctx.session.adminFlow = undefined;

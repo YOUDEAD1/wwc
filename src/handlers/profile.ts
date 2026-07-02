@@ -87,6 +87,8 @@ import {
   getAdminContactUrlWithPrefill,
   getBotTutorial,
   getStoreName,
+  getReferralCost,
+  getReferralAmount,
 } from '../services/settings.js';
 import * as adminLog from '../services/adminLog.js';
 import { InputFile } from 'grammy';
@@ -558,13 +560,17 @@ export async function showReferScreen(
   } catch {
     // Tables may be missing — show zeroes instead of crashing.
   }
-  const left = Math.max(0, 10 - refBalance.available);
+  const cost = getReferralCost();
+  const amount = getReferralAmount();
+  const left = Math.max(0, cost - refBalance.available);
   const fmt = (n: number): string => n.toFixed(n % 1 === 0 ? 0 : 2);
   const body = ctx.t('profile.refer.body', {
     link,
     ref24h,
     ref7d,
     left,
+    cost,
+    amount: fmt(amount),
     refTotal: refBalance.total,
     refSpent: refBalance.spent,
     refAvailable: refBalance.available,
@@ -967,19 +973,19 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   });
 
   bot.callbackQuery('profile:refer:convert', async (ctx) => {
-    const REF_COST = 20;
-    const USDT_AMOUNT = 1;
+    const cost = getReferralCost();
+    const amount = getReferralAmount();
     try {
       const result = await convertReferralBalance({
         user_id: ctx.user.telegram_id,
-        referral_cost: REF_COST,
-        amount: USDT_AMOUNT,
+        referral_cost: cost,
+        amount: amount,
       });
       ctx.user.balance = result.newBalance;
       await ctx.answerCallbackQuery({
         text: ctx.t('profile.refer.convert_success', {
-          refs: REF_COST,
-          amount: USDT_AMOUNT.toFixed(2),
+          refs: cost,
+          amount: amount.toFixed(2),
           balance: result.newBalance.toFixed(2),
         }),
         show_alert: true,
@@ -990,6 +996,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
         const balance = await getReferralBalance(ctx.user.telegram_id).catch(() => null);
         await ctx.answerCallbackQuery({
           text: ctx.t('profile.refer.convert_low', {
+            cost,
+            amount: amount.toFixed(2),
             available: balance?.available ?? 0,
           }),
           show_alert: true,

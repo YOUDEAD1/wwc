@@ -755,7 +755,7 @@ export const en: Record<string, string> = {
   // Refer & Earn screen.
   'profile.refer.title': '{refer_title} *Refer & Earn*',
   'profile.refer.body':
-    '{refer_prize_l} *Refer 10 users and win $0.50* {refer_prize_r}\n\n' +
+    '{refer_prize_l} *Refer {cost} users and win ${amount}* {refer_prize_r}\n\n' +
     '{refer_clicks} *Clicks:* {clicks}\n' +
     '{refer_pending} *Pending:* {pending}\n' +
     '{refer_active} *Active:* {active}\n' +
@@ -770,7 +770,7 @@ export const en: Record<string, string> = {
   'profile.refer.convert_success':
     '💱 Converted *{refs} refs* into *{amount} USDT*.\n\n💳 Wallet Balance: *{balance} USDT*',
   'profile.refer.convert_low':
-    '⚠️ Not enough refs to convert.\n\nYou need *20 active refs* to convert into *1 USDT*.\nCurrent Referral Pay Balance: *{available} refs*',
+    '⚠️ Not enough refs to convert.\n\nYou need *{cost} active refs* to convert into *{amount} USDT*.\nCurrent Referral Pay Balance: *{available} refs*',
   'profile.refer.convert_error':
     '⚠️ Could not convert refs right now. Please try again.',
   'btn.copy_link': '📋 Copy Link',

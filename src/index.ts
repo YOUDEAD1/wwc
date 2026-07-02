@@ -67,6 +67,7 @@ async function main() {
 
     await bot.api.setWebhook(env.WEBHOOK_URL, {
       secret_token: env.WEBHOOK_SECRET || undefined,
+      allowed_updates: ['message', 'callback_query', 'chat_member'],
     });
 
     const handler = webhookCallback(bot, 'http', {
@@ -79,6 +80,7 @@ async function main() {
 
     logger.info('Starting main bot with long-polling…');
     await bot.start({
+      allowed_updates: ['message', 'callback_query', 'chat_member'],
       onStart: (info) => logger.info({ username: info.username }, 'Main bot is online'),
     });
   }

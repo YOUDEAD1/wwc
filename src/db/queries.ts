@@ -162,6 +162,23 @@ export async function confirmPendingReferral(telegram_id: number): Promise<void>
 
   const referrerId = user.pending_referral_by;
 
+  // التحقق من الحد الأقصى للإحالات اليومية للمحيل
+  try {
+    const { getReferralLimitPerDay } = await import('../services/settings.js');
+    const limit = getReferralLimitPerDay();
+    if (limit > 0) {
+      const DAY = 24 * 60 * 60 * 1000;
+      const refsCount = await countReferralsSince(referrerId, DAY);
+      if (refsCount >= limit) {
+        logger.info({ referrerId, telegram_id }, 'Referral skipped because referrer reached daily limit');
+        await cancelPendingReferral(telegram_id);
+        return;
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to check referral daily limit');
+  }
+
   // سجّل الإحالة الآن
   await ensureReferralRecord(referrerId, telegram_id);
 
@@ -571,6 +588,29 @@ export async function convertReferralBalance(args: {
     logger.error({ err: error, args }, 'convertReferralBalance failed');
     throw error;
   }
+
+  // تحديث إحصائيات الأرباح المتراكمة والمحولة للمستخدم
+  try {
+    const { data: userStats } = await supabase
+      .from('users')
+      .select('referral_earned_total, referral_transferred')
+      .eq('telegram_id', args.user_id)
+      .single();
+
+    const newEarned = Number(userStats?.referral_earned_total ?? 0) + args.amount;
+    const newTransferred = Number(userStats?.referral_transferred ?? 0) + args.amount;
+
+    await supabase
+      .from('users')
+      .update({
+        referral_earned_total: newEarned,
+        referral_transferred: newTransferred,
+      })
+      .eq('telegram_id', args.user_id);
+  } catch (statErr) {
+    logger.warn({ err: statErr, user_id: args.user_id }, 'Failed to update user referral stats');
+  }
+
   const result = (Array.isArray(data) ? data[0] : data) as
     | {
         total_referrals?: number;

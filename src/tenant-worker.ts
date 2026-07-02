@@ -24,6 +24,7 @@ async function main() {
     const webhookUrl = `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/webhook/tenant/${process.env.BOT_TOKEN}`;
     await bot.api.setWebhook(webhookUrl, {
       drop_pending_updates: true,
+      allowed_updates: ['message', 'callback_query', 'chat_member'],
     });
     process.on('message', (msg: any) => {
       if (msg && msg.type === 'telegram_update') {
@@ -37,6 +38,7 @@ async function main() {
     await bot.api.deleteWebhook({ drop_pending_updates: true });
     logger.info({ tenantId }, 'Starting tenant bot with long-polling…');
     await bot.start({
+      allowed_updates: ['message', 'callback_query', 'chat_member'],
       onStart: (info) => logger.info({ username: info.username, tenantId }, 'Tenant bot is online'),
     });
   }

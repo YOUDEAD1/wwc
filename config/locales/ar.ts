@@ -251,7 +251,7 @@ export const ar: Record<string, string> = {
   // شاشة الإحالة والتربح.
   'profile.refer.title': '{refer_title} *إحالة وتربح*',
   'profile.refer.body':
-    '{refer_prize_l} *ادعُ 10 مستخدمين واربح $0.50* {refer_prize_r}\n\n' +
+    '{refer_prize_l} *ادعُ {cost} مستخدمين واربح {amount} USDT* {refer_prize_r}\n\n' +
     '{refer_clicks} *النقرات:* {clicks}\n' +
     '{refer_pending} *المعلق:* {pending}\n' +
     '{refer_active} *النشط:* {active}\n' +
@@ -266,7 +266,7 @@ export const ar: Record<string, string> = {
   'profile.refer.convert_success':
     '💱 تم تحويل *{refs} إحالة* إلى *{amount} USDT*.\n\n💳 رصيد المحفظة: *{balance}*',
   'profile.refer.convert_low':
-    '⚠️ لا يوجد رصيد إحالات كافٍ للتحويل.\n\nتحتاج *20 إحالة نشطة* للتحويل إلى *1 USDT*.\nرصيد Referral Pay الحالي: *{available} إحالة*',
+    '⚠️ لا يوجد رصيد إحالات كافٍ للتحويل.\n\nتحتاج *{cost} إحالة نشطة* للتحويل إلى *{amount} USDT*.\nرصيد Referral Pay الحالي: *{available} إحالة*',
   'profile.refer.convert_error':
     '⚠️ تعذر تحويل الإحالات الآن. حاول مرة أخرى.',
   'btn.live_refers': '🔵 See Your Live Refers',

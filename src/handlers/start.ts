@@ -203,13 +203,15 @@ export function registerStart(bot: Composer<AppCtx>): void {
     // ===== تحقق الاشتراك الإجباري =====
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
-      const channelLink = subCheck.channelId.startsWith('@')
-        ? `https://t.me/${subCheck.channelId.slice(1)}`
-        : `https://t.me/c/${subCheck.channelId.replace('-100', '')}`;
-      const kb = new InlineKeyboard()
-        .url('📢 اشترك في القناة', channelLink)
-        .row()
-        .text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      const kb = new InlineKeyboard();
+      let idx = 1;
+      for (const ch of subCheck.channels) {
+        const channelLink = ch.startsWith('@')
+          ? `https://t.me/${ch.slice(1)}`
+          : `https://t.me/c/${ch.replace('-100', '')}`;
+        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
+      }
+      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
       await ctx.reply(
         renderMdHtml(subCheck.message),
         { parse_mode: 'HTML', reply_markup: kb },
