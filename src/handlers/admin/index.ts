@@ -116,6 +116,9 @@ import {
   setChannelUrl,
   clearChannelUrl,
   getChannelUrl,
+  setReferralChannelUrl,
+  clearReferralChannelUrl,
+  getReferralChannelUrl,
   getEmoji,
   getButtonColor,
   getButtonIcon,
@@ -4713,6 +4716,7 @@ adminBot.callbackQuery('adm:cust', async (ctx) => {
   const layoutLabel = layout === 'list' ? '📋 Shop: List View' : '📱 Shop: Grid View';
   
   const channelUrl = getChannelUrl();
+  const referralChannelUrl = getReferralChannelUrl();
   const kb = new InlineKeyboard()
     .text('📝 Edit Text', 'adm:cust:text')
     .text('🎨 Set Color', 'adm:cust:color:pick')
@@ -4723,16 +4727,20 @@ adminBot.callbackQuery('adm:cust', async (ctx) => {
     .text('🎯 Set Button Icon', 'adm:cust:btnicon')
     .row()
     .text('🔗 Set Channel URL', 'adm:cust:channel')
+    .text('🔗 Set Referral Channel', 'adm:cust:referral_channel')
+    .row()
     .text(layoutLabel, 'adm:cust:layout') // Toggle shop layout style
     .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
   
-  const channelLine = channelUrl
-    ? `\n\nChannel URL: \`${channelUrl}\``
-    : '\n\n_No channel URL set yet._';
+  let infoLine = '✏️ *Customize*\n\nEdit any text, button color, emoji, or channel links used by the bot.';
+  if (channelUrl) infoLine += `\n\n• Channel URL: \`${channelUrl}\``;
+  if (referralChannelUrl) infoLine += `\n• Referral Channel: \`${referralChannelUrl}\``;
+  if (!channelUrl && !referralChannelUrl) infoLine += '\n\n_No channel URLs set yet._';
+
   await ctx.editMessageText(
-    `✏️ *Customize*\n\nEdit any text, button color, emoji, or the channel link used by the bot.${channelLine}`,
+    infoLine,
     { parse_mode: 'Markdown', reply_markup: kb },
   );
 });
@@ -4746,6 +4754,7 @@ adminBot.callbackQuery('adm:cust:layout', async (ctx) => {
   
   // Re-render Customize page with updated layout button
   const channelUrl = getChannelUrl();
+  const referralChannelUrl = getReferralChannelUrl();
   const layoutLabel = nextStyle === 'list' ? '📋 Shop: List View' : '📱 Shop: Grid View';
   const kb = new InlineKeyboard()
     .text('📝 Edit Text', 'adm:cust:text')
@@ -4757,16 +4766,20 @@ adminBot.callbackQuery('adm:cust:layout', async (ctx) => {
     .text('🎯 Set Button Icon', 'adm:cust:btnicon')
     .row()
     .text('🔗 Set Channel URL', 'adm:cust:channel')
+    .text('🔗 Set Referral Channel', 'adm:cust:referral_channel')
+    .row()
     .text(layoutLabel, 'adm:cust:layout')
     .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
   
-  const channelLine = channelUrl
-    ? `\n\nChannel URL: \`${channelUrl}\``
-    : '\n\n_No channel URL set yet._';
+  let infoLine = '✏️ *Customize*\n\nEdit any text, button color, emoji, or channel links used by the bot.';
+  if (channelUrl) infoLine += `\n\n• Channel URL: \`${channelUrl}\``;
+  if (referralChannelUrl) infoLine += `\n• Referral Channel: \`${referralChannelUrl}\``;
+  if (!channelUrl && !referralChannelUrl) infoLine += '\n\n_No channel URLs set yet._';
+
   await ctx.editMessageText(
-    `✏️ *Customize*\n\nEdit any text, button color, emoji, or the channel link used by the bot.${channelLine}`,
+    infoLine,
     { parse_mode: 'Markdown', reply_markup: kb },
   );
 });
@@ -4789,6 +4802,27 @@ adminBot.callbackQuery('adm:cust:channel:clear', async (ctx) => {
   await clearChannelUrl(ctx.from!.id);
   ctx.session.adminFlow = undefined;
   await ctx.answerCallbackQuery({ text: 'Channel link removed.' });
+  await showRoot(ctx);
+});
+
+adminBot.callbackQuery('adm:cust:referral_channel', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_referral_channel', step: 'value', data: {} };
+  const kb = new InlineKeyboard()
+    .text('🗑 Remove Referral Channel', 'adm:cust:referral_channel:clear')
+    .row()
+    .text('⬅️ Back', 'adm:cust');
+  await ctx.editMessageText(
+    '🔗 *Set Referral Channel URL*\n\nSend the referral channel link (e.g. `https://t.me/yourchannel`).' +
+      '\n\nOr `/cancel`.',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:cust:referral_channel:clear', async (ctx) => {
+  await clearReferralChannelUrl(ctx.from!.id);
+  ctx.session.adminFlow = undefined;
+  await ctx.answerCallbackQuery({ text: 'Referral channel link removed.' });
   await showRoot(ctx);
 });
 
@@ -8937,6 +8971,7 @@ adminBot.on('message:text', async (ctx, next) => {
             reply_markup: rootMenu(),
           });
         }
+        await refreshSettings();
       }
       return;
     }
@@ -9273,6 +9308,23 @@ adminBot.on('message:text', async (ctx, next) => {
       await setChannelUrl(text, ctx.from!.id);
       ctx.session.adminFlow = undefined;
       await ctx.reply(`✅ Channel link saved:\n\`${text}\``, {
+        parse_mode: 'Markdown',
+        reply_markup: rootMenu(),
+      });
+      return;
+    }
+
+    if (flow.type === 'set_referral_channel') {
+      if (!/^https?:\/\/t\.me\//i.test(text) && !/^https?:\/\//i.test(text)) {
+        await ctx.reply(
+          '❌ That doesn\'t look like a URL. Send a link like `https://t.me/yourchannel`.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      await setReferralChannelUrl(text, ctx.from!.id);
+      ctx.session.adminFlow = undefined;
+      await ctx.reply(`✅ Referral channel link saved:\n\`${text}\``, {
         parse_mode: 'Markdown',
         reply_markup: rootMenu(),
       });
@@ -10552,6 +10604,7 @@ adminBot.command('settext', async (ctx) => {
     return;
   }
   await setText(key, value, ctx.from!.id);
+  await refreshSettings();
   await ctx.reply(`✅ Text \`${key}\` updated.`, { parse_mode: 'Markdown' });
 });
 

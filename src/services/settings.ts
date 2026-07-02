@@ -236,6 +236,22 @@ export async function clearChannelUrl(updated_by?: number): Promise<void> {
   cache.set('channel.url', '');
 }
 
+/** Referral channel URL shown on the refer screen. */
+export function getReferralChannelUrl(): string | undefined {
+  const v = cache.get('referral_channel.url');
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+export async function setReferralChannelUrl(url: string, updated_by?: number): Promise<void> {
+  await setSetting('referral_channel.url', url, updated_by);
+  cache.set('referral_channel.url', url);
+}
+
+export async function clearReferralChannelUrl(updated_by?: number): Promise<void> {
+  await setSetting('referral_channel.url', '', updated_by);
+  cache.set('referral_channel.url', '');
+}
+
 /**
  * Public URL of the email-explanation PDF. When set, the Why Email
  * "Know More" button becomes a URL button that opens the PDF in

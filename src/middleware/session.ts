@@ -271,6 +271,7 @@ export type AdminFlow =
       };
     }
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
+  | { type: 'set_referral_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
   | { type: 'referral_find_user'; step: 'query'; data: Record<string, never> }

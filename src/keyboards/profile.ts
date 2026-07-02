@@ -2,6 +2,7 @@ import { InlineKeyboard } from 'grammy';
 import { CURRENCIES, type CurrencyCode } from '../../config/currencies.js';
 import { type Lang } from '../../config/index.js';
 import { inlineBtn, inlineCopyText, inlineUrl } from './helpers.js';
+import { getReferralChannelUrl } from '../services/settings.js';
 
 /**
  * Settings (profile) keyboard — eight buttons in a tidy 2×4 grid:
@@ -234,8 +235,11 @@ export function referKeyboard(
   const kb = new InlineKeyboard();
   inlineCopyText(kb, lang, 'copy_link', link);
   kb.row();
-  inlineUrl(kb, lang, 'live_refers', 'https://t.me/TigerStockChat');
-  kb.row();
+  const refChannelUrl = getReferralChannelUrl();
+  if (refChannelUrl) {
+    inlineUrl(kb, lang, 'live_refers', refChannelUrl);
+    kb.row();
+  }
   inlineBtn(kb, lang, 'convert_refers', 'profile:refer:convert');
   kb.row();
   inlineBtn(kb, lang, 'refresh', options.refreshCallback ?? 'profile:refer');
