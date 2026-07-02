@@ -82,6 +82,7 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
     const msg = (err.error as { description?: string } | undefined)?.description ?? '';
     if (msg.includes('message is not modified')) return;
     if (msg.includes('query is too old') || msg.includes('query ID is invalid')) return;
+    if (msg.includes('blocked by the user') || msg.includes('chat not found') || msg.includes('user is deactivated')) return;
     logger.error({ err: err.error }, 'Unhandled bot error');
   });
 
