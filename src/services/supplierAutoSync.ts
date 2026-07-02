@@ -14,7 +14,7 @@ import {
 } from './supplierApi.js';
 import { syncProducts as syncApiShopProducts } from './apiShop.js';
 
-const DEFAULT_SUPPLIER_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const DEFAULT_SUPPLIER_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;

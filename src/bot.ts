@@ -23,6 +23,42 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
   const isTenant = opts.isTenant === true;
   const bot = new Bot<AppCtx>(env.BOT_TOKEN);
 
+  // منظم تسلسلي لكل مستخدم لمنع التعارض والعمليات المتكررة وتخفيف الضغط
+  const userLocks = new Map<number, Promise<void>>();
+  bot.use(async (ctx, next) => {
+    const userId = ctx.from?.id;
+    if (!userId) return next();
+
+    const prevPromise = userLocks.get(userId) || Promise.resolve();
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(() => {
+        logger.warn({ userId }, 'User request queue lock timed out');
+        resolve();
+      }, 15000);
+    });
+
+    let resolveLock: () => void;
+    const newPromise = new Promise<void>((resolve) => {
+      resolveLock = resolve;
+    });
+
+    userLocks.set(userId, newPromise);
+
+    try {
+      await Promise.race([prevPromise, timeoutPromise]);
+      if (timeoutId) clearTimeout(timeoutId);
+      await next();
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      resolveLock!();
+      if (userLocks.get(userId) === newPromise) {
+        userLocks.delete(userId);
+      }
+    }
+  });
+
   bot.use(sessionMiddleware as unknown as (ctx: SessionCtx, next: () => Promise<void>) => Promise<void>);
   bot.use(userMiddleware);
   bot.use(banMiddleware);
@@ -45,6 +81,7 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
   bot.catch((err) => {
     const msg = (err.error as { description?: string } | undefined)?.description ?? '';
     if (msg.includes('message is not modified')) return;
+    if (msg.includes('query is too old') || msg.includes('query ID is invalid')) return;
     logger.error({ err: err.error }, 'Unhandled bot error');
   });
 

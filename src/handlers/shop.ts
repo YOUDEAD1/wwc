@@ -498,7 +498,11 @@ async function finalizeOrderDelivery(args: {
   // tapping the order in /myorders would render a broken
   // "Received: Order #N-37" line that confused buyers.
   await setOrderDeliveredItems(order.id, deliveredItemsForDb);
-  await ctx.answerCallbackQuery();
+  try {
+    await ctx.answerCallbackQuery();
+  } catch (err) {
+    logger.debug({ err }, 'finalizeOrderDelivery answerCallbackQuery failed or timed out');
+  }
   // ---- Step 1: Payment Verified card (auto-deletes after 15s) ----
   // We capture the message_id and schedule a delete via setTimeout
   // so the chat stays clean: by the time the user finishes reading
