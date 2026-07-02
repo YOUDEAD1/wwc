@@ -322,15 +322,34 @@ export function registerStart(bot: Composer<AppCtx>): void {
 
   // زر "اشتركت، تحقق الآن"
   bot.callbackQuery('forcesub:check', async (ctx) => {
-    await ctx.answerCallbackQuery();
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
+      const kb = new InlineKeyboard();
+      let idx = 1;
+      for (const ch of subCheck.channels) {
+        const channelLink = ch.startsWith('@')
+          ? `https://t.me/${ch.slice(1)}`
+          : `https://t.me/c/${ch.replace('-100', '')}`;
+        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
+      }
+      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+
+      try {
+        await ctx.editMessageText(
+          renderMdHtml(subCheck.message),
+          { parse_mode: 'HTML', reply_markup: kb }
+        );
+      } catch {
+        // ignore identical content error
+      }
+
       await ctx.answerCallbackQuery({
-        text: '❌ لم يتم التحقق من اشتراكك! اشترك في القناة أولاً.',
+        text: '❌ لم تشترك في جميع القنوات بعد! يرجى الاشتراك في القنوات المتبقية أولاً.',
         show_alert: true,
       });
       return;
     }
+    await ctx.answerCallbackQuery();
     // اشترك — أكّد الإحالة المعلّقة إن وجدت
     await confirmPendingReferral(ctx.user.telegram_id);
     // أدخله البوت
