@@ -13,6 +13,7 @@ import {
   syncSupplierProductLink,
 } from './supplierApi.js';
 import { syncProducts as syncApiShopProducts } from './apiShop.js';
+import { getConnection } from './apiConnect.js';
 
 const DEFAULT_SUPPLIER_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -106,10 +107,13 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
 
     // --- API Shop background sync ---
     try {
-      logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync started');
-      const res = await syncApiShopProductsOnce(api);
-      if (res.ok) {
-        logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync finished successfully');
+      const conn = await getConnection();
+      if (conn) {
+        logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync started');
+        const res = await syncApiShopProductsOnce(api);
+        if (res.ok) {
+          logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync finished successfully');
+        }
       }
     } catch (apiShopErr) {
       logger.warn({ err: apiShopErr, tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync failed');
