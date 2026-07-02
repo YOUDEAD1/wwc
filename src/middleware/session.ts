@@ -759,6 +759,7 @@ export type SessionData = {
    * Cleared when the user re-opens topup from anywhere else.
    */
   topupOriginBuyProductId?: number;
+  langSelected?: boolean;
 };
 
 export type SessionCtx = Context & SessionFlavor<SessionData>;

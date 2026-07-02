@@ -196,9 +196,85 @@ async function handleTopupDeepLink(ctx: AppCtx): Promise<boolean> {
 }
 
 export function registerStart(bot: Composer<AppCtx>): void {
+  // Callback setting language on startup
+  bot.callbackQuery(/^startlang:(en|ar|vi)$/, async (ctx) => {
+    const selectedLang = ctx.match[1] as any;
+    ctx.session.langSelected = true;
+
+    const { setUserLanguage } = await import('../db/queries.js');
+    await setUserLanguage(ctx.user.telegram_id, selectedLang);
+    ctx.user.language = selectedLang;
+    ctx.lang = selectedLang;
+
+    const { t: translate } = await import('../i18n/index.js');
+    ctx.t = (key, vars) => translate(selectedLang, key, vars);
+
+    await ctx.answerCallbackQuery();
+
+    try {
+      await ctx.deleteMessage();
+    } catch { /* ignore */ }
+
+    // ===== تحقق الاشتراك الإجباري =====
+    const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
+    if (!subCheck.pass) {
+      const kb = new InlineKeyboard();
+      let idx = 1;
+      for (const ch of subCheck.channels) {
+        const channelLink = ch.startsWith('@')
+          ? `https://t.me/${ch.slice(1)}`
+          : `https://t.me/c/${ch.replace('-100', '')}`;
+        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
+      }
+      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      await ctx.reply(
+        renderMdHtml(subCheck.message),
+        { parse_mode: 'HTML', reply_markup: kb },
+      );
+      return;
+    }
+
+    const flagged = ctx.user as typeof ctx.user & { __just_created?: boolean };
+    if (flagged.__just_created) {
+      void adminLog.logFirstStart(ctx.api, {
+        user: {
+          telegram_id: ctx.user.telegram_id,
+          username: ctx.user.username ?? null,
+          first_name: ctx.user.first_name ?? null,
+          email: ctx.user.email ?? null,
+        },
+        referralCode: ctx.user.ref_code ?? null,
+        referredBy: ctx.user.referred_by ?? null,
+      });
+    }
+    // تأكيد الإحالة المعلّقة إذا اشترك
+    await confirmPendingReferral(ctx.user.telegram_id);
+
+    if (await handleReferDeepLink(ctx)) return;
+    if (await handleSettingsDeepLink(ctx)) return;
+    if (await handleTopupDeepLink(ctx)) return;
+    if (await handleProductDeepLink(ctx)) return;
+    if (await handleInvoiceDeepLink(ctx)) return;
+    await showMainMenu(ctx, { fresh: true });
+  });
+
   bot.command('start', async (ctx) => {
     await clearOldReplyKeyboard(ctx);
     clearAiSession(ctx.from?.id);
+
+    // If they haven't explicitly selected their language yet, prompt them first
+    if (!ctx.session.langSelected) {
+      const kb = new InlineKeyboard()
+        .text('🇺🇸 English', 'startlang:en').row()
+        .text('🇸🇦 العربية', 'startlang:ar').row()
+        .text('🇻🇳 Tiếng Việt', 'startlang:vi');
+      await ctx.reply(
+        '🌐 *Please choose your language / الرجاء اختيار لغتك / Vui lòng chọn ngôn ngữ:*\n\n' +
+        'Choose a language to continue.',
+        { parse_mode: 'Markdown', reply_markup: kb }
+      );
+      return;
+    }
 
     // ===== تحقق الاشتراك الإجباري =====
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
@@ -272,13 +348,15 @@ export function registerStart(bot: Composer<AppCtx>): void {
     // تحقق الاشتراك عند /menu أيضاً
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
-      const channelLink = subCheck.channelId.startsWith('@')
-        ? `https://t.me/${subCheck.channelId.slice(1)}`
-        : `https://t.me/c/${subCheck.channelId.replace('-100', '')}`;
-      const kb = new InlineKeyboard()
-        .url('📢 اشترك في القناة', channelLink)
-        .row()
-        .text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      const kb = new InlineKeyboard();
+      let idx = 1;
+      for (const ch of subCheck.channels) {
+        const channelLink = ch.startsWith('@')
+          ? `https://t.me/${ch.slice(1)}`
+          : `https://t.me/c/${ch.replace('-100', '')}`;
+        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
+      }
+      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
       await ctx.reply(
         renderMdHtml(subCheck.message),
         { parse_mode: 'HTML', reply_markup: kb },
