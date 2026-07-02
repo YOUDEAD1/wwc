@@ -441,17 +441,19 @@ export async function clearTextOverride(key: string): Promise<void> {
 }
 
 /** Get the log chat id override — editable via /admin → Bot Settings. */
-export function getLogChatIdOverride(): number | null {
+export function getLogChatIdOverride(): number | string | null {
   const v = readString('log.chat_id');
   if (!v) return null;
+  if (v.startsWith('@')) return v;
   const n = Number(v);
   return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
 /** Get the order log chat id override — editable via /admin → Bot Settings. */
-export function getOrderLogChatIdOverride(): number | null {
+export function getOrderLogChatIdOverride(): number | string | null {
   const v = readString('log.order_chat_id');
   if (!v) return null;
+  if (v.startsWith('@')) return v;
   const n = Number(v);
   return Number.isFinite(n) && n !== 0 ? n : null;
 }
