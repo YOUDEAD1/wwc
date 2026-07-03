@@ -75,8 +75,8 @@ export async function checkUserSubscribed(
     const member = await api.getChatMember(targetChatId, userId);
     return ['member', 'administrator', 'creator'].includes(member.status);
   } catch (err) {
-    logger.warn({ err, userId, channelId }, 'forceSub: getChatMember failed — allowing user');
-    return true;
+    logger.warn({ err, userId, channelId }, 'forceSub: getChatMember failed — denying user');
+    return false;
   }
 }
 

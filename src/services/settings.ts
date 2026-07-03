@@ -471,7 +471,7 @@ export function getReferralCost(): number {
 
 export function getReferralAmount(): number {
   const v = cache.get('text.referral.amount') ?? cache.get('referral.amount');
-  return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 1.00;
+  return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 0.50;
 }
 
 export function getReferralLimitPerDay(): number {
