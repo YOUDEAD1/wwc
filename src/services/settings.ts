@@ -478,3 +478,24 @@ export function getReferralLimitPerDay(): number {
   const v = cache.get('text.referral.limit_per_day') ?? cache.get('referral.limit_per_day');
   return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 0;
 }
+
+export function getPublicFeedTpl(type: 'purchase' | 'topup' | 'stock' | 'referral'): string {
+  const custom = cache.get(`text.public_feed.tpl.${type}`) ?? cache.get(`public_feed.tpl.${type}`);
+  if (typeof custom === 'string' && custom.length > 0) return custom;
+  
+  if (type === 'purchase') {
+    return '🎉 <b>New Purchase!</b>\n\n📦 <b>Service:</b> {product_name}\n👤 <b>Buyer:</b> {masked_user}\n🎁 <b>Plan:</b> {plan_name}\n🧾 <b>Order ID:</b> {order_id}\n🔢 <b>Quantity:</b> {quantity}\n📈 <b>Total Purchases:</b> {total_orders}';
+  }
+  if (type === 'topup') {
+    return '💰 <b>New Credits Added!</b>\n\n👤 <b>User:</b> {masked_user}\n💵 <b>Amount:</b> {amount}\n💳 <b>Payment Method:</b> {payment_method}\n📈 <b>Total Deposits:</b> {total_deposits}';
+  }
+  if (type === 'stock') {
+    return '🆕 <b>New Stock Added!</b>\n\n🎁 <b>Product:</b> {product_name}\n➕ <b>Added:</b> {added_count}\n📦 <b>Current Stock:</b> {stock}\n💲 <b>Price:</b> {price}';
+  }
+  return '💎 <b>Referral Reward!</b>\n\n👤 <b>User:</b> {masked_user}\n🎉 <b>Earned:</b> +{reward}\n👥 <b>Total Referrals:</b> {referral_count}';
+}
+
+export function isPublicFeedEnabled(type: 'purchase' | 'topup' | 'stock' | 'referral'): boolean {
+  const v = cache.get(`public_feed.notify.${type}`);
+  return v !== false && String(v) !== 'false';
+}

@@ -141,6 +141,8 @@ import {
   setProductColor,
   clearProductColor,
   getMasterContactUrl,
+  isPublicFeedEnabled,
+  getPublicFeedTpl,
 } from '../../services/settings.js';
 import {
   FORMAT_ENTITY_TYPES,
@@ -149,6 +151,7 @@ import {
   renderHtmlTemplate,
   renderMdHtml,
   stripCustomEmojiTags,
+  escapeAttr,
 } from '../../services/premium.js';
 import { t as translate } from '../../i18n/index.js';
 import * as adminLog from '../../services/adminLog.js';
@@ -388,9 +391,10 @@ adminBot.callbackQuery('adm:sub:info', async (ctx) => {
 adminBot.callbackQuery('adm:bot', async (ctx) => {
   await ctx.answerCallbackQuery();
   ctx.session.adminFlow = undefined;
-  const { getLogChatIdOverride, getOrderLogChatIdOverride, getTextOverride } = await import('../../services/settings.js');
+  const { getLogChatIdOverride, getOrderLogChatIdOverride, getPublicFeedChatIdOverride, getTextOverride } = await import('../../services/settings.js');
   const logId = getLogChatIdOverride();
   const orderLogId = getOrderLogChatIdOverride();
+  const publicFeedId = getPublicFeedChatIdOverride();
   const binanceKey = getTextOverride('binance.api_key');
   const binanceSecret = getTextOverride('binance.api_secret');
   const bybitKey = getTextOverride('bybit.api_key');
@@ -399,6 +403,7 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
   // عرض القيمة المحفوظة مباشرة دون طلب خارجي لمنع التعليق
   const logDisplay = logId ? `\`${logId}\`` : '_(not set)_';
   const orderLogDisplay = orderLogId ? `\`${orderLogId}\`` : '_(not set)_';
+  const publicFeedDisplay = publicFeedId ? `\`${publicFeedId}\`` : '_(not set)_';
   const kb = new InlineKeyboard()
     .text('🔗 Set Channel URL', 'adm:cust:channel')
     .row()
@@ -407,6 +412,8 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
     .text('📋 Set Log Chat ID', 'adm:bot:logchat')
     .row()
     .text('🧾 Set Order Log Chat ID', 'adm:bot:orderlogchat')
+    .row()
+    .text('📢 Public Activity Feed', 'adm:pfeed')
     .row()
     .text('🟡 Binance Pay Credentials', 'adm:bot:binance')
     .row()
@@ -418,12 +425,14 @@ adminBot.callbackQuery('adm:bot', async (ctx) => {
     .row()
     .text('🔁 Reload Settings', 'adm:reload');
   backRow(kb);
+
   await ctx.editMessageText(
     [
       '⚙️ *Bot Settings*',
       '',
       `• Log Chat: ${logDisplay}`,
       `• Order Log Chat: ${orderLogDisplay}`,
+      `• Public Feed Chat: ${publicFeedDisplay}`,
       `• Binance API Key: ${binanceKey ? '`✅ Set`' : '`Not set`'}`,
       `• Binance API Secret: ${binanceSecret ? '`✅ Set`' : '`Not set`'}`,
       `• Bybit API Key: ${bybitKey ? '`✅ Set`' : '`Not set`'}`,
@@ -787,6 +796,131 @@ adminBot.callbackQuery('adm:fsub:clrmsg', async (ctx) => {
   await refreshSettings();
   await ctx.answerCallbackQuery({ text: '✅ تم المسح — تم الرجوع للرسالة الافتراضية' });
   await showFSubMenu(ctx);
+});
+
+// ---------- Public Feed Settings ----------
+async function showPublicFeedMenu(ctx: AppCtx): Promise<void> {
+  const { getPublicFeedChatIdOverride } = await import('../../services/settings.js');
+  const feedChatId = getPublicFeedChatIdOverride() ?? env.PUBLIC_FEED_CHAT_ID ?? '_(not set)_';
+  
+  const purchaseEnabled = isPublicFeedEnabled('purchase');
+  const topupEnabled = isPublicFeedEnabled('topup');
+  const stockEnabled = isPublicFeedEnabled('stock');
+  const referralEnabled = isPublicFeedEnabled('referral');
+
+  const lines = [
+    '📢 <b>Public Activity Feed Settings</b>',
+    '',
+    `• <b>Feed Chat ID/Username:</b> <code>${feedChatId}</code>`,
+    '',
+    '<b>Notification Toggles:</b>',
+    `• Purchase Notifications: ${purchaseEnabled ? '✅ Enabled' : '❌ Disabled'}`,
+    `• Top-up Notifications: ${topupEnabled ? '✅ Enabled' : '❌ Disabled'}`,
+    `• Stock Added Notifications: ${stockEnabled ? '✅ Enabled' : '❌ Disabled'}`,
+    `• Referral Notifications: ${referralEnabled ? '✅ Enabled' : '❌ Disabled'}`,
+    '',
+    'Click a button below to configure the channel, toggle notifications, or customize the HTML templates.',
+  ];
+
+  const kb = new InlineKeyboard()
+    .text('🔗 Set Target Feed Chat ID', 'adm:pfeed:setchat')
+    .row()
+    .text(`${purchaseEnabled ? '❌ Disable' : '✅ Enable'} Purchases`, 'adm:pfeed:toggle:purchase')
+    .text(`${topupEnabled ? '❌ Disable' : '✅ Enable'} Top-ups`, 'adm:pfeed:toggle:topup')
+    .row()
+    .text(`${stockEnabled ? '❌ Disable' : '✅ Enable'} Stock`, 'adm:pfeed:toggle:stock')
+    .text(`${referralEnabled ? '❌ Disable' : '✅ Enable'} Referrals`, 'adm:pfeed:toggle:referral')
+    .row()
+    .text('📝 Customize Purchase Template', 'adm:pfeed:tpl:purchase')
+    .row()
+    .text('📝 Customize Top-up Template', 'adm:pfeed:tpl:topup')
+    .row()
+    .text('📝 Customize Stock Template', 'adm:pfeed:tpl:stock')
+    .row()
+    .text('📝 Customize Referral Template', 'adm:pfeed:tpl:referral')
+    .row()
+    .text('⬅️ Back', 'adm:bot');
+
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+}
+
+adminBot.callbackQuery('adm:pfeed', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showPublicFeedMenu(ctx);
+});
+
+// Set chat ID
+adminBot.callbackQuery('adm:pfeed:setchat', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: 'public_feed.chat_id' } } as any;
+  const kb = new InlineKeyboard();
+  kb.row().text('⬅️ Back', 'adm:pfeed');
+  await ctx.editMessageText(
+    '🔗 <b>Set Feed Chat ID</b>\n\n' +
+      'Send the channel/group username or ID where the public activity feed will be posted (e.g. `@mychannel` or `-100123456789`).\n\n' +
+      'Send `/cancel` to abort.',
+    { parse_mode: 'HTML', reply_markup: kb }
+  );
+});
+
+// Toggle notifications
+adminBot.callbackQuery(/^adm:pfeed:toggle:(purchase|topup|stock|referral)$/, async (ctx) => {
+  const type = ctx.match[1] as 'purchase' | 'topup' | 'stock' | 'referral';
+  const current = isPublicFeedEnabled(type);
+  const next = !current;
+  
+  await supabase.from('settings').upsert({
+    key: `public_feed.notify.${type}`,
+    value: String(next),
+  });
+  await refreshSettings();
+  
+  await ctx.answerCallbackQuery({ text: `✅ Notification ${next ? 'enabled' : 'disabled'}` });
+  await showPublicFeedMenu(ctx);
+});
+
+// Customize templates
+adminBot.callbackQuery(/^adm:pfeed:tpl:(purchase|topup|stock|referral)$/, async (ctx) => {
+  const type = ctx.match[1] as 'purchase' | 'topup' | 'stock' | 'referral';
+  await ctx.answerCallbackQuery();
+  
+  ctx.session.adminFlow = { type: 'set_text', step: 'value', data: { key: `public_feed.tpl.${type}` } } as any;
+  
+  const currentTpl = getPublicFeedTpl(type);
+  
+  const kb = new InlineKeyboard();
+  kb.row().text('🧹 Reset Template', `adm:pfeed:tplreset:${type}`).row().text('⬅️ Back', 'adm:pfeed');
+  
+  await ctx.editMessageText(
+    `📝 <b>Customize ${type.toUpperCase()} Template</b>\n\n` +
+      `Send the new HTML template. You can use standard HTML tags like <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, and <code>&lt;code&gt;</code>.\n\n` +
+      `<b>Available Placeholders:</b>\n` +
+      (type === 'purchase'
+        ? `• <code>{product_name}</code> - Product Name\n• <code>{masked_user}</code> - Masked User ID\n• <code>{plan_name}</code> - Product name + payment method\n• <code>{order_id}</code> - Order Public ID\n• <code>{quantity}</code> - Order QTY\n• <code>{total_orders}</code> - Total user purchases\n`
+        : type === 'topup'
+        ? `• <code>{masked_user}</code> - Masked User ID\n• <code>{amount}</code> - Topup amount in USDT\n• <code>{payment_method}</code> - Payment method\n• <code>{total_deposits}</code> - Total deposited amount\n`
+        : type === 'stock'
+        ? `• <code>{product_name}</code> - Product Name\n• <code>{added_count}</code> - Number of items added\n• <code>{stock}</code> - Current available stock\n• <code>{price}</code> - Product price\n`
+        : `• <code>{masked_user}</code> - Masked User ID\n• <code>{reward}</code> - Earned USDT reward\n• <code>{referral_count}</code> - Total referrals count\n`) +
+      `\n<b>Current Template:</b>\n<pre>${escapeAttr(currentTpl)}</pre>`,
+    { parse_mode: 'HTML', reply_markup: kb }
+  );
+});
+
+// Reset templates
+adminBot.callbackQuery(/^adm:pfeed:tplreset:(purchase|topup|stock|referral)$/, async (ctx) => {
+  const type = ctx.match[1] as 'purchase' | 'topup' | 'stock' | 'referral';
+  
+  await supabase.from('settings').delete().eq('key', `public_feed.tpl.${type}`);
+  await supabase.from('settings').delete().eq('key', `text.public_feed.tpl.${type}`);
+  await refreshSettings();
+  
+  await ctx.answerCallbackQuery({ text: '✅ Template reset to default' });
+  await showPublicFeedMenu(ctx);
 });
 
 
@@ -9046,8 +9180,8 @@ adminBot.on('message:text', async (ctx, next) => {
             `✅ Store name updated to *${name}*.\n\nAll welcome messages and menus updated.`,
             { parse_mode: 'Markdown', reply_markup: rootMenu() },
           );
-        } else if (key === 'log.chat_id' || key === 'log.order_chat_id') {
-          const label = key === 'log.chat_id' ? 'Log Chat' : 'Order Log Chat';
+        } else if (key === 'log.chat_id' || key === 'log.order_chat_id' || key === 'public_feed.chat_id') {
+          const label = key === 'log.chat_id' ? 'Log Chat' : key === 'log.order_chat_id' ? 'Order Log Chat' : 'Public Feed Chat';
           const raw = text.trim();
 
           // إذا أرسل 0 — تعطيل

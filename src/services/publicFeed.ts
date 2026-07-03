@@ -9,7 +9,14 @@ import {
   renderMdHtml,
   stripCustomEmojiTags,
 } from './premium.js';
-import { getEmoji, getPublicFeedChatIdOverride } from './settings.js';
+import {
+  getEmoji,
+  getPublicFeedChatIdOverride,
+  getPublicFeedTpl,
+  isPublicFeedEnabled,
+  getReferralCost,
+  getReferralAmount,
+} from './settings.js';
 
 type FeedButton = {
   text: string;
@@ -96,25 +103,22 @@ export async function notifyActiveReferral(api: Api, _args: {
   activeReferrals?: number;
   totalEarned: number;
 }): Promise<void> {
-  const active = Math.max(0, _args.activeReferrals ?? _args.totalReferrals);
-  const remaining = active > 0 && active % 10 === 0 ? 0 : 10 - (active % 10);
-  const milestone =
-    remaining === 0
-      ? '{refer_prize_l} <b>Reward milestone unlocked!</b>'
-      : `{refer_left} <b>${remaining} more to earn $0.50</b>`;
-  const html = renderHtmlTemplate(
-    [
-      '<blockquote>',
-      '{feed_title} <b>New Active Referral!</b>',
-      '',
-      `{refer_user} <b>Referrer:</b> <b>${escapeAttr(_args.referrerName)}</b>`,
-      `{refer_active} <b>Active Referrals:</b> <b>${active}</b>`,
-      `{refer_coin} <b>Total earned from invites:</b> <b>$${money(_args.totalEarned)}</b>`,
-      milestone,
-      '</blockquote>',
-    ].join('\n'),
-  );
-  await sendRenderedHtml(api, html, {
+  if (!isPublicFeedEnabled('referral')) return;
+
+  const cost = getReferralCost();
+  const amount = getReferralAmount();
+  const reward = cost > 0 ? (amount / cost).toFixed(2) : '0.00';
+  const referral_count = _args.activeReferrals ?? _args.totalReferrals;
+
+  // Format using the template
+  const rawTpl = getPublicFeedTpl('referral');
+  const body = rawTpl
+    .replace(/{masked_user}/g, escapeAttr(_args.referrerName))
+    .replace(/{reward}/g, escapeAttr(reward))
+    .replace(/{referral_count}/g, String(referral_count));
+
+  const html = `<blockquote>\n${body}\n</blockquote>`;
+  await sendRenderedHtml(api, renderHtmlTemplate(html), {
     text: 'Refer & Earn',
     iconKey: 'refer_title',
     url: publicFeedBotUrl('refer'),
@@ -125,6 +129,7 @@ export async function notifyReferralAchievement(api: Api, args: {
   userId: number;
   amount: number;
 }): Promise<void> {
+  if (!isPublicFeedEnabled('referral')) return;
   const body = [
     '<blockquote>',
     '{feed_title} <b>New Achievement!</b>',
@@ -150,28 +155,23 @@ export async function notifyPurchase(api: Api, args: {
   total: number;
   paidVia: string;
 }): Promise<void> {
-  const product = await getProduct(args.productId).catch(() => null);
-  const glyph = product?.emoji?.trim() ?? '';
-  const productIcon =
-    product?.emoji_id
-      ? `<tg-emoji emoji-id="${escapeAttr(product.emoji_id)}">${escapeAttr(glyph || CART_FALLBACK)}</tg-emoji> `
-      : '{orders_product} ';
-  const name = escapeAttr(args.productName);
-  const html = renderHtmlTemplate(
-    [
-      '<blockquote>',
-      '{feed_title} <b>New Purchase!</b>',
-      '',
-      `${productIcon}<b>Service:</b> <b>${name}</b>`,
-      `{refer_user} <b>By:</b> <b>${maskId(args.buyerId)}</b>`,
-      `{orders_product} <b>Plan:</b> <b>${name} [${escapeAttr(args.paidVia)}]</b>`,
-      `{orders_id} <b>Order No.:</b> <b>${escapeAttr(args.orderPublicId)}</b>`,
-      `{orders_qty} <b>QTY:</b> <b>${args.qty}</b>`,
-      `{orders_total} <b>Total Purchase:</b> <b>${money(args.total)} USDT</b>`,
-      '</blockquote>',
-    ].join('\n'),
-  );
-  await sendRenderedHtml(api, html, {
+  if (!isPublicFeedEnabled('purchase')) return;
+
+  const { getUserOrderSummary } = await import('../db/queries.js');
+  const summary = await getUserOrderSummary(args.buyerId).catch(() => ({ orders: 0 }));
+  const total_orders = summary.orders;
+
+  const rawTpl = getPublicFeedTpl('purchase');
+  const body = rawTpl
+    .replace(/{product_name}/g, escapeAttr(args.productName))
+    .replace(/{masked_user}/g, maskId(args.buyerId))
+    .replace(/{plan_name}/g, escapeAttr(args.productName + ' [' + args.paidVia + ']'))
+    .replace(/{order_id}/g, escapeAttr(args.orderPublicId))
+    .replace(/{quantity}/g, String(args.qty))
+    .replace(/{total_orders}/g, String(total_orders));
+
+  const html = `<blockquote>\n${body}\n</blockquote>`;
+  await sendRenderedHtml(api, renderHtmlTemplate(html), {
     text: 'View Product',
     iconKey: 'feed_buy_button',
     url: publicFeedBotUrl(`prod_${args.productId}`),
@@ -183,16 +183,21 @@ export async function notifyTopup(api: Api, args: {
   amount: number;
   method: string;
 }): Promise<void> {
-  const html = renderHtmlTemplate([
-    '<blockquote>',
-    '{feed_title} <b>New Topup!</b>',
-    '',
-    `{refer_user} <b>User:</b> <b>${maskId(args.userId)}</b>`,
-    `{gift_usdt} <b>Amount:</b> <b>${money(args.amount)} USDT</b>`,
-    `{paymethod_others} <b>Method:</b> <b>${escapeAttr(args.method)}</b>`,
-    '</blockquote>',
-  ].join('\n'));
-  await sendRenderedHtml(api, html, {
+  if (!isPublicFeedEnabled('topup')) return;
+
+  const { getUserStats } = await import('../db/queries.js');
+  const stats = await getUserStats(args.userId).catch(() => ({ deposits: 0 }));
+  const total_deposits = stats.deposits;
+
+  const rawTpl = getPublicFeedTpl('topup');
+  const body = rawTpl
+    .replace(/{masked_user}/g, maskId(args.userId))
+    .replace(/{amount}/g, money(args.amount) + ' USDT')
+    .replace(/{payment_method}/g, escapeAttr(args.method))
+    .replace(/{total_deposits}/g, money(total_deposits) + ' USDT');
+
+  const html = `<blockquote>\n${body}\n</blockquote>`;
+  await sendRenderedHtml(api, renderHtmlTemplate(html), {
     text: 'Top-Up Wallet',
     iconKey: 'deposits_wallet',
     url: publicFeedBotUrl('topup'),
@@ -253,24 +258,17 @@ export async function notifyStockAdded(api: Api, args: {
   available: number;
   price: number;
 }): Promise<void> {
-  const glyph = args.productEmoji?.trim() ?? '';
-  const productIcon =
-    glyph && args.productEmojiId
-      ? `<tg-emoji emoji-id="${escapeAttr(args.productEmojiId)}">${escapeAttr(glyph)}</tg-emoji> `
-      : glyph && glyph !== CART_FALLBACK
-        ? `${escapeAttr(glyph)} `
-        : '';
-  const name = `${productIcon}${escapeAttr(args.productName)}`;
-  const html = renderHtmlTemplate(
-    [
-      `<blockquote>{feed_title} <b>${args.qtyAdded} new stock added for ${name}!</b>`,
-      '',
-      `{refer_active} <b>Available:</b> ${args.available} items`,
-      `{prod_price_base} <b>Price:</b> ${money(args.price)} USDT`,
-      '</blockquote>',
-    ].join('\n'),
-  );
-  await sendRenderedHtml(api, html, {
+  if (!isPublicFeedEnabled('stock')) return;
+
+  const rawTpl = getPublicFeedTpl('stock');
+  const body = rawTpl
+    .replace(/{product_name}/g, escapeAttr(args.productName))
+    .replace(/{added_count}/g, String(args.qtyAdded))
+    .replace(/{stock}/g, String(args.available))
+    .replace(/{price}/g, money(args.price) + ' USDT');
+
+  const html = `<blockquote>\n${body}\n</blockquote>`;
+  await sendRenderedHtml(api, renderHtmlTemplate(html), {
     text: `Buy ${args.productName}`.slice(0, 64),
     iconKey: 'feed_buy_button',
     url: publicFeedBotUrl(`prod_${args.productId}`),
