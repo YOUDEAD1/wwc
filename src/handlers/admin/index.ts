@@ -223,6 +223,21 @@ async function notifyPublicStockAdded(
     available: product.stock,
     price: product.price,
   });
+
+  const adminUser = {
+    telegram_id: ctx.from!.id,
+    username: ctx.from!.username ?? null,
+    first_name: ctx.from!.first_name ?? null,
+    last_name: ctx.from!.last_name ?? null,
+    email: ctx.user?.email ?? null,
+  };
+  void adminLog.logStockAdded(ctx.api, {
+    adminUser,
+    productId,
+    productName: product.name,
+    qtyAdded,
+    totalStock: product.stock,
+  });
 }
 
 /**
@@ -745,6 +760,7 @@ adminBot.callbackQuery('adm:fsub:clearchannels', async (ctx) => {
   await supabase.from('settings').delete().eq('key', 'fsub.channels');
   await supabase.from('settings').delete().eq('key', 'fsub.channel_id');
   await supabase.from('settings').delete().eq('key', 'force_sub.channel_id');
+  await refreshSettings();
   await ctx.answerCallbackQuery({ text: '✅ تم مسح جميع القنوات' });
   await showFSubMenu(ctx);
 });
@@ -768,6 +784,7 @@ adminBot.callbackQuery('adm:fsub:setmsg', async (ctx) => {
 // مسح رسالة الاشتراك (يرجع للافتراضية)
 adminBot.callbackQuery('adm:fsub:clrmsg', async (ctx) => {
   await supabase.from('settings').delete().eq('key', 'fsub.message');
+  await refreshSettings();
   await ctx.answerCallbackQuery({ text: '✅ تم المسح — تم الرجوع للرسالة الافتراضية' });
   await showFSubMenu(ctx);
 });
@@ -8963,6 +8980,7 @@ adminBot.on('message:text', async (ctx, next) => {
           await supabase.from('settings').upsert({ key: 'fsub.channels', value: updatedChannels });
           await supabase.from('settings').upsert({ key: 'fsub.channel_id', value: newChanStr });
           await supabase.from('settings').upsert({ key: 'force_sub.channel_id', value: newChanStr });
+          await refreshSettings();
 
           ctx.session.adminFlow = undefined;
           await ctx.reply(`✅ تم إضافة القناة بنجاح كقناة إجبارية:\n\`${newChanStr}\``, {
@@ -8975,6 +8993,7 @@ adminBot.on('message:text', async (ctx, next) => {
             return;
           }
           await setText(key, String(cost), ctx.from!.id);
+          await refreshSettings();
           ctx.session.adminFlow = undefined;
           await ctx.reply(`✅ تم تحديد عدد الإحالات المطلوبة للتحويل: <b>${cost} إحالة</b>`, {
             parse_mode: 'HTML',
@@ -8987,6 +9006,7 @@ adminBot.on('message:text', async (ctx, next) => {
             return;
           }
           await setText(key, String(amount), ctx.from!.id);
+          await refreshSettings();
           ctx.session.adminFlow = undefined;
           await ctx.reply(`✅ تم تحديد مكافأة التحويل: <b>${amount.toFixed(2)} USDT</b>`, {
             parse_mode: 'HTML',
@@ -8999,6 +9019,7 @@ adminBot.on('message:text', async (ctx, next) => {
             return;
           }
           await setText(key, String(limit), ctx.from!.id);
+          await refreshSettings();
           ctx.session.adminFlow = undefined;
           await ctx.reply(`✅ تم تحديد الحد اليومي للإحالات: <b>${limit === 0 ? 'غير محدود' : `${limit} إحالة/يوم`}</b>`, {
             parse_mode: 'HTML',
@@ -9006,6 +9027,7 @@ adminBot.on('message:text', async (ctx, next) => {
           });
         } else if (key === 'fsub.message') {
           await supabase.from('settings').upsert({ key: 'fsub.message', value: text });
+          await refreshSettings();
           ctx.session.adminFlow = undefined;
           await ctx.reply(
             `✅ تم تحديث رسالة الاشتراك الإجباري.`,

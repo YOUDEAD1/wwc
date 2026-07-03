@@ -84,7 +84,7 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
       return next();
     }
     const data = ctx.callbackQuery?.data ?? '';
-    if (data === 'forcesub:check') {
+    if (data === 'forcesub:check' || data.startsWith('startlang:')) {
       return next();
     }
 

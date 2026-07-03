@@ -465,16 +465,16 @@ export function getPublicFeedChatIdOverride(): string | null {
 }
 
 export function getReferralCost(): number {
-  const v = cache.get('referral.cost');
+  const v = cache.get('text.referral.cost') ?? cache.get('referral.cost');
   return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 20;
 }
 
 export function getReferralAmount(): number {
-  const v = cache.get('referral.amount');
+  const v = cache.get('text.referral.amount') ?? cache.get('referral.amount');
   return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 1.00;
 }
 
 export function getReferralLimitPerDay(): number {
-  const v = cache.get('referral.limit_per_day');
+  const v = cache.get('text.referral.limit_per_day') ?? cache.get('referral.limit_per_day');
   return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 0;
 }

@@ -8,6 +8,7 @@
 import type { Api } from 'grammy';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
+import { refreshSettings } from './settings.js';
 
 export async function getForceSub(): Promise<{
   enabled: boolean;
@@ -55,11 +56,13 @@ export async function getForceSub(): Promise<{
 
 export async function setForceSubEnabled(enabled: boolean): Promise<void> {
   await supabase.from('settings').upsert({ key: 'force_sub.enabled', value: enabled });
+  await refreshSettings();
 }
 
 export async function setForceSubChannel(channelId: string): Promise<void> {
   await supabase.from('settings').upsert({ key: 'fsub.channel_id', value: channelId });
   await supabase.from('settings').upsert({ key: 'force_sub.channel_id', value: channelId });
+  await refreshSettings();
 }
 
 export async function checkUserSubscribed(
@@ -68,7 +71,8 @@ export async function checkUserSubscribed(
   channelId: string,
 ): Promise<boolean> {
   try {
-    const member = await api.getChatMember(channelId, userId);
+    const targetChatId = channelId.startsWith('@') ? channelId : Number(channelId);
+    const member = await api.getChatMember(targetChatId, userId);
     return ['member', 'administrator', 'creator'].includes(member.status);
   } catch (err) {
     logger.warn({ err, userId, channelId }, 'forceSub: getChatMember failed — allowing user');

@@ -798,3 +798,25 @@ export async function logStockAlert(api: Api, args: {
   ];
   await send(api, lines.join('\n'));
 }
+
+export async function logStockAdded(api: Api, args: {
+  adminUser: LogUser;
+  productId: number;
+  productName: string;
+  qtyAdded: number;
+  totalStock: number;
+}): Promise<void> {
+  const body = compose({
+    tag: 'STOCK_ADDED',
+    title: 'New Stock Added',
+    user: args.adminUser,
+    bodyLines: [
+      '📦 <b>Product Info</b>',
+      `🆔 Product ID: ${args.productId}`,
+      `Product: ${escapeHtml(args.productName)}`,
+      `🔢 Quantity Added: ${args.qtyAdded} unit${args.qtyAdded === 1 ? '' : 's'}`,
+      `Available Stock: ${args.totalStock} units`,
+    ],
+  });
+  await send(api, body, 'orders');
+}
