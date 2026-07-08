@@ -1,0 +1,25 @@
+import fs from 'fs';
+import path from 'path';
+
+function searchDir(dirPath) {
+  const files = fs.readdirSync(dirPath);
+  files.forEach(file => {
+    const filePath = path.join(dirPath, file);
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      searchDir(filePath);
+    } else if (file.endsWith('.ts') || file.endsWith('.js')) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n');
+      lines.forEach((line, index) => {
+        if (line.includes('[API_PRODUCT_ID') || line.includes('apiShop') || line.includes('apiConnect') || line.includes('purchaseProduct')) {
+          console.log(`${path.basename(filePath)} Line ${index + 1}: ${line.trim()}`);
+        }
+      });
+    }
+  });
+}
+
+const targetDir = 'C:\\\\Users\\\\PC\\\\Desktop\\\\SafwanTigerShopBot\\\\src\\\\services';
+searchDir(targetDir);
+console.log('Search completed.');

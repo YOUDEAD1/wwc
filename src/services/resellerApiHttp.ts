@@ -411,7 +411,9 @@ export async function handleResellerApiRequest(
 export function handleHealthRequest(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   const host = req.headers.host ?? 'localhost';
   const url = new URL(req.url ?? '/', `http://${host}`);
-  if (url.pathname !== '/healthz') return false;
-  sendText(res, 200, 'ok');
+  if (url.pathname !== '/healthz' && url.pathname !== '/') return false;
+  sendText(res, 200, 'work');
   return true;
 }
+
+
