@@ -1,3 +1,4 @@
+import { type Api } from 'grammy';
 import {
   addProduct,
   getProduct,
@@ -14,6 +15,13 @@ import {
 } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
+import {
+  getGlobalProfitPercent,
+  getProductProfitPercent,
+  isAutoProfitEnabled,
+  calculateProfitSellPrice,
+} from './settings.js';
+import { logSupplierPriceChangedAlert } from './adminLog.js';
 import type {
   DBSupplierApiSource,
   DBSupplierProductLink,
@@ -22,6 +30,7 @@ import type {
 } from '../types.js';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
+
 
 export type SupplierCatalogProduct = {
   id: string;
@@ -443,12 +452,14 @@ export async function fetchSupplierProducts(
 export function supplierSellPrice(
   source: DBSupplierApiSource,
   product: SupplierCatalogProduct,
+  customProfitPercent?: number | null,
 ): number {
   const base = Number(product.price ?? 0);
-  return Number(
-    (base * (1 + Number(source.markup_percent) / 100) + Number(source.fixed_markup)).toFixed(3),
-  );
+  const profitPercent = customProfitPercent ?? getProductProfitPercent(Number(product.id)) ?? source.markup_percent ?? getGlobalProfitPercent() ?? 25;
+  const fixedMarkup = Number(source.fixed_markup ?? 0);
+  return Number((base * (1 + Number(profitPercent) / 100) + fixedMarkup).toFixed(2));
 }
+
 
 export async function importSupplierProduct(args: {
   source: DBSupplierApiSource;
@@ -757,7 +768,11 @@ export async function trySupplierAutoOrder(args: {
   }
 }
 
-export async function syncSupplierProductLink(link: DBSupplierProductLink): Promise<{
+export async function syncSupplierProductLink(
+
+  link: DBSupplierProductLink,
+  api?: Api,
+): Promise<{
   matched: SupplierCatalogProduct | null;
   updatedLocal: boolean;
 }> {
@@ -771,6 +786,10 @@ export async function syncSupplierProductLink(link: DBSupplierProductLink): Prom
     });
     return { matched: null, updatedLocal: false };
   }
+
+  const oldCost = Number(link.supplier_cost ?? 0);
+  const newCost = Number(matched.price ?? 0);
+
   await updateSupplierProductLink(link.id, {
     supplier_product_name: matched.name,
     supplier_cost: matched.price,
@@ -778,16 +797,47 @@ export async function syncSupplierProductLink(link: DBSupplierProductLink): Prom
     last_sync_at: new Date().toISOString(),
     last_error: null,
   });
+
   let updatedLocal = false;
   const local = await getProduct(link.local_product_id);
-  if (local && link.auto_sync_stock) {
-    if (matched.stock === null) {
-      await updateProduct(link.local_product_id, { unlimited_stock: true, stock: 0 });
-    } else {
-      await updateProduct(link.local_product_id, { unlimited_stock: false, stock: matched.stock });
+  if (local) {
+    const profitPercent = getProductProfitPercent(local.id) ?? source.markup_percent ?? getGlobalProfitPercent() ?? 25;
+    const calculatedSellPrice = calculateProfitSellPrice(newCost, profitPercent);
+
+    const patch: any = {};
+    if (link.auto_sync_stock) {
+      if (matched.stock === null) {
+        patch.unlimited_stock = true;
+        patch.stock = 0;
+      } else {
+        patch.unlimited_stock = false;
+        patch.stock = matched.stock;
+      }
     }
-    updatedLocal = true;
+
+    if (isAutoProfitEnabled() && newCost > 0) {
+      patch.price = calculatedSellPrice;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await updateProduct(link.local_product_id, patch);
+      updatedLocal = true;
+    }
+
+    if (api && oldCost > 0 && newCost > 0 && Math.abs(newCost - oldCost) >= 0.01) {
+      void logSupplierPriceChangedAlert(api, {
+        productId: local.id,
+        productName: local.name,
+        oldSupplierCost: oldCost,
+        newSupplierCost: newCost,
+        currentSellPrice: Number(local.price),
+        suggestedSellPrice: calculatedSellPrice,
+        profitPercent,
+        sourceLabel: source.name,
+      }).catch((err) => logger.warn({ err }, 'logSupplierPriceChangedAlert failed'));
+    }
   }
+
   return { matched, updatedLocal };
 }
 

@@ -820,3 +820,55 @@ export async function logStockAdded(api: Api, args: {
   });
   await send(api, body, 'orders');
 }
+
+export type SupplierPriceChangeAlertArgs = {
+  productId: number;
+  productName: string;
+  oldSupplierCost: number;
+  newSupplierCost: number;
+  currentSellPrice: number;
+  suggestedSellPrice: number;
+  profitPercent: number;
+  sourceLabel?: string;
+};
+
+export async function logSupplierPriceChangedAlert(
+  api: Api,
+  args: SupplierPriceChangeAlertArgs,
+): Promise<void> {
+  const isIncrease = args.newSupplierCost > args.oldSupplierCost;
+  const trendIcon = isIncrease ? '📈' : '📉';
+  const diff = Math.abs(args.newSupplierCost - args.oldSupplierCost).toFixed(2);
+  const diffPercent = args.oldSupplierCost > 0
+    ? (((args.newSupplierCost - args.oldSupplierCost) / args.oldSupplierCost) * 100).toFixed(1)
+    : '0';
+
+  const body = [
+    `⚠️ <b>تنبيه: تغير سعر المنتج لدى المورد/API!</b>`,
+    '',
+    `📦 <b>المنتج:</b> ${escapeHtml(args.productName)} (ID: <code>#${args.productId}</code>)`,
+    args.sourceLabel ? `🔌 <b>المصدر:</b> ${escapeHtml(args.sourceLabel)}` : null,
+    `📅 <b>الوقت:</b> ${formatLoggedAt()}`,
+    '━━━━━ ◆ ━━━━━',
+    `📉 <b>سعر التكلفة السابق:</b> $${args.oldSupplierCost.toFixed(2)}`,
+    `${trendIcon} <b>سعر التكلفة الجديد:</b> <b>$${args.newSupplierCost.toFixed(2)}</b> (${isIncrease ? '+' : '-'}$${diff} / ${diffPercent}%)`,
+    `💰 <b>سعر البيع الحالي في متجرك:</b> $${args.currentSellPrice.toFixed(2)}`,
+    `📊 <b>نسبة الربح المعتمدة:</b> ${args.profitPercent}%`,
+    `✨ <b>سعر البيع المقترح بالنسبة:</b> <b>$${args.suggestedSellPrice.toFixed(2)}</b>`,
+    '━━━━━ ◆ ━━━━━',
+    `💡 <i>يرجى اختيار الإجراء المطلوب من الأزرار أدناه:</i>`,
+  ]
+    .filter((x): x is string => x !== null)
+    .join('\n');
+
+  const kb = new InlineKeyboard()
+    .text(`⚡ تطبيق النسبة ($${args.suggestedSellPrice.toFixed(2)})`, `adm:pchange:apply:${args.productId}:${args.suggestedSellPrice.toFixed(2)}`)
+    .row()
+    .text('📊 تحديد نسبة ربح %', `adm:pchange:setp:${args.productId}`)
+    .text('💲 تحديد سعر يدوي', `adm:pchange:setm:${args.productId}`)
+    .row()
+    .text('✅ إبقاء السعر الحالي', `adm:pchange:dismiss:${args.productId}`);
+
+  await send(api, body, 'main', kb);
+}
+

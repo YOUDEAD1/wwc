@@ -13,6 +13,14 @@ import {
   type ApiProduct,
 } from './apiConnect.js';
 
+import {
+  getGlobalProfitPercent,
+  getProductProfitPercent,
+  isAutoProfitEnabled,
+  calculateProfitSellPrice,
+} from './settings.js';
+import { logSupplierPriceChangedAlert } from './adminLog.js';
+
 // ─────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────
@@ -20,6 +28,7 @@ import {
 export type ApiShopProduct = {
   enabled: boolean;
   sell_price: number;
+  profit_percent?: number;    // نسبة الربح المئوية المخصصة للمنتج
   custom_name: string;        // اسم مخصص (يظهر للعميل)
   custom_desc: string;        // وصف مخصص
   emoji: string;              // إيموجي مخصص
@@ -34,6 +43,8 @@ export type ApiShopProduct = {
 
 export type ApiShopConfig = {
   products: Record<string, ApiShopProduct>;
+  global_profit_percent?: number;
+  auto_profit_enabled?: boolean;
   button?: {
     label: string;       // مثل "🎮 Products" أو "🛒 Shop"
     position: number;    // الصف (0 = أول صف, 1 = ثاني, إلخ)
@@ -66,6 +77,7 @@ export async function saveShopConfig(config: ApiShopConfig): Promise<void> {
 export type MergedProduct = ApiProduct & {
   enabled: boolean;
   sell_price: number;
+  profit_percent?: number;
   custom_name: string;
   custom_desc: string;
   emoji: string;
@@ -88,12 +100,22 @@ export async function syncProducts(
     (max, p) => Math.max(max, p.sort_order ?? 0), 0,
   ) + 1;
 
+  const globalProfit = config.global_profit_percent ?? getGlobalProfitPercent();
+  const autoProfitOn = config.auto_profit_enabled ?? isAutoProfitEnabled();
+
   // Merge
   for (const p of res.products) {
+    const rawCost = Number(p.your_price ?? p.base_price ?? 0);
     if (!config.products[p.id]) {
+      const initialProfit = globalProfit ?? 20;
+      const initialSellPrice = autoProfitOn && globalProfit !== null
+        ? calculateProfitSellPrice(rawCost, initialProfit)
+        : Number(p.your_price ?? p.base_price ?? 0);
+
       config.products[p.id] = {
         enabled: true,
-        sell_price: p.your_price,
+        sell_price: initialSellPrice,
+        profit_percent: globalProfit !== null ? globalProfit : undefined,
         custom_name: p.name_en,
         custom_desc: '',
         emoji: p.emoji || getProductEmoji(p.name_en),
@@ -108,6 +130,9 @@ export async function syncProducts(
       // Update API-side data
       const existing = config.products[p.id];
       if (existing) {
+        const oldCost = Number(existing.base_price ?? 0);
+        const newCost = Number(p.base_price ?? 0);
+
         if (existing.custom_name === existing.original_name) {
           existing.custom_name = p.name_en;
         }
@@ -126,10 +151,17 @@ export async function syncProducts(
         existing.is_manual = p.is_manual;
         existing.emoji = p.emoji || getProductEmoji(p.name_en);
         existing.emoji_id = p.emoji_id || undefined;
+
+        // Calculate dynamic profit price if percentage is active
+        const effectivePercent = existing.profit_percent ?? globalProfit;
+        if (effectivePercent !== null && effectivePercent !== undefined && (autoProfitOn || existing.profit_percent !== undefined)) {
+          existing.sell_price = calculateProfitSellPrice(newCost, effectivePercent);
+        }
       }
     }
   }
   await saveShopConfig(config);
+
 
   // --- DYNAMIC DATABASE SYNC ---
   try {
@@ -231,6 +263,7 @@ export async function syncProducts(
         }
       }
     }
+
 
     // Deactivate local products that are no longer returned by the API
     const activeApiProductIds = new Set(res.products.map((p) => String(p.id)));
@@ -604,3 +637,41 @@ export async function handleProductSyncAlerts(
     });
   }
 }
+
+export async function setApiProductProfitPercent(
+  productId: string,
+  profitPercent: number | null,
+): Promise<void> {
+  const config = await getShopConfig();
+  const p = config.products[productId];
+  if (!p) return;
+  if (profitPercent === null || isNaN(profitPercent)) {
+    delete p.profit_percent;
+  } else {
+    p.profit_percent = Number(profitPercent);
+    const base = Number(p.base_price ?? p.sell_price ?? 0);
+    if (base > 0) {
+      p.sell_price = Number((base * (1 + profitPercent / 100)).toFixed(2));
+    }
+  }
+  await saveShopConfig(config);
+}
+
+export async function applyProfitMarginToAllApiProducts(
+  profitPercent: number,
+): Promise<void> {
+  const config = await getShopConfig();
+  config.global_profit_percent = profitPercent;
+  config.auto_profit_enabled = true;
+  for (const id of Object.keys(config.products)) {
+    const p = config.products[id];
+    if (!p) continue;
+    p.profit_percent = profitPercent;
+    const base = Number(p.base_price ?? p.sell_price ?? 0);
+    if (base > 0) {
+      p.sell_price = Number((base * (1 + profitPercent / 100)).toFixed(2));
+    }
+  }
+  await saveShopConfig(config);
+}
+

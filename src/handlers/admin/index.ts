@@ -143,7 +143,15 @@ import {
   getMasterContactUrl,
   isPublicFeedEnabled,
   getPublicFeedTpl,
+  getGlobalProfitPercent,
+  setGlobalProfitPercent,
+  isAutoProfitEnabled,
+  setAutoProfitEnabled,
+  getProductProfitPercent,
+  setProductProfitPercent,
+  calculateProfitSellPrice,
 } from '../../services/settings.js';
+
 import {
   FORMAT_ENTITY_TYPES,
   entitiesToHtml,
@@ -296,8 +304,11 @@ function rootMenu(): InlineKeyboard {
     .text('🎁 Gift Codes', 'adm:gift')
     .row()
     .text('💎 Custom Prices', 'adm:price')
+    .text('📈 Profit % Margins', 'adm:profit')
+    .row()
     .text('🔌 API Manager', 'adm:api')
     .row();
+
 
   if (process.env.IS_TENANT === 'true') {
     const subEndStr = process.env.SUBSCRIPTION_END;
@@ -3140,7 +3151,10 @@ async function showProductEditor(
       ? `*${p.referral_required_count} referral${p.referral_required_count === 1 ? '' : 's'}*`
       : '_OFF_';
   const productColor = getProductColor(p.id);
+  const customProdProfit = getProductProfitPercent(p.id);
+  const globalProfit = getGlobalProfitPercent();
   const lines = [
+
     `✏️ *Edit Product #${p.id}*`,
     '',
     `*Name:* ${p.name}`,
@@ -3150,6 +3164,7 @@ async function showProductEditor(
       ? `*Supplier link:* \`${supplierLink.supplier_product_id}\` · stock sync *${supplierLink.auto_sync_stock ? 'ON' : 'OFF'}*`
       : null,
     `*Referral Pay:* ${referralLabel}`,
+    `*Profit Margin:* ${customProdProfit !== null ? `*${customProdProfit}%* (Custom)` : globalProfit !== null ? `*${globalProfit}%* (Global default)` : '_Manual price_'}`,
     `*Select Button Color:* ${productColor ? `*${productColor}*` : '_Default / inherited_'}`,
     `*Warranty:* ${p.warranty ? '`set`' : '_unset_'}`,
     `*Premium Emoji:* ${p.emoji_id ? '`set`' : '_unset_'}`,
@@ -3166,9 +3181,13 @@ async function showProductEditor(
     '_Tap a button to edit. For "Set Premium Emoji" / "Set Tutorial File", the bot will capture your next message of the appropriate kind._',
   ].filter((x): x is string => x !== null);
   const kb = new InlineKeyboard();
+  kb.text(`📊 Set Profit % (${customProdProfit !== null ? customProdProfit + '%' : 'Default'})`, `adm:prod:profit:set:${p.id}:${page}`)
+    .text('🧹 Clear Profit %', `adm:prod:profit:clr:${p.id}:${page}`)
+    .row();
   kb.text('🎬 Set Premium Emoji', `adm:prod:emoji:set:${p.id}:${page}`)
     .text('🧹 Clear Emoji', `adm:prod:emoji:clr:${p.id}:${page}`)
     .row();
+
   kb.text('📝 Set Note Text', `adm:prod:note:settxt:${p.id}:${page}`)
     .text('🧹 Clear Note', `adm:prod:note:clr:${p.id}:${page}`)
     .row();
@@ -6844,6 +6863,340 @@ adminBot.callbackQuery('adm:price:csv', async (ctx) => {
 });
 
 // ============================================================
+// 📊 Profit Margins & Percentage Pricing
+// ============================================================
+
+async function showProfitMenu(ctx: AppCtx): Promise<void> {
+  const globalProfit = getGlobalProfitPercent();
+  const autoProfit = isAutoProfitEnabled();
+
+  const statusText = autoProfit ? '✅ مفعّل (تحديث تلقائي مستمر)' : '❌ معطّل (تحديث يدوي فقط)';
+  const globalText = globalProfit !== null ? `*${globalProfit}%*` : '_غير محددة (السعر اليدوي الافتراضي)_';
+
+  const { rows: products } = await listAllProducts(0, 1000);
+  const productsWithCustomProfit = products.filter((p) => getProductProfitPercent(p.id) !== null);
+
+  const lines = [
+    '📊 *إدارة نسب الأرباح والتسعير التلقائي*',
+    '',
+    `• *حالة التسعير التلقائي:* ${statusText}`,
+    `• *نسبة الربح العامة لجميع المنتجات:* ${globalText}`,
+    `• *إجمالي المنتجات في المتجر:* \`${products.length}\``,
+    `• *منتجات بنسب ربح مخصصة:* \`${productsWithCustomProfit.length}\``,
+    '',
+    '💡 _عند تفعيل النسبة، يتم احتساب وتحديث سعر بيع المنتجات تلقائياً بناءً على سعر تكلفة المورد عند المزامنة، وتصلك إشعارات تفاعلية عند تغير أسعار الموردين._',
+    '',
+    '👇 *اختر نسبة سريعة أو أدخل نسبة مخصصة:*',
+  ];
+
+  const kb = new InlineKeyboard();
+  if (autoProfit) {
+    kb.text('🔴 تعطيل التحديث التلقائي', 'adm:profit:tgl:off');
+  } else {
+    kb.text('🟢 تفعيل التحديث التلقائي', 'adm:profit:tgl:on');
+  }
+  kb.row();
+
+  kb.text('10%', 'adm:profit:quick:10')
+    .text('15%', 'adm:profit:quick:15')
+    .text('20%', 'adm:profit:quick:20')
+    .row()
+    .text('25%', 'adm:profit:quick:25')
+    .text('30%', 'adm:profit:quick:30')
+    .text('50%', 'adm:profit:quick:50')
+    .row();
+
+  kb.text('✏️ إدخال نسبة عامة مخصصة %', 'adm:profit:set_global')
+    .row()
+    .text('🔄 تطبيق النسبة على كل المنتجات الآن', 'adm:profit:apply_all')
+    .row()
+    .text('📦 تخصيص نسب المنتجات الفردية', 'adm:profit:prods:0')
+    .row();
+
+  backRow(kb);
+
+  try {
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(lines.join('\n'), {
+        parse_mode: 'Markdown',
+        reply_markup: kb,
+      });
+    } else {
+      await ctx.reply(lines.join('\n'), {
+        parse_mode: 'Markdown',
+        reply_markup: kb,
+      });
+    }
+  } catch {
+    await ctx.reply(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      reply_markup: kb,
+    });
+  }
+}
+
+async function showProfitProductsPicker(ctx: AppCtx, page: number): Promise<void> {
+  const { rows: products, total } = await listAllProducts(page * PER_PAGE, PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const globalProfit = getGlobalProfitPercent();
+
+  const lines = [
+    `📦 *نسب الأرباح للمنتجات الفردية* (${total})`,
+    `الصفحة: ${page + 1}/${totalPages}`,
+    '',
+    'اختر منتجاً لتحديد نسبة ربح خاصة به % أو إرجاعه للنسبة العامة:',
+    '',
+  ];
+
+  for (const p of products) {
+    const custom = getProductProfitPercent(p.id);
+    const badge = custom !== null ? `📊 *${custom}%* (مخصص)` : globalProfit !== null ? `🌐 ${globalProfit}% (عام)` : '💲 يدوي';
+    lines.push(`• <b>${escapeHtml(p.name)}</b> (<code>#${p.id}</code>) — ${badge} | السعر: <b>$${Number(p.price).toFixed(2)}</b>`);
+  }
+
+  const kb = new InlineKeyboard();
+  for (const p of products) {
+    const custom = getProductProfitPercent(p.id);
+    const label = `${p.emoji || '📦'} ${p.name.slice(0, 15)} (${custom !== null ? custom + '%' : 'عام'})`;
+    kb.text(label, `adm:prod:profit:set:${p.id}:${page}`).row();
+  }
+
+  if (totalPages > 1) {
+    if (page > 0) kb.text('◀️ السابق', `adm:profit:prods:${page - 1}`);
+    kb.text(`${page + 1}/${totalPages}`, 'noop:pg');
+    if (page + 1 < totalPages) kb.text('التالي ▶️', `adm:profit:prods:${page + 1}`);
+    kb.row();
+  }
+
+  kb.text('⬅️ رجوع', 'adm:profit');
+
+  try {
+    await ctx.editMessageText(lines.join('\n'), {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch {
+    await ctx.reply(lines.join('\n'), {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  }
+}
+
+adminBot.callbackQuery('adm:profit', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = undefined;
+  await showProfitMenu(ctx);
+});
+
+adminBot.callbackQuery('adm:profit:tgl:on', async (ctx) => {
+  await setAutoProfitEnabled(true, ctx.from?.id);
+  await ctx.answerCallbackQuery({ text: '🟢 تم تفعيل التسعير التلقائي بالنسبة' });
+  await showProfitMenu(ctx);
+});
+
+adminBot.callbackQuery('adm:profit:tgl:off', async (ctx) => {
+  await setAutoProfitEnabled(false, ctx.from?.id);
+  await ctx.answerCallbackQuery({ text: '🔴 تم تعطيل التسعير التلقائي' });
+  await showProfitMenu(ctx);
+});
+
+adminBot.callbackQuery(/^adm:profit:quick:(\d+)$/, async (ctx) => {
+  const percent = Number(ctx.match[1]);
+  await setGlobalProfitPercent(percent, ctx.from?.id);
+  await setAutoProfitEnabled(true, ctx.from?.id);
+  await ctx.answerCallbackQuery({ text: `✅ تم تعيين نسبة الربح العامة إلى ${percent}%` });
+  await showProfitMenu(ctx);
+});
+
+adminBot.callbackQuery('adm:profit:set_global', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.adminFlow = { type: 'set_global_profit_percent', step: 'value', data: {} };
+  const kb = new InlineKeyboard().text('❌ إلغاء', 'adm:profit');
+  await ctx.editMessageText(
+    '✏️ *تعيين نسبة الربح العامة*\n\n' +
+      'أرسل النسبة المئوية للربح التي تريد تطبيقها على جميع المنتجات (مثال: `20` أو `35` أو `50`):\n\n' +
+      '💡 _يمكنك إرسال أي نسبة بدون حدود._',
+    { parse_mode: 'Markdown', reply_markup: kb },
+  );
+});
+
+adminBot.callbackQuery('adm:profit:apply_all', async (ctx) => {
+  const globalProfit = getGlobalProfitPercent();
+  if (globalProfit === null) {
+    await ctx.answerCallbackQuery({
+      text: '⚠️ يرجى تحديد نسبة ربح عامة أولاً!',
+      show_alert: true,
+    });
+    return;
+  }
+  await ctx.answerCallbackQuery({ text: '⏳ جاري تحديث جميع الأسعار...' });
+
+  const { rows: products } = await listAllProducts(0, 1000);
+  let updatedCount = 0;
+
+  for (const p of products) {
+    const profitPercent = getProductProfitPercent(p.id) ?? globalProfit;
+    let cost = 0;
+    if (p.note && p.note.includes('[API_PRODUCT_ID:')) {
+      const match = p.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+      if (match && match[1]) {
+        const { getShopConfig } = await import('../../services/apiShop.js');
+        const cfg = await getShopConfig();
+        const apiProd = cfg.products[match[1]];
+        if (apiProd) cost = Number(apiProd.base_price ?? 0);
+      }
+    } else {
+      const link = await getSupplierProductLinkByProduct(p.id).catch(() => null);
+      if (link && link.supplier_cost) cost = Number(link.supplier_cost);
+    }
+
+    if (cost > 0) {
+      const newPrice = calculateProfitSellPrice(cost, profitPercent);
+      await updateProduct(p.id, { price: newPrice });
+      updatedCount += 1;
+    }
+  }
+
+  try {
+    const { applyProfitMarginToAllApiProducts } = await import('../../services/apiShop.js');
+    await applyProfitMarginToAllApiProducts(globalProfit);
+  } catch (err) {
+    logger.warn({ err }, 'applyProfitMarginToAllApiProducts failed');
+  }
+
+  await ctx.reply(
+    `✅ *تم تحديث أسعار المنتجات بنجاح!*\n\n` +
+      `تم تطبيق نسبة ربح *${globalProfit}%* على *${updatedCount}* منتج مرتبط بموردين وAPI.`,
+    { parse_mode: 'Markdown', reply_markup: new InlineKeyboard().text('⬅️ رجوع', 'adm:profit') },
+  );
+});
+
+adminBot.callbackQuery(/^adm:profit:prods:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await showProfitProductsPicker(ctx, Number(ctx.match[1]));
+});
+
+adminBot.callbackQuery(/^adm:prod:profit:set:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  const product = await getProduct(product_id);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'المنتج غير موجود' });
+    return;
+  }
+  const currentCustom = getProductProfitPercent(product_id);
+  const globalProfit = getGlobalProfitPercent();
+
+  ctx.session.adminFlow = {
+    type: 'set_product_profit_percent',
+    step: 'value',
+    data: { product_id, page },
+  };
+
+  const lines = [
+    `📊 <b>تحديد نسبة ربح للمنتج</b>`,
+    '',
+    `📦 المنتج: <b>${escapeHtml(product.name)}</b> (<code>#${product.id}</code>)`,
+    `💰 السعر الحالي: <b>$${Number(product.price).toFixed(2)}</b>`,
+    `📊 نسبة الربح الحالية: <b>${currentCustom !== null ? currentCustom + '% (مخصص)' : globalProfit !== null ? globalProfit + '% (افتراضي عام)' : 'غير محددة'}</b>`,
+    '',
+    'أرسل النسبة المئوية الجديدة للمنتج (مثال: <code>25</code> أو <code>40</code> أو <code>100</code>):',
+    '💡 <i>أرسل <code>0</code> أو <code>-</code> أو <code>clear</code> لمسح النسبة المخصصة والرجوع للنسبة العامة الافتراضية.</i>',
+  ];
+
+  const kb = new InlineKeyboard().text('❌ إلغاء', `adm:prod:edit:${product_id}:${page}`);
+  await ctx.editMessageText(lines.join('\n'), {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
+adminBot.callbackQuery(/^adm:prod:profit:clr:(\d+):(\d+)$/, async (ctx) => {
+  const product_id = Number(ctx.match[1]);
+  const page = Number(ctx.match[2]);
+  await setProductProfitPercent(product_id, null, ctx.from?.id);
+  await ctx.answerCallbackQuery({ text: '🧹 تم مسح نسبة الربح المخصصة' });
+  await showProductEditor(ctx, product_id, page);
+});
+
+// Price change alert action handlers
+adminBot.callbackQuery(/^adm:pchange:apply:(\d+):([0-9.]+)$/, async (ctx) => {
+  const productId = Number(ctx.match[1]);
+  const newPrice = Number(ctx.match[2]);
+  const product = await getProduct(productId);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'المنتج غير موجود' });
+    return;
+  }
+  await updateProduct(productId, { price: newPrice });
+  await ctx.answerCallbackQuery({ text: `✅ تم تحديث السعر إلى $${newPrice.toFixed(2)}` });
+  try {
+    await ctx.editMessageText(
+      `✅ <b>تم تحديث سعر المنتج بنجاح!</b>\n\n` +
+        `📦 المنتج: <b>${escapeHtml(product.name)}</b>\n` +
+        `💰 السعر الجديد: <b>$${newPrice.toFixed(2)} USDT</b>\n` +
+        `👤 تم التحديث بواسطة: @${escapeHtml(ctx.from?.username ?? String(ctx.from?.id))}`,
+      { parse_mode: 'HTML' },
+    );
+  } catch { /* */ }
+});
+
+adminBot.callbackQuery(/^adm:pchange:setp:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const productId = Number(ctx.match[1]);
+  const product = await getProduct(productId);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'المنتج غير موجود' });
+    return;
+  }
+  ctx.session.adminFlow = {
+    type: 'pchange_set_percent',
+    step: 'value',
+    data: { product_id: productId },
+  };
+  await ctx.reply(
+    `📊 <b>تحديد نسبة ربح للمنتج:</b> ${escapeHtml(product.name)}\n\n` +
+      `أرسل نسبة الربح المئوية الجديدة (مثال: <code>20</code> أو <code>35</code> أو <code>50</code>):`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ إلغاء', 'adm:profit') },
+  );
+});
+
+adminBot.callbackQuery(/^adm:pchange:setm:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const productId = Number(ctx.match[1]);
+  const product = await getProduct(productId);
+  if (!product) {
+    await ctx.answerCallbackQuery({ text: 'المنتج غير موجود' });
+    return;
+  }
+  ctx.session.adminFlow = {
+    type: 'pchange_set_manual_price',
+    step: 'value',
+    data: { product_id: productId },
+  };
+  await ctx.reply(
+    `💲 <b>تحديد سعر يدوي للمنتج:</b> ${escapeHtml(product.name)}\n\n` +
+      `السعر الحالي: <b>$${Number(product.price).toFixed(2)}</b>\n\n` +
+      `أرسل السعر الجديد بالدولار (مثال: <code>12.50</code>):`,
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('❌ إلغاء', 'adm:profit') },
+  );
+});
+
+adminBot.callbackQuery(/^adm:pchange:dismiss:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: '✅ تم تجاهل التنبيه' });
+  try {
+    await ctx.editMessageText(
+      `ℹ️ <i>تم تجاهل تنبيه تغير السعر والإبقاء على السعر الحالي.</i>`,
+      { parse_mode: 'HTML' },
+    );
+  } catch { /* */ }
+});
+
+
+
+// ============================================================
 // 💸 Promos — qty-threshold flat-USDT auto-discounts.
 //
 // Hierarchical scope: per-user-per-product → per-user → per-product
@@ -7953,6 +8306,26 @@ adminBot.on('message:text', async (ctx, next) => {
         return;
       }
       
+      if (field === 'profit_percent') {
+        if (text === '-' || text.toLowerCase() === 'clear' || text === '0') {
+          const { setApiProductProfitPercent } = await import('../../services/apiShop.js');
+          await setApiProductProfitPercent(productId, null);
+          const kb = new InlineKeyboard().text('⬅️ Back', `adm:api:edit:${productId}`);
+          await ctx.reply('✅ تم مسح نسبة الربح المخصصة والرجوع للنسبة الافتراضية!', { reply_markup: kb });
+          return;
+        }
+        const num = Number(text);
+        if (!Number.isFinite(num) || num < 0) {
+          await ctx.reply('❌ نسبة غير صالحة. أرسل رقماً موجباً (مثال: 20 أو 35).');
+          return;
+        }
+        const { setApiProductProfitPercent } = await import('../../services/apiShop.js');
+        await setApiProductProfitPercent(productId, num);
+        const kb = new InlineKeyboard().text('⬅️ Back', `adm:api:edit:${productId}`);
+        await ctx.reply(`✅ تم تعيين نسبة الربح إلى <b>${num}%</b> واحتساب السعر الجديد بنجاح!`, { parse_mode: 'HTML', reply_markup: kb });
+        return;
+      }
+
       let val: string | number = text;
       if (field === 'sell_price') {
         const num = Number(text);
@@ -7964,6 +8337,7 @@ adminBot.on('message:text', async (ctx, next) => {
       } else if (field === 'custom_desc' && text === '-') {
         val = '';
       }
+
       
       await apiSetProductField(productId, field as any, val);
       
@@ -9761,7 +10135,135 @@ adminBot.on('message:text', async (ctx, next) => {
       return;
     }
 
+    if (flow.type === 'set_global_profit_percent') {
+      const num = Number(text.trim());
+      if (!Number.isFinite(num) || num < 0) {
+        await ctx.reply('❌ نسبة غير صالحة. يرجى إرسال رقم موجب (مثال: 20 أو 35.5).');
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await setGlobalProfitPercent(num, ctx.from?.id);
+      await setAutoProfitEnabled(true, ctx.from?.id);
+      const kb = new InlineKeyboard().text('⬅️ لوحة إدارة الأرباح', 'adm:profit');
+      await ctx.reply(
+        `✅ <b>تم حفظ نسبة الربح العامة: ${num}%</b>\n\n` +
+          `تم تفعيل التسعير التلقائي لجميع المنتجات!`,
+        { parse_mode: 'HTML', reply_markup: kb },
+      );
+      return;
+    }
+
+    if (flow.type === 'set_product_profit_percent') {
+      const { product_id, page } = flow.data;
+      ctx.session.adminFlow = undefined;
+      if (text.trim() === '-' || text.trim().toLowerCase() === 'clear' || text.trim() === '0') {
+        await setProductProfitPercent(product_id, null, ctx.from?.id);
+        await ctx.reply('✅ تم مسح نسبة الربح المخصصة والرجوع للنسبة الافتراضية!', {
+          reply_markup: new InlineKeyboard().text('⬅️ تعديل المنتج', `adm:prod:edit:${product_id}:${page ?? 0}`),
+        });
+        return;
+      }
+      const num = Number(text.trim());
+      if (!Number.isFinite(num) || num < 0) {
+        await ctx.reply('❌ نسبة غير صالحة. يرجى إرسال رقم موجب (مثال: 25).');
+        return;
+      }
+      await setProductProfitPercent(product_id, num, ctx.from?.id);
+      
+      const product = await getProduct(product_id);
+      let cost = 0;
+      if (product?.note && product.note.includes('[API_PRODUCT_ID:')) {
+        const match = product.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+        if (match && match[1]) {
+          const { getShopConfig } = await import('../../services/apiShop.js');
+          const cfg = await getShopConfig();
+          const apiProd = cfg.products[match[1]];
+          if (apiProd) cost = Number(apiProd.base_price ?? 0);
+        }
+      } else {
+        const link = await getSupplierProductLinkByProduct(product_id).catch(() => null);
+        if (link && link.supplier_cost) cost = Number(link.supplier_cost);
+      }
+
+      if (cost > 0) {
+        const newPrice = calculateProfitSellPrice(cost, num);
+        await updateProduct(product_id, { price: newPrice });
+        await ctx.reply(
+          `✅ <b>تم تعيين نسبة ربح ${num}% للمنتج!</b>\n` +
+            `💰 سعر البيع الجديد: <b>$${newPrice.toFixed(2)} USDT</b> (التكلفة: $${cost.toFixed(2)})`,
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('⬅️ تعديل المنتج', `adm:prod:edit:${product_id}:${page ?? 0}`) },
+        );
+      } else {
+        await ctx.reply(
+          `✅ <b>تم حفظ نسبة الربح للمنتج: ${num}%</b>`,
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('⬅️ تعديل المنتج', `adm:prod:edit:${product_id}:${page ?? 0}`) },
+        );
+      }
+      return;
+    }
+
+    if (flow.type === 'pchange_set_percent') {
+      const { product_id } = flow.data;
+      const num = Number(text.trim());
+      if (!Number.isFinite(num) || num < 0) {
+        await ctx.reply('❌ نسبة غير صالحة. يرجى إرسال رقم موجب (مثال: 25).');
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await setProductProfitPercent(product_id, num, ctx.from?.id);
+
+      const product = await getProduct(product_id);
+      let cost = 0;
+      if (product?.note && product.note.includes('[API_PRODUCT_ID:')) {
+        const match = product.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+        if (match && match[1]) {
+          const { getShopConfig } = await import('../../services/apiShop.js');
+          const cfg = await getShopConfig();
+          const apiProd = cfg.products[match[1]];
+          if (apiProd) cost = Number(apiProd.base_price ?? 0);
+        }
+      } else {
+        const link = await getSupplierProductLinkByProduct(product_id).catch(() => null);
+        if (link && link.supplier_cost) cost = Number(link.supplier_cost);
+      }
+
+      if (cost > 0) {
+        const newPrice = calculateProfitSellPrice(cost, num);
+        await updateProduct(product_id, { price: newPrice });
+        await ctx.reply(
+          `✅ <b>تم حفظ النسبة وتحديث سعر المنتج!</b>\n\n` +
+            `📦 المنتج: <b>${escapeHtml(product?.name ?? '')}</b>\n` +
+            `📊 نسبة الربح: <b>${num}%</b>\n` +
+            `💰 سعر البيع الجديد: <b>$${newPrice.toFixed(2)} USDT</b>`,
+          { parse_mode: 'HTML', reply_markup: rootMenu() },
+        );
+      } else {
+        await ctx.reply(`✅ تم تعيين نسبة الربح إلى ${num}% بنجاح!`, { reply_markup: rootMenu() });
+      }
+      return;
+    }
+
+    if (flow.type === 'pchange_set_manual_price') {
+      const { product_id } = flow.data;
+      const num = Number(text.trim());
+      if (!Number.isFinite(num) || num < 0) {
+        await ctx.reply('❌ سعر غير صالح. يرجى إرسال رقم موجب (مثال: 12.50).');
+        return;
+      }
+      ctx.session.adminFlow = undefined;
+      await updateProduct(product_id, { price: num });
+      const product = await getProduct(product_id);
+      await ctx.reply(
+        `✅ <b>تم تحديث سعر البيع بنجاح!</b>\n\n` +
+          `📦 المنتج: <b>${escapeHtml(product?.name ?? '')}</b>\n` +
+          `💰 السعر الجديد: <b>$${num.toFixed(2)} USDT</b>`,
+        { parse_mode: 'HTML', reply_markup: rootMenu() },
+      );
+      return;
+    }
+
     if (flow.type === 'price_overrides_pick_user') {
+
       const query = text.replace(/^@/, '');
       const numeric = /^\d+$/.test(query);
       // Username path requires the user to have started the bot at
@@ -11952,6 +12454,7 @@ adminBot.callbackQuery(/^adm:api:edit:(.+)$/, async (ctx) => {
     `📝 ${escapeHtml(p.custom_desc) || '<i>No description</i>'}`,
     '',
     `💲 Sell: <b>$${p.sell_price}</b> | Base: $${p.base_price}`,
+    `📊 Profit: <b>${p.profit_percent !== undefined ? p.profit_percent + '%' : 'Default / Global'}</b>`,
     `📛 Original: ${escapeHtml(p.original_name)}`,
     `🔢 Sort: #${p.sort_order}`,
   ].join('\n');
@@ -11963,6 +12466,7 @@ adminBot.callbackQuery(/^adm:api:edit:(.+)$/, async (ctx) => {
     .text('📄 Description', `adm:api:sf:${id}:custom_desc`)
     .text('💲 Price', `adm:api:sf:${id}:sell_price`)
     .row()
+    .text(`📊 Profit % (${p.profit_percent !== undefined ? p.profit_percent + '%' : 'Default'})`, `adm:api:sf:${id}:profit_percent`)
     .text('🔄 Reset', `adm:api:rst:${id}`)
     .row()
     .text('⬅️ Back', 'adm:api:manage');
@@ -11972,17 +12476,19 @@ adminBot.callbackQuery(/^adm:api:edit:(.+)$/, async (ctx) => {
 });
 
 // ━━━ Set field prompt ━━━
-adminBot.callbackQuery(/^adm:api:sf:(.+):(emoji|custom_name|custom_desc|sell_price)$/, async (ctx) => {
+adminBot.callbackQuery(/^adm:api:sf:(.+):(emoji|custom_name|custom_desc|sell_price|profit_percent)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const id = ctx.match![1] as string;
-  const field = ctx.match![2] as 'emoji' | 'custom_name' | 'custom_desc' | 'sell_price';
+  const field = ctx.match![2] as 'emoji' | 'custom_name' | 'custom_desc' | 'sell_price' | 'profit_percent';
   const labels: Record<string, string> = {
     emoji: '😀 أرسل الإيموجي الجديد:',
     custom_name: '📝 أرسل الاسم الجديد:',
     custom_desc: '📄 أرسل الوصف الجديد:\n(أرسل <code>-</code> لحذف الوصف)',
     sell_price: '💲 أرسل السعر الجديد (رقم فقط):',
+    profit_percent: '📊 أرسل نسبة الربح المئوية للمنتج (مثال: 20 أو 35، أو أرسل <code>-</code> للمسح):',
   };
   ctx.session.adminFlow = { type: 'api_set_field', step: 'value', data: { productId: id, field } } as never;
+
   const kb = new InlineKeyboard().text('❌ Cancel', `adm:api:edit:${id}`);
   try { await ctx.editMessageText(labels[field]!, { parse_mode: 'HTML', reply_markup: kb }); }
   catch { await ctx.reply(labels[field]!, { parse_mode: 'HTML', reply_markup: kb }); }

@@ -272,7 +272,12 @@ export type AdminFlow =
     }
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'set_referral_channel'; step: 'value'; data: Record<string, never> }
+  | { type: 'set_global_profit_percent'; step: 'value'; data: Record<string, never> }
+  | { type: 'set_product_profit_percent'; step: 'value'; data: { product_id: number; page?: number } }
+  | { type: 'pchange_set_percent'; step: 'value'; data: { product_id: number } }
+  | { type: 'pchange_set_manual_price'; step: 'value'; data: { product_id: number } }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
+
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
   | { type: 'referral_find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'referral_adjust'; step: 'delta'; data: { telegram_id: number } }

@@ -59,8 +59,9 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
         if (!link.auto_sync_stock) continue;
         checked += 1;
         try {
-          const result = await syncSupplierProductLink(link);
+          const result = await syncSupplierProductLink(link, api);
           if (result.updatedLocal) updated += 1;
+
 
           const product = await getProduct(link.local_product_id).catch(() => null);
           if (product && !product.unlimited_stock && product.stock > 0) {

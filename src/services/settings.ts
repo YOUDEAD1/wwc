@@ -499,3 +499,64 @@ export function isPublicFeedEnabled(type: 'purchase' | 'topup' | 'stock' | 'refe
   const v = cache.get(`public_feed.notify.${type}`);
   return v !== false && String(v) !== 'false';
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Profit Margin & Percentage Pricing Settings
+// ─────────────────────────────────────────────────────────────────
+
+export function getGlobalProfitPercent(): number | null {
+  const v = cache.get('shop.global_profit_percent') ?? cache.get('text.shop.global_profit_percent');
+  if (v === null || v === undefined) return null;
+  const num = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+export async function setGlobalProfitPercent(percent: number | null, updated_by?: number): Promise<void> {
+  const key = 'shop.global_profit_percent';
+  if (percent === null || percent === undefined || isNaN(percent)) {
+    await deleteSetting(key);
+    cache.delete(key);
+  } else {
+    await setSetting(key, Number(percent), updated_by);
+    cache.set(key, Number(percent));
+  }
+}
+
+export function isAutoProfitEnabled(): boolean {
+  const v = cache.get('shop.auto_profit_enabled');
+  if (v === true || v === 'true') return true;
+  if (v === false || v === 'false') return false;
+  return getGlobalProfitPercent() !== null;
+}
+
+export async function setAutoProfitEnabled(enabled: boolean, updated_by?: number): Promise<void> {
+  const key = 'shop.auto_profit_enabled';
+  await setSetting(key, Boolean(enabled), updated_by);
+  cache.set(key, Boolean(enabled));
+}
+
+export function getProductProfitPercent(productId: number): number | null {
+  const v = cache.get(`prod_profit.${productId}`);
+  if (v === null || v === undefined) return null;
+  const num = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+export async function setProductProfitPercent(productId: number, percent: number | null, updated_by?: number): Promise<void> {
+  const key = `prod_profit.${productId}`;
+  if (percent === null || percent === undefined || isNaN(percent)) {
+    await deleteSetting(key);
+    cache.delete(key);
+  } else {
+    await setSetting(key, Number(percent), updated_by);
+    cache.set(key, Number(percent));
+  }
+}
+
+
+export function calculateProfitSellPrice(cost: number, profitPercent: number): number {
+  if (!Number.isFinite(cost) || cost <= 0) return 0;
+  const p = Number.isFinite(profitPercent) && profitPercent >= 0 ? profitPercent : 0;
+  const raw = cost * (1 + p / 100);
+  return Number(raw.toFixed(2));
+}
