@@ -197,7 +197,8 @@ import { logger } from '../../logger.js';
 import { env } from '../../env.js';
 import type { DBOrder, DBUser, DBPromo, DBSupplierApiSource, DBSupplierProductLink } from '../../types.js';
 import { supabase } from '../../db/supabase.js';
-import { getForceSub, setForceSubEnabled, setForceSubChannel } from '../../services/forceSub.js';
+import { getForceSub, setForceSubEnabled, setForceSubChannel, normalizeChannelIdentifier } from '../../services/forceSub.js';
+
 
 export const adminBot = new Composer<AppCtx>();
 
@@ -9451,9 +9452,12 @@ adminBot.on('message:text', async (ctx, next) => {
           const raw = text.trim();
           let chatId: number | string = raw;
           let botIsAdmin = false;
+          let chatObj: any = null;
           try {
-            const chat = await ctx.api.getChat(raw.startsWith('-') || /^\d/.test(raw) ? Number(raw) : raw);
+            const lookupTarget = normalizeChannelIdentifier(raw);
+            const chat = await ctx.api.getChat(lookupTarget);
             chatId = chat.id;
+            chatObj = chat;
             const me = await ctx.api.getMe();
             const member = await ctx.api.getChatMember(chatId, me.id);
             botIsAdmin = ['administrator', 'creator'].includes(member.status);
@@ -9478,9 +9482,17 @@ adminBot.on('message:text', async (ctx, next) => {
             return;
           }
 
+          let newChanStr = String(chatId);
+          if (chatObj?.username) {
+            newChanStr = `@${chatObj.username}`;
+          } else if (raw.startsWith('@')) {
+            newChanStr = raw;
+          } else if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('t.me/')) {
+            newChanStr = raw;
+          }
+
           const config = await getForceSub();
           const updatedChannels = [...config.channels];
-          const newChanStr = String(chatId).startsWith('-') ? String(chatId) : raw;
           if (!updatedChannels.includes(newChanStr)) {
             updatedChannels.push(newChanStr);
           }
@@ -9494,7 +9506,8 @@ adminBot.on('message:text', async (ctx, next) => {
           await ctx.reply(`✅ تم إضافة القناة بنجاح كقناة إجبارية:\n\`${newChanStr}\``, {
             reply_markup: rootMenu(),
           });
-        } else if (key === 'referral.cost') {
+        }
+ else if (key === 'referral.cost') {
           const cost = parseInt(text.trim(), 10);
           if (isNaN(cost) || cost <= 0) {
             await ctx.reply('❌ قيمة غير صالحة. يرجى إرسال عدد صحيح موجب.');

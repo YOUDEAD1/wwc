@@ -14,7 +14,8 @@ import { formatReceivedItemsBlock } from '../services/orderRender.js';
 import * as adminLog from '../services/adminLog.js';
 import { clearAiSession } from './support.js';
 import { inlineBtn } from '../keyboards/helpers.js';
-import { enforceSubscription } from '../services/forceSub.js';
+import { enforceSubscription, buildForceSubKeyboard } from '../services/forceSub.js';
+
 import { showProfile, showReferScreen } from './profile.js';
 import { showTopupMenu } from './topup.js';
 import { getStoreName } from '../services/settings.js';
@@ -218,15 +219,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
     // ===== تحقق الاشتراك الإجباري =====
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
-      const kb = new InlineKeyboard();
-      let idx = 1;
-      for (const ch of subCheck.channels) {
-        const channelLink = ch.startsWith('@')
-          ? `https://t.me/${ch.slice(1)}`
-          : `https://t.me/c/${ch.replace('-100', '')}`;
-        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
-      }
-      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
       await ctx.reply(
         renderMdHtml(subCheck.message),
         { parse_mode: 'HTML', reply_markup: kb },
@@ -279,15 +272,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
     // ===== تحقق الاشتراك الإجباري =====
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
-      const kb = new InlineKeyboard();
-      let idx = 1;
-      for (const ch of subCheck.channels) {
-        const channelLink = ch.startsWith('@')
-          ? `https://t.me/${ch.slice(1)}`
-          : `https://t.me/c/${ch.replace('-100', '')}`;
-        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
-      }
-      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
       await ctx.reply(
         renderMdHtml(subCheck.message),
         { parse_mode: 'HTML', reply_markup: kb },
@@ -324,16 +309,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
   bot.callbackQuery('forcesub:check', async (ctx) => {
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
-      const kb = new InlineKeyboard();
-      let idx = 1;
-      for (const ch of subCheck.channels) {
-        const channelLink = ch.startsWith('@')
-          ? `https://t.me/${ch.slice(1)}`
-          : `https://t.me/c/${ch.replace('-100', '')}`;
-        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
-      }
-      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
-
+      const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
       try {
         await ctx.editMessageText(
           renderMdHtml(subCheck.message),
@@ -367,21 +343,14 @@ export function registerStart(bot: Composer<AppCtx>): void {
     // تحقق الاشتراك عند /menu أيضاً
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
-      const kb = new InlineKeyboard();
-      let idx = 1;
-      for (const ch of subCheck.channels) {
-        const channelLink = ch.startsWith('@')
-          ? `https://t.me/${ch.slice(1)}`
-          : `https://t.me/c/${ch.replace('-100', '')}`;
-        kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
-      }
-      kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+      const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
       await ctx.reply(
         renderMdHtml(subCheck.message),
         { parse_mode: 'HTML', reply_markup: kb },
       );
       return;
     }
+
     await showMainMenu(ctx, { fresh: true });
   });
 

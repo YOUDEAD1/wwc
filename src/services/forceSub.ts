@@ -5,10 +5,97 @@
  * - الإحالة لا تُحسب إلا بعد الاشتراك
  */
 
-import type { Api } from 'grammy';
+import { InlineKeyboard, type Api } from 'grammy';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
 import { refreshSettings } from './settings.js';
+
+export function normalizeChannelIdentifier(channel: string): string | number {
+  const trimmed = channel.trim();
+  if (trimmed.startsWith('-') || /^\d+$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+  if (trimmed.startsWith('@')) {
+    return trimmed;
+  }
+  if (trimmed.includes('t.me/')) {
+    const after = trimmed.split('t.me/')[1]?.trim();
+    if (after && !after.startsWith('+') && !after.startsWith('joinchat/')) {
+      return `@${after.replace(/^@/, '')}`;
+    }
+  }
+  return trimmed;
+}
+
+const linkCache = new Map<string, { url: string; timestamp: number }>();
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+export async function resolveChannelLink(api: Api, channelStr: string): Promise<string> {
+  const trimmed = channelStr.trim();
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('t.me/')) {
+    return `https://${trimmed}`;
+  }
+
+  const cached = linkCache.get(trimmed);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.url;
+  }
+
+  if (trimmed.startsWith('@')) {
+    const url = `https://t.me/${trimmed.slice(1)}`;
+    linkCache.set(trimmed, { url, timestamp: Date.now() });
+    return url;
+  }
+
+  try {
+    const targetChatId = normalizeChannelIdentifier(trimmed);
+    const chat = await api.getChat(targetChatId);
+
+    let url: string | null = null;
+    if (chat.username) {
+      url = `https://t.me/${chat.username}`;
+    } else if (chat.invite_link) {
+      url = chat.invite_link;
+    } else {
+      try {
+        url = await api.exportChatInviteLink(chat.id);
+      } catch {
+        /* ignore export failure */
+      }
+    }
+
+    if (url) {
+      linkCache.set(trimmed, { url, timestamp: Date.now() });
+      return url;
+    }
+  } catch (err) {
+    logger.warn({ err, channelStr }, 'forceSub: resolveChannelLink getChat failed');
+  }
+
+  const cleanNum = trimmed.replace('-100', '').replace('-', '');
+  if (/^\d+$/.test(cleanNum)) {
+    return `https://t.me/c/${cleanNum}`;
+  }
+  return `https://t.me/${trimmed.replace(/^@/, '')}`;
+}
+
+export async function buildForceSubKeyboard(
+  api: Api,
+  channels: string[],
+): Promise<InlineKeyboard> {
+  const kb = new InlineKeyboard();
+  let idx = 1;
+  for (const ch of channels) {
+    const channelLink = await resolveChannelLink(api, ch);
+    kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
+  }
+  kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
+  return kb;
+}
 
 export async function getForceSub(): Promise<{
   enabled: boolean;
@@ -71,7 +158,7 @@ export async function checkUserSubscribed(
   channelId: string,
 ): Promise<boolean> {
   try {
-    const targetChatId = channelId.startsWith('@') ? channelId : Number(channelId);
+    const targetChatId = normalizeChannelIdentifier(channelId);
     const member = await api.getChatMember(targetChatId, userId);
     return ['member', 'administrator', 'creator'].includes(member.status);
   } catch (err) {
@@ -79,6 +166,7 @@ export async function checkUserSubscribed(
     return false;
   }
 }
+
 
 export async function enforceSubscription(
   api: Api,
