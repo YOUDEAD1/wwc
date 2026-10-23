@@ -1,7 +1,17 @@
+> **Independent manager compatibility · 2026-10-23**: STORE-MANAGER is a complete separate project with its own token, environment and runtime. Its entire control plane uses the existing NSS MongoDB; individual WWC stores retain Supabase. Start with [Shared setup](docs/MANAGER-AR.md). This WWC store still runs with `npm start`; the legacy controller command remains available for compatibility.
+
+> **فحص التخصيص الحالي:** [النتيجة وطريقة التعديل](docs/AUDIT-CUSTOMIZE-AR.md). لمنصة تعمل بترقية 0045: نفّذ `0046_platform_metadata.sql` على قاعدة التحكم قبل التحديث.
+
+> **الربط الحالي:** بوت الإدارة في حزمة `STORE-MANAGER.zip` المستقلة. شغّل WWC الأصلي عبر `npm start`. [دليل المنصة القديم](docs/PLATFORM-AR.md) باقٍ للتوافق؛ لا تشغّل مشغّل المنصة القديم والمدير الجديد على سجل المتاجر نفسه.
+
 # 🐯 SafwanTiger Shop Bot
 
 Futuristic Telegram shop bot for **@safwantigershopbot** — built with
 **Node.js + TypeScript + grammY + Supabase**, deployable on **Railway**.
+
+**تحديث 22 أكتوبر 2026:** ابدأ بقراءة [تعليمات التحديث](docs/UPDATE-2026-10-22.md) و[تتبع الإصلاحات](docs/REVIEW-FIXES.md). يلزم تطبيق migration 0044 على قاعدة المتجر القائمة قبل تشغيل هذه النسخة. لوحة التخصيص الجديدة عبر `/customize` أو `/admin → Customize`.
+
+**تعديل المنتجات:** افتح `/admin → Products`، اختر زر المنتج باسمه وإيموجيه المحفوظ (بما فيه البريميوم)، ثم اختر قسم التعديل من الأزرار. بقيت جميع خيارات التعديل السابقة، مع رجوع إلى المنتج والصفحة وإلغاء الإدخال المعلق.
 
 - Config-driven UI (every label, color, and emoji lives in one place)
 - Admin commands to edit texts, button colors, and premium emojis at runtime
@@ -29,7 +39,7 @@ SafwanTigerShopBot/
 ├── .prettierrc
 ├── supabase/
 │   └── migrations/
-│       └── 0001_init.sql       # full schema + seed
+│       └── 0044_secure_checkout_and_runtime.sql # required existing-store upgrade
 ├── config/                     #  ✨  edit-here-first  ✨
 │   ├── index.ts                # buttons, colors, emojis, layout, paging
 │   └── locales/
@@ -75,14 +85,14 @@ SafwanTigerShopBot/
 
 ### Where to edit common things
 
-| What                           | File                                             |
-| ------------------------------ | ------------------------------------------------ |
-| Welcome message / button text  | `config/locales/en.ts` (and `ar.ts`, `vi.ts`)    |
-| Button color / state color     | `config/index.ts` → `DEFAULT_BUTTON_COLORS`      |
-| Default emojis (premium-aware) | `config/index.ts` → `EMOJI`                      |
-| Main menu layout               | `config/index.ts` → `MAIN_MENU_LAYOUT`           |
-| Page size                      | `config/index.ts` → `PRODUCTS_PER_PAGE`          |
-| Database schema                | `supabase/migrations/0001_init.sql`              |
+| What                           | File                                          |
+| ------------------------------ | --------------------------------------------- |
+| Welcome message / button text  | `config/locales/en.ts` (and `ar.ts`, `vi.ts`) |
+| Button color / state color     | `config/index.ts` → `DEFAULT_BUTTON_COLORS`   |
+| Default emojis (premium-aware) | `config/index.ts` → `EMOJI`                   |
+| Main menu layout               | `config/index.ts` → `MAIN_MENU_LAYOUT`        |
+| Page size                      | `config/index.ts` → `PRODUCTS_PER_PAGE`       |
+| Database schema                | `supabase/schema.sql`                         |
 
 **Anything in `config/` can also be overridden at runtime** by the admin
 through bot commands (e.g. `/settext welcome Hello!`,
@@ -135,9 +145,9 @@ npm run lint
    (e.g. `safwantigershopbot`).
 3. **Copy the token** — paste it into `BOT_TOKEN` in `.env` (or Railway).
 4. Set the bot username (without `@`) into `BOT_USERNAME`.
-5. *(Optional but recommended)* Run `/setprivacy → Disable` so the bot can
+5. _(Optional but recommended)_ Run `/setprivacy → Disable` so the bot can
    read group messages, and `/setjoingroups → Enable` if you want it in groups.
-6. *(Optional)* Run `/setcommands` and paste:
+6. _(Optional)_ Run `/setcommands` and paste:
 
    ```
    start - Open the main menu
@@ -147,7 +157,8 @@ npm run lint
 
    The bot also calls `setMyCommands` on startup — this step is just for
    discovery in clients that haven't refreshed.
-7. *(For Telegram Premium emojis)* Find a premium emoji pack you like and
+
+7. _(For Telegram Premium emojis)_ Find a premium emoji pack you like and
    copy its `custom_emoji_id`s (they appear in the message as
    `tg://emoji?id=…`). Then run inside your bot:
    `/setemoji fire 🔥 5440123412341234567`.
@@ -182,7 +193,7 @@ npm run lint
    - **Project URL** → `SUPABASE_URL`
    - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY` ⚠️ keep secret
 3. Open the **SQL Editor** and run the contents of
-   [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql).
+   [`supabase/schema.sql`](supabase/schema.sql) for a new database. For an existing database that already has migrations through 0043, run only [`0044_secure_checkout_and_runtime.sql`](supabase/migrations/0044_secure_checkout_and_runtime.sql).
 
    Or, with the Supabase CLI:
 
@@ -190,6 +201,7 @@ npm run lint
    supabase link --project-ref <your-ref>
    supabase db push
    ```
+
 4. The migration seeds the admin row for user ID `8004955979`
    (`@safwantiger`). To add more admins later:
 
@@ -197,7 +209,7 @@ npm run lint
    insert into public.admins (telegram_id, username) values (123456, 'someone');
    ```
 
-5. *(Optional)* Seed a category and product to play with:
+5. _(Optional)_ Seed a category and product to play with:
 
    ```sql
    insert into public.categories (name, emoji) values ('Demo', '🎁');
@@ -217,18 +229,18 @@ npm run lint
    then `node dist/index.js` (see `railway.toml`).
 4. **Variables** tab — add every value from `.env.example`. At minimum:
 
-   | Variable                       | Value                                          |
-   | ------------------------------ | ---------------------------------------------- |
-   | `BOT_TOKEN`                    | from BotFather                                 |
-   | `BOT_USERNAME`                 | `safwantigershopbot`                           |
-   | `ADMIN_USER_ID`                | `8004955979`                                   |
-   | `SUPABASE_URL`                 | `https://xxx.supabase.co`                      |
-   | `SUPABASE_SERVICE_ROLE_KEY`    | the **service_role** JWT                       |
-   | `BOT_MODE`                     | `polling` (recommended)                        |
-   | `DEFAULT_LANG`                 | `en`                                           |
-   | `LOG_LEVEL`                    | `info`                                         |
+   | Variable                    | Value                     |
+   | --------------------------- | ------------------------- |
+   | `BOT_TOKEN`                 | from BotFather            |
+   | `BOT_USERNAME`              | `safwantigershopbot`      |
+   | `ADMIN_USER_ID`             | `8004955979`              |
+   | `SUPABASE_URL`              | `https://xxx.supabase.co` |
+   | `SUPABASE_SERVICE_ROLE_KEY` | the **service_role** JWT  |
+   | `BOT_MODE`                  | `polling` (recommended)   |
+   | `DEFAULT_LANG`              | `en`                      |
+   | `LOG_LEVEL`                 | `info`                    |
 
-5. *(Optional)* For webhook mode on Railway, enable a public domain in
+5. _(Optional)_ For webhook mode on Railway, enable a public domain in
    the service settings, then set:
 
    ```
@@ -239,6 +251,7 @@ npm run lint
    ```
 
    Railway will route external traffic to `PORT` automatically.
+
 6. Trigger a deploy. The `worker` defined in the `Procfile` will start.
 
 ### Binance Pay VPN Sidecar (Required for Auto-Verify)
@@ -423,19 +436,19 @@ CMD ["node", "dist/index.js"]
 
 Send these from the admin Telegram account (must be in the `admins` table):
 
-| Command                                  | Effect                                   |
-| ---------------------------------------- | ---------------------------------------- |
-| `/admin`                                 | Show full help                           |
-| `/settext <key> <text…>`                 | Override any i18n string                 |
-| `/setbutton <key> <text…>`               | Override a button label (`btn.<key>`)    |
-| `/setcolor <key> <blue\|green\|red\|yellow\|none>` | Change a button color prefix |
-| `/setemoji <key> <unicode> [custom_id]`  | Map a key to a (premium) emoji           |
-| `/addcategory <name> [emoji]`            | Create a category                        |
-| `/addproduct <cat_id> <price> <stock> <name…>` | Create a product                   |
-| `/addpayment Name \| Instructions \| min` | Create a payment method                  |
-| `/announce <text…>`                      | Broadcast (premium-emoji aware)          |
-| `/clearcache`                            | Drop in-memory caches                    |
-| `/reload`                                | Re-read settings table                   |
+| Command                                            | Effect                                |
+| -------------------------------------------------- | ------------------------------------- |
+| `/admin`                                           | Show full help                        |
+| `/settext <key> <text…>`                           | Override any i18n string              |
+| `/setbutton <key> <text…>`                         | Override a button label (`btn.<key>`) |
+| `/setcolor <key> <blue\|green\|red\|yellow\|none>` | Change a button color prefix          |
+| `/setemoji <key> <unicode> [custom_id]`            | Map a key to a (premium) emoji        |
+| `/addcategory <name> [emoji]`                      | Create a category                     |
+| `/addproduct <cat_id> <price> <stock> <name…>`     | Create a product                      |
+| `/addpayment Name \| Instructions \| min`          | Create a payment method               |
+| `/announce <text…>`                                | Broadcast (premium-emoji aware)       |
+| `/clearcache`                                      | Drop in-memory caches                 |
+| `/reload`                                          | Re-read settings table                |
 
 Examples:
 
@@ -474,8 +487,9 @@ emoji IDs from premium packs. Premium subscribers see the animated/styled
 glyph; non-premium users see the unicode fallback.
 
 `src/services/premium.ts` renders templates like `Hi {fire}!` into a text
-+ entities pair. Map keys like `fire` to a `{ unicode, custom_emoji_id }`
-pair via:
+
+- entities pair. Map keys like `fire` to a `{ unicode, custom_emoji_id }`
+  pair via:
 
 ```
 /setemoji fire 🔥 5440123412341234567

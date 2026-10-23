@@ -208,6 +208,8 @@ export function languageKeyboard(lang: Lang): InlineKeyboard {
   kb.row();
   inlineBtn(kb, lang, 'language_vi', 'lang:vi');
   kb.row();
+  inlineBtn(kb, lang, 'language_zh', 'lang:zh');
+  kb.row();
   inlineBtn(kb, lang, 'back_to_settings', 'profile:open');
   return kb;
 }

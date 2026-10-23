@@ -1,34 +1,19 @@
 import { supabase } from '../db/supabase.js';
 
-export type RateLimitResult =
-  | { ok: true; remaining: number }
-  | { ok: false; retryAfterMs: number };
+export type RateLimitResult = { ok: true; remaining: number } | { ok: false; retryAfterMs: number };
 
 export async function consume(
   key: string,
   max: number,
   windowMs: number,
 ): Promise<RateLimitResult> {
-  const now = new Date();
-  const resetAt = new Date(Date.now() + windowMs).toISOString();
-
-  const { data: existing } = await supabase
-    .from('rate_limits')
-    .select('count, reset_at')
-    .eq('key', key)
-    .maybeSingle();
-
-  if (!existing || new Date(existing.reset_at) <= now) {
-    await supabase.from('rate_limits').upsert({ key, count: 1, reset_at: resetAt });
-    return { ok: true, remaining: max - 1 };
-  }
-
-  if (existing.count >= max) {
-    return { ok: false, retryAfterMs: new Date(existing.reset_at).getTime() - Date.now() };
-  }
-
-  await supabase.from('rate_limits').update({ count: existing.count + 1 }).eq('key', key);
-  return { ok: true, remaining: max - (existing.count + 1) };
+  const { data, error } = await supabase.rpc('consume_rate_limit', {
+    p_key: key,
+    p_max: max,
+    p_window_ms: windowMs,
+  });
+  if (error) throw error;
+  return data as RateLimitResult;
 }
 
 export function formatRetryAfter(retryAfterMs: number): string {

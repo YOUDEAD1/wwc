@@ -1,0 +1,14 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+src/platform/config.ts 90ms
+src/platform/pool.ts 59ms
+src/platform/repository.ts 18ms (unchanged)
+src/platform/server.ts 84ms
+src/platform/manager/bot.ts 107ms
+src/platform/manager/content.ts 37ms
+src/platform/manager/format.ts 11ms
+src/platform/manager/nss.ts 5ms
+src/platform/manager/profiles.ts 9ms
+tests/manager.test.mjs 63ms
+tests/capacity.test.mjs 5ms
+tests/fixtures/capacity-runner.mjs 22ms
+tests/fixtures/offline-worker.mjs 13ms

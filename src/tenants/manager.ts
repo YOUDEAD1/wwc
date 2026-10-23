@@ -1,13 +1,15 @@
+import { randomUUID } from 'node:crypto';
+import { inheritedTenantEnvironment, validWebhookSecret } from './security.js';
 /**
  * Tenant Manager — يشغل كل tenant bot كـ child process منفصل
  * كل process له env خاص = قاعدة بيانات منفصلة تماماً
  */
-import type http from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import type http from 'node:http';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { logger } from '../logger.js';
-import { listActiveTenants, setTenantStatus, getTenantByToken, type Tenant } from './store.js';
+import { listActiveTenants, setTenantStatus, type Tenant } from './store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,9 +22,15 @@ type RunningBot = {
   tenant: Tenant;
   process: ChildProcess;
   startedAt: Date;
+  ready: boolean;
 };
 
 const running = new Map<string, RunningBot>();
+const explicitlyStopped = new Set<string>();
+const acknowledgements = new Map<
+  string,
+  { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> }
+>();
 
 async function startTenantProcess(tenant: Tenant): Promise<void> {
   if (running.has(tenant.id)) {
@@ -31,9 +39,8 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
   }
 
   const tenantEnv: Record<string, string> = {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(([, v]) => v !== undefined) as [string, string][]
-    ),
+    ...inheritedTenantEnvironment(process.env),
+    DOTENV_CONFIG_PATH: join(__dirname, 'tenant.env.disabled'),
     // --- override بقيم المستأجر ---
     TELEGRAM_BOT_TOKEN: tenant.bot_token,
     BOT_TOKEN: tenant.bot_token,
@@ -64,6 +71,20 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
     detached: false,
   });
 
+  child.on('message', (message: any) => {
+    if (message?.type === 'ready') {
+      const entry = running.get(tenant.id);
+      if (entry?.process === child) entry.ready = true;
+    }
+    if (message?.type === 'update_ack') {
+      const pending = acknowledgements.get(message.id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        acknowledgements.delete(message.id);
+        pending.resolve(message.ok === true);
+      }
+    }
+  });
   child.on('error', (err) => {
     logger.error({ tenantId: tenant.id, err }, 'Failed to start tenant bot child process');
   });
@@ -84,24 +105,27 @@ async function startTenantProcess(tenant: Tenant): Promise<void> {
 
   child.on('exit', (code, signal) => {
     logger.warn({ tenantId: tenant.id, code, signal }, 'tenant bot process exited');
-    running.delete(tenant.id);
+    if (running.get(tenant.id)?.process === child) running.delete(tenant.id);
     // إعادة التشغيل بعد 15 ثانية إذا لم يُوقف يدوياً
     setTimeout(() => {
-      if (!running.has(tenant.id)) {
+      if (!explicitlyStopped.has(tenant.id) && !running.has(tenant.id)) {
         void restartIfActive(tenant.id);
       }
     }, 15_000);
   });
 
-  running.set(tenant.id, { tenant, process: child, startedAt: new Date() });
-  logger.info({ tenantId: tenant.id, username: tenant.bot_username, pid: child.pid }, 'tenant bot process started');
+  running.set(tenant.id, { tenant, process: child, startedAt: new Date(), ready: false });
+  logger.info(
+    { tenantId: tenant.id, username: tenant.bot_username, pid: child.pid },
+    'tenant bot process started',
+  );
 }
 
 async function restartIfActive(tenantId: string): Promise<void> {
   try {
     const { getTenant } = await import('./store.js');
     const t = await getTenant(tenantId);
-    if (!t || t.status !== 'active') return;
+    if (explicitlyStopped.has(tenantId) || !t || t.status !== 'active') return;
     if (new Date(t.subscription_end) < new Date()) return;
     await startTenantProcess(t);
   } catch (err) {
@@ -125,13 +149,25 @@ export async function startAllTenantBots(): Promise<void> {
 }
 
 export async function launchTenantBot(tenant: Tenant): Promise<void> {
+  explicitlyStopped.delete(tenant.id);
+  const entry = running.get(tenant.id);
+  if (entry) {
+    entry.tenant = tenant;
+    entry.process.send?.({ type: 'tenant_config', subscriptionEnd: tenant.subscription_end });
+    return;
+  }
   await startTenantProcess(tenant);
 }
 
 export async function stopTenantBot(tenantId: string): Promise<void> {
+  explicitlyStopped.add(tenantId);
   const entry = running.get(tenantId);
   if (!entry) return;
-  try { entry.process.kill('SIGTERM'); } catch { /* ignore */ }
+  try {
+    entry.process.kill('SIGTERM');
+  } catch {
+    /* ignore */
+  }
   running.delete(tenantId);
   logger.info({ tenantId }, 'tenant bot stopped');
 }
@@ -143,7 +179,7 @@ export async function suspendTenant(tenantId: string): Promise<void> {
 
 export async function resumeTenant(tenant: Tenant): Promise<void> {
   await setTenantStatus(tenant.id, 'active');
-  await startTenantProcess(tenant);
+  await launchTenantBot({ ...tenant, status: 'active' });
 }
 
 export function isTenantRunning(tenantId: string): boolean {
@@ -173,7 +209,9 @@ export async function checkExpiredTenants(): Promise<void> {
           entry.tenant.owner_telegram_id,
           '⚠️ Your bot subscription has expired. Please contact support to renew.',
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -182,55 +220,71 @@ export async function handleTenantWebhookRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<boolean> {
-  const url = req.url ?? '';
-  if (!url.startsWith('/webhook/tenant/')) return false;
-
-  const token = url.split('/').pop()?.trim();
-  if (!token) {
-    res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: false, error: 'missing_token' }));
+  const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+  if (!path.startsWith('/webhook/tenant/')) return false;
+  const respond = (status: number, error?: string) => {
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: status === 200, ...(error ? { error } : {}) }));
+  };
+  if (req.method !== 'POST') {
+    respond(405, 'method_not_allowed');
     return true;
   }
-
-  let bodyStr = '';
-  try {
-    for await (const chunk of req) {
-      bodyStr += chunk;
-    }
-  } catch (err) {
-    logger.error({ err }, 'Error reading tenant webhook request body');
-    res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: false, error: 'read_error' }));
+  const id = path.slice('/webhook/tenant/'.length);
+  const entry = running.get(id);
+  if (
+    !entry ||
+    entry.tenant.status !== 'active' ||
+    new Date(entry.tenant.subscription_end).getTime() <= Date.now()
+  ) {
+    respond(404, 'tenant_unavailable');
     return true;
   }
-
-  try {
-    const update = JSON.parse(bodyStr);
-    const tenant = await getTenantByToken(token);
-    if (!tenant) {
-      res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'tenant_not_found' }));
-      return true;
-    }
-
-    const entry = running.get(tenant.id);
-    if (!entry) {
-      res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'tenant_not_running' }));
-      return true;
-    }
-
-    if (entry.process.connected) {
-      entry.process.send({ type: 'telegram_update', update });
-      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true }));
-    } else {
-      res.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'tenant_process_disconnected' }));
-    }
-  } catch (err) {
-    res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: false, error: 'invalid_json' }));
+  const header = req.headers['x-telegram-bot-api-secret-token'];
+  if (
+    !validWebhookSecret(typeof header === 'string' ? header : undefined, entry.tenant.bot_token)
+  ) {
+    respond(403, 'invalid_secret');
+    return true;
   }
+  if (!entry.ready || !entry.process.connected) {
+    respond(503, 'tenant_not_ready');
+    return true;
+  }
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of req) {
+    const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += b.length;
+    if (bytes > 256 * 1024) {
+      respond(413, 'body_too_large');
+      return true;
+    }
+    chunks.push(b);
+  }
+  let update: any;
+  try {
+    update = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (!Number.isInteger(update.update_id)) throw Error('Invalid update');
+  } catch {
+    respond(400, 'invalid_json');
+    return true;
+  }
+  const requestId = randomUUID();
+  const ok = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      acknowledgements.delete(requestId);
+      resolve(false);
+    }, 45000);
+    acknowledgements.set(requestId, { resolve, timer });
+    entry.process.send({ type: 'telegram_update', id: requestId, update }, (err) => {
+      if (err) {
+        clearTimeout(timer);
+        acknowledgements.delete(requestId);
+        resolve(false);
+      }
+    });
+  });
+  respond(ok ? 200 : 503, ok ? undefined : 'handler_failed');
   return true;
 }

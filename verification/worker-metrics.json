@@ -1,0 +1,18 @@
+{
+  "type": "benchmark",
+  "rss": 98574336,
+  "heap": 36195520,
+  "requests": 16,
+  "telegram": [
+    "getMe",
+    "sendMessage",
+    "answerCallbackQuery",
+    "sendMessage"
+  ],
+  "sessions": 1,
+  "requestBodyBytes": 2128,
+  "responseBodyBytes": 1282,
+  "productScreens": 0,
+  "offline": true,
+  "live_services_tested": false
+}

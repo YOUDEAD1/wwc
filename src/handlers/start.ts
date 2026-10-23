@@ -1,24 +1,24 @@
 import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import { formatPriceWithCurrency } from '../../config/currencies.js';
-import type { AppCtx } from '../middleware/user.js';
-import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
-import { renderMdHtml } from '../services/premium.js';
-import { getOrder, getProduct, confirmPendingReferral, cancelPendingReferral } from '../db/queries.js';
-import { applyUserPriceToProduct } from '../services/pricing.js';
-import { productKeyboard } from '../keyboards/shop.js';
 import { QTY_MIN } from '../../config/index.js';
-import { env } from '../env.js';
+import { confirmPendingReferral, getOrder, getProduct } from '../db/queries.js';
+import { inlineBtn } from '../keyboards/helpers.js';
+import { mainMenuKeyboard } from '../keyboards/mainMenu.js';
+import { productKeyboard } from '../keyboards/shop.js';
+import type { AppCtx } from '../middleware/user.js';
+import * as adminLog from '../services/adminLog.js';
+import { buildForceSubKeyboard, enforceSubscription } from '../services/forceSub.js';
+import { setInterfaceLanguage } from '../services/interfaceCustomization.js';
 import { parsePublicOrderId, publicOrderId } from '../services/orderId.js';
 import { formatReceivedItemsBlock } from '../services/orderRender.js';
-import * as adminLog from '../services/adminLog.js';
+import { renderMdHtml } from '../services/premium.js';
+import { applyUserPriceToProduct } from '../services/pricing.js';
 import { clearAiSession } from './support.js';
-import { inlineBtn } from '../keyboards/helpers.js';
-import { enforceSubscription, buildForceSubKeyboard } from '../services/forceSub.js';
 
+import { getStoreName } from '../services/settings.js';
 import { showProfile, showReferScreen } from './profile.js';
 import { showTopupMenu } from './topup.js';
-import { getStoreName } from '../services/settings.js';
 
 /**
  * Silently dismiss any leftover persistent reply keyboard from older
@@ -59,10 +59,7 @@ function buildWelcomeHtml(ctx: AppCtx): string {
   });
 }
 
-export async function showMainMenu(
-  ctx: AppCtx,
-  opts: { fresh?: boolean } = {},
-): Promise<void> {
+export async function showMainMenu(ctx: AppCtx, opts: { fresh?: boolean } = {}): Promise<void> {
   const html = buildWelcomeHtml(ctx);
   const reply_markup = mainMenuKeyboard(ctx.lang);
 
@@ -87,32 +84,36 @@ export async function showMainMenu(
  * deep link was handled and the caller should NOT show the main menu.
  */
 async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
-  const text = ctx.message?.text ?? '';
+  const text = ctx.message?.text ?? ctx.session.pendingStartText ?? '';
   const m = text.match(/^\/start(?:@\S+)?\s+prod_(\d+)/i);
   if (!m) return false;
   const id = Number(m[1]);
   if (!Number.isFinite(id) || id <= 0) return false;
   const raw = await getProduct(id);
-  if (!raw) return false;
+  if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) return false;
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[p.id] ?? QTY_MIN;
   const total = formatPriceWithCurrency(p.price * qty, ctx.user.currency);
   const productEmoji = p.emoji === '🛒' ? '' : (p.emoji ?? '');
   const body = [
     ctx.t('shop.product.line.name', { name: p.name, emoji: productEmoji }),
-    ctx.t('shop.product.line.price', { price: formatPriceWithCurrency(p.price, ctx.user.currency) }),
+    ctx.t('shop.product.line.price', {
+      price: formatPriceWithCurrency(p.price, ctx.user.currency),
+    }),
     ctx.t('shop.product.line.stock', { stock: p.stock }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
     ctx.t('shop.product.line.qty', { qty }),
     ctx.t('shop.product.line.total', { total }),
-    ctx.t('shop.product.line.balance', { balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency) }),
+    ctx.t('shop.product.line.balance', {
+      balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency),
+    }),
   ]
     .filter(Boolean)
     .join('\n');
   // Plain deep-link URL — fed straight into the keyboard's
   // `copy_text` button so a tap copies it to the user's clipboard
   // (no share-to-chat dialog, no automatic forward — see PR #57).
-  const shareUrl = `https://t.me/${env.BOT_USERNAME}?start=prod_${p.id}`;
+  const shareUrl = `https://t.me/${ctx.me.username}?start=prod_${p.id}`;
   await ctx.reply(renderMdHtml(body), {
     parse_mode: 'HTML',
     reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
@@ -130,7 +131,7 @@ async function handleProductDeepLink(ctx: AppCtx): Promise<boolean> {
  * My Orders → Find by ID.
  */
 async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
-  const text = ctx.message?.text ?? '';
+  const text = ctx.message?.text ?? ctx.session.pendingStartText ?? '';
   const m = text.match(/^\/start(?:@\S+)?\s+ord_([0-9A-Z]+)/i);
   if (!m) return false;
   const dbId = parsePublicOrderId(`ORD${m[1]}`);
@@ -176,21 +177,21 @@ async function handleInvoiceDeepLink(ctx: AppCtx): Promise<boolean> {
 }
 
 async function handleReferDeepLink(ctx: AppCtx): Promise<boolean> {
-  const text = ctx.message?.text ?? '';
+  const text = ctx.message?.text ?? ctx.session.pendingStartText ?? '';
   if (!/^\/start(?:@\S+)?\s+refer\b/i.test(text)) return false;
   await showReferScreen(ctx, { forceReply: true });
   return true;
 }
 
 async function handleSettingsDeepLink(ctx: AppCtx): Promise<boolean> {
-  const text = ctx.message?.text ?? '';
+  const text = ctx.message?.text ?? ctx.session.pendingStartText ?? '';
   if (!/^\/start(?:@\S+)?\s+settings\b/i.test(text)) return false;
   await showProfile(ctx, { forceReply: true });
   return true;
 }
 
 async function handleTopupDeepLink(ctx: AppCtx): Promise<boolean> {
-  const text = ctx.message?.text ?? '';
+  const text = ctx.message?.text ?? ctx.session.pendingStartText ?? '';
   if (!/^\/start(?:@\S+)?\s+topup\b/i.test(text)) return false;
   await showTopupMenu(ctx, false);
   return true;
@@ -198,14 +199,16 @@ async function handleTopupDeepLink(ctx: AppCtx): Promise<boolean> {
 
 export function registerStart(bot: Composer<AppCtx>): void {
   // Callback setting language on startup
-  bot.callbackQuery(/^startlang:(en|ar|vi)$/, async (ctx) => {
+  bot.callbackQuery(/^startlang:(en|ar|vi|zh)$/, async (ctx) => {
     const selectedLang = ctx.match[1] as any;
     ctx.session.langSelected = true;
 
     const { setUserLanguage } = await import('../db/queries.js');
     await setUserLanguage(ctx.user.telegram_id, selectedLang);
     ctx.user.language = selectedLang;
+    ctx.user.language_selected = true;
     ctx.lang = selectedLang;
+    setInterfaceLanguage(selectedLang);
 
     const { t: translate } = await import('../i18n/index.js');
     ctx.t = (key, vars) => translate(selectedLang, key, vars);
@@ -214,16 +217,15 @@ export function registerStart(bot: Composer<AppCtx>): void {
 
     try {
       await ctx.deleteMessage();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     // ===== تحقق الاشتراك الإجباري =====
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
       const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
-      await ctx.reply(
-        renderMdHtml(subCheck.message),
-        { parse_mode: 'HTML', reply_markup: kb },
-      );
+      await ctx.reply(renderMdHtml(subCheck.message), { parse_mode: 'HTML', reply_markup: kb });
       return;
     }
 
@@ -252,19 +254,24 @@ export function registerStart(bot: Composer<AppCtx>): void {
   });
 
   bot.command('start', async (ctx) => {
+    ctx.session.pendingStartText = ctx.message?.text;
     await clearOldReplyKeyboard(ctx);
     clearAiSession(ctx.from?.id);
 
     // If they haven't explicitly selected their language yet, prompt them first
-    if (!ctx.session.langSelected) {
+    if (!ctx.user.language_selected) {
+      ctx.session.pendingStartText = ctx.message?.text;
       const kb = new InlineKeyboard()
-        .text('🇺🇸 English', 'startlang:en').row()
-        .text('🇸🇦 العربية', 'startlang:ar').row()
-        .text('🇻🇳 Tiếng Việt', 'startlang:vi');
+        .text('🇺🇸 English', 'startlang:en')
+        .row()
+        .text('🇸🇦 العربية', 'startlang:ar')
+        .row()
+        .text('🇻🇳 Tiếng Việt', 'startlang:vi')
+        .row().text('🇨🇳 简体中文', 'startlang:zh');
       await ctx.reply(
         '🌐 *Please choose your language / الرجاء اختيار لغتك / Vui lòng chọn ngôn ngữ:*\n\n' +
-        'Choose a language to continue.',
-        { parse_mode: 'Markdown', reply_markup: kb }
+          'Choose a language to continue.',
+        { parse_mode: 'Markdown', reply_markup: kb },
       );
       return;
     }
@@ -273,10 +280,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
       const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
-      await ctx.reply(
-        renderMdHtml(subCheck.message),
-        { parse_mode: 'HTML', reply_markup: kb },
-      );
+      await ctx.reply(renderMdHtml(subCheck.message), { parse_mode: 'HTML', reply_markup: kb });
       return;
     }
     // ===================================
@@ -311,10 +315,10 @@ export function registerStart(bot: Composer<AppCtx>): void {
     if (!subCheck.pass) {
       const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
       try {
-        await ctx.editMessageText(
-          renderMdHtml(subCheck.message),
-          { parse_mode: 'HTML', reply_markup: kb }
-        );
+        await ctx.editMessageText(renderMdHtml(subCheck.message), {
+          parse_mode: 'HTML',
+          reply_markup: kb,
+        });
       } catch {
         // ignore identical content error
       }
@@ -329,14 +333,14 @@ export function registerStart(bot: Composer<AppCtx>): void {
     // اشترك — أكّد الإحالة المعلّقة إن وجدت
     await confirmPendingReferral(ctx.user.telegram_id);
     // أدخله البوت
-    await ctx.editMessageText(
-      renderMdHtml('✅ *تم التحقق من اشتراكك!* مرحباً بك 🎉'),
-      { parse_mode: 'HTML' },
-    );
+    await ctx.editMessageText(renderMdHtml('✅ *تم التحقق من اشتراكك!* مرحباً بك 🎉'), {
+      parse_mode: 'HTML',
+    });
     await showMainMenu(ctx, { fresh: true });
   });
 
   bot.command('menu', async (ctx) => {
+    ctx.session.pendingStartText = ctx.message?.text;
     await clearOldReplyKeyboard(ctx);
     clearAiSession(ctx.from?.id);
 
@@ -344,10 +348,7 @@ export function registerStart(bot: Composer<AppCtx>): void {
     const subCheck = await enforceSubscription(ctx.api, ctx.user.telegram_id);
     if (!subCheck.pass) {
       const kb = await buildForceSubKeyboard(ctx.api, subCheck.channels);
-      await ctx.reply(
-        renderMdHtml(subCheck.message),
-        { parse_mode: 'HTML', reply_markup: kb },
-      );
+      await ctx.reply(renderMdHtml(subCheck.message), { parse_mode: 'HTML', reply_markup: kb });
       return;
     }
 

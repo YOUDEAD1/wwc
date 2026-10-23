@@ -8,11 +8,11 @@ import type { Lang } from '../../config/index.js';
 import { getOrCreateUser } from '../db/queries.js';
 import { env } from '../env.js';
 import { t as translate } from '../i18n/index.js';
+import { remember } from '../services/cache.js';
 import { renderMdHtml } from '../services/premium.js';
+import * as publicFeed from '../services/publicFeed.js';
 import type { DBUser } from '../types.js';
 import type { SessionCtx } from './session.js';
-import { maybeSendEmailNag } from '../services/emailNag.js';
-import * as publicFeed from '../services/publicFeed.js';
 
 export type AppCtx = SessionCtx & {
   user: DBUser;
@@ -34,16 +34,19 @@ function extractReferral(text: string | undefined): number | null {
 
 export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
   if (!ctx.from) return next();
+  const from = ctx.from;
   const referred_by = extractReferral(ctx.message?.text ?? undefined);
 
-  const user = await getOrCreateUser({
-    telegram_id: ctx.from.id,
-    username: ctx.from.username ?? null,
-    first_name: ctx.from.first_name ?? null,
-    last_name: ctx.from.last_name ?? null,
-    language: env.DEFAULT_LANG,
-    referred_by,
-  });
+  const user = await remember('user:' + from.id, 10000, () =>
+    getOrCreateUser({
+      telegram_id: from.id,
+      username: from.username ?? null,
+      first_name: from.first_name ?? null,
+      last_name: from.last_name ?? null,
+      language: env.DEFAULT_LANG,
+      referred_by,
+    }),
+  );
 
   ctx.user = user;
   ctx.user.currency = normalizeCurrency((user as DBUser & { currency?: string | null }).currency);
@@ -52,15 +55,6 @@ export const userMiddleware: MiddlewareFn<AppCtx> = async (ctx, next) => {
 
   // Fire-and-forget the 12h email nag.
   // void maybeSendEmailNag(ctx);
-
-  // If this is a newly created user with a referrer, notify the referrer
-  // directly and mirror it to the admin channel when configured.
-  if (
-    (user as DBUser & { __just_created?: boolean }).__just_created &&
-    user.referred_by
-  ) {
-    void sendReferralNotification(ctx, user.referred_by, ctx.from.id, ctx.from.username ?? null, ctx.from.first_name);
-  }
 
   return next();
 };
@@ -80,16 +74,19 @@ async function sendReferralNotification(
   refereeUsername: string | null,
   refereeFirstName: string | null,
 ) {
-  const { getUserByTelegramId, getReferralBalance, getReferralEarnings } = await import('../db/queries.js');
+  const { getUserByTelegramId, getReferralBalance, getReferralEarnings } =
+    await import('../db/queries.js');
 
   const referrer = await getUserByTelegramId(referrerId);
   if (!referrer) return;
 
   const referrerUsername = cleanDisplayName(
-    referrer.username ? `@${referrer.username}` : referrer.first_name ?? `User ${referrer.telegram_id}`,
+    referrer.username
+      ? `@${referrer.username}`
+      : (referrer.first_name ?? `User ${referrer.telegram_id}`),
   );
   const refereeDisplay = cleanDisplayName(
-    refereeUsername ? `@${refereeUsername}` : refereeFirstName ?? `User ${refereeId}`,
+    refereeUsername ? `@${refereeUsername}` : (refereeFirstName ?? `User ${refereeId}`),
   );
 
   let refBalance = { total: 0, spent: 0, available: 0 };

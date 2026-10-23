@@ -3,26 +3,73 @@
  * (texts, colors, emojis) from this in-memory cache. Reload after
  * changes by calling `refreshSettings()`.
  */
-import { deleteSetting, getAllSettings, setSetting } from '../db/queries.js';
 import type { ColorMode, EmojiSpec } from '../../config/index.js';
 import { COLOR_PREFIX, DEFAULT_BUTTON_COLORS, EMOJI } from '../../config/index.js';
+import { getDbScope } from '../db/db_context.js';
+import { deleteSetting, setSetting } from '../db/queries.js';
+import { supabase } from '../db/supabase.js';
+import { del, remember } from './cache.js';
 
-let cache = new Map<string, unknown>();
-let loaded = false;
+const states = new Map<
+  string,
+  { values: Map<string, unknown>; revision: number; loaded: boolean }
+>();
+function state() {
+  const key = getDbScope();
+  let s = states.get(key);
+  if (!s) {
+    if (states.size >= 200) states.delete(states.keys().next().value!);
+    s = { values: new Map(), revision: -1, loaded: false };
+    states.set(key, s);
+  }
+  return s;
+}
+const cache = {
+  get: (key: string) => state().values.get(key),
+  set: (key: string, value: unknown) => state().values.set(key, value),
+  delete: (key: string) => state().values.delete(key),
+  clear: () => state().values.clear(),
+};
 
 export async function refreshSettings(): Promise<void> {
-  cache = await getAllSettings();
-  loaded = true;
+  const { data, error } = await supabase.rpc('runtime_settings_snapshot');
+  if (error) throw error;
+  state().values = new Map(Object.entries(data.values ?? {}));
+  state().revision = Number(data.revision);
+  state().loaded = true;
 }
 
 export async function ensureLoaded(): Promise<void> {
-  if (!loaded) await refreshSettings();
+  if (!state().loaded) {
+    await refreshSettings();
+    return;
+  }
+  const versions = await remember('runtime-revisions', 15000, async () => {
+    const { data, error } = await supabase.rpc('runtime_revisions');
+    if (error) throw error;
+    return data as Record<string, number>;
+  });
+  if (Number(versions.settings) !== state().revision) await refreshSettings();
 }
 
 /** Override a text by i18n key â€” `text.<key>` in settings table. */
-export function getTextOverride(key: string): string | undefined {
-  const v = cache.get(`text.${key}`);
-  return typeof v === 'string' ? v : undefined;
+export function getTextOverride(
+  key: string,
+  lang?: import('../../config/index.js').Lang,
+): string | undefined {
+  if (lang) {
+    const localized = cache.get('text.' + lang + '.' + key);
+    if (typeof localized === 'string') return localized;
+  }
+  const value = cache.get('text.' + key);
+  if (typeof value !== 'string') return;
+  if (!lang) return value;
+  const detected = /[\u0600-\u06ff]/u.test(value)
+    ? 'ar'
+    : /[ăâđêôơưĂÂĐÊÔƠƯ\u1ea0-\u1ef9]/u.test(value)
+      ? 'vi'
+      : /[\u4e00-\u9fff]/u.test(value) ? 'zh' : 'en';
+  return detected === lang ? value : undefined;
 }
 
 /** Get color mode for a button key. Falls back to the default. */
@@ -150,11 +197,7 @@ export async function setText(key: string, value: string, updated_by?: number): 
   cache.set(`text.${key}`, value);
 }
 
-export async function setColor(
-  key: string,
-  color: ColorMode,
-  updated_by?: number,
-): Promise<void> {
+export async function setColor(key: string, color: ColorMode, updated_by?: number): Promise<void> {
   await setSetting(`color.${key}`, color, updated_by);
   cache.set(`color.${key}`, color);
 }
@@ -186,13 +229,11 @@ export async function clearEmoji(key: string): Promise<void> {
  * Returns `undefined` when no override is set or the stored value
  * has no premium id (icons require a real `custom_emoji_id`).
  */
-export function getButtonIcon(key: string): { unicode: string; custom_emoji_id?: string | null } | undefined {
+export function getButtonIcon(
+  key: string,
+): { unicode: string; custom_emoji_id?: string | null } | undefined {
   const v = cache.get(`btnicon.${key}`);
-  if (
-    v &&
-    typeof v === 'object' &&
-    'unicode' in (v as Record<string, unknown>)
-  ) {
+  if (v && typeof v === 'object' && 'unicode' in (v as Record<string, unknown>)) {
     const obj = v as { unicode: string; custom_emoji_id?: string | null };
     if (obj.unicode && obj.unicode.length > 0) return obj;
   }
@@ -217,7 +258,8 @@ export async function clearButtonIcon(key: string): Promise<void> {
 
 export function clearLocalCache(): void {
   cache.clear();
-  loaded = false;
+  state().loaded = false;
+  del('runtime-revisions');
 }
 
 /** Channel URL shown as a direct-join button in the main menu. */
@@ -302,7 +344,8 @@ export function getAdminContactUrl(): string {
 }
 
 export function getMasterContactUrl(): string {
-  const raw = process.env.MASTER_CONTACT_URL ?? process.env.ADMIN_CONTACT_URL ?? 'https://t.me/lara_v2';
+  const raw =
+    process.env.MASTER_CONTACT_URL ?? process.env.ADMIN_CONTACT_URL ?? 'https://t.me/lara_v2';
   if (raw.startsWith('@')) return `https://t.me/${raw.slice(1)}`;
   if (!raw.startsWith('http')) return `https://t.me/${raw}`;
   return raw;
@@ -342,9 +385,7 @@ function readString(key: string): string | null {
 export function getBotTutorial(): BotTutorial {
   const fileType = readString('bot_tutorial.file_type');
   const file_type =
-    fileType === 'photo' || fileType === 'video' || fileType === 'document'
-      ? fileType
-      : null;
+    fileType === 'photo' || fileType === 'video' || fileType === 'document' ? fileType : null;
   return {
     text: readString('bot_tutorial.text'),
     file_id: readString('bot_tutorial.file_id'),
@@ -385,9 +426,7 @@ function methodTutorialKey(methodId: number, field: keyof BotTutorial): string {
 export function getPaymentMethodTutorial(methodId: number): PaymentMethodTutorial {
   const fileType = readString(methodTutorialKey(methodId, 'file_type'));
   const file_type =
-    fileType === 'photo' || fileType === 'video' || fileType === 'document'
-      ? fileType
-      : null;
+    fileType === 'photo' || fileType === 'video' || fileType === 'document' ? fileType : null;
   return {
     text: readString(methodTutorialKey(methodId, 'text')),
     file_id: readString(methodTutorialKey(methodId, 'file_id')),
@@ -471,7 +510,7 @@ export function getReferralCost(): number {
 
 export function getReferralAmount(): number {
   const v = cache.get('text.referral.amount') ?? cache.get('referral.amount');
-  return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 0.50;
+  return typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : 0.5;
 }
 
 export function getReferralLimitPerDay(): number {
@@ -482,7 +521,7 @@ export function getReferralLimitPerDay(): number {
 export function getPublicFeedTpl(type: 'purchase' | 'topup' | 'stock' | 'referral'): string {
   const custom = cache.get(`text.public_feed.tpl.${type}`) ?? cache.get(`public_feed.tpl.${type}`);
   if (typeof custom === 'string' && custom.length > 0) return custom;
-  
+
   if (type === 'purchase') {
     return '🎉 <b>New Purchase!</b>\n\n📦 <b>Service:</b> {product_name}\n👤 <b>Buyer:</b> {masked_user}\n🎁 <b>Plan:</b> {plan_name}\n🧾 <b>Order ID:</b> {order_id}\n🔢 <b>Quantity:</b> {quantity}\n📈 <b>Total Purchases:</b> {total_orders}';
   }
@@ -511,7 +550,10 @@ export function getGlobalProfitPercent(): number | null {
   return Number.isFinite(num) && num >= 0 ? num : null;
 }
 
-export async function setGlobalProfitPercent(percent: number | null, updated_by?: number): Promise<void> {
+export async function setGlobalProfitPercent(
+  percent: number | null,
+  updated_by?: number,
+): Promise<void> {
   const key = 'shop.global_profit_percent';
   if (percent === null || percent === undefined || isNaN(percent)) {
     await deleteSetting(key);
@@ -542,7 +584,11 @@ export function getProductProfitPercent(productId: number): number | null {
   return Number.isFinite(num) && num >= 0 ? num : null;
 }
 
-export async function setProductProfitPercent(productId: number, percent: number | null, updated_by?: number): Promise<void> {
+export async function setProductProfitPercent(
+  productId: number,
+  percent: number | null,
+  updated_by?: number,
+): Promise<void> {
   const key = `prod_profit.${productId}`;
   if (percent === null || percent === undefined || isNaN(percent)) {
     await deleteSetting(key);
@@ -553,10 +599,12 @@ export async function setProductProfitPercent(productId: number, percent: number
   }
 }
 
-
 export function calculateProfitSellPrice(cost: number, profitPercent: number): number {
   if (!Number.isFinite(cost) || cost <= 0) return 0;
   const p = Number.isFinite(profitPercent) && profitPercent >= 0 ? profitPercent : 0;
   const raw = cost * (1 + p / 100);
   return Number(raw.toFixed(2));
-}
+}
+export function getSettingValue(key: string) {
+  return cache.get(key);
+}

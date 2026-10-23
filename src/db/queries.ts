@@ -2,32 +2,35 @@
  * Thin wrappers around Supabase queries. Keep all SQL access here so
  * callers don't have to know about the underlying client.
  */
-import { supabase } from './supabase.js';
-import { env } from '../env.js';
+import { managedShop, importingNss, requirePaidCapability, requireProductPatch, allowedProduct } from '../platform/policy.js';
+import type { Lang } from '../../config/index.js';
+import { logger } from '../logger.js';
+import * as hotCache from '../services/cache.js';
 import type {
-  DBUser,
   DBCategory,
-  DBProduct,
-  DBOrder,
   DBDeposit,
-  DBPaymentMethod,
-  DBWalletLedger,
   DBGiftCode,
   DBGiftCodeRedemption,
-  DBUserPriceOverride,
-  DBPromo,
+  DBOrder,
   DBOrderDeliverySubmission,
-  DeliveryFieldSpec,
-  PaymentProvider,
-  OrderIntent,
+  DBPaymentMethod,
+  DBProduct,
+  DBPromo,
   DBSupplierApiSource,
-  DBSupplierProductLink,
   DBSupplierOrderLog,
+  DBSupplierProductLink,
+  DBUser,
+  DBUserPriceOverride,
+  DBWalletLedger,
+  DeliveryFieldSpec,
+  OrderIntent,
+  PaymentProvider,
   SupplierAuthMode,
   SupplierOrderMethod,
 } from '../types.js';
-import type { Lang } from '../../config/index.js';
-import { logger } from '../logger.js';
+import { getContextAdminId } from './db_context.js';
+import { readAll } from './readAll.js';
+import { supabase } from './supabase.js';
 
 // ---------- Users ----------
 
@@ -101,11 +104,10 @@ export async function getOrCreateUser(args: {
     // so the Notifications screen renders with a sensible default.
     const out = {
       ...(existing as DBUser),
-      wallet_alert:
-        (existing as { wallet_alert?: boolean }).wallet_alert ?? true,
+      wallet_alert: (existing as { wallet_alert?: boolean }).wallet_alert ?? true,
     } as DBUser & { __just_created?: boolean };
     out.__just_created = false;
-    await ensureReferralRecord(out.referred_by, out.telegram_id);
+
     return out;
   }
 
@@ -118,25 +120,14 @@ export async function getOrCreateUser(args: {
     last_name: args.last_name ?? null,
     language: args.language,
     ref_code,
-    referred_by: validReferrer,
+    referred_by: null,
+    pending_referral_by: validReferrer,
+    language_selected: false,
   };
   const { data, error } = await supabase.from('users').insert(insert).select('*').single();
   if (error || !data) {
     logger.error({ err: error }, 'getOrCreateUser failed');
     throw error ?? new Error('Failed to create user');
-  }
-  if (args.referred_by && args.referred_by !== args.telegram_id) {
-    // لا نسجل الإحالة الآن — نحفظها كـ pending حتى يتحقق الاشتراك
-    const { error: pendErr } = await supabase
-      .from('users')
-      .update({ pending_referral_by: args.referred_by })
-      .eq('telegram_id', args.telegram_id);
-    if (pendErr) {
-      // Column may not exist yet (migration 0040) — fall back to
-      // recording the referral immediately instead of deferring.
-      logger.warn({ err: pendErr }, 'pending_referral_by column missing, recording referral now');
-      await ensureReferralRecord(args.referred_by, args.telegram_id);
-    }
   }
   const created = data as DBUser & { __just_created?: boolean };
   created.__just_created = true;
@@ -148,45 +139,13 @@ export async function getOrCreateUser(args: {
  * تُستدعى بعد ما يثبت المستخدم اشتراكه في القناة
  */
 export async function confirmPendingReferral(telegram_id: number): Promise<void> {
-  const { data: user, error: selErr } = await supabase
-    .from('users')
-    .select('pending_referral_by, sub_verified')
-    .eq('telegram_id', telegram_id)
-    .single();
-
-  // If the columns don't exist yet (migration 0040 not applied),
-  // silently bail — the referral was already recorded immediately
-  // in the getOrCreateUser fallback path.
-  if (selErr || !user) return;
-  if (user.sub_verified || !user.pending_referral_by) return;
-
-  const referrerId = user.pending_referral_by;
-
-  // التحقق من الحد الأقصى للإحالات اليومية للمحيل
-  try {
-    const { getReferralLimitPerDay } = await import('../services/settings.js');
-    const limit = getReferralLimitPerDay();
-    if (limit > 0) {
-      const DAY = 24 * 60 * 60 * 1000;
-      const refsCount = await countReferralsSince(referrerId, DAY);
-      if (refsCount >= limit) {
-        logger.info({ referrerId, telegram_id }, 'Referral skipped because referrer reached daily limit');
-        await cancelPendingReferral(telegram_id);
-        return;
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to check referral daily limit');
+  const { data, error } = await supabase.rpc('confirm_referral_atomic', { p_user_id: telegram_id });
+  if (error) throw error;
+  if (data?.confirmed) {
+    const { notifyConfirmedReferral } = await import('../services/referralNotify.js');
+    await notifyConfirmedReferral(Number(data.referrer_id), telegram_id).catch(() => {});
   }
-
-  // سجّل الإحالة الآن
-  await ensureReferralRecord(referrerId, telegram_id);
-
-  // امسح الـ pending وضع sub_verified
-  await supabase
-    .from('users')
-    .update({ pending_referral_by: null, sub_verified: true, referred_by: referrerId })
-    .eq('telegram_id', telegram_id);
+  hotCache.del('user:' + telegram_id);
 }
 
 /**
@@ -204,9 +163,13 @@ export async function cancelPendingReferral(telegram_id: number): Promise<void> 
   }
 }
 
-
 export async function setUserLanguage(telegram_id: number, language: Lang): Promise<void> {
-  await supabase.from('users').update({ language }).eq('telegram_id', telegram_id);
+  const { error } = await supabase
+    .from('users')
+    .update({ language, language_selected: true })
+    .eq('telegram_id', telegram_id);
+  if (error) throw error;
+  hotCache.del('user:' + telegram_id);
 }
 
 export async function setUserCurrency(telegram_id: number, currency: string): Promise<void> {
@@ -252,10 +215,7 @@ export async function setUserRegion(
  * "succeeding" while the value is dropped.
  */
 export async function setUserEmail(telegram_id: number, email: string | null): Promise<void> {
-  const { error } = await supabase
-    .from('users')
-    .update({ email })
-    .eq('telegram_id', telegram_id);
+  const { error } = await supabase.from('users').update({ email }).eq('telegram_id', telegram_id);
   if (error) {
     logger.error({ err: error, telegram_id }, 'setUserEmail failed');
     throw error;
@@ -417,23 +377,14 @@ async function getReferralAdjustmentTotal(user_id: number): Promise<number> {
     logger.error({ err: error, user_id }, 'getReferralAdjustmentTotal failed');
     throw error;
   }
-  return (data ?? []).reduce(
-    (sum, row) => sum + Number((row as { delta?: number }).delta ?? 0),
-    0,
-  );
+  return (data ?? []).reduce((sum, row) => sum + Number((row as { delta?: number }).delta ?? 0), 0);
 }
 
 export async function getReferralBalance(user_id: number): Promise<ReferralBalance> {
   const [total, spendRows, conversionRows] = await Promise.all([
     countReferrals(user_id),
-    supabase
-      .from('referral_redemptions')
-      .select('referral_cost')
-      .eq('user_id', user_id),
-    supabase
-      .from('referral_conversions')
-      .select('refs_spent')
-      .eq('user_id', user_id),
+    supabase.from('referral_redemptions').select('referral_cost').eq('user_id', user_id),
+    supabase.from('referral_conversions').select('refs_spent').eq('user_id', user_id),
   ]);
   if (spendRows.error) {
     logger.error({ err: spendRows.error, user_id }, 'getReferralBalance failed');
@@ -557,13 +508,11 @@ export async function spendReferralBalance(args: {
     logger.error({ err: error, args }, 'spendReferralBalance failed');
     throw error;
   }
-  const result = (Array.isArray(data) ? data[0] : data) as
-    | {
-        total_referrals?: number;
-        spent_referrals?: number;
-        available_referrals?: number;
-      }
-    | null;
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    total_referrals?: number;
+    spent_referrals?: number;
+    available_referrals?: number;
+  } | null;
   return {
     total: Number(result?.total_referrals ?? 0),
     spent: Number(result?.spent_referrals ?? 0),
@@ -611,15 +560,13 @@ export async function convertReferralBalance(args: {
     logger.warn({ err: statErr, user_id: args.user_id }, 'Failed to update user referral stats');
   }
 
-  const result = (Array.isArray(data) ? data[0] : data) as
-    | {
-        total_referrals?: number;
-        spent_referrals?: number;
-        available_referrals?: number;
-        converted_amount?: number;
-        new_balance?: number;
-      }
-    | null;
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    total_referrals?: number;
+    spent_referrals?: number;
+    available_referrals?: number;
+    converted_amount?: number;
+    new_balance?: number;
+  } | null;
   return {
     total: Number(result?.total_referrals ?? 0),
     spent: Number(result?.spent_referrals ?? 0),
@@ -633,11 +580,7 @@ export async function convertReferralBalance(args: {
  * Get user by telegram_id. Returns null if not found.
  */
 export async function getUserByTelegramId(telegram_id: number): Promise<DBUser | null> {
-  const { data } = await supabase
-    .from('users')
-    .select('*')
-    .eq('telegram_id', telegram_id)
-    .single();
+  const { data } = await supabase.from('users').select('*').eq('telegram_id', telegram_id).single();
   return data as DBUser | null;
 }
 
@@ -646,10 +589,7 @@ export async function getUserByTelegramId(telegram_id: number): Promise<DBUser |
  * milliseconds. Used by the Refer & Earn screen to render the 24-hour
  * and 7-day breakdowns.
  */
-export async function countReferralsSince(
-  telegram_id: number,
-  windowMs: number,
-): Promise<number> {
+export async function countReferralsSince(telegram_id: number, windowMs: number): Promise<number> {
   const since = new Date(Date.now() - windowMs).toISOString();
   const { count } = await supabase
     .from('referrals')
@@ -664,9 +604,7 @@ export async function countReferralsSince(
  * migration 0009 has not yet been applied (the columns are missing,
  * so the SELECT returns no row data for them).
  */
-export async function getReferralEarnings(
-  telegram_id: number,
-): Promise<{
+export async function getReferralEarnings(telegram_id: number): Promise<{
   total: number;
   available: number;
   transferred: number;
@@ -674,9 +612,7 @@ export async function getReferralEarnings(
 }> {
   const { data, error } = await supabase
     .from('users')
-    .select(
-      'referral_earned_total, referral_available, referral_transferred, referral_withdrawn',
-    )
+    .select('referral_earned_total, referral_available, referral_transferred, referral_withdrawn')
     .eq('telegram_id', telegram_id)
     .maybeSingle();
   if (error) {
@@ -707,14 +643,16 @@ export async function getReferralEarnings(
 // ---------- Admins ----------
 
 export async function isAdmin(telegram_id: number): Promise<boolean> {
-  // تحقق من env.ADMIN_USER_ID أولاً — يعمل دائماً حتى لو جدول admins فارغ
-  if (telegram_id === env.ADMIN_USER_ID) return true;
-  const { data } = await supabase
-    .from('admins')
-    .select('telegram_id')
-    .eq('telegram_id', telegram_id)
-    .maybeSingle();
-  return Boolean(data);
+  if (telegram_id === getContextAdminId()) return true;
+  return hotCache.remember('admin:' + telegram_id, 15000, async () => {
+    const { data, error } = await supabase
+      .from('admins')
+      .select('telegram_id')
+      .eq('telegram_id', telegram_id)
+      .maybeSingle();
+    if (error) throw error;
+    return Boolean(data);
+  });
 }
 
 // ---------- Categories ----------
@@ -735,6 +673,7 @@ export async function getCategory(id: number): Promise<DBCategory | null> {
 }
 
 export async function addCategory(name: string, emoji?: string): Promise<DBCategory> {
+  requirePaidCapability();
   const { data, error } = await supabase
     .from('categories')
     .insert({ name, emoji: emoji ?? null })
@@ -744,10 +683,7 @@ export async function addCategory(name: string, emoji?: string): Promise<DBCateg
   return data as DBCategory;
 }
 
-export async function getOrCreateCategory(
-  name: string,
-  emoji?: string,
-): Promise<DBCategory> {
+export async function getOrCreateCategory(name: string, emoji?: string): Promise<DBCategory> {
   const { data: existing, error: lookupError } = await supabase
     .from('categories')
     .select('*')
@@ -765,23 +701,14 @@ export async function listProducts(
   page: number,
   perPage: number,
 ): Promise<{ rows: DBProduct[]; total: number }> {
-  const from = page * perPage;
-  const to = from + perPage - 1;
-  const { data, count } = await supabase
-    .from('products')
-    .select('*', { count: 'exact' })
-    .eq('category_id', categoryId)
-    .eq('active', true)
-    .order('is_pinned', { ascending: false })
-    .order('sort_order', { ascending: true })
-    .order('id', { ascending: true })
-    .range(from, to);
-  return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
+  const all = await listActiveProducts(0, 1000000);
+  const rows = all.rows.filter((p) => p.category_id === categoryId);
+  return { rows: rows.slice(page * perPage, (page + 1) * perPage), total: rows.length };
 }
 
 export async function getProduct(id: number): Promise<DBProduct | null> {
   const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
-  return (data as DBProduct) ?? null;
+  return data && allowedProduct(data as DBProduct) ? data as DBProduct : null;
 }
 
 export async function addProduct(p: {
@@ -798,7 +725,9 @@ export async function addProduct(p: {
   referral_required_count?: number;
   active?: boolean;
 }): Promise<DBProduct> {
-  const { data, error } = await supabase.from('products').insert(p).select('*').single();
+  requirePaidCapability();
+  const source = managedShop() && importingNss() ? p.note?.match(/\[API_PRODUCT_ID:([^\]]+)\]/)?.[1] : undefined;
+  const { data, error } = await supabase.from('products').insert({ ...p, ...(source ? { wwc_source_id: source } : {}) }).select('*').single();
   if (error || !data) throw error ?? new Error('addProduct failed');
   return data as DBProduct;
 }
@@ -841,6 +770,7 @@ export async function updateProduct(
     stashed_sort_order: number | null;
   }>,
 ): Promise<void> {
+  requireProductPatch(patch);
   // When the caller is editing `stock` we capture the pre-write
   // value so a transition across zero (in <-> out of stock) can
   // trigger the auto-reorder side-effect after the write lands.
@@ -854,6 +784,7 @@ export async function updateProduct(
     beforeStock = Number((snap as { stock?: number } | null)?.stock ?? 0);
   }
   const { error } = await supabase.from('products').update(patch).eq('id', id);
+  hotCache.del('runtime-revisions');
   if (error) {
     logger.error({ err: error, id, patch }, 'updateProduct failed');
     throw error;
@@ -861,10 +792,7 @@ export async function updateProduct(
   if (beforeStock !== null && patch.stock !== undefined) {
     const afterStock = Number(patch.stock);
     await applyStockTransition(id, beforeStock, afterStock).catch((err) => {
-      logger.warn(
-        { err, id },
-        'applyStockTransition after updateProduct(stock) failed',
-      );
+      logger.warn({ err, id }, 'applyStockTransition after updateProduct(stock) failed');
     });
   }
 
@@ -907,7 +835,10 @@ export async function updateProduct(
           }
           if (changed) {
             await saveShopConfig(config);
-            logger.info({ id, apiId, patch }, 'Synced updateProduct changes back to api_shop_config');
+            logger.info(
+              { id, apiId, patch },
+              'Synced updateProduct changes back to api_shop_config',
+            );
           }
         }
       }
@@ -977,10 +908,7 @@ export async function applyStockTransition(
       })
       .eq('id', product_id);
     if (error) {
-      logger.warn(
-        { err: error, product_id },
-        'applyStockTransition: OOS stash failed',
-      );
+      logger.warn({ err: error, product_id }, 'applyStockTransition: OOS stash failed');
     }
     return;
   }
@@ -994,10 +922,7 @@ export async function applyStockTransition(
       })
       .eq('id', product_id);
     if (error) {
-      logger.warn(
-        { err: error, product_id },
-        'applyStockTransition: restock restore failed',
-      );
+      logger.warn({ err: error, product_id }, 'applyStockTransition: restock restore failed');
     }
   }
 }
@@ -1011,22 +936,17 @@ export async function applyStockTransition(
  * slides to the bottom immediately rather than waiting for the
  * next stock change.
  */
-export async function setProductPinned(
-  id: number,
-  pinned: boolean,
-): Promise<void> {
+export async function setProductPinned(id: number, pinned: boolean): Promise<void> {
   const { data } = await supabase
     .from('products')
     .select('stashed_sort_order, stock, unlimited_stock')
     .eq('id', id)
     .maybeSingle();
-  const row = data as
-    | {
-        stashed_sort_order: number | null;
-        stock: number | null;
-        unlimited_stock: boolean | null;
-      }
-    | null;
+  const row = data as {
+    stashed_sort_order: number | null;
+    stock: number | null;
+    unlimited_stock: boolean | null;
+  } | null;
   if (pinned) {
     if (row && row.stashed_sort_order !== null) {
       await supabase
@@ -1115,8 +1035,7 @@ export async function unstashSortOrder(id: number): Promise<void> {
     .select('stashed_sort_order')
     .eq('id', id)
     .maybeSingle();
-  const stashed = (data as { stashed_sort_order: number | null } | null)
-    ?.stashed_sort_order;
+  const stashed = (data as { stashed_sort_order: number | null } | null)?.stashed_sort_order;
   if (stashed === null || stashed === undefined) return;
   await supabase
     .from('products')
@@ -1173,6 +1092,19 @@ export async function upsertDeliverySubmission(args: {
   product_id: number;
   payload: Record<string, string>;
 }): Promise<DBOrderDeliverySubmission> {
+  const { data: owner, error: ownershipError } = await supabase
+    .from('orders')
+    .select('user_id,product_id')
+    .eq('id', args.order_id)
+    .maybeSingle();
+  if (ownershipError) throw ownershipError;
+  if (
+    !owner ||
+    Number(owner.user_id) !== args.user_id ||
+    Number(owner.product_id) !== args.product_id
+  )
+    throw Error('DELIVERY_ORDER_OWNERSHIP');
+
   const existing = await getDeliverySubmission(args.order_id);
   if (!existing) {
     const { data, error } = await supabase
@@ -1187,7 +1119,10 @@ export async function upsertDeliverySubmission(args: {
       .select('*')
       .single();
     if (error || !data) {
-      logger.error({ err: error, args }, 'upsertDeliverySubmission insert failed');
+      logger.error(
+        { err: error, orderId: args.order_id, userId: args.user_id },
+        'upsertDeliverySubmission insert failed',
+      );
       throw error ?? new Error('upsertDeliverySubmission insert failed');
     }
     return {
@@ -1213,7 +1148,10 @@ export async function upsertDeliverySubmission(args: {
     .select('*')
     .single();
   if (error || !data) {
-    logger.error({ err: error, args }, 'upsertDeliverySubmission update failed');
+    logger.error(
+      { err: error, orderId: args.order_id, userId: args.user_id },
+      'upsertDeliverySubmission update failed',
+    );
     throw error ?? new Error('upsertDeliverySubmission update failed');
   }
   return {
@@ -1233,6 +1171,7 @@ export async function upsertDeliverySubmission(args: {
  * all product_items rows to the new ID so the items pool stays intact.
  */
 export async function changeProductId(oldId: number, newId: number): Promise<void> {
+  requirePaidCapability();
   const { data: product, error: fetchErr } = await supabase
     .from('products')
     .select('*')
@@ -1241,9 +1180,7 @@ export async function changeProductId(oldId: number, newId: number): Promise<voi
   if (fetchErr || !product) throw fetchErr ?? new Error('Product not found');
 
   const { id: _id, ...rest } = product as Record<string, unknown>;
-  const { error: insertErr } = await supabase
-    .from('products')
-    .insert({ ...rest, id: newId });
+  const { error: insertErr } = await supabase.from('products').insert({ ...rest, id: newId });
   if (insertErr) {
     logger.error({ err: insertErr, oldId, newId }, 'changeProductId insert failed');
     throw insertErr;
@@ -1267,10 +1204,8 @@ export async function changeProductId(oldId: number, newId: number): Promise<voi
  * Add a single line of payload to the per-product items pool. Returns
  * the inserted row.
  */
-export async function addProductItems(
-  product_id: number,
-  payloads: string[],
-): Promise<number> {
+export async function addProductItems(product_id: number, payloads: string[]): Promise<number> {
+  requirePaidCapability();
   if (payloads.length === 0) return 0;
   const rows = payloads.map((payload) => ({ product_id, payload }));
   const { error } = await supabase.from('product_items').insert(rows);
@@ -1279,10 +1214,7 @@ export async function addProductItems(
     throw error;
   }
   await syncProductStockToPool(product_id).catch((err) => {
-    logger.warn(
-      { err, product_id },
-      'syncProductStockToPool after addProductItems failed',
-    );
+    logger.warn({ err, product_id }, 'syncProductStockToPool after addProductItems failed');
   });
   return rows.length;
 }
@@ -1331,10 +1263,8 @@ export async function listAvailableProductItems(
 
 /** Wipe every item (consumed or not) from the pool. */
 export async function clearProductItems(product_id: number): Promise<void> {
-  const { error } = await supabase
-    .from('product_items')
-    .delete()
-    .eq('product_id', product_id);
+  requirePaidCapability();
+  const { error } = await supabase.from('product_items').delete().eq('product_id', product_id);
   if (error) {
     logger.error({ err: error, product_id }, 'clearProductItems failed');
     throw error;
@@ -1351,6 +1281,7 @@ export async function clearProductItems(product_id: number): Promise<void> {
  * after deletion so the catalog count never lies.
  */
 export async function deleteProductItem(item_id: number): Promise<number | null> {
+  requirePaidCapability();
   const { data: row, error: fetchErr } = await supabase
     .from('product_items')
     .select('id, product_id')
@@ -1362,19 +1293,13 @@ export async function deleteProductItem(item_id: number): Promise<number | null>
   }
   if (!row) return null;
   const product_id = Number(row.product_id);
-  const { error } = await supabase
-    .from('product_items')
-    .delete()
-    .eq('id', item_id);
+  const { error } = await supabase.from('product_items').delete().eq('id', item_id);
   if (error) {
     logger.error({ err: error, item_id }, 'deleteProductItem failed');
     throw error;
   }
   await syncProductStockToPool(product_id).catch((err) => {
-    logger.warn(
-      { err, product_id },
-      'syncProductStockToPool after deleteProductItem failed',
-    );
+    logger.warn({ err, product_id }, 'syncProductStockToPool after deleteProductItem failed');
   });
   return product_id;
 }
@@ -1387,6 +1312,7 @@ export async function deleteProductItem(item_id: number): Promise<number | null>
  * the `unlimited_stock` column.
  */
 export async function syncProductStockToPool(product_id: number): Promise<void> {
+  requirePaidCapability();
   let unlimited = false;
   let beforeStock = 0;
   let note = '';
@@ -1418,10 +1344,7 @@ export async function syncProductStockToPool(product_id: number): Promise<void> 
   const remaining = await countAvailableProductItems(product_id);
   await supabase.from('products').update({ stock: remaining }).eq('id', product_id);
   await applyStockTransition(product_id, beforeStock, remaining).catch((err) => {
-    logger.warn(
-      { err, product_id },
-      'applyStockTransition after syncProductStockToPool failed',
-    );
+    logger.warn({ err, product_id }, 'applyStockTransition after syncProductStockToPool failed');
   });
 }
 
@@ -1437,75 +1360,25 @@ export async function claimProductItems(
   qty: number,
   order_id: number,
 ): Promise<string[]> {
-  const { data: rows, error } = await supabase
-    .from('product_items')
-    .select('id, payload')
-    .eq('product_id', product_id)
-    .is('consumed_at', null)
-    .order('id', { ascending: true })
-    .limit(Math.max(0, qty));
-  if (error) {
-    logger.error({ err: error, product_id, qty }, 'claimProductItems select failed');
-    return [];
-  }
-  if (!rows || rows.length === 0) return [];
-  const ids = rows.map((r) => r.id);
-  const now = new Date().toISOString();
-  const { error: upd } = await supabase
-    .from('product_items')
-    .update({ consumed_at: now, consumed_order_id: order_id })
-    .in('id', ids);
-  if (upd) {
-    logger.error({ err: upd, ids }, 'claimProductItems update failed');
-  }
-  return rows.map((r) => String(r.payload));
+  const { data, error } = await supabase.rpc('claim_product_items', {
+    p_product_id: product_id,
+    p_qty: qty,
+    p_order_id: order_id,
+  });
+  if (error) throw error;
+  return (data ?? []) as string[];
 }
 
 export async function decrementProductStock(id: number, qty: number): Promise<void> {
-  // Guard against the case where migration 0015 has NOT been applied
-  // (no `unlimited_stock` column). We attempt the columned select
-  // first and fall back to the legacy `stock`-only select on column
-  // errors so the buy flow keeps working on older schemas.
-  let unlimited = false;
-  let cur = 0;
-  const { data: full, error: fullErr } = await supabase
-    .from('products')
-    .select('stock, unlimited_stock')
-    .eq('id', id)
-    .single();
-  if (fullErr) {
-    const { data: legacy } = await supabase
-      .from('products')
-      .select('stock')
-      .eq('id', id)
-      .single();
-    cur = Number((legacy as { stock?: number } | null)?.stock ?? 0);
-  } else {
-    unlimited = Boolean((full as { unlimited_stock?: boolean } | null)?.unlimited_stock);
-    cur = Number((full as { stock?: number } | null)?.stock ?? 0);
-  }
-  if (unlimited) return;
-  const newStock = Math.max(0, cur - qty);
-  await supabase.from('products').update({ stock: newStock }).eq('id', id);
-  await applyStockTransition(id, cur, newStock).catch((err) => {
-    logger.warn(
-      { err, id },
-      'applyStockTransition after decrementProductStock failed',
-    );
-  });
+  const { error } = await supabase.rpc('change_product_stock', { p_product_id: id, p_delta: -qty });
+  if (error) throw error;
+  hotCache.del('runtime-revisions');
 }
 
 export async function incrementProductStock(id: number, qty: number): Promise<void> {
-  const { data } = await supabase.from('products').select('stock').eq('id', id).single();
-  const cur = Number((data as { stock?: number } | null)?.stock ?? 0);
-  const newStock = cur + qty;
-  await supabase.from('products').update({ stock: newStock }).eq('id', id);
-  await applyStockTransition(id, cur, newStock).catch((err) => {
-    logger.warn(
-      { err, id },
-      'applyStockTransition after incrementProductStock failed',
-    );
-  });
+  const { error } = await supabase.rpc('change_product_stock', { p_product_id: id, p_delta: qty });
+  if (error) throw error;
+  hotCache.del('runtime-revisions');
 }
 
 // ---------- Upstream supplier APIs ----------
@@ -1555,13 +1428,17 @@ export type SupplierProductLinkInput = {
 export async function createSupplierApiSource(
   input: SupplierApiSourceInput,
 ): Promise<DBSupplierApiSource> {
+  requirePaidCapability();
   const { data, error } = await supabase
     .from('supplier_api_sources')
     .insert(input)
     .select('*')
     .single();
   if (error || !data) {
-    logger.error({ err: error, input: { ...input, api_key: input.api_key ? '[redacted]' : '' } }, 'createSupplierApiSource failed');
+    logger.error(
+      { err: error, input: { ...input, api_key: input.api_key ? '[redacted]' : '' } },
+      'createSupplierApiSource failed',
+    );
     throw error ?? new Error('createSupplierApiSource failed');
   }
   return data as DBSupplierApiSource;
@@ -1575,11 +1452,9 @@ export async function updateSupplierApiSource(
     last_error?: string | null;
   },
 ): Promise<void> {
+  requirePaidCapability();
   const payload = { ...patch, updated_at: new Date().toISOString() };
-  const { error } = await supabase
-    .from('supplier_api_sources')
-    .update(payload)
-    .eq('id', id);
+  const { error } = await supabase.from('supplier_api_sources').update(payload).eq('id', id);
   if (error) {
     logger.error({ err: error, id }, 'updateSupplierApiSource failed');
     throw error;
@@ -1604,9 +1479,7 @@ export async function listSupplierApiSources(
   return { rows: (data ?? []) as DBSupplierApiSource[], total: count ?? 0 };
 }
 
-export async function getSupplierApiSource(
-  id: number,
-): Promise<DBSupplierApiSource | null> {
+export async function getSupplierApiSource(id: number): Promise<DBSupplierApiSource | null> {
   const { data, error } = await supabase
     .from('supplier_api_sources')
     .select('*')
@@ -1620,6 +1493,7 @@ export async function getSupplierApiSource(
 }
 
 export async function deleteSupplierApiSource(id: number): Promise<void> {
+  requirePaidCapability();
   const { error } = await supabase.from('supplier_api_sources').delete().eq('id', id);
   if (error) {
     logger.error({ err: error, id }, 'deleteSupplierApiSource failed');
@@ -1630,6 +1504,7 @@ export async function deleteSupplierApiSource(id: number): Promise<void> {
 export async function upsertSupplierProductLink(
   input: SupplierProductLinkInput,
 ): Promise<DBSupplierProductLink> {
+  requirePaidCapability();
   const { data, error } = await supabase
     .from('supplier_product_links')
     .upsert(input, { onConflict: 'local_product_id' })
@@ -1649,11 +1524,9 @@ export async function updateSupplierProductLink(
     last_error?: string | null;
   },
 ): Promise<void> {
+  requirePaidCapability();
   const payload = { ...patch, updated_at: new Date().toISOString() };
-  const { error } = await supabase
-    .from('supplier_product_links')
-    .update(payload)
-    .eq('id', id);
+  const { error } = await supabase.from('supplier_product_links').update(payload).eq('id', id);
   if (error) {
     logger.error({ err: error, id }, 'updateSupplierProductLink failed');
     throw error;
@@ -1691,9 +1564,7 @@ export async function getSupplierProductLinkByProduct(
   return (data as DBSupplierProductLink) ?? null;
 }
 
-export async function getSupplierProductLink(
-  id: number,
-): Promise<DBSupplierProductLink | null> {
+export async function getSupplierProductLink(id: number): Promise<DBSupplierProductLink | null> {
   const { data, error } = await supabase
     .from('supplier_product_links')
     .select('*')
@@ -1727,6 +1598,7 @@ export async function getSupplierProductLinkBySupplierProduct(
 }
 
 export async function deleteSupplierProductLink(id: number): Promise<void> {
+  requirePaidCapability();
   const { error } = await supabase.from('supplier_product_links').delete().eq('id', id);
   if (error) {
     logger.error({ err: error, id }, 'deleteSupplierProductLink failed');
@@ -1844,9 +1716,11 @@ export async function listUserPriceOverrides(
     .select('*, products(name, price)')
     .eq('telegram_id', telegram_id)
     .order('updated_at', { ascending: false });
-  return ((data ?? []) as Array<
-    DBUserPriceOverride & { products: { name: string; price: number } | null }
-  >).map((row) => ({
+  return (
+    (data ?? []) as Array<
+      DBUserPriceOverride & { products: { name: string; price: number } | null }
+    >
+  ).map((row) => ({
     telegram_id: Number(row.telegram_id),
     product_id: Number(row.product_id),
     price: Number(row.price),
@@ -1869,18 +1743,16 @@ export async function setUserProductPrice(args: {
   price: number;
   created_by: number | null;
 }): Promise<void> {
-  const { error } = await supabase
-    .from('user_price_overrides')
-    .upsert(
-      {
-        telegram_id: args.telegram_id,
-        product_id: args.product_id,
-        price: args.price,
-        created_by: args.created_by,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'telegram_id,product_id' },
-    );
+  const { error } = await supabase.from('user_price_overrides').upsert(
+    {
+      telegram_id: args.telegram_id,
+      product_id: args.product_id,
+      price: args.price,
+      created_by: args.created_by,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'telegram_id,product_id' },
+  );
   if (error) {
     logger.error({ err: error, args }, 'setUserProductPrice failed');
     throw error;
@@ -1932,24 +1804,19 @@ export async function listAllPriceOverrides(): Promise<
     .select('*, products(name, price)')
     .order('telegram_id', { ascending: true })
     .order('product_id', { ascending: true });
-  const overrideRows = ((rows ?? []) as Array<
+  const overrideRows = (rows ?? []) as Array<
     DBUserPriceOverride & {
       products: { name: string; price: number } | null;
     }
-  >);
+  >;
   if (overrideRows.length === 0) return [];
 
-  const ids = Array.from(
-    new Set(overrideRows.map((r) => Number(r.telegram_id))),
-  );
+  const ids = Array.from(new Set(overrideRows.map((r) => Number(r.telegram_id))));
   const { data: users } = await supabase
     .from('users')
     .select('telegram_id, username, first_name')
     .in('telegram_id', ids);
-  const userMap = new Map<
-    number,
-    { username: string | null; first_name: string | null }
-  >();
+  const userMap = new Map<number, { username: string | null; first_name: string | null }>();
   for (const u of (users ?? []) as Array<{
     telegram_id: number;
     username: string | null;
@@ -1979,9 +1846,7 @@ export async function listAllPriceOverrides(): Promise<
 }
 
 /** Drop every override for a user (admin convenience). */
-export async function clearAllUserPriceOverrides(
-  telegram_id: number,
-): Promise<number> {
+export async function clearAllUserPriceOverrides(telegram_id: number): Promise<number> {
   const { count } = await supabase
     .from('user_price_overrides')
     .delete({ count: 'exact' })
@@ -1994,9 +1859,7 @@ export async function clearAllUserPriceOverrides(
  * editor to render the "Clear all custom prices" button label and
  * to short-circuit the clear flow when there's nothing to wipe.
  */
-export async function countProductPriceOverrides(
-  product_id: number,
-): Promise<number> {
+export async function countProductPriceOverrides(product_id: number): Promise<number> {
   const { count } = await supabase
     .from('user_price_overrides')
     .select('product_id', { count: 'exact', head: true })
@@ -2010,9 +1873,7 @@ export async function countProductPriceOverrides(
  * deleted so the admin toast can confirm how many users were
  * affected.
  */
-export async function clearAllProductPriceOverrides(
-  product_id: number,
-): Promise<number> {
+export async function clearAllProductPriceOverrides(product_id: number): Promise<number> {
   const { count } = await supabase
     .from('user_price_overrides')
     .delete({ count: 'exact' })
@@ -2096,10 +1957,7 @@ export async function findScopedActivePromos(
  * Returns the resulting exclusion list so the admin UI can show
  * the updated count without an extra fetch.
  */
-export async function addPromoExclusion(
-  promo_id: number,
-  telegram_id: number,
-): Promise<number[]> {
+export async function addPromoExclusion(promo_id: number, telegram_id: number): Promise<number[]> {
   const { data: current, error: readErr } = await supabase
     .from('promos')
     .select('excluded_telegram_ids')
@@ -2311,10 +2169,7 @@ export async function listAllPromos(): Promise<
     if (p.created_by !== null) idSet.add(Number(p.created_by));
   }
   const ids = Array.from(idSet);
-  const userMap = new Map<
-    number,
-    { username: string | null; first_name: string | null }
-  >();
+  const userMap = new Map<number, { username: string | null; first_name: string | null }>();
   if (ids.length > 0) {
     const { data: users } = await supabase
       .from('users')
@@ -2338,10 +2193,8 @@ export async function listAllPromos(): Promise<
     return {
       ...p,
       product_name: p.products?.name ?? null,
-      product_default_price:
-        p.products?.price !== undefined ? Number(p.products.price) : null,
-      product_stock:
-        p.products?.stock !== undefined ? Number(p.products.stock) : null,
+      product_default_price: p.products?.price !== undefined ? Number(p.products.price) : null,
+      product_stock: p.products?.stock !== undefined ? Number(p.products.stock) : null,
       username: target?.username ?? null,
       first_name: target?.first_name ?? null,
       created_by_username: actor?.username ?? null,
@@ -2417,11 +2270,7 @@ export async function createOrder(o: {
   if (o.delivered_items !== undefined) {
     payload.delivered_items = o.delivered_items;
   }
-  const { data, error } = await supabase
-    .from('orders')
-    .insert(payload)
-    .select('*')
-    .single();
+  const { data, error } = await supabase.from('orders').insert(payload).select('*').single();
   if (error || !data) throw error ?? new Error('createOrder failed');
   return data as DBOrder;
 }
@@ -2476,10 +2325,7 @@ export async function tryStartPreorderFulfillment(order_id: number): Promise<boo
   return Boolean(data);
 }
 
-export async function restorePreorderPending(
-  order_id: number,
-  pendingText: string,
-): Promise<void> {
+export async function restorePreorderPending(order_id: number, pendingText: string): Promise<void> {
   await supabase
     .from('orders')
     .update({ delivered_items: pendingText })
@@ -2520,11 +2366,7 @@ export async function listOrdersPaginated(
 
 /** Get a single order by numeric primary key. */
 export async function getOrder(id: number): Promise<DBOrder | null> {
-  const { data } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
+  const { data } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
   return (data ?? null) as DBOrder | null;
 }
 
@@ -2579,14 +2421,12 @@ export async function listPaymentMethods(): Promise<DBPaymentMethod[]> {
   // Backfill the new chrome columns (added in migration 0021) with
   // safe defaults so callers can rely on them existing even on
   // legacy DBs where the migration hasn't been applied yet.
-  return ((data ?? []) as Array<Partial<DBPaymentMethod> & { id: number }>).map(
-    (row) => ({
-      ...(row as DBPaymentMethod),
-      color_mode: (row as DBPaymentMethod).color_mode ?? 'none',
-      emoji_unicode: (row as DBPaymentMethod).emoji_unicode ?? null,
-      emoji_id: (row as DBPaymentMethod).emoji_id ?? null,
-    }),
-  );
+  return ((data ?? []) as Array<Partial<DBPaymentMethod> & { id: number }>).map((row) => ({
+    ...(row as DBPaymentMethod),
+    color_mode: (row as DBPaymentMethod).color_mode ?? 'none',
+    emoji_unicode: (row as DBPaymentMethod).emoji_unicode ?? null,
+    emoji_id: (row as DBPaymentMethod).emoji_id ?? null,
+  }));
 }
 
 export async function addPaymentMethod(p: {
@@ -2614,10 +2454,7 @@ export async function addPaymentMethod(p: {
 }
 
 /** Update the wallet address on an existing payment method row. */
-export async function setPaymentMethodAddress(
-  id: number,
-  address: string | null,
-): Promise<void> {
+export async function setPaymentMethodAddress(id: number, address: string | null): Promise<void> {
   await supabase.from('payment_methods').update({ address }).eq('id', id);
 }
 
@@ -2630,10 +2467,7 @@ export async function setPaymentMethodColor(
   id: number,
   color_mode: 'none' | 'blue' | 'green' | 'red' | 'yellow',
 ): Promise<void> {
-  const { error } = await supabase
-    .from('payment_methods')
-    .update({ color_mode })
-    .eq('id', id);
+  const { error } = await supabase.from('payment_methods').update({ color_mode }).eq('id', id);
   if (error && !/column.+color_mode/i.test(error.message ?? '')) throw error;
 }
 
@@ -2675,9 +2509,7 @@ export async function findDepositByReference(reference: string): Promise<DBDepos
  * Look up a deposit by its on-chain transaction hash. Used to dedupe
  * tx submissions before we credit the wallet again.
  */
-export async function findDepositByTxHash(
-  tx_hash: string,
-): Promise<DBDeposit | null> {
+export async function findDepositByTxHash(tx_hash: string): Promise<DBDeposit | null> {
   const { data } = await supabase
     .from('deposits')
     .select('*')
@@ -2699,6 +2531,7 @@ export async function createDeposit(d: {
   quote_expires_at?: string;
   order_intent?: OrderIntent;
   unique_amount_tag?: string;
+  quote_id?: number | null;
 }): Promise<DBDeposit> {
   const { data, error } = await supabase
     .from('deposits')
@@ -2719,11 +2552,9 @@ export async function createDeposit(d: {
 }
 
 /** Persist the on-chain tx hash on an existing deposit row. */
-export async function setDepositTxHash(
-  id: number,
-  tx_hash: string,
-): Promise<void> {
-  await supabase.from('deposits').update({ tx_hash }).eq('id', id);
+export async function setDepositTxHash(id: number, tx_hash: string): Promise<void> {
+  const { error } = await supabase.from('deposits').update({ tx_hash }).eq('id', id);
+  if (error) throw error;
 }
 
 export async function listDeposits(user_id: number, limit = 10): Promise<DBDeposit[]> {
@@ -2739,19 +2570,13 @@ export async function listDeposits(user_id: number, limit = 10): Promise<DBDepos
 // ---------- Settings (admin-editable runtime config) ----------
 
 export async function getAllSettings(): Promise<Map<string, unknown>> {
-  const { data } = await supabase.from('settings').select('key,value');
-  const map = new Map<string, unknown>();
-  for (const row of data ?? []) {
-    map.set((row as { key: string }).key, (row as { value: unknown }).value);
-  }
-  return map;
+  const rows = await readAll<{ key: string; value: unknown }>((from, to) =>
+    supabase.from('settings').select('key,value').order('key').range(from, to),
+  );
+  return new Map(rows.map((r) => [r.key, r.value]));
 }
 
-export async function setSetting(
-  key: string,
-  value: unknown,
-  updated_by?: number,
-): Promise<void> {
+export async function setSetting(key: string, value: unknown, updated_by?: number): Promise<void> {
   await supabase.from('settings').upsert({
     key,
     value,
@@ -2766,11 +2591,7 @@ export async function setSetting(
  * from the DB on bot startup, before the cache is populated.
  */
 export async function readSetting(key: string): Promise<unknown> {
-  const { data } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', key)
-    .maybeSingle();
+  const { data } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
   return (data as { value: unknown } | null)?.value ?? null;
 }
 
@@ -2782,19 +2603,25 @@ export async function deleteSetting(key: string): Promise<void> {
 // ---------- Announcements ----------
 
 export async function listUsersForAnnouncement(): Promise<{ telegram_id: number }[]> {
-  const { data } = await supabase
-    .from('users')
-    .select('telegram_id')
-    .eq('announcements', true);
-  return (data ?? []) as { telegram_id: number }[];
+  return readAll<{ telegram_id: number }>((from, to) =>
+    supabase
+      .from('users')
+      .select('telegram_id')
+      .eq('announcements', true)
+      .order('telegram_id')
+      .range(from, to),
+  );
 }
 
 export async function listUsersForStockAlert(): Promise<{ telegram_id: number }[]> {
-  const { data } = await supabase
-    .from('users')
-    .select('telegram_id')
-    .eq('stock_alert', true);
-  return (data ?? []) as { telegram_id: number }[];
+  return readAll<{ telegram_id: number }>((from, to) =>
+    supabase
+      .from('users')
+      .select('telegram_id')
+      .eq('stock_alert', true)
+      .order('telegram_id')
+      .range(from, to),
+  );
 }
 
 // ---------- Admin: stats / management ----------
@@ -2809,36 +2636,9 @@ export type Stats = {
 };
 
 export async function getStats(): Promise<Stats> {
-  const [usersR, ordersR, depR, prodR, catR, totalsR] = await Promise.all([
-    supabase.from('users').select('telegram_id', { count: 'exact', head: true }),
-    supabase.from('orders').select('id', { count: 'exact', head: true }),
-    supabase
-      .from('deposits')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending'),
-    supabase
-      .from('products')
-      .select('id', { count: 'exact', head: true })
-      .eq('active', true),
-    supabase
-      .from('categories')
-      .select('id', { count: 'exact', head: true })
-      .eq('active', true),
-    supabase.from('orders').select('total'),
-  ]);
-  const revenue =
-    (totalsR.data as { total: number }[] | null)?.reduce(
-      (acc, r) => acc + Number(r.total ?? 0),
-      0,
-    ) ?? 0;
-  return {
-    users: usersR.count ?? 0,
-    orders: ordersR.count ?? 0,
-    revenue: Number(revenue.toFixed(2)),
-    pending_deposits: depR.count ?? 0,
-    active_products: prodR.count ?? 0,
-    active_categories: catR.count ?? 0,
-  };
+  const { data, error } = await supabase.rpc('shop_statistics', {});
+  if (error) throw error;
+  return data;
 }
 
 /**
@@ -2863,60 +2663,9 @@ export type ProductSalesRow = {
 };
 
 export async function getProductSales(limit = 50): Promise<ProductSalesRow[]> {
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('product_id, product_name, qty, total, created_at, status')
-    .eq('status', 'paid')
-    .order('created_at', { ascending: false });
-  type OrderRow = Pick<
-    DBOrder,
-    'product_id' | 'product_name' | 'qty' | 'total' | 'created_at' | 'status'
-  >;
-  const rows = (orders ?? []) as OrderRow[];
-  const byKey = new Map<string, ProductSalesRow>();
-  for (const o of rows) {
-    const key =
-      o.product_id !== null ? `id:${o.product_id}` : `name:${o.product_name}`;
-    let row = byKey.get(key);
-    if (!row) {
-      row = {
-        product_id: o.product_id,
-        product_name: o.product_name,
-        units_sold: 0,
-        revenue: 0,
-        stock_left: null,
-        last_sold_at: o.created_at,
-      };
-      byKey.set(key, row);
-    }
-    row.units_sold += Number(o.qty);
-    row.revenue += Number(o.total);
-    if ((row.last_sold_at ?? '') < o.created_at) row.last_sold_at = o.created_at;
-  }
-  // Single round-trip to fill in current stock for products that
-  // still exist. Deleted products keep `stock_left = null`.
-  const productIds = Array.from(byKey.values())
-    .map((r) => r.product_id)
-    .filter((x): x is number => x !== null);
-  if (productIds.length > 0) {
-    const { data: prods } = await supabase
-      .from('products')
-      .select('id, stock')
-      .in('id', productIds);
-    const stockMap = new Map<number, number>();
-    for (const p of (prods ?? []) as Array<{ id: number; stock: number }>) {
-      stockMap.set(p.id, p.stock);
-    }
-    for (const row of byKey.values()) {
-      if (row.product_id !== null) {
-        row.stock_left = stockMap.get(row.product_id) ?? null;
-      }
-    }
-  }
-  const list = Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
-  // Round revenue to 2dp on the way out so callers don't have to.
-  for (const r of list) r.revenue = Number(r.revenue.toFixed(2));
-  return list.slice(0, limit);
+  const { data, error } = await supabase.rpc('product_sales_statistics', { p_limit: limit });
+  if (error) throw error;
+  return data;
 }
 
 export type RangeStats = {
@@ -2931,98 +2680,18 @@ export type RangeStats = {
 };
 
 export async function getRangeStats(days: number): Promise<RangeStats> {
-  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
-  const since = new Date(Date.now() - safeDays * 86_400_000).toISOString();
-  const [ordersR, depositsR, usersR] = await Promise.all([
-    supabase
-      .from('orders')
-      .select('user_id,qty,total,status,created_at')
-      .eq('status', 'paid')
-      .gte('created_at', since),
-    supabase
-      .from('deposits')
-      .select('amount,status,created_at')
-      .eq('status', 'approved')
-      .gte('created_at', since),
-    supabase
-      .from('users')
-      .select('telegram_id', { count: 'exact', head: true })
-      .gte('joined_at', since),
-  ]);
-  const orders = (ordersR.data ?? []) as Array<{
-    user_id: number;
-    qty: number | string;
-    total: number | string;
-  }>;
-  const deposits = (depositsR.data ?? []) as Array<{ amount: number | string }>;
-  const revenue = orders.reduce((sum, row) => sum + Number(row.total ?? 0), 0);
-  const units = orders.reduce((sum, row) => sum + Number(row.qty ?? 0), 0);
-  const depositAmount = deposits.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
-  return {
-    days: safeDays,
-    orders: orders.length,
-    units,
-    revenue: Number(revenue.toFixed(2)),
-    unique_buyers: new Set(orders.map((row) => row.user_id)).size,
-    approved_deposits: deposits.length,
-    deposit_amount: Number(depositAmount.toFixed(2)),
-    new_users: usersR.count ?? 0,
-  };
+  const { data, error } = await supabase.rpc('shop_statistics', { p_days: days });
+  if (error) throw error;
+  return data;
 }
 
 export async function getProductSalesSince(days: number, limit = 50): Promise<ProductSalesRow[]> {
-  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
-  const since = new Date(Date.now() - safeDays * 86_400_000).toISOString();
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('product_id, product_name, qty, total, created_at, status')
-    .eq('status', 'paid')
-    .gte('created_at', since)
-    .order('created_at', { ascending: false });
-  type OrderRow = Pick<
-    DBOrder,
-    'product_id' | 'product_name' | 'qty' | 'total' | 'created_at' | 'status'
-  >;
-  const rows = (orders ?? []) as OrderRow[];
-  const byKey = new Map<string, ProductSalesRow>();
-  for (const o of rows) {
-    const key =
-      o.product_id !== null ? `id:${o.product_id}` : `name:${o.product_name}`;
-    let row = byKey.get(key);
-    if (!row) {
-      row = {
-        product_id: o.product_id,
-        product_name: o.product_name,
-        units_sold: 0,
-        revenue: 0,
-        stock_left: null,
-        last_sold_at: o.created_at,
-      };
-      byKey.set(key, row);
-    }
-    row.units_sold += Number(o.qty);
-    row.revenue += Number(o.total);
-    if ((row.last_sold_at ?? '') < o.created_at) row.last_sold_at = o.created_at;
-  }
-  const productIds = Array.from(byKey.values())
-    .map((r) => r.product_id)
-    .filter((x): x is number => x !== null);
-  if (productIds.length > 0) {
-    const { data: prods } = await supabase
-      .from('products')
-      .select('id, stock')
-      .in('id', productIds);
-    const stockMap = new Map<number, number>();
-    for (const p of (prods ?? []) as Array<{ id: number; stock: number }>) {
-      stockMap.set(p.id, p.stock);
-    }
-    for (const row of byKey.values()) {
-      if (row.product_id !== null) row.stock_left = stockMap.get(row.product_id) ?? null;
-    }
-  }
-  const list = Array.from(byKey.values()).sort((a, b) => b.revenue - a.revenue);
-  for (const r of list) r.revenue = Number(r.revenue.toFixed(2));
-  return list.slice(0, limit);
+  const { data, error } = await supabase.rpc('product_sales_statistics', {
+    p_days: days,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return data;
 }
 
 /**
@@ -3065,13 +2734,14 @@ export async function listAllProducts(
 ): Promise<{ rows: DBProduct[]; total: number }> {
   const from = page * perPage;
   const to = from + perPage - 1;
-  const { data, count } = await supabase
+  const { data, count, error } = await supabase
     .from('products')
     .select('*', { count: 'exact' })
     .order('is_pinned', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
     .range(from, to);
+  if (error) throw error;
   return { rows: (data ?? []) as DBProduct[], total: count ?? 0 };
 }
 
@@ -3096,9 +2766,7 @@ export async function findAdjacentProduct(
   const rows = (data ?? []) as DBProduct[];
   const current = rows.find((row) => row.id === productId);
   if (!current) return null;
-  const section = rows.filter(
-    (row) => Boolean(row.is_pinned) === Boolean(current.is_pinned),
-  );
+  const section = rows.filter((row) => Boolean(row.is_pinned) === Boolean(current.is_pinned));
   const idx = section.findIndex((row) => row.id === productId);
   if (idx < 0) return null;
   return section[direction === 'up' ? idx - 1 : idx + 1] ?? null;
@@ -3124,10 +2792,7 @@ export async function swapProductOrder(
       .from('products')
       .update({ sort_order: earlier.sort_order + 1 })
       .eq('id', earlier.id);
-    await supabase
-      .from('products')
-      .update({ sort_order: later.sort_order })
-      .eq('id', later.id);
+    await supabase.from('products').update({ sort_order: later.sort_order }).eq('id', later.id);
     return;
   }
   await supabase.from('products').update({ sort_order: b.sort_order }).eq('id', a.id);
@@ -3149,52 +2814,62 @@ export async function listActiveProducts(
   page: number,
   perPage: number,
 ): Promise<{ rows: DBProduct[]; total: number }> {
-  const { data, error } = await supabase
-    .from('products')
-    .select('*')
-    .eq('active', true)
-    .order('is_pinned', { ascending: false })
-    .order('sort_order', { ascending: true })
-    .order('id', { ascending: true });
-  if (error) {
-    logger.error({ err: error }, 'listActiveProducts failed');
-    return { rows: [], total: 0 };
-  }
-  const all = ((data ?? []) as DBProduct[]).sort((a, b) => {
-    const aInStock = a.unlimited_stock || a.stock > 0;
-    const bInStock = b.unlimited_stock || b.stock > 0;
-    if (aInStock !== bInStock) return aInStock ? -1 : 1;
-    if (Boolean(a.is_pinned) !== Boolean(b.is_pinned)) {
-      return a.is_pinned ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+  const versions = await hotCache.remember('runtime-revisions', 15000, async () => {
+    const { data, error } = await supabase.rpc('runtime_revisions');
+    if (error) throw error;
+    return data as Record<string, number>;
   });
-  const safePage = Math.max(0, Math.floor(page));
-  const safePerPage = Math.max(1, Math.floor(perPage));
-  const from = safePage * safePerPage;
-  return {
-    rows: all.slice(from, from + safePerPage),
-    total: all.length,
-  };
+  const stat = await hotCache.remember('catalog-static:' + versions.catalog_static, 3600000, () =>
+    readAll<DBProduct>((from, to) =>
+      supabase.from('products').select('*').order('id').range(from, to),
+    ),
+  );
+  const availability = await hotCache.remember(
+    'catalog-live:' + versions.catalog_availability,
+    3600000,
+    async () => {
+      const { data, error } = await supabase.rpc('catalog_availability');
+      if (error) throw error;
+      return data as Partial<DBProduct>[];
+    },
+  );
+  const live = new Map(availability.map((p) => [p.id, p]));
+  const all = stat
+    .map((p) => ({ ...p, ...live.get(p.id) }))
+    .filter((p) => p.active && !p.catalog_hidden && !p.api_auto_hidden && allowedProduct(p))
+    .sort(
+      (a, b) =>
+        Number(Boolean(b.unlimited_stock || b.stock > 0)) -
+          Number(Boolean(a.unlimited_stock || a.stock > 0)) ||
+        Number(b.is_pinned) - Number(a.is_pinned) ||
+        a.sort_order - b.sort_order ||
+        a.id - b.id,
+    );
+  const from = Math.max(0, Math.floor(page)) * Math.max(1, Math.floor(perPage));
+  return { rows: all.slice(from, from + perPage), total: all.length };
 }
 
 export async function deleteProduct(id: number): Promise<void> {
+  requirePaidCapability();
   await supabase.from('products').delete().eq('id', id);
 }
 
 export async function setProductActive(id: number, active: boolean): Promise<void> {
-  await supabase.from('products').update({ active }).eq('id', id);
+  const { error } = await supabase
+    .from('products')
+    .update({ active, catalog_hidden: !active })
+    .eq('id', id);
+  if (error) throw error;
+  hotCache.del('runtime-revisions');
 }
 
 export async function listAllCategories(): Promise<DBCategory[]> {
-  const { data } = await supabase
-    .from('categories')
-    .select('*')
-    .order('id', { ascending: true });
+  const { data } = await supabase.from('categories').select('*').order('id', { ascending: true });
   return (data ?? []) as DBCategory[];
 }
 
 export async function deleteCategory(id: number): Promise<void> {
+  requirePaidCapability();
   await supabase.from('categories').delete().eq('id', id);
 }
 
@@ -3234,20 +2909,20 @@ export async function getDeposit(id: number): Promise<DBDeposit | null> {
   return (data as DBDeposit) ?? null;
 }
 
-export async function setDepositStatus(
-  id: number,
-  status: 'approved' | 'rejected',
-): Promise<void> {
-  await supabase.from('deposits').update({ status }).eq('id', id);
+export async function setDepositStatus(id: number, status: 'approved' | 'rejected'): Promise<void> {
+  const { error } = await supabase.from('deposits').update({ status }).eq('id', id);
+  if (error) throw error;
 }
 
 export async function setDepositAmount(id: number, amount: number): Promise<void> {
-  await supabase.from('deposits').update({ amount }).eq('id', id);
+  const { error } = await supabase.from('deposits').update({ amount }).eq('id', id);
+  if (error) throw error;
 }
 
 /** Update the free-text `note` column on a deposit row. */
 export async function setDepositNote(id: number, note: string | null): Promise<void> {
-  await supabase.from('deposits').update({ note }).eq('id', id);
+  const { error } = await supabase.from('deposits').update({ note }).eq('id', id);
+  if (error) throw error;
 }
 
 // ---------- User management (admin) ----------
@@ -3308,10 +2983,7 @@ export async function findUserByUsername(username: string): Promise<DBUser | nul
  * `reason` is optional and shown only in the admin user card; the
  * banned user themselves never sees it.
  */
-export async function banUser(
-  telegram_id: number,
-  reason: string | null,
-): Promise<void> {
+export async function banUser(telegram_id: number, reason: string | null): Promise<void> {
   await supabase
     .from('users')
     .update({
@@ -3352,11 +3024,15 @@ export async function promoteAdmin(telegram_id: number, username?: string | null
   await supabase
     .from('admins')
     .upsert({ telegram_id, username: username ?? null }, { onConflict: 'telegram_id' });
+
+  hotCache.del('admin:' + telegram_id);
 }
 
 /** Remove a Telegram user from bot admins. */
 export async function demoteAdmin(telegram_id: number): Promise<void> {
   await supabase.from('admins').delete().eq('telegram_id', telegram_id);
+
+  hotCache.del('admin:' + telegram_id);
 }
 
 /**
@@ -3371,60 +3047,17 @@ export async function getUserStats(telegram_id: number): Promise<{
   lastOrderAt: string | null;
   deposits: number;
 }> {
-  const [{ data: orderRows }, { data: depositRows }] = await Promise.all([
-    supabase
-      .from('orders')
-      .select('qty,total,created_at')
-      .eq('user_id', telegram_id)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('deposits')
-      .select('amount,status')
-      .eq('user_id', telegram_id)
-      .eq('status', 'approved'),
-  ]);
-
-  const orders = orderRows ?? [];
-  const deposits = depositRows ?? [];
-
-  const totalOrders = orders.length;
-  const items = orders.reduce(
-    (s, r) => s + Number((r as { qty: number }).qty),
-    0,
-  );
-  const spent = orders.reduce(
-    (s, r) => s + Number((r as { total: number }).total),
-    0,
-  );
-  const lastOrderAt =
-    orders.length > 0
-      ? ((orders[0] as { created_at: string }).created_at ?? null)
-      : null;
-  const totalDeposits = deposits.reduce(
-    (s, r) => s + Number((r as { amount: number }).amount),
-    0,
-  );
-
-  return {
-    orders: totalOrders,
-    items,
-    spent,
-    lastOrderAt,
-    deposits: totalDeposits,
-  };
+  const { data, error } = await supabase.rpc('shop_statistics', { p_user_id: telegram_id });
+  if (error) throw error;
+  return data;
 }
 
 /** Count orders + total spent by a single user (for the admin user view). */
 export async function getUserOrderSummary(
   telegram_id: number,
 ): Promise<{ orders: number; spent: number }> {
-  const { data } = await supabase
-    .from('orders')
-    .select('total')
-    .eq('user_id', telegram_id);
-  const orders = (data ?? []).length;
-  const spent = (data ?? []).reduce((s, r) => s + Number((r as { total: number }).total), 0);
-  return { orders, spent };
+  const stats = await getUserStats(telegram_id);
+  return { orders: stats.orders, spent: stats.spent };
 }
 
 // ---------- Wallet ledger ----------
@@ -3449,10 +3082,7 @@ export async function recordLedger(
   }
 }
 
-export async function listWalletLedger(
-  user_id: number,
-  limit = 10,
-): Promise<DBWalletLedger[]> {
+export async function listWalletLedger(user_id: number, limit = 10): Promise<DBWalletLedger[]> {
   const { data } = await supabase
     .from('wallet_ledger')
     .select('*')
@@ -3465,11 +3095,7 @@ export async function listWalletLedger(
 // ---------- Gift codes ----------
 
 export async function getGiftCode(code: string): Promise<DBGiftCode | null> {
-  const { data } = await supabase
-    .from('gift_codes')
-    .select('*')
-    .eq('code', code)
-    .maybeSingle();
+  const { data } = await supabase.from('gift_codes').select('*').eq('code', code).maybeSingle();
   return (data ?? null) as DBGiftCode | null;
 }
 
@@ -3500,11 +3126,7 @@ export async function createGiftCode(args: {
     note: args.note ?? null,
     created_by: args.created_by ?? null,
   };
-  const { data, error } = await supabase
-    .from('gift_codes')
-    .insert(insert)
-    .select('*')
-    .single();
+  const { data, error } = await supabase.from('gift_codes').insert(insert).select('*').single();
   if (error || !data) {
     logger.error({ err: error, code: args.code }, 'createGiftCode failed');
     throw error ?? new Error('Failed to create gift code');
@@ -3518,7 +3140,9 @@ export async function deleteGiftCode(code: string): Promise<void> {
 
 export async function updateGiftCode(
   code: string,
-  patch: Partial<Pick<DBGiftCode, 'amount' | 'max_redemptions' | 'per_user_limit' | 'expires_at' | 'note'>>,
+  patch: Partial<
+    Pick<DBGiftCode, 'amount' | 'max_redemptions' | 'per_user_limit' | 'expires_at' | 'note'>
+  >,
 ): Promise<void> {
   const { error } = await supabase.from('gift_codes').update(patch).eq('code', code);
   if (error) {

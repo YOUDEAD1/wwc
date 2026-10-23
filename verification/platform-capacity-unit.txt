@@ -1,0 +1,21 @@
+✔ HMAC covers every request component; ciphertext is bound to its shop (3.589964ms)
+✔ Wallet prices are explicit fixed-point dollars, with no Stars conversion (0.94741ms)
+WWC maintenance deferred for one store.
+✔ Signed NSS wallet receipts activate without Stars and preserve the paid quote (64.334071ms)
+✔ Runtime notices load only editable copy, cache it, and retain button styling (8.396486ms)
+✔ One unavailable store does not block inactivity maintenance for other stores (1.419844ms)
+✔ Free/expired permissions and product provenance cannot be forged with a local label (0.577239ms)
+✔ Every Chinese locale template exists and retains all English placeholders (1.12199ms)
+✔ Pool starts lazily, queues a different shop and preserves the hard process cap (12.23841ms)
+✔ Twenty concurrent shops share one process slot without capacity retries or duplicate updates (86.316152ms)
+✔ Pool queue has a hard bound, expires waiters and rejects them on shutdown (29.956045ms)
+✔ Public registry views never include credentials or credential fingerprints (0.815854ms)
+✔ Controller rejects replay, forged actors and non-owner super actions before writes (13.276179ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 768.263687

@@ -21,27 +21,27 @@
  * with wallet/referral preorder checkout.
  */
 import type { Api } from 'grammy';
-import { logger } from '../logger.js';
-import { env } from '../env.js';
 import {
-  createOrder,
-  decrementProductStock,
   claimProductItems,
-  setOrderDeliveredItems,
-  getProduct,
+  decrementProductStock,
   findUserById,
+  getProduct,
+  setOrderDeliveredItems,
 } from '../db/queries.js';
-import { credit } from './wallet.js';
-import { publicOrderId } from './orderId.js';
-import * as adminLog from './adminLog.js';
-import { renderMdHtml } from './premium.js';
-import { buildOrderDeliveredChunks } from './orderRender.js';
-import { trySupplierAutoOrder } from './supplierApi.js';
-import { tryApiShopAutoOrder } from './apiShop.js';
-import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
-import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
+import { env } from '../env.js';
 import { t as translate } from '../i18n/index.js';
+import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
+import { logger } from '../logger.js';
 import type { DBDeposit, OrderIntent, PaymentProvider } from '../types.js';
+import * as adminLog from './adminLog.js';
+import { tryApiShopAutoOrder } from './apiShop.js';
+import { beginDelivery, checkout, finishDelivery } from './checkout.js';
+import { publicOrderId } from './orderId.js';
+import { buildOrderDeliveredChunks } from './orderRender.js';
+import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
+import { renderMdHtml } from './premium.js';
+import { trySupplierAutoOrder } from './supplierApi.js';
+import { credit } from './wallet.js';
 
 /**
  * Map a payment provider to the user-facing "Paid Via" label that
@@ -83,6 +83,8 @@ export async function fulfilOrderForDeposit(args: {
   intent: OrderIntent;
   provider: PaymentProvider;
   methodName: string;
+  approvedOrder?: import('../types.js').DBOrder;
+  paidViaOverride?: string;
 }): Promise<FulfilResult> {
   const { api, deposit, intent, provider, methodName } = args;
 
@@ -114,37 +116,47 @@ export async function fulfilOrderForDeposit(args: {
 
   const user = await findUserById(deposit.user_id);
   const lang = user?.language ?? env.DEFAULT_LANG;
-  const t = (key: string, vars?: Record<string, string | number>) =>
-    translate(lang, key, vars);
-  const preorder = !product.unlimited_stock && product.stock < intent.qty;
+  const t = (key: string, vars?: Record<string, string | number>) => translate(lang, key, vars);
+  const preorder =
+    args.approvedOrder?.is_preorder ?? (!product.unlimited_stock && product.stock < intent.qty);
 
-  const order = await createOrder({
-    user_id: deposit.user_id,
-    product_id: intent.product_id,
-    product_name: intent.product_name,
-    qty: intent.qty,
-    unit_price: intent.unit_price,
-    total: intent.total,
-    discount: intent.discount,
-    promo_id: intent.promo_id,
-    delivery: `Order #${intent.product_id}-${intent.qty}`,
-  });
-  if (!preorder) {
+  const order =
+    args.approvedOrder ??
+    (
+      await checkout(
+        {
+          user_id: deposit.user_id,
+          product_id: intent.product_id,
+          qty: intent.qty,
+          unit_price: intent.unit_price,
+          total: intent.total,
+          discount: intent.discount,
+          promo_id: intent.promo_id,
+        },
+        'deposit:' + deposit.id,
+        'direct',
+      )
+    ).order;
+  if (!(await beginDelivery(order)))
+    return { ok: true, orderId: order.id, orderPublicId: publicOrderId(order) };
+  if (!preorder && !order.stock_reserved) {
     await decrementProductStock(intent.product_id, intent.qty);
     // ── Stock alert: notify admin if stock depleted or low ──
     if (!product.unlimited_stock) {
       const remaining = product.stock - intent.qty;
       if (remaining <= 3) {
-        void adminLog.logStockAlert(api, {
-          productId: product.id,
-          productName: product.name,
-          remaining: Math.max(0, remaining),
-        }).catch((err) => logger.warn({ err }, 'logStockAlert failed'));
+        void adminLog
+          .logStockAlert(api, {
+            productId: product.id,
+            productName: product.name,
+            remaining: Math.max(0, remaining),
+          })
+          .catch((err) => logger.warn({ err }, 'logStockAlert failed'));
       }
     }
   }
   const publicId = publicOrderId(order);
-  const paidVia = paidViaLabel(provider, methodName);
+  const paidVia = args.paidViaOverride ?? paidViaLabel(provider, methodName);
   const apiProductIdMatch = product.note?.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
   const apiProductId = apiProductIdMatch ? apiProductIdMatch[1] : null;
 
@@ -157,76 +169,75 @@ export async function fulfilOrderForDeposit(args: {
           localOrderId: order.id,
           buyerInfo: user?.username ? `@${user.username}` : `tg_${deposit.user_id}`,
           onFailure: (failure) =>
-            adminLog.logSupplierOrderFailed(api, {
-              user: {
-                telegram_id: deposit.user_id,
-                username: user?.username ?? null,
-                first_name: user?.first_name ?? null,
-                email: user?.email ?? null,
-              },
-              orderDbId: order.id,
-              orderPublicId: publicId,
-              productId: intent.product_id,
-              productName: intent.product_name,
-              qty: intent.qty,
-              total: intent.total,
-              paidVia,
-              balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
-              supplierName: 'API Shop',
-              supplierProductId: apiProductId,
-              reason: failure.error,
-              lowBalance: failure.lowBalance,
-            }).catch((err) => logger.warn({ err }, 'direct-pay: API Shop failure admin log failed')),
+            adminLog
+              .logSupplierOrderFailed(api, {
+                user: {
+                  telegram_id: deposit.user_id,
+                  username: user?.username ?? null,
+                  first_name: user?.first_name ?? null,
+                  email: user?.email ?? null,
+                },
+                orderDbId: order.id,
+                orderPublicId: publicId,
+                productId: intent.product_id,
+                productName: intent.product_name,
+                qty: intent.qty,
+                total: intent.total,
+                paidVia,
+                balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+                supplierName: 'API Shop',
+                supplierProductId: apiProductId,
+                reason: failure.error,
+                lowBalance: failure.lowBalance,
+              })
+              .catch((err) =>
+                logger.warn({ err }, 'direct-pay: API Shop failure admin log failed'),
+              ),
         })
       : await trySupplierAutoOrder({
           localProductId: intent.product_id,
           qty: intent.qty,
           localOrderId: order.id,
           onFailure: (failure) =>
-            adminLog.logSupplierOrderFailed(api, {
-              user: {
-                telegram_id: deposit.user_id,
-                username: user?.username ?? null,
-                first_name: user?.first_name ?? null,
-                email: user?.email ?? null,
-              },
-              orderDbId: order.id,
-              orderPublicId: publicId,
-              productId: intent.product_id,
-              productName: intent.product_name,
-              qty: intent.qty,
-              total: intent.total,
-              paidVia,
-              balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
-              supplierName: failure.supplierName,
-              supplierProductId: failure.supplierProductId,
-              reason: failure.error,
-              lowBalance: failure.lowBalance,
-            }).catch((err) => logger.warn({ err }, 'direct-pay: supplier failure admin log failed')),
+            adminLog
+              .logSupplierOrderFailed(api, {
+                user: {
+                  telegram_id: deposit.user_id,
+                  username: user?.username ?? null,
+                  first_name: user?.first_name ?? null,
+                  email: user?.email ?? null,
+                },
+                orderDbId: order.id,
+                orderPublicId: publicId,
+                productId: intent.product_id,
+                productName: intent.product_name,
+                qty: intent.qty,
+                total: intent.total,
+                paidVia,
+                balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+                supplierName: failure.supplierName,
+                supplierProductId: failure.supplierProductId,
+                reason: failure.error,
+                lowBalance: failure.lowBalance,
+              })
+              .catch((err) =>
+                logger.warn({ err }, 'direct-pay: supplier failure admin log failed'),
+              ),
         });
   const claimed = preorder
     ? []
     : supplierOrder
       ? supplierOrder.items
-      : await claimProductItems(
-          intent.product_id,
-          intent.qty,
-          order.id,
-        );
+      : await claimProductItems(intent.product_id, intent.qty, order.id);
   // Match the wallet-pay layout: split the items into 7-per-chunk
   // messages so the Order Delivered card never blows past Telegram's
   // 4096-char limit on bulk orders. The first chunk goes inside the
   // header card; subsequent chunks are sent as plain blockquote
   // messages right below it.
   const deliveredChunks = buildOrderDeliveredChunks(claimed);
-  const pendingText = preorder
-    ? t('shop.buy.preorder_pending')
-    : t('shop.buy.delivery_pending');
-  const firstChunkBlock =
-    deliveredChunks[0]?.inlineBlock ??
-    `> ${pendingText}`;
-  const deliveredItemsForDb =
-    claimed.length > 0 ? claimed.join('\n') : pendingText;
+  const pendingText = preorder ? t('shop.buy.preorder_pending') : t('shop.buy.delivery_pending');
+  const firstChunkBlock = deliveredChunks[0]?.inlineBlock ?? `> ${pendingText}`;
+  const deliveredItemsForDb = claimed.length > 0 ? claimed.join('\n') : pendingText;
   // Always persist `delivered_items` — even the manual-delivery
   // placeholder — so the My Orders detail screen can render the
   // order without falling back to the legacy `delivery` blob.
@@ -327,9 +338,7 @@ export async function fulfilOrderForDeposit(args: {
       discount: intent.discount,
       paidVia,
       items: claimed,
-      invoiceLink: env.BOT_USERNAME
-        ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}`
-        : '',
+      invoiceLink: env.BOT_USERNAME ? `https://t.me/${env.BOT_USERNAME}?start=ord_${publicId}` : '',
     });
   }
 
@@ -358,6 +367,10 @@ export async function fulfilOrderForDeposit(args: {
     })
     .catch((err) => logger.warn({ err }, 'direct-pay: logOrderCreated failed'));
 
+  await finishDelivery(
+    order,
+    preorder ? 'preorder' : claimed.length ? 'delivered' : 'manual_review',
+  );
   return { ok: true, orderId: order.id, orderPublicId: publicId };
 }
 

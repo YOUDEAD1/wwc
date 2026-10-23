@@ -9,13 +9,10 @@
  */
 import { LOCALES, type Lang } from '../../config/index.js';
 import { getTextOverride } from '../services/settings.js';
+import { copyDefault, validCopy } from '../services/copyCatalog.js';
 
-export function t(
-  lang: Lang,
-  key: string,
-  vars: Record<string, string | number> = {},
-): string {
-  let override = getTextOverride(key);
+export function t(lang: Lang, key: string, vars: Record<string, string | number> = {}): string {
+  let override = getTextOverride(key, lang);
   if (
     override === 'Welcome to SafwanTiger Shop' ||
     override === 'Welcome to SafwanTiger Shop!' ||
@@ -24,7 +21,9 @@ export function t(
   ) {
     override = undefined;
   }
-  const tpl = override ?? LOCALES[lang]?.[key] ?? LOCALES.en[key] ?? key;
+  const registered=copyDefault(lang,key);
+  const fallback=LOCALES[lang]?.[key] ?? LOCALES.en[key] ?? registered ?? key;
+  const tpl = override !== undefined && (registered===undefined || validCopy(override,fallback)) ? override : fallback;
   return tpl.replace(/\{(\w+)\}/g, (_, k: string) =>
     vars[k] !== undefined ? String(vars[k]) : `{${k}}`,
   );

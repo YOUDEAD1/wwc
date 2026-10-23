@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-22",
+  "reference_commit": "1188cd11468f1322572bd0615847bac94bbf94e0",
+  "typecheck": "passed",
+  "build": "passed",
+  "tests": {
+    "passed": 57,
+    "failed": 0
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 29
+  },
+  "npm_audit": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0,
+    "total": 0
+  },
+  "preservation": {
+    "checked": 875,
+    "missing": []
+  },
+  "product_editor_update": {
+    "reference": "WWC-UPDATE.zip version 1",
+    "preserved_declarations": 929,
+    "missing_declarations": [],
+    "preserved_admin_callback_routes": 287,
+    "missing_admin_callback_routes": [],
+    "additional_tests_passed": 10,
+    "premium_icons_verified_in_outbound_button_payloads": true,
+    "no_database_upgrade_required_after_0044": true
+  },
+  "live_database_modified": false,
+  "real_payment_tested": false,
+  "published_to_github": false
+}

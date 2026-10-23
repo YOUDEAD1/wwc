@@ -3,7 +3,9 @@
  * يخزن الـ Supabase client المناسب لكل بوت
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createHash } from 'node:crypto';
 import { env } from '../env.js';
+import { getDb as contextualDb, runWithTenantContext as contextualRun } from './db_context.js';
 
 // Cache للـ tenant clients
 const clientCache = new Map<string, SupabaseClient>();
@@ -20,7 +22,9 @@ export function getDefaultClient(): SupabaseClient {
 }
 
 export function getTenantClient(url: string, key: string): SupabaseClient {
-  const cacheKey = `${url}::${key.slice(0, 20)}`;
+  const cacheKey = createHash('sha256')
+    .update(url + '\0' + key)
+    .digest('hex');
   if (clientCache.has(cacheKey)) return clientCache.get(cacheKey)!;
   const client = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -32,7 +36,7 @@ export function getTenantClient(url: string, key: string): SupabaseClient {
 // للتوافق مع الكود القديم — يرجع دائماً الـ default client
 // الـ tenant client يُمرر عبر ctx.db
 export function getDb(): SupabaseClient {
-  return getDefaultClient();
+  return contextualDb();
 }
 
 // stub للتوافق
@@ -42,5 +46,5 @@ export function runWithTenantContext<T>(
   _adminId: number,
   fn: () => Promise<T>,
 ): Promise<T> {
-  return fn();
+  return contextualRun(_url, _key, _adminId, fn);
 }

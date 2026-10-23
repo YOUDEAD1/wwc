@@ -1,0 +1,21 @@
+{
+  "old_files": 201,
+  "missing": [],
+  "changed": [
+    ".github/workflows/check.yml",
+    "README.md",
+    "docs/PLATFORM-AR.md",
+    "package.json",
+    "render.platform.yaml",
+    "src/platform/config.ts",
+    "src/platform/policy.ts",
+    "src/platform/pool.ts",
+    "src/platform/repository.ts",
+    "src/platform/server.ts",
+    "supabase/schema.sql",
+    "tests/database.test.mjs",
+    "tests/fixtures/offline-worker.mjs",
+    "tests/platform.test.mjs",
+    "verification/worker-metrics.json"
+  ]
+}

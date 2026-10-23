@@ -1,4 +1,5 @@
 import { session, type Context, type SessionFlavor } from 'grammy';
+import { persistentSessions } from '../platform/sessions.js';
 
 /** Multi-step admin input flow state. */
 export type AdminFlow =
@@ -273,11 +274,14 @@ export type AdminFlow =
   | { type: 'set_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'set_referral_channel'; step: 'value'; data: Record<string, never> }
   | { type: 'set_global_profit_percent'; step: 'value'; data: Record<string, never> }
-  | { type: 'set_product_profit_percent'; step: 'value'; data: { product_id: number; page?: number } }
+  | {
+      type: 'set_product_profit_percent';
+      step: 'value';
+      data: { product_id: number; page?: number };
+    }
   | { type: 'pchange_set_percent'; step: 'value'; data: { product_id: number } }
   | { type: 'pchange_set_manual_price'; step: 'value'; data: { product_id: number } }
   | { type: 'find_user'; step: 'query'; data: Record<string, never> }
-
   | { type: 'adjust_balance'; step: 'amount'; data: { telegram_id: number } }
   | { type: 'referral_find_user'; step: 'query'; data: Record<string, never> }
   | { type: 'referral_adjust'; step: 'delta'; data: { telegram_id: number } }
@@ -521,6 +525,7 @@ export type UserFlow =
         opened_at_ms: number;
         /** المبلغ الفريد المُولَّد لهذه الجلسة (مثلاً 10.037) لمنع replay */
         unique_amount: number;
+        quote_id?: number;
         /** Message id of the instruction screen — deleted on success. */
         instruction_message_id?: number;
       };
@@ -563,7 +568,8 @@ export type UserFlow =
         opened_at_ms: number;
         instruction_message_id?: number;
       };
-    }  | {
+    }
+  | {
       /**
        * LTC quote-on-display top-up — three steps:
        *   `usd_amount`  – user types the USD amount they want.
@@ -616,6 +622,7 @@ export type UserFlow =
         opened_at_ms: number;
         /** المبلغ الفريد لمنع replay */
         unique_amount: number;
+        quote_id?: number;
         /** Message id of the instruction screen — deleted on success. */
         instruction_message_id?: number;
       };
@@ -681,7 +688,8 @@ export type UserFlow =
         opened_at_ms: number;
         instruction_message_id?: number;
       };
-    }  | {
+    }
+  | {
       /**
        * User is in a Live Support relay session. While this flow is
        * active, every non-command message they send is forwarded to
@@ -748,6 +756,12 @@ export type SessionData = {
   qtyInput?: Record<number, string>;
   /** Multi-step admin input flow, if any */
   adminFlow?: AdminFlow;
+  /** Product editor location; keeps cancel/save inside the selected product and section. */
+  adminProductEditor?: {
+    productId: number;
+    page: number;
+    section: import('../handlers/admin/productUi.js').ProductEditorSection;
+  };
   /** Multi-step user input flow, if any. */
   userFlow?: UserFlow;
   /**
@@ -765,10 +779,26 @@ export type SessionData = {
    */
   topupOriginBuyProductId?: number;
   langSelected?: boolean;
+  pendingStartText?: string;
+  customizePick?: boolean;
+  checkoutIntents?: Record<
+    string,
+    { product: number; qty: number; total: number; expires: number }
+  >;
+  customizeFlow?: {
+    entry: number;
+    reference?: string;
+    lang: import('../../config/index.js').Lang;
+    field: string;
+    draft?: string;
+    emojiId?: string;
+  };
 };
 
 export type SessionCtx = Context & SessionFlavor<SessionData>;
 
 export const sessionMiddleware = session<SessionData, SessionCtx>({
+  getSessionKey: (ctx) => (ctx.from && ctx.chat ? `${ctx.chat.id}:${ctx.from.id}` : undefined),
   initial: (): SessionData => ({ qty: {} }),
+  ...(process.env.WWC_MANAGED === '1' ? { storage: persistentSessions } : {}),
 });

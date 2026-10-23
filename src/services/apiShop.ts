@@ -1,25 +1,36 @@
 import { InlineKeyboard, type Api } from 'grammy';
-import { readSetting, setSetting, addCategory, addProduct, getProduct, listUsersForAnnouncement, listUsersForStockAlert } from '../db/queries.js';
+import { managedShop, trustedCatalog } from '../platform/policy.js';
+import { getProductEmoji } from '../../config/index.js';
+import {
+  addCategory,
+  addProduct,
+  getProduct,
+  listUsersForAnnouncement,
+  listUsersForStockAlert,
+  readSetting,
+  setSetting,
+} from '../db/queries.js';
+import { readAll } from '../db/readAll.js';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
-import { getProductEmoji } from '../../config/index.js';
-import { publicFeedBotUrl } from './publicFeed.js';
-import { stripCustomEmojiTags } from './premium.js';
 import {
-  getConnection,
+  fetchBalance as apiFetchBalance,
   fetchProducts as apiFetchProducts,
   purchase as apiPurchase,
-  fetchBalance as apiFetchBalance,
+  recoverPurchase,
+  getConnection,
   type ApiProduct,
 } from './apiConnect.js';
+import { set as cacheSet, del, remember } from './cache.js';
+import { stableRequestId, supplierAttempt } from './checkout.js';
+import { stripCustomEmojiTags } from './premium.js';
+import { publicFeedBotUrl } from './publicFeed.js';
 
 import {
-  getGlobalProfitPercent,
-  getProductProfitPercent,
-  isAutoProfitEnabled,
   calculateProfitSellPrice,
+  getGlobalProfitPercent,
+  isAutoProfitEnabled,
 } from './settings.js';
-import { logSupplierPriceChangedAlert } from './adminLog.js';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -28,15 +39,15 @@ import { logSupplierPriceChangedAlert } from './adminLog.js';
 export type ApiShopProduct = {
   enabled: boolean;
   sell_price: number;
-  profit_percent?: number;    // نسبة الربح المئوية المخصصة للمنتج
-  custom_name: string;        // اسم مخصص (يظهر للعميل)
-  custom_desc: string;        // وصف مخصص
-  emoji: string;              // إيموجي مخصص
-  emoji_id?: string;          // إيموجي بريميوم مخصص
-  sort_order: number;         // ترتيب العرض
+  profit_percent?: number; // نسبة الربح المئوية المخصصة للمنتج
+  custom_name: string; // اسم مخصص (يظهر للعميل)
+  custom_desc: string; // وصف مخصص
+  emoji: string; // إيموجي مخصص
+  emoji_id?: string; // إيموجي بريميوم مخصص
+  sort_order: number; // ترتيب العرض
   // بيانات من API (لا يعدّلها الأدمن)
   original_name: string;
-  original_desc?: string;     // الوصف الأصلي من الـ API لمزامنة التغييرات
+  original_desc?: string; // الوصف الأصلي من الـ API لمزامنة التغييرات
   base_price: number;
   is_manual: boolean;
 };
@@ -46,8 +57,8 @@ export type ApiShopConfig = {
   global_profit_percent?: number;
   auto_profit_enabled?: boolean;
   button?: {
-    label: string;       // مثل "🎮 Products" أو "🛒 Shop"
-    position: number;    // الصف (0 = أول صف, 1 = ثاني, إلخ)
+    label: string; // مثل "🎮 Products" أو "🛒 Shop"
+    position: number; // الصف (0 = أول صف, 1 = ثاني, إلخ)
     enabled: boolean;
   };
 };
@@ -59,15 +70,18 @@ const SETTINGS_KEY = 'api_shop_config';
 // ─────────────────────────────────────────────────────────────────
 
 export async function getShopConfig(): Promise<ApiShopConfig> {
-  const raw = await readSetting(SETTINGS_KEY);
-  if (raw && typeof raw === 'object' && (raw as Record<string, unknown>).products) {
-    return raw as ApiShopConfig;
-  }
-  return { products: {} };
+  return remember('api-shop-config', 60000, async () => {
+    const raw = await readSetting(SETTINGS_KEY);
+    if (raw && typeof raw === 'object' && (raw as Record<string, unknown>).products)
+      return raw as ApiShopConfig;
+    return { products: {} };
+  });
 }
 
 export async function saveShopConfig(config: ApiShopConfig): Promise<void> {
   await setSetting(SETTINGS_KEY, config);
+  cacheSet('api-shop-config', config, 60000);
+  del('runtime-revisions');
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -86,233 +100,292 @@ export type MergedProduct = ApiProduct & {
 
 export async function syncProducts(
   api?: Api,
-): Promise<
-  { ok: true; products: MergedProduct[] } | { ok: false; error: string }
-> {
-  const conn = await getConnection();
-  if (!conn) return { ok: false, error: 'Not connected' };
+): Promise<{ ok: true; products: MergedProduct[] } | { ok: false; error: string }> {
+  const sourceConnection = await getConnection();
+  return trustedCatalog(
+    async () => {
+      const conn = sourceConnection;
+      if (!conn) return { ok: false, error: 'Not connected' };
 
-  const res = await apiFetchProducts(conn);
-  if (!res.ok) return { ok: false, error: res.error };
+      const res = await apiFetchProducts(conn);
+      if (!res.ok) return { ok: false, error: res.error };
 
-  const config = await getShopConfig();
-  let nextOrder = Object.values(config.products).reduce(
-    (max, p) => Math.max(max, p.sort_order ?? 0), 0,
-  ) + 1;
+      const config = await getShopConfig();
+      const configBefore = JSON.stringify(config);
+      let nextOrder =
+        Object.values(config.products).reduce((max, p) => Math.max(max, p.sort_order ?? 0), 0) + 1;
 
-  const globalProfit = config.global_profit_percent ?? getGlobalProfitPercent();
-  const autoProfitOn = config.auto_profit_enabled ?? isAutoProfitEnabled();
+      const globalProfit = config.global_profit_percent ?? getGlobalProfitPercent();
+      const autoProfitOn = config.auto_profit_enabled ?? isAutoProfitEnabled();
 
-  // Merge
-  for (const p of res.products) {
-    const rawCost = Number(p.your_price ?? p.base_price ?? 0);
-    if (!config.products[p.id]) {
-      const initialProfit = globalProfit ?? 20;
-      const initialSellPrice = autoProfitOn && globalProfit !== null
-        ? calculateProfitSellPrice(rawCost, initialProfit)
-        : Number(p.your_price ?? p.base_price ?? 0);
+      // Merge
+      for (const p of res.products) {
+        const rawCost = Number(p.your_price ?? p.base_price ?? 0);
+        if (!config.products[p.id]) {
+          const initialProfit = globalProfit ?? 20;
+          const initialSellPrice =
+            autoProfitOn && globalProfit !== null
+              ? calculateProfitSellPrice(rawCost, initialProfit)
+              : Number(p.your_price ?? p.base_price ?? 0);
 
-      config.products[p.id] = {
-        enabled: true,
-        sell_price: initialSellPrice,
-        profit_percent: globalProfit !== null ? globalProfit : undefined,
-        custom_name: p.name_en,
-        custom_desc: '',
-        emoji: p.emoji || getProductEmoji(p.name_en),
-        emoji_id: p.emoji_id || undefined,
-        sort_order: nextOrder++,
-        original_name: p.name_en,
-        original_desc: p.description || '',
-        base_price: p.base_price,
-        is_manual: p.is_manual,
-      };
-    } else {
-      // Update API-side data
-      const existing = config.products[p.id];
-      if (existing) {
-        const oldCost = Number(existing.base_price ?? 0);
-        const newCost = Number(p.base_price ?? 0);
+          config.products[p.id] = {
+            enabled: true,
+            sell_price: initialSellPrice,
+            profit_percent: globalProfit !== null ? globalProfit : undefined,
+            custom_name: p.name_en,
+            custom_desc: '',
+            emoji: p.emoji || getProductEmoji(p.name_en),
+            emoji_id: p.emoji_id || undefined,
+            sort_order: nextOrder++,
+            original_name: p.name_en,
+            original_desc: p.description || '',
+            base_price: p.base_price,
+            is_manual: p.is_manual,
+          };
+        } else {
+          // Update API-side data
+          const existing = config.products[p.id];
+          if (existing) {
+            const oldCost = Number(existing.base_price ?? 0);
+            const newCost = Number(p.your_price ?? p.base_price ?? 0);
 
-        if (existing.custom_name === existing.original_name) {
-          existing.custom_name = p.name_en;
-        }
+            if (existing.custom_name === existing.original_name) {
+              existing.custom_name = p.name_en;
+            }
 
-        if (existing.original_desc === undefined) {
-          existing.original_desc = existing.custom_desc;
-        }
+            if (existing.original_desc === undefined) {
+              existing.original_desc = existing.custom_desc;
+            }
 
-        if (existing.custom_desc === existing.original_desc) {
-          existing.custom_desc = '';
-        }
+            if (existing.custom_desc === existing.original_desc) {
+              existing.custom_desc = '';
+            }
 
-        existing.original_name = p.name_en;
-        existing.original_desc = p.description || '';
-        existing.base_price = p.base_price;
-        existing.is_manual = p.is_manual;
-        existing.emoji = p.emoji || getProductEmoji(p.name_en);
-        existing.emoji_id = p.emoji_id || undefined;
+            existing.original_name = p.name_en;
+            existing.original_desc = p.description || '';
+            existing.base_price = Number(p.your_price ?? p.base_price);
+            existing.is_manual = p.is_manual;
+            existing.emoji = p.emoji || getProductEmoji(p.name_en);
+            existing.emoji_id = p.emoji_id || undefined;
 
-        // Calculate dynamic profit price if percentage is active
-        const effectivePercent = existing.profit_percent ?? globalProfit;
-        if (effectivePercent !== null && effectivePercent !== undefined && (autoProfitOn || existing.profit_percent !== undefined)) {
-          existing.sell_price = calculateProfitSellPrice(newCost, effectivePercent);
-        }
-      }
-    }
-  }
-  await saveShopConfig(config);
-
-
-  // --- DYNAMIC DATABASE SYNC ---
-  try {
-    let categoryId: number;
-    const { data: catRow } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('name', '🔌 API Shop')
-      .maybeSingle();
-
-    if (catRow) {
-      categoryId = catRow.id;
-    } else {
-      const newCat = await addCategory('🔌 API Shop', '🔌');
-      categoryId = newCat.id;
-    }
-
-    for (const p of res.products) {
-      const s = config.products[p.id];
-      if (!s) continue;
-
-      const { data: matchingProds } = await supabase
-        .from('products')
-        .select('id, emoji, emoji_id, price, stock, active')
-        .eq('note', `[API_PRODUCT_ID:${p.id}]`);
-
-      const existingProd = matchingProds && matchingProds.length > 0 ? matchingProds[0] : null;
-
-      if (matchingProds && matchingProds.length > 1) {
-        const idsToDelete = matchingProds.slice(1).map((x) => x.id);
-        await supabase.from('products').delete().in('id', idsToDelete);
-      }
-
-      // Determine stock and unlimited status safely to prevent null PostgreSQL database violations
-      const isUnlimited =
-        p.stock === null ||
-        p.stock === undefined ||
-        p.stock === 'unlimited' ||
-        (typeof p.stock === 'number' && p.stock < 0);
-      let stockVal = isUnlimited ? 0 : Number(p.stock);
-      if (isNaN(stockVal)) {
-        stockVal = 0;
-      }
-
-      // Safely determine price to prevent null database constraint violations
-      const rawPrice = s.sell_price ?? p.your_price ?? p.base_price ?? 0;
-      let priceVal = Number(rawPrice);
-      if (isNaN(priceVal) || !isFinite(priceVal) || priceVal < 0) {
-        priceVal = 0;
-      }
-
-      if (existingProd) {
-        const oldPrice = Number(existingProd.price);
-        const oldStock = Number(existingProd.stock);
-        const wasActive = Boolean(existingProd.active);
-
-        // Sync API stock, price, enabled state, name and descriptions to standard products table
-        await supabase
-          .from('products')
-          .update({
-            name: s.custom_name || p.name_en,
-            price: priceVal,
-            stock: stockVal,
-            active: s.enabled,
-            description: s.custom_desc || p.description || '',
-            emoji: s.emoji || p.emoji || existingProd.emoji || getProductEmoji(p.name_en),
-            emoji_id: s.emoji_id || p.emoji_id || existingProd.emoji_id || null,
-            unlimited_stock: isUnlimited,
-          })
-          .eq('id', existingProd.id);
-
-        if (api) {
-          const premiumEmojiId = s.emoji_id || p.emoji_id || existingProd.emoji_id || null;
-          if ((oldStock <= 0 || !wasActive) && stockVal > 0 && s.enabled) {
-            await handleProductSyncAlerts(api, 'restock', existingProd.id, s.custom_name || p.name_en, priceVal, undefined, premiumEmojiId);
-          } else if (wasActive && s.enabled && priceVal < oldPrice) {
-            await handleProductSyncAlerts(api, 'discount', existingProd.id, s.custom_name || p.name_en, priceVal, oldPrice, premiumEmojiId);
-          }
-        }
-      } else {
-        // Insert as a new standard local database product
-        const noteTag = `[API_PRODUCT_ID:${p.id}]`;
-        const newProd = await addProduct({
-          category_id: categoryId,
-          name: s.custom_name || p.name_en,
-          price: priceVal,
-          stock: stockVal,
-          description: s.custom_desc || p.description || '',
-          note: noteTag,
-          emoji: s.emoji || p.emoji || getProductEmoji(p.name_en),
-          emoji_id: s.emoji_id || p.emoji_id || null,
-          unlimited_stock: isUnlimited,
-          active: s.enabled,
-        });
-
-        if (api && s.enabled) {
-          const premiumEmojiId = s.emoji_id || p.emoji_id || null;
-          await handleProductSyncAlerts(api, 'new', newProd.id, s.custom_name || p.name_en, priceVal, undefined, premiumEmojiId);
-        }
-      }
-    }
-
-
-    // Deactivate local products that are no longer returned by the API
-    const activeApiProductIds = new Set(res.products.map((p) => String(p.id)));
-    const { data: localApiProducts } = await supabase
-      .from('products')
-      .select('id, note, active')
-      .eq('category_id', categoryId);
-
-    if (localApiProducts) {
-      for (const localP of localApiProducts) {
-        if (!localP.note) continue;
-        const match = localP.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
-        if (match) {
-          const apiId = match[1];
-          if (apiId && !activeApiProductIds.has(apiId)) {
-            if (localP.active) {
-              await supabase
-                .from('products')
-                .update({ active: false })
-                .eq('id', localP.id);
-              logger.info(
-                { localProductId: localP.id, apiProductId: apiId },
-                'Deactivated local API Shop product because it was hidden/removed upstream',
-              );
+            // Calculate dynamic profit price if percentage is active
+            const effectivePercent = existing.profit_percent ?? globalProfit;
+            if (
+              effectivePercent !== null &&
+              effectivePercent !== undefined &&
+              (autoProfitOn || existing.profit_percent !== undefined)
+            ) {
+              existing.sell_price = calculateProfitSellPrice(newCost, effectivePercent);
             }
           }
         }
       }
-    }
-  } catch (syncErr) {
-    logger.error({ err: syncErr }, 'syncProducts database sync failed');
-  }
+      if (JSON.stringify(config) !== configBefore) await saveShopConfig(config);
 
-  const merged: MergedProduct[] = res.products.map((p) => {
-    const s = config.products[p.id];
-    return {
-      ...p,
-      enabled: s?.enabled ?? false,
-      sell_price: s?.sell_price ?? p.your_price,
-      custom_name: s?.custom_name ?? p.name_en,
-      custom_desc: s?.custom_desc ?? '',
-      emoji: s?.emoji ?? p.emoji ?? getProductEmoji(p.name_en),
-      emoji_id: s?.emoji_id ?? p.emoji_id ?? undefined,
-      sort_order: s?.sort_order ?? 0,
-    };
-  });
+      // --- DYNAMIC DATABASE SYNC ---
+      try {
+        let categoryId: number;
+        const { data: catRow } = await supabase
+          .from('categories')
+          .select('id')
+          .eq('name', '🔌 API Shop')
+          .maybeSingle();
 
-  merged.sort((a, b) => a.sort_order - b.sort_order);
-  return { ok: true, products: merged };
+        if (catRow) {
+          categoryId = catRow.id;
+        } else {
+          const newCat = await addCategory('🔌 API Shop', '🔌');
+          categoryId = newCat.id;
+        }
+
+        const localRows = await readAll<any>((from, to) =>
+          supabase
+            .from('products')
+            .select('*')
+            .like('note', '[API_PRODUCT_ID:%')
+            .order('id')
+            .range(from, to),
+        );
+        const byApiId = new Map<string, any>();
+        for (const row of localRows) {
+          const match = row.note?.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+          if (match && !byApiId.has(match[1])) byApiId.set(match[1], row);
+        }
+        for (const p of res.products) {
+          const s = config.products[p.id];
+          if (!s) continue;
+
+          const existingProd = byApiId.get(String(p.id));
+          // Determine stock and unlimited status safely to prevent null PostgreSQL database violations
+          const isUnlimited =
+            p.stock === null ||
+            p.stock === undefined ||
+            p.stock === 'unlimited' ||
+            (typeof p.stock === 'number' && p.stock < 0);
+          let stockVal = isUnlimited ? 0 : Number(p.stock);
+          if (isNaN(stockVal)) {
+            stockVal = 0;
+          }
+
+          // Safely determine price to prevent null database constraint violations
+          const rawPrice = s.sell_price ?? p.your_price ?? p.base_price ?? 0;
+          let priceVal = Number(rawPrice);
+          if (isNaN(priceVal) || !isFinite(priceVal) || priceVal < 0) {
+            priceVal = 0;
+          }
+
+          if (existingProd) {
+            const oldPrice = Number(existingProd.price);
+            const oldStock = Number(existingProd.stock);
+            const wasActive = Boolean(existingProd.active);
+
+            // Sync API stock, price, enabled state, name and descriptions to standard products table
+            const patch = changedFields(existingProd, {
+              ...(managedShop()
+                ? {
+                    wwc_source_id:
+                      conn.api_url === process.env.TENANT_SOURCE_URL &&
+                      conn.api_key === process.env.TENANT_SOURCE_KEY
+                        ? p.id
+                        : null,
+                  }
+                : {}),
+              name: s.custom_name || p.name_en,
+              price: priceVal,
+              stock: stockVal,
+              active: s.enabled && !existingProd?.catalog_hidden && (isUnlimited || stockVal > 0),
+              api_auto_hidden: !(isUnlimited || stockVal > 0),
+              description: s.custom_desc || p.description || '',
+              emoji: s.emoji || p.emoji || existingProd.emoji || getProductEmoji(p.name_en),
+              emoji_id: s.emoji_id || p.emoji_id || existingProd.emoji_id || null,
+              unlimited_stock: isUnlimited,
+            });
+            if (Object.keys(patch).length) {
+              const { error } = await supabase
+                .from('products')
+                .update(patch)
+                .eq('id', existingProd.id);
+              if (error) throw error;
+              del('runtime-revisions');
+            }
+
+            if (api) {
+              const premiumEmojiId = s.emoji_id || p.emoji_id || existingProd.emoji_id || null;
+              if ((oldStock <= 0 || !wasActive) && stockVal > 0 && s.enabled) {
+                await handleProductSyncAlerts(
+                  api,
+                  'restock',
+                  existingProd.id,
+                  s.custom_name || p.name_en,
+                  priceVal,
+                  undefined,
+                  premiumEmojiId,
+                );
+              } else if (wasActive && s.enabled && priceVal < oldPrice) {
+                await handleProductSyncAlerts(
+                  api,
+                  'discount',
+                  existingProd.id,
+                  s.custom_name || p.name_en,
+                  priceVal,
+                  oldPrice,
+                  premiumEmojiId,
+                );
+              }
+            }
+          } else {
+            // Insert as a new standard local database product
+            const noteTag = `[API_PRODUCT_ID:${p.id}]`;
+            const newProd = await addProduct({
+              category_id: categoryId,
+              name: s.custom_name || p.name_en,
+              price: priceVal,
+              stock: stockVal,
+              description: s.custom_desc || p.description || '',
+              note: noteTag,
+              emoji: s.emoji || p.emoji || getProductEmoji(p.name_en),
+              emoji_id: s.emoji_id || p.emoji_id || null,
+              unlimited_stock: isUnlimited,
+              active: s.enabled && !existingProd?.catalog_hidden && (isUnlimited || stockVal > 0),
+            });
+
+            if (api && s.enabled) {
+              const premiumEmojiId = s.emoji_id || p.emoji_id || null;
+              await handleProductSyncAlerts(
+                api,
+                'new',
+                newProd.id,
+                s.custom_name || p.name_en,
+                priceVal,
+                undefined,
+                premiumEmojiId,
+              );
+            }
+          }
+        }
+
+        // Deactivate local products that are no longer returned by the API
+        const activeApiProductIds = new Set(res.products.map((p) => String(p.id)));
+        const { data: localApiProducts } = await supabase
+          .from('products')
+          .select('id, note, active')
+          .eq('category_id', categoryId);
+
+        if (localApiProducts && res.complete) {
+          for (const localP of localApiProducts) {
+            if (!localP.note) continue;
+            const match = localP.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+            if (match) {
+              const apiId = match[1];
+              if (apiId && !activeApiProductIds.has(apiId)) {
+                if (localP.active) {
+                  await supabase
+                    .from('products')
+                    .update({
+                      active: false,
+                      api_auto_hidden: true,
+                      stock: 0,
+                      unlimited_stock: false,
+                    })
+                    .eq('id', localP.id);
+                  logger.info(
+                    { localProductId: localP.id, apiProductId: apiId },
+                    'Deactivated local API Shop product because it was hidden/removed upstream',
+                  );
+                }
+              }
+            }
+          }
+        }
+      } catch (syncErr) {
+        logger.error({ err: syncErr }, 'syncProducts database sync failed');
+        return { ok: false, error: 'Local catalog update failed' };
+      }
+
+      del('runtime-revisions');
+      const merged: MergedProduct[] = res.products.map((p) => {
+        const s = config.products[p.id];
+        return {
+          ...p,
+          enabled: s?.enabled ?? false,
+          sell_price: s?.sell_price ?? p.your_price,
+          custom_name: s?.custom_name ?? p.name_en,
+          custom_desc: s?.custom_desc ?? '',
+          emoji: s?.emoji ?? p.emoji ?? getProductEmoji(p.name_en),
+          emoji_id: s?.emoji_id ?? p.emoji_id ?? undefined,
+          sort_order: s?.sort_order ?? 0,
+        };
+      });
+
+      merged.sort((a, b) => a.sort_order - b.sort_order);
+      return { ok: true as const, products: merged };
+    },
+    Boolean(
+      process.env.TENANT_SOURCE_URL &&
+      sourceConnection?.api_url === process.env.TENANT_SOURCE_URL &&
+      sourceConnection?.api_key === process.env.TENANT_SOURCE_KEY,
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -325,6 +398,22 @@ export async function toggleProduct(id: string, enabled: boolean): Promise<void>
     config.products[id].enabled = enabled;
     await saveShopConfig(config);
   }
+  const { data, error } = await supabase
+    .from('products')
+    .select('id,stock,unlimited_stock,api_auto_hidden')
+    .eq('note', '[API_PRODUCT_ID:' + id + ']');
+  if (error) throw error;
+  for (const p of data ?? []) {
+    const { error: e } = await supabase
+      .from('products')
+      .update({
+        catalog_hidden: !enabled,
+        active: enabled && !p.api_auto_hidden && (p.unlimited_stock || p.stock > 0),
+      })
+      .eq('id', p.id);
+    if (e) throw e;
+  }
+  del('runtime-revisions');
 }
 
 export async function setProductField(
@@ -371,7 +460,11 @@ export async function getButtonConfig(): Promise<{
   return config.button ?? { label: '🛒 Shop', position: 0, enabled: false };
 }
 
-export async function setButtonConfig(label: string, position: number, enabled: boolean): Promise<void> {
+export async function setButtonConfig(
+  label: string,
+  position: number,
+  enabled: boolean,
+): Promise<void> {
   const config = await getShopConfig();
   config.button = { label, position, enabled };
   await saveShopConfig(config);
@@ -445,6 +538,7 @@ export async function purchaseProduct(
   productId: string,
   qty: number,
   buyerInfo: string,
+  requestId?: string,
 ): Promise<
   | { ok: true; codes: string[]; total_price: number; order_id: string; status: string }
   | { ok: false; error: string; balance?: number; required?: number; available?: number }
@@ -452,7 +546,7 @@ export async function purchaseProduct(
   const conn = await getConnection();
   if (!conn) return { ok: false, error: 'Not connected to API' };
 
-  const res = await apiPurchase(conn, productId, qty, buyerInfo);
+  const res = await apiPurchase(conn, productId, qty, buyerInfo, requestId);
   if (res.ok) {
     return {
       ok: true,
@@ -486,41 +580,68 @@ export async function tryApiShopAutoOrder(args: {
   buyerInfo: string;
   onFailure?: (failure: { error: string; lowBalance: boolean }) => void | Promise<void>;
 }): Promise<{ items: string[]; status: string | null; supplierName: string } | null> {
-  const product = await getProduct(args.localProductId).catch(() => null);
-  if (!product || !product.note) return null;
+  return supplierAttempt(
+    args.localOrderId,
+    async () => {
+      const product = await getProduct(args.localProductId).catch(() => null);
+      if (!product || !product.note) return null;
 
-  const match = product.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
-  if (!match) return null;
+      const match = product.note.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
+      if (!match) return null;
 
-  const apiProductId = match[1];
-  if (!apiProductId) return null;
-  try {
-    const res = await purchaseProduct(apiProductId, args.qty, args.buyerInfo);
-    if (!res.ok) {
-      const isLowBalance =
-        res.error.toLowerCase().includes('balance') ||
-        res.error.toLowerCase().includes('insufficient') ||
-        res.balance !== undefined;
-      await args.onFailure?.({
-        error: res.error,
-        lowBalance: isLowBalance,
-      });
-      return null;
-    }
-    return {
-      items: res.codes,
-      status: res.status,
-      supplierName: 'API Shop',
-    };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    logger.error({ err, localProductId: args.localProductId, orderId: args.localOrderId }, 'tryApiShopAutoOrder failed');
-    await args.onFailure?.({
-      error,
-      lowBalance: false,
-    });
-    return null;
-  }
+      const apiProductId = match[1];
+      if (!apiProductId) return null;
+      try {
+        const res = await purchaseProduct(
+          apiProductId,
+          args.qty,
+          args.buyerInfo,
+          stableRequestId(args.localOrderId),
+        );
+        if (!res.ok) {
+          const isLowBalance =
+            res.error.toLowerCase().includes('balance') ||
+            res.error.toLowerCase().includes('insufficient') ||
+            res.balance !== undefined;
+          await args.onFailure?.({
+            error: res.error,
+            lowBalance: isLowBalance,
+          });
+          return null;
+        }
+        return {
+          items: res.codes,
+          status: res.status,
+          supplierName: 'API Shop',
+          total_price: Number(res.total_price),
+        };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        logger.error(
+          { err, localProductId: args.localProductId, orderId: args.localOrderId },
+          'tryApiShopAutoOrder failed',
+        );
+        await args.onFailure?.({
+          error,
+          lowBalance: false,
+        });
+        return null;
+      }
+    },
+    async () => {
+      const conn = await getConnection();
+      if (!conn || conn.api_url !== process.env.TENANT_SOURCE_URL) return null;
+      const result = await recoverPurchase(conn, stableRequestId(args.localOrderId));
+      return result
+        ? {
+            items: result.codes,
+            status: result.status,
+            supplierName: 'API Shop',
+            total_price: Number(result.total_price),
+          }
+        : null;
+    },
+  );
 }
 
 function escapeHtml(str: string): string {
@@ -532,7 +653,11 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
-function makeProductButton(productId: number, text: string, emojiId?: string | null): InlineKeyboard {
+function makeProductButton(
+  productId: number,
+  text: string,
+  emojiId?: string | null,
+): InlineKeyboard {
   const url = publicFeedBotUrl(`prod_${productId}`);
   const kb = new InlineKeyboard().url(text, url);
   kb.style('success');
@@ -631,7 +756,10 @@ export async function handleProductSyncAlerts(
   }
 
   if (recipients.length > 0) {
-    logger.info({ type, productId, recipientsCount: recipients.length }, 'Starting background product broadcast');
+    logger.info(
+      { type, productId, recipientsCount: recipients.length },
+      'Starting background product broadcast',
+    );
     void sendBroadcast(api, recipients, html, replyMarkup).catch((err) => {
       logger.error({ err }, 'sendBroadcast background execution failed');
     });
@@ -657,9 +785,7 @@ export async function setApiProductProfitPercent(
   await saveShopConfig(config);
 }
 
-export async function applyProfitMarginToAllApiProducts(
-  profitPercent: number,
-): Promise<void> {
+export async function applyProfitMarginToAllApiProducts(profitPercent: number): Promise<void> {
   const config = await getShopConfig();
   config.global_profit_percent = profitPercent;
   config.auto_profit_enabled = true;
@@ -675,3 +801,8 @@ export async function applyProfitMarginToAllApiProducts(
   await saveShopConfig(config);
 }
 
+function changedFields(before: any, next: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(next).filter(([k, v]) => JSON.stringify(before[k]) !== JSON.stringify(v)),
+  );
+}

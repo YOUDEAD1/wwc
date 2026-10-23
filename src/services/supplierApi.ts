@@ -1,11 +1,12 @@
 import { type Api } from 'grammy';
+import { createHash } from 'node:crypto';
 import {
   addProduct,
-  getProduct,
   getOrCreateCategory,
+  getProduct,
   getSupplierApiSource,
-  getSupplierProductLinkBySupplierProduct,
   getSupplierProductLinkByProduct,
+  getSupplierProductLinkBySupplierProduct,
   recordSupplierOrderLog,
   setProductActive,
   updateProduct,
@@ -15,22 +16,24 @@ import {
 } from '../db/queries.js';
 import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
-import {
-  getGlobalProfitPercent,
-  getProductProfitPercent,
-  isAutoProfitEnabled,
-  calculateProfitSellPrice,
-} from './settings.js';
-import { logSupplierPriceChangedAlert } from './adminLog.js';
 import type {
+  DBProduct,
   DBSupplierApiSource,
   DBSupplierProductLink,
   SupplierAuthMode,
   SupplierOrderMethod,
 } from '../types.js';
+import { logSupplierPriceChangedAlert } from './adminLog.js';
+import { remember } from './cache.js';
+import { stableRequestId, supplierAttempt } from './checkout.js';
+import {
+  calculateProfitSellPrice,
+  getGlobalProfitPercent,
+  getProductProfitPercent,
+  isAutoProfitEnabled,
+} from './settings.js';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
-
 
 export type SupplierCatalogProduct = {
   id: string;
@@ -185,9 +188,7 @@ export function supabaseResellerSupplierConfig(apiKey: string): SupplierSourceCo
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {};
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 function asString(v: unknown): string | null {
@@ -275,13 +276,14 @@ function supplierResponseError(json: Record<string, unknown>, status: string | n
         'response.error',
         'response.message',
       ]),
-    ) ??
-    (status ? `Supplier status: ${status}` : 'Supplier rejected the order')
+    ) ?? (status ? `Supplier status: ${status}` : 'Supplier rejected the order')
   );
 }
 
 export function isSupplierLowBalanceMessage(message: string): boolean {
-  return /balance|insufficient|not enough|low fund|wallet|credit|recharge|top[\s-]?up/i.test(message);
+  return /balance|insufficient|not enough|low fund|wallet|credit|recharge|top[\s-]?up/i.test(
+    message,
+  );
 }
 
 function replaceTemplate(value: unknown, vars: Record<string, string | number>): unknown {
@@ -347,7 +349,9 @@ async function supplierFetch(
     }
     if (!res.ok) {
       const sample = bodyText.replace(/\s+/g, ' ').slice(0, 300);
-      throw new SupplierApiError(`HTTP ${res.status} from ${url.hostname}: ${sample || res.statusText}`);
+      throw new SupplierApiError(
+        `HTTP ${res.status} from ${url.hostname}: ${sample || res.statusText}`,
+      );
     }
     return json;
   } catch (err) {
@@ -366,25 +370,12 @@ function normalizeCatalogProduct(
 ): SupplierCatalogProduct | null {
   const row = asRecord(raw);
   const id = asString(
-    firstValue(row, [
-      source.product_id_json_path,
-      'product_id',
-      'id',
-      'pid',
-      'service_id',
-      'sku',
-    ]),
+    firstValue(row, [source.product_id_json_path, 'product_id', 'id', 'pid', 'service_id', 'sku']),
   );
   if (!id) return null;
   const name =
     asString(
-      firstValue(row, [
-        source.product_name_json_path,
-        'product_name',
-        'name',
-        'title',
-        'service',
-      ]),
+      firstValue(row, [source.product_name_json_path, 'product_name', 'name', 'title', 'service']),
     ) ?? id;
   const price = asNumber(
     firstValue(row, [
@@ -415,9 +406,7 @@ function normalizeCatalogProduct(
   };
 }
 
-export async function fetchSupplierBalance(
-  source: DBSupplierApiSource,
-): Promise<number | null> {
+export async function fetchSupplierBalance(source: DBSupplierApiSource): Promise<number | null> {
   const json = await supplierFetch(source, cleanPath(source.balance_path, '/balance'));
   return asNumber(
     firstValue(json, [
@@ -436,17 +425,23 @@ export async function fetchSupplierBalance(
 export async function fetchSupplierProducts(
   source: DBSupplierApiSource,
 ): Promise<SupplierCatalogProduct[]> {
-  const json = await supplierFetch(source, cleanPath(source.products_path, '/products'));
-  const rawProducts =
-    deepGet(json, source.products_json_path) ??
-    deepGet(json, 'products') ??
-    deepGet(json, 'data.products') ??
-    deepGet(json, 'data') ??
-    json;
-  const arr = Array.isArray(rawProducts) ? rawProducts : [];
-  return arr
-    .map((p) => normalizeCatalogProduct(source, p))
-    .filter((p): p is SupplierCatalogProduct => p !== null);
+  return remember(
+    'supplier-catalog:' + createHash('sha256').update(JSON.stringify(source)).digest('hex'),
+    60000,
+    async () => {
+      const json = await supplierFetch(source, cleanPath(source.products_path, '/products'));
+      const rawProducts =
+        deepGet(json, source.products_json_path) ??
+        deepGet(json, 'products') ??
+        deepGet(json, 'data.products') ??
+        deepGet(json, 'data') ??
+        json;
+      const arr = Array.isArray(rawProducts) ? rawProducts : [];
+      return arr
+        .map((p) => normalizeCatalogProduct(source, p))
+        .filter((p): p is SupplierCatalogProduct => p !== null);
+    },
+  );
 }
 
 export function supplierSellPrice(
@@ -455,11 +450,15 @@ export function supplierSellPrice(
   customProfitPercent?: number | null,
 ): number {
   const base = Number(product.price ?? 0);
-  const profitPercent = customProfitPercent ?? getProductProfitPercent(Number(product.id)) ?? source.markup_percent ?? getGlobalProfitPercent() ?? 25;
+  const profitPercent =
+    customProfitPercent ??
+    getProductProfitPercent(Number(product.id)) ??
+    source.markup_percent ??
+    getGlobalProfitPercent() ??
+    25;
   const fixedMarkup = Number(source.fixed_markup ?? 0);
   return Number((base * (1 + Number(profitPercent) / 100) + fixedMarkup).toFixed(2));
 }
-
 
 export async function importSupplierProduct(args: {
   source: DBSupplierApiSource;
@@ -472,7 +471,10 @@ export async function importSupplierProduct(args: {
     args.product.id,
   ).catch((err) => {
     if (isSupplierMigrationError(err)) throw err;
-    logger.warn({ err, supplierId: args.source.id, productId: args.product.id }, 'supplier import lookup failed');
+    logger.warn(
+      { err, supplierId: args.source.id, productId: args.product.id },
+      'supplier import lookup failed',
+    );
     return null;
   });
   if (existing) {
@@ -507,7 +509,10 @@ export async function importSupplierProduct(args: {
       stock,
       unlimited_stock: unlimited,
     });
-    logger.info({ localProductId: matchedLocal.id, supplierProductId: args.product.id }, 'Smart-matched supplier product to existing local product by name');
+    logger.info(
+      { localProductId: matchedLocal.id, supplierProductId: args.product.id },
+      'Smart-matched supplier product to existing local product by name',
+    );
     return { localProductId: matchedLocal.id, created: false, link };
   }
 
@@ -529,7 +534,10 @@ export async function importSupplierProduct(args: {
     emoji: '',
     unlimited_stock: args.product.stock === null,
   });
-  if (args.active === false || (args.active === undefined && args.source.auto_import_active === false)) {
+  if (
+    args.active === false ||
+    (args.active === undefined && args.source.auto_import_active === false)
+  ) {
     await setProductActive(local.id, false);
   }
   const link = await upsertSupplierProductLink({
@@ -615,7 +623,9 @@ function sanitizeDeliveryValue(value: unknown): string {
       if (item === null || item === undefined || item === '') return false;
       return !HIDDEN_DELIVERY_KEY_RX.test(key.replace(/\s+/g, '_'));
     })
-    .map(([key, item]) => `${key}: ${typeof item === 'object' ? JSON.stringify(item) : String(item)}`)
+    .map(
+      ([key, item]) => `${key}: ${typeof item === 'object' ? JSON.stringify(item) : String(item)}`,
+    )
     .join('\n')
     .trim();
 }
@@ -634,9 +644,7 @@ function normalizeItems(source: DBSupplierApiSource, json: Record<string, unknow
     return clean ? [clean] : [];
   }
   const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  return arr
-    .map(sanitizeDeliveryValue)
-    .filter((s) => s.length > 0);
+  return arr.map(sanitizeDeliveryValue).filter((s) => s.length > 0);
 }
 
 export async function placeSupplierOrder(args: {
@@ -646,7 +654,7 @@ export async function placeSupplierOrder(args: {
   localOrderId: number;
   requestId?: string;
 }): Promise<SupplierOrderResult> {
-  const requestId = args.requestId ?? `ord_${args.localOrderId}_${Date.now()}`;
+  const requestId = args.requestId ?? stableRequestId(args.localOrderId);
   const vars = {
     supplier_product_id: args.link.supplier_product_id,
     local_product_id: args.link.local_product_id,
@@ -664,18 +672,14 @@ export async function placeSupplierOrder(args: {
       payload,
     );
     const json = asRecord(rawJson);
-    const statusValue =
-      firstValue(json, [
-        args.source.order_status_json_path,
-        'status',
-        'data.status',
-        'success',
-        'ok',
-      ]);
-    const status =
-      asString(
-        statusValue,
-      ) ?? null;
+    const statusValue = firstValue(json, [
+      args.source.order_status_json_path,
+      'status',
+      'data.status',
+      'success',
+      'ok',
+    ]);
+    const status = asString(statusValue) ?? null;
     const failed =
       statusValue === false ||
       statusValue === 0 ||
@@ -692,7 +696,13 @@ export async function placeSupplierOrder(args: {
       response_payload: Array.isArray(rawJson) ? { data: rawJson } : json,
       error,
     });
-    return { ok: !failed, items, status, error, raw: Array.isArray(rawJson) ? { data: rawJson } : json };
+    return {
+      ok: !failed,
+      items,
+      status,
+      error,
+      raw: Array.isArray(rawJson) ? { data: rawJson } : json,
+    };
   } catch (err) {
     const msg = errorMessage(err);
     await recordSupplierOrderLog({
@@ -715,26 +725,53 @@ export async function trySupplierAutoOrder(args: {
   localOrderId: number;
   onFailure?: (failure: SupplierAutoOrderFailure) => void | Promise<void>;
 }): Promise<{ items: string[]; status: string | null; supplierName: string } | null> {
-  const link = await getSupplierProductLinkByProduct(args.localProductId).catch((err) => {
-    if (isSupplierMigrationError(err)) {
-      logger.debug('supplier tables not migrated; normal checkout fallback remains active');
+  return supplierAttempt(args.localOrderId, async () => {
+    const link = await getSupplierProductLinkByProduct(args.localProductId).catch((err) => {
+      if (isSupplierMigrationError(err)) {
+        logger.debug('supplier tables not migrated; normal checkout fallback remains active');
+        return null;
+      }
+      logger.warn({ err, localProductId: args.localProductId }, 'supplier link lookup failed');
       return null;
-    }
-    logger.warn({ err, localProductId: args.localProductId }, 'supplier link lookup failed');
-    return null;
-  });
-  if (!link || !link.auto_order) return null;
-  const source = await getSupplierApiSource(link.supplier_id);
-  if (!source || !source.enabled) return null;
-  try {
-    const result = await placeSupplierOrder({
-      source,
-      link,
-      qty: args.qty,
-      localOrderId: args.localOrderId,
     });
-    if (!result.ok) {
-      const error = result.error ?? `Supplier status: ${result.status ?? 'failed'}`;
+    if (!link || !link.auto_order) return null;
+    const source = await getSupplierApiSource(link.supplier_id);
+    if (!source || !source.enabled) return null;
+    try {
+      const result = await placeSupplierOrder({
+        source,
+        link,
+        qty: args.qty,
+        localOrderId: args.localOrderId,
+      });
+      if (!result.ok) {
+        const error = result.error ?? `Supplier status: ${result.status ?? 'failed'}`;
+        await updateSupplierProductLink(link.id, {
+          last_error: error,
+        }).catch((updateErr) =>
+          logger.warn({ err: updateErr }, 'supplier link error update failed'),
+        );
+        await args.onFailure?.({
+          supplierId: source.id,
+          supplierName: source.name,
+          supplierProductId: link.supplier_product_id,
+          error,
+          lowBalance: isSupplierLowBalanceMessage(error),
+        });
+        return null;
+      }
+      return { items: result.items, status: result.status, supplierName: source.name };
+    } catch (err) {
+      const error = errorMessage(err);
+      logger.warn(
+        {
+          err,
+          localProductId: args.localProductId,
+          orderId: args.localOrderId,
+          supplierId: source.id,
+        },
+        'supplier auto-order failed; falling back to local/manual delivery',
+      );
       await updateSupplierProductLink(link.id, {
         last_error: error,
       }).catch((updateErr) => logger.warn({ err: updateErr }, 'supplier link error update failed'));
@@ -747,61 +784,57 @@ export async function trySupplierAutoOrder(args: {
       });
       return null;
     }
-    return { items: result.items, status: result.status, supplierName: source.name };
-  } catch (err) {
-    const error = errorMessage(err);
-    logger.warn(
-      { err, localProductId: args.localProductId, orderId: args.localOrderId, supplierId: source.id },
-      'supplier auto-order failed; falling back to local/manual delivery',
-    );
-    await updateSupplierProductLink(link.id, {
-      last_error: error,
-    }).catch((updateErr) => logger.warn({ err: updateErr }, 'supplier link error update failed'));
-    await args.onFailure?.({
-      supplierId: source.id,
-      supplierName: source.name,
-      supplierProductId: link.supplier_product_id,
-      error,
-      lowBalance: isSupplierLowBalanceMessage(error),
-    });
-    return null;
-  }
+  });
 }
 
 export async function syncSupplierProductLink(
-
   link: DBSupplierProductLink,
   api?: Api,
+  snapshot?: SupplierCatalogProduct[],
+  sourceOverride?: DBSupplierApiSource,
+  localOverride?: DBProduct,
 ): Promise<{
   matched: SupplierCatalogProduct | null;
   updatedLocal: boolean;
 }> {
-  const source = await getSupplierApiSource(link.supplier_id);
+  const source = sourceOverride ?? (await getSupplierApiSource(link.supplier_id));
   if (!source) throw new SupplierApiError('Supplier not found.');
-  const products = await fetchSupplierProducts(source);
+  const products = snapshot ?? (await fetchSupplierProducts(source));
   const matched = products.find((p) => p.id === link.supplier_product_id) ?? null;
   if (!matched) {
     await updateSupplierProductLink(link.id, {
       last_error: 'Supplier product id not found in catalog.',
     });
-    return { matched: null, updatedLocal: false };
+    await updateProduct(link.local_product_id, {
+      stock: 0,
+      unlimited_stock: false,
+      api_auto_hidden: true,
+    } as any);
+    return { matched: null, updatedLocal: true };
   }
 
   const oldCost = Number(link.supplier_cost ?? 0);
   const newCost = Number(matched.price ?? 0);
 
-  await updateSupplierProductLink(link.id, {
-    supplier_product_name: matched.name,
-    supplier_cost: matched.price,
-    supplier_stock: matched.stock,
-    last_sync_at: new Date().toISOString(),
-    last_error: null,
-  });
+  if (
+    link.supplier_product_name !== matched.name ||
+    Number(link.supplier_cost) !== Number(matched.price) ||
+    link.supplier_stock !== matched.stock ||
+    link.last_error
+  )
+    await updateSupplierProductLink(link.id, {
+      supplier_product_name: matched.name,
+      supplier_cost: matched.price,
+      supplier_stock: matched.stock,
+      last_sync_at: new Date().toISOString(),
+      last_error: null,
+    });
 
   let updatedLocal = false;
-  const local = await getProduct(link.local_product_id);
+  const local = localOverride ?? (await getProduct(link.local_product_id));
   if (local) {
-    const profitPercent = getProductProfitPercent(local.id) ?? source.markup_percent ?? getGlobalProfitPercent() ?? 25;
+    const profitPercent =
+      getProductProfitPercent(local.id) ?? source.markup_percent ?? getGlobalProfitPercent() ?? 25;
     const calculatedSellPrice = calculateProfitSellPrice(newCost, profitPercent);
 
     const patch: any = {};
@@ -819,6 +852,8 @@ export async function syncSupplierProductLink(
       patch.price = calculatedSellPrice;
     }
 
+    patch.api_auto_hidden = !(matched.stock === null || Number(matched.stock) > 0);
+    for (const key of Object.keys(patch)) if ((local as any)[key] === patch[key]) delete patch[key];
     if (Object.keys(patch).length > 0) {
       await updateProduct(link.local_product_id, patch);
       updatedLocal = true;
@@ -889,11 +924,15 @@ export function parseSupplierSourceConfig(text: string): SupplierSourceConfig {
     balance_json_path: asString(cfg.balance_json_path ?? cfg.balanceJsonPath) ?? 'balance',
     products_json_path: asString(cfg.products_json_path ?? cfg.productsJsonPath) ?? 'products',
     product_id_json_path: asString(cfg.product_id_json_path ?? cfg.productIdJsonPath) ?? 'id',
-    product_name_json_path: asString(cfg.product_name_json_path ?? cfg.productNameJsonPath) ?? 'name',
-    product_price_json_path: asString(cfg.product_price_json_path ?? cfg.productPriceJsonPath) ?? 'price',
-    product_stock_json_path: asString(cfg.product_stock_json_path ?? cfg.productStockJsonPath) ?? 'stock',
+    product_name_json_path:
+      asString(cfg.product_name_json_path ?? cfg.productNameJsonPath) ?? 'name',
+    product_price_json_path:
+      asString(cfg.product_price_json_path ?? cfg.productPriceJsonPath) ?? 'price',
+    product_stock_json_path:
+      asString(cfg.product_stock_json_path ?? cfg.productStockJsonPath) ?? 'stock',
     order_items_json_path: asString(cfg.order_items_json_path ?? cfg.orderItemsJsonPath) ?? 'items',
-    order_status_json_path: asString(cfg.order_status_json_path ?? cfg.orderStatusJsonPath) ?? 'status',
+    order_status_json_path:
+      asString(cfg.order_status_json_path ?? cfg.orderStatusJsonPath) ?? 'status',
     order_request_template: asRecord(
       cfg.order_request_template ??
         cfg.orderRequestTemplate ?? {
@@ -902,7 +941,10 @@ export function parseSupplierSourceConfig(text: string): SupplierSourceConfig {
           request_id: '{{request_id}}',
         },
     ),
-    auto_import_new_products: asBoolean(cfg.auto_import_new_products ?? cfg.autoImportNewProducts, false),
+    auto_import_new_products: asBoolean(
+      cfg.auto_import_new_products ?? cfg.autoImportNewProducts,
+      false,
+    ),
     auto_import_active: asBoolean(cfg.auto_import_active ?? cfg.autoImportActive, false),
     import_category_name: asString(cfg.import_category_name ?? cfg.importCategoryName),
     markup_percent: asNumber(cfg.markup_percent ?? cfg.markupPercent) ?? 25,

@@ -1,3 +1,5 @@
+import { getDbScope } from '../db/db_context.js';
+import { recordTransfer } from './networkMeter.js';
 /**
  * Bybit internal-transfer verifier.
  *
@@ -123,7 +125,7 @@ function readProxyRoutes(): ProxyRoute[] {
   for (const proxyUrl of configured) {
     const label = formatProxyLabel(proxyUrl);
     try {
-      routes.push({ label, dispatcher: new ProxyAgent(proxyUrl) });
+      routes.push({ label, dispatcher: getProxyAgent(proxyUrl) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ err, proxy: label }, 'bybit: invalid proxy URL');
@@ -189,21 +191,29 @@ function parseBybitTimeMs(value: string | undefined): number | null {
   return n < 1_000_000_000_000 ? n * 1000 : n;
 }
 
-async function bybitGet<T>(
-  path: string,
-  params: URLSearchParams,
-): Promise<BybitEnvelope<T>> {
+async function bybitGet<T>(path: string, params: URLSearchParams): Promise<BybitEnvelope<T>> {
   const creds = readCreds();
   if (!creds) throw new Error('bybit api credentials missing');
 
   const query = params.toString();
+  const scope = getDbScope();
+  const blocked = providerCooldown.get(scope) ?? 0;
+  if (blocked > Date.now())
+    throw new Error('bybit retry deferred; provider temporarily unavailable');
+  const deadline = Date.now() + 15000;
+  let attempts = 0;
   const failures: AttemptFailure[] = [];
   const baseUrls = readBaseUrls();
   const proxyRoutes = readProxyRoutes();
 
-  for (const proxy of proxyRoutes) {
-    for (const baseUrl of baseUrls) {
+  const choices = proxyRoutes.flatMap((proxy) => baseUrls.map((baseUrl) => ({ proxy, baseUrl })));
+  const cursor = routeCursor.get(scope) ?? 0;
+  for (let n = 0; n < choices.length && attempts < 2 && Date.now() < deadline; n++) {
+    const index = (cursor + n) % choices.length;
+    const { proxy, baseUrl } = choices[index]!;
+    {
       const route = routeLabel(baseUrl, proxy);
+      routeCursor.set(scope, (index + 1) % choices.length);
       if (proxy.initError) {
         failures.push({ route, reason: `proxy misconfigured: ${proxy.initError}` });
         continue;
@@ -222,7 +232,9 @@ async function bybitGet<T>(
       const url = `${baseUrl}${path}${query ? `?${query}` : ''}`;
       let res: Response;
       try {
+        attempts++;
         res = await fetch(url, {
+          signal: AbortSignal.timeout(Math.max(1, Math.min(7000, deadline - Date.now()))),
           headers,
           ...(proxy.dispatcher ? { dispatcher: proxy.dispatcher } : {}),
         });
@@ -233,6 +245,13 @@ async function bybitGet<T>(
         continue;
       }
 
+      recordTransfer(
+        'bybit',
+        baseUrl,
+        Number(res.headers.get('content-length') ?? 0),
+        res.status >= 400,
+      );
+      if ([401, 403, 451].includes(res.status)) providerCooldown.set(scope, Date.now() + 60000);
       const text = await res.text();
       let json: unknown = null;
       if (text.trim().length > 0) {
@@ -256,12 +275,10 @@ async function bybitGet<T>(
       }
       const envelope = (json ?? {}) as BybitEnvelope<T>;
       if (envelope.retCode !== 0) {
-        failures.push(
-          {
-            route,
-            reason: `api ${envelope.retCode ?? '?'}${envelope.retMsg ? ` ${envelope.retMsg}` : ''}`,
-          },
-        );
+        failures.push({
+          route,
+          reason: `api ${envelope.retCode ?? '?'}${envelope.retMsg ? ` ${envelope.retMsg}` : ''}`,
+        });
         continue;
       }
       if (failures.length > 0) {
@@ -270,11 +287,14 @@ async function bybitGet<T>(
           'bybit: verifier succeeded after route fallback',
         );
       }
+      providerCooldown.delete(scope);
+      routeCursor.set(scope, index);
       return envelope;
     }
   }
 
   logger.warn({ failures }, 'bybit: all API routes failed');
+  providerCooldown.set(scope, Math.max(providerCooldown.get(scope) ?? 0, Date.now() + 15000));
   throw new Error(summarizeFailures(failures));
 }
 
@@ -282,13 +302,15 @@ export function isBybitPayEnabled(): boolean {
   return readCreds() !== null;
 }
 
-export async function listBybitInternalDeposits(opts: {
-  txID?: string;
-  startTime?: number;
-  endTime?: number;
-  coin?: string;
-  limit?: number;
-} = {}): Promise<BybitInternalDepositRecord[]> {
+export async function listBybitInternalDeposits(
+  opts: {
+    txID?: string;
+    startTime?: number;
+    endTime?: number;
+    coin?: string;
+    limit?: number;
+  } = {},
+): Promise<BybitInternalDepositRecord[]> {
   const params = new URLSearchParams();
   if (opts.txID) params.set('txID', opts.txID);
   if (opts.startTime !== undefined) params.set('startTime', String(Math.floor(opts.startTime)));
@@ -366,4 +388,22 @@ export async function verifyBybitInternalDeposit(args: {
         ? String(record.address)
         : null,
   };
+}
+
+const providerCooldown = new Map<string, number>();
+const routeCursor = new Map<string, number>();
+
+const proxyAgents = new Map<string, ProxyAgent>();
+function getProxyAgent(url: string) {
+  let agent = proxyAgents.get(url);
+  if (!agent) {
+    if (proxyAgents.size >= 16) {
+      const key = proxyAgents.keys().next().value!;
+      void proxyAgents.get(key)!.close();
+      proxyAgents.delete(key);
+    }
+    agent = new ProxyAgent(url);
+    proxyAgents.set(url, agent);
+  }
+  return agent;
 }

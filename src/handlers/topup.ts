@@ -8,27 +8,28 @@ import {
   setDepositNote,
   setDepositStatus,
 } from '../db/queries.js';
+import { t as paymentText } from '../i18n/index.js';
 import { btn, inlineBtn, inlineUrl } from '../keyboards/helpers.js';
 import { paymentMethodsKeyboard } from '../keyboards/payMethods.js';
-import type { AppCtx } from '../middleware/user.js';
-import { renderMdHtml } from '../services/premium.js';
-import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
-import { verifyAndCreditDeposit } from '../services/depositVerify.js';
-import { classifyReason, friendlyReason } from '../services/verifyReason.js';
-import { startVerifyingMessage } from '../services/verifyingMsg.js';
 import {
   manualReviewKeyboard,
   rejectionKeyboard,
   successKeyboard,
 } from '../keyboards/verifyResult.js';
-import { consume, formatRetryAfter } from '../services/rateLimit.js';
 import { logger } from '../logger.js';
+import type { AppCtx } from '../middleware/user.js';
 import * as adminLog from '../services/adminLog.js';
-import type { DBPaymentMethod, PaymentProvider } from '../types.js';
-import { getAdminContactUrlWithPrefill } from '../services/settings.js';
+import { fetchLtcUsdRate } from '../services/chainVerify.js';
+import { reserveQuote } from '../services/checkout.js';
+import { verifyAndCreditDeposit } from '../services/depositVerify.js';
+import { currentInterfaceLanguage } from '../services/interfaceCustomization.js';
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
-import { PE } from './paymentInstructionEmojis.js';
-import { generateUniqueAmount } from '../services/uniqueAmount.js';
+import { renderMdHtml } from '../services/premium.js';
+import { consume, formatRetryAfter } from '../services/rateLimit.js';
+import { getAdminContactUrlWithPrefill, getTextOverride } from '../services/settings.js';
+import { classifyReason, friendlyReason } from '../services/verifyReason.js';
+import { startVerifyingMessage } from '../services/verifyingMsg.js';
+import type { DBPaymentMethod, PaymentProvider } from '../types.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -71,12 +72,8 @@ function topupExitCallback(ctx: AppCtx): string {
  * "Where TXID?". Used by both top-up and direct-pay instruction
  * screens to surface the per-method tutorial card consistently.
  */
-function tutButtonKeyFor(
-  provider: PaymentProvider,
-): 'where_txid' | 'where_order_id' {
-  return provider === 'binance_pay' || provider === 'bybit_pay'
-    ? 'where_order_id'
-    : 'where_txid';
+function tutButtonKeyFor(provider: PaymentProvider): 'where_txid' | 'where_order_id' {
+  return provider === 'binance_pay' || provider === 'bybit_pay' ? 'where_order_id' : 'where_txid';
 }
 
 /**
@@ -86,10 +83,7 @@ function tutButtonKeyFor(
  * The tutorial callback (`paytut:<methodId>`) opens the admin-editable
  * how-to card sourced from `pay_tutorial.<id>.*`.
  */
-function topupInstructionKeyboard(
-  ctx: AppCtx,
-  m: DBPaymentMethod,
-): InlineKeyboard {
+function topupInstructionKeyboard(ctx: AppCtx, m: DBPaymentMethod): InlineKeyboard {
   const kb = new InlineKeyboard();
   inlineBtn(kb, ctx.lang, tutButtonKeyFor(m.provider), `paytut:${m.id}`);
   kb.row();
@@ -128,14 +122,15 @@ export function registerTopup(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^pay:others:(topup|direct(?::\d+(?::\d+)?)?)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const origin = ctx.match[1] ?? 'topup';
-    const backCallback = origin === 'topup' ? topupRootCallback(ctx) : `pdpm:${origin.replace(/^direct:/, '')}`;
+    const backCallback =
+      origin === 'topup' ? topupRootCallback(ctx) : `pdpm:${origin.replace(/^direct:/, '')}`;
     const contactUrl = getAdminContactUrlWithPrefill(
       'Hey Admin i need help about another payment method for bot payment method name is : ',
     );
     const text = [
       '🆘 *Payment Support*',
       '',
-      '_*If the payment method you need isn\'t listed, tap Contact Admin to request it. For real-time help, use Live Support to chat with an admin directly.*_',
+      "_*If the payment method you need isn't listed, tap Contact Admin to request it. For real-time help, use Live Support to chat with an admin directly.*_",
     ].join('\n');
     const kb = new InlineKeyboard();
     inlineUrl(kb, ctx.lang, 'support_contact', contactUrl);
@@ -159,11 +154,7 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     }
     await ctx.answerCallbackQuery();
 
-    if (
-      m.provider === 'usdt_trc20' ||
-      m.provider === 'usdt_bep20' ||
-      m.provider === 'usdt_ton'
-    ) {
+    if (m.provider === 'usdt_trc20' || m.provider === 'usdt_bep20' || m.provider === 'usdt_ton') {
       if (!m.address) {
         await ctx.editMessageText(
           renderMdHtml(
@@ -180,24 +171,18 @@ export function registerTopup(bot: Composer<AppCtx>): void {
       // address screen — anchors the 30-min freshness window in
       // `services/depositVerify.ts` so a stale vendor TXID can't be
       // replayed by re-opening the screen.
-      const { uniqueAmount, tag } = generateUniqueAmount(0, ctx.user.telegram_id, m.id);
-      ctx.session.userFlow = {
-        type: 'chain_topup',
-        step: 'tx_hash',
-        data: {
-          method_id: m.id,
-          method_name: m.name,
-          provider: m.provider,
-          address: m.address,
-          opened_at_ms: Date.now(),
-          unique_amount: uniqueAmount,
-          instruction_message_id: ctx.callbackQuery?.message?.message_id,
-        },
+      (ctx.session as any).userFlow = {
+        type: 'chain_quote_amount',
+        step: 'amount',
+        data: { method_id: m.id },
       };
-      await ctx.editMessageText(renderMdHtml(buildChainTopupScreen(m, uniqueAmount, tag)), {
-        parse_mode: 'HTML',
-        reply_markup: topupInstructionKeyboard(ctx, m),
-      });
+      await ctx.editMessageText(
+        renderMdHtml(ctx.t('payment.ask_amount', { method: m.name, instructions: '' })),
+        {
+          parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), topupRootCallback(ctx)),
+        },
+      );
       return;
     }
 
@@ -338,7 +323,9 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     // ----- Manual provider — original simple flow -----
     const methodBody = ctx.t('topup.method.body', {
       name: m.name,
-      instructions: m.instructions,
+      instructions:
+        getTextOverride('payment.instructions.' + m.id, ctx.lang) ??
+        (ctx.lang === 'ar' ? m.instructions : ctx.t('payment.default_instructions')),
     });
     await ctx.editMessageText(renderMdHtml(methodBody), {
       parse_mode: 'HTML',
@@ -399,10 +386,12 @@ export function registerTopup(bot: Composer<AppCtx>): void {
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
       renderMdHtml(
-        `💸 *${m.name}*\n\n` +
-        `${m.instructions}\n\n` +
-        `*كم تريد أن تودع؟*\n` +
-        `_أرسل المبلغ بالدولار (مثل: \`50\` أو \`100.50\`)_`,
+        ctx.t('payment.ask_amount', {
+          method: m.name,
+          instructions:
+            getTextOverride('payment.instructions.' + m.id, ctx.lang) ??
+            (ctx.lang === 'ar' ? m.instructions : ctx.t('payment.default_instructions')),
+        }),
       ),
       {
         parse_mode: 'HTML',
@@ -414,6 +403,42 @@ export function registerTopup(bot: Composer<AppCtx>): void {
   // ----- Auto-verify top-up flows -----
   bot.on('message:text', async (ctx, next) => {
     const flow = ctx.session.userFlow;
+    if ((flow as any)?.type === 'chain_quote_amount') {
+      const amount = Number(ctx.message.text.trim());
+      const methods = await listPaymentMethods();
+      const m = methods.find((x) => x.id === (flow as any).data.method_id);
+      if (!m?.address) {
+        ctx.session.userFlow = undefined;
+        return next();
+      }
+      if (
+        !/^\d+(?:\.\d{1,2})?$/.test(ctx.message.text.trim()) ||
+        !Number.isFinite(amount) ||
+        amount < Math.max(1, Number(m.min_amount))
+      ) {
+        await ctx.reply(ctx.t('payment.minimum', { minimum: Math.max(1, Number(m.min_amount)) }));
+        return;
+      }
+      const quote = await reserveQuote(ctx.user.telegram_id, m.provider, m.address, amount);
+      (ctx.session as any).userFlow = {
+        type: 'chain_topup',
+        step: 'tx_hash',
+        data: {
+          method_id: m.id,
+          method_name: m.name,
+          provider: m.provider,
+          address: m.address,
+          opened_at_ms: Date.now(),
+          unique_amount: Number(quote.exact_amount),
+          quote_id: quote.id,
+        },
+      };
+      await ctx.reply(renderMdHtml(buildChainTopupScreen(m, Number(quote.exact_amount))), {
+        parse_mode: 'HTML',
+        reply_markup: topupInstructionKeyboard(ctx, m),
+      });
+      return;
+    }
     if (!flow) return next();
 
     const text = ctx.message.text.trim();
@@ -460,14 +485,11 @@ async function handleManualTopupAmount(
 ): Promise<void> {
   const amount = Number(text.replace(/[^0-9.]/g, ''));
   if (!Number.isFinite(amount) || amount <= 0) {
-    await ctx.reply(
-      renderMdHtml('❌ مبلغ غير صالح. أرسل رقماً موجباً مثل `50` أو `100.50`.'),
-      { parse_mode: 'HTML' },
-    );
+    await ctx.reply(renderMdHtml(ctx.t('payment.invalid_amount')), { parse_mode: 'HTML' });
     return;
   }
   if (amount < 1) {
-    await ctx.reply(renderMdHtml('❌ الحد الأدنى للإيداع هو **1 USDT**.'), { parse_mode: 'HTML' });
+    await ctx.reply(renderMdHtml(ctx.t('payment.minimum', { minimum: 1 })), { parse_mode: 'HTML' });
     return;
   }
 
@@ -481,12 +503,7 @@ async function handleManualTopupAmount(
   });
 
   await ctx.reply(
-    renderMdHtml(
-      `✅ *تم استلام طلبك!*\n\n` +
-      `🆔 رقم الطلب: \`#${dep.id}\`\n` +
-      `💰 المبلغ: *$${amount.toFixed(2)} USDT*\n\n` +
-      `_سيقوم الأدمن بمراجعة الطلب وإضافة الرصيد قريباً._`,
-    ),
+    renderMdHtml(ctx.t('payment.submitted', { id: dep.id, amount: amount.toFixed(2) })),
     { parse_mode: 'HTML' },
   );
 }
@@ -552,7 +569,7 @@ async function handleChainTopupSubmit(
       );
       return;
     }
-    txHash = cleaned;
+    txHash = normalizeTransactionHash(cleaned, provider);
   }
 
   let depId: number;
@@ -578,10 +595,7 @@ async function handleChainTopupSubmit(
     if (reverifyOk) {
       depId = existingByHash.id;
       isReverify = true;
-      logger.info(
-        { depId, ageMs, txHash },
-        'topup: reusing pending deposit for re-verification',
-      );
+      logger.info({ depId, ageMs, txHash }, 'topup: reusing pending deposit for re-verification');
     } else {
       await ctx.reply(
         renderMdHtml(
@@ -601,6 +615,7 @@ async function handleChainTopupSubmit(
         reference: txHash,
         note: 'On-chain tx submitted via auto-verify',
         tx_hash: txHash,
+        quote_id: (flow.data as any).quote_id,
         unique_amount_tag: flow.data.unique_amount
           ? `${ctx.user.telegram_id}:${flow.data.method_id}:${flow.data.unique_amount}`
           : undefined,
@@ -619,9 +634,7 @@ async function handleChainTopupSubmit(
         return;
       }
       logger.error({ err }, 'Chain top-up deposit insert failed');
-      await ctx.reply(
-        '⚠️ Could not record your submission. Please try again or contact support.',
-      );
+      await ctx.reply('⚠️ Could not record your submission. Please try again or contact support.');
       ctx.session.userFlow = undefined;
       return;
     }
@@ -744,15 +757,17 @@ async function handleChainTopupSubmit(
 
 async function handleLtcUsdAmount(
   ctx: AppCtx,
-  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'ltc_topup'; step: 'usd_amount' }>,
+  flow: Extract<
+    NonNullable<AppCtx['session']['userFlow']>,
+    { type: 'ltc_topup'; step: 'usd_amount' }
+  >,
   text: string,
 ): Promise<void> {
   const usd = Number(text.replace(/[^0-9.]/g, ''));
   if (!Number.isFinite(usd) || usd <= 0) {
-    await ctx.reply(
-      renderMdHtml('❌ Please send a positive USD amount (e.g. `10` or `25.50`).'),
-      { parse_mode: 'HTML' },
-    );
+    await ctx.reply(renderMdHtml('❌ Please send a positive USD amount (e.g. `10` or `25.50`).'), {
+      parse_mode: 'HTML',
+    });
     return;
   }
 
@@ -770,7 +785,16 @@ async function handleLtcUsdAmount(
     return;
   }
 
-  const { ltcAmount, expiresAt } = quoteLtc(usd, rate);
+  const quote = await reserveQuote(
+    ctx.user.telegram_id,
+    'ltc',
+    flow.data.address,
+    usd,
+    'LTC',
+    rate,
+  );
+  const ltcAmount = Number(quote.exact_amount),
+    expiresAt = new Date(quote.expires_at);
   const expiresAtMs = expiresAt.getTime();
 
   // Insert a pending deposit with the locked quote.
@@ -781,15 +805,14 @@ async function handleLtcUsdAmount(
       method: flow.data.method_name,
       amount: usd,
       expected_amount: ltcAmount,
+      quote_id: quote.id,
       quote_expires_at: expiresAt.toISOString(),
       note: `LTC quote: $${usd} = ${ltcAmount} LTC @ $${rate}/LTC`,
     });
     depId = dep.id;
   } catch (err) {
     logger.error({ err }, 'LTC deposit insert failed');
-    await ctx.reply(
-      '⚠️ Could not lock the LTC quote. Please try again or contact support.',
-    );
+    await ctx.reply('⚠️ Could not lock the LTC quote. Please try again or contact support.');
     ctx.session.userFlow = undefined;
     return;
   }
@@ -861,9 +884,7 @@ async function handleLtcTxHash(
   }
   if (Date.now() > flow.data.expires_at_ms) {
     await ctx.reply(
-      renderMdHtml(
-        '⏰ Your LTC quote expired. Tap *Top-up* again to get a fresh rate.',
-      ),
+      renderMdHtml('⏰ Your LTC quote expired. Tap *Top-up* again to get a fresh rate.'),
       {
         parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), 'main:open'),
@@ -991,47 +1012,22 @@ async function handleLtcTxHash(
 // ----- Screen builders ---------------------------------------------------
 
 function buildBinancePayTopupScreen(m: DBPaymentMethod): string {
-  return [
-    `${PE.binance_title} *Binance Pay Deposit*`,
-    '',
-    `*Pay ID:* \`${m.address ?? '(not set)'}\``,
-    `*Binance Name:* \`${m.pay_name ?? '(not set)'}\``,
-    '',
-    `${PE.bullet_send} Send any USDT amount to the Pay ID above`,
-    `${PE.bullet_paste} Paste your *Order ID* below`,
-    '',
-    `${PE.note} _Only up to 3 decimal places will be credited to your wallet._`,
-    '',
-    '⏰ _Only payments started after opening this screen and completed within 30 minutes will be credited._',
-    '',
-    '*Please send your Order ID below:*',
-  ].join('\n');
+  return paymentText(currentInterfaceLanguage(), 'payment.topup.binance', {
+    address: m.address ?? '—',
+    name: m.pay_name ?? '—',
+  });
 }
 
 function buildBybitPayTopupScreen(m: DBPaymentMethod): string {
-  return [
-    '*Bybit Pay Deposit*',
-    '',
-    `*Bybit UID / ID:* \`${m.address ?? '(not set)'}\``,
-    `*Bybit Name:* \`${m.pay_name ?? '(not set)'}\``,
-    '',
-    `${PE.bullet_send} Send any USDT amount inside Bybit to the ID above`,
-    `${PE.bullet_paste} Paste your *Bybit internal transfer TXID* below`,
-    '',
-    `${PE.note} _Only successful USDT internal transfers are auto-verified._`,
-    '',
-    '⏰ _Only payments started after opening this screen and completed within 30 minutes will be credited._',
-    '',
-    '*Please send your Bybit TXID below:*',
-  ].join('\n');
+  return paymentText(currentInterfaceLanguage(), 'payment.topup.bybit', {
+    address: m.address ?? '—',
+    name: m.pay_name ?? '—',
+  });
 }
 
 async function handleBybitPayTxId(
   ctx: AppCtx,
-  flow: Extract<
-    NonNullable<AppCtx['session']['userFlow']>,
-    { type: 'bybit_pay_topup' }
-  >,
+  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'bybit_pay_topup' }>,
   text: string,
 ): Promise<void> {
   const cleaned = text.replace(/\s+/g, '');
@@ -1073,7 +1069,9 @@ async function handleBybitPayTxId(
     );
     return;
   }
-  await setDepositNote(depId, `Bybit internal transfer TXID submitted: ${txId}`).catch(() => undefined);
+  await setDepositNote(depId, `Bybit internal transfer TXID submitted: ${txId}`).catch(
+    () => undefined,
+  );
 
   const verifying = await startVerifyingMessage({
     api: ctx.api,
@@ -1121,7 +1119,9 @@ async function handleBybitPayTxId(
   }
 
   const klass = classifyReason(result.reason);
-  await setDepositNote(depId, `auto-verify failed: ${result.reason} (bybit txid ${txId})`).catch(() => undefined);
+  await setDepositNote(depId, `auto-verify failed: ${result.reason} (bybit txid ${txId})`).catch(
+    () => undefined,
+  );
   if (klass === 'duplicate') {
     await verifying.done({
       text: [
@@ -1143,13 +1143,7 @@ async function handleBybitPayTxId(
         '',
         'This transfer did not match our records. If you believe this is a mistake, tap *Admin Help* below.',
       ].join('\n'),
-      reply_markup: rejectionKeyboard(
-        ctx.lang,
-        depId,
-        txId,
-        result.reason,
-        topupExitCallback(ctx),
-      ),
+      reply_markup: rejectionKeyboard(ctx.lang, depId, txId, result.reason, topupExitCallback(ctx)),
     });
   } else {
     await verifying.done({
@@ -1180,10 +1174,7 @@ async function handleBybitPayTxId(
 
 async function handleBinancePayOrderId(
   ctx: AppCtx,
-  flow: Extract<
-    NonNullable<AppCtx['session']['userFlow']>,
-    { type: 'binance_pay_topup' }
-  >,
+  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'binance_pay_topup' }>,
   text: string,
 ): Promise<void> {
   const cleaned = text.replace(/\s+/g, '');
@@ -1345,48 +1336,11 @@ async function handleBinancePayOrderId(
 }
 
 function buildChainTopupScreen(m: DBPaymentMethod, uniqueAmount?: number, tag?: string): string {
-  const headingGlyph =
-    m.provider === 'usdt_ton' ? PE.ton_title : PE.usdt_title;
-  const heading =
-    m.provider === 'usdt_bep20'
-      ? `${headingGlyph} *USDT (BEP-20) Deposit*`
-      : m.provider === 'usdt_trc20'
-        ? `${headingGlyph} *USDT (TRC-20) Deposit*`
-        : `${headingGlyph} *TON Network Deposit*`;
-  const sendLine =
-    m.provider === 'usdt_bep20'
-      ? `${PE.bullet_send} Send *exactly \`${uniqueAmount ?? 'any'} USDT\`* to the address above`
-      : m.provider === 'usdt_ton'
-        ? `${PE.bullet_send} Send *exactly \`${uniqueAmount ?? 'any'} USDT\`* (TON) to the address above`
-        : `${PE.bullet_send} Send *exactly \`${uniqueAmount ?? 'any'} USDT\`* (TRC-20) to the address above`;
-  const lines: string[] = [
-    heading,
-    '',
-    `\`${m.address ?? '(address not set)'}\``,
-    '',
-    sendLine,
-  ];
-  if (uniqueAmount) {
-    lines.push(
-      ``,
-      `⚠️ _أرسل *المبلغ بالضبط* \`${uniqueAmount} USDT\` — هذا المبلغ فريد لجلستك ويمنع استخدام معاملتك من قِبل شخص آخر._`,
-    );
-  }
-  lines.push(
-    ``,
-    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
-    ``,
-  );
-  if (m.provider === 'usdt_bep20') {
-    lines.push(`${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`);
-  } else if (m.provider === 'usdt_ton') {
-    lines.push(`${PE.convert} _TON coins are automatically converted to USDT at live market rates._`);
-  } else {
-    lines.push(`${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`);
-  }
-  lines.push('');
-  lines.push('*Please send your TX hash below:*');
-  return lines.join('\n');
+  return paymentText(currentInterfaceLanguage(), 'payment.chain', {
+    method: m.name,
+    address: m.address ?? '—',
+    amount: uniqueAmount?.toFixed(4) ?? '—',
+  });
 }
 
 function buildLtcUsdAmountScreen(m: DBPaymentMethod): string {
@@ -1430,4 +1384,14 @@ export async function showTopupMenu(ctx: AppCtx, asEdit = false) {
   } else {
     await ctx.reply(html, { parse_mode: 'HTML', reply_markup: kb });
   }
+}
+
+function normalizeTransactionHash(value: string, provider: string) {
+  const raw = value.replace(/\s+/g, '');
+  if (provider === 'usdt_ton' && !/^(?:0x)?[a-fA-F0-9]{64}$/.test(raw)) {
+    const bytes = Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    if (bytes.length === 32) return bytes.toString('hex');
+    return raw;
+  }
+  return raw.toLowerCase();
 }

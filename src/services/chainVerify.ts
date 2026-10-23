@@ -1,3 +1,4 @@
+import { measuredFetch } from './networkMeter.js';
 /**
  * On-chain payment verification helpers.
  *
@@ -24,18 +25,12 @@ import { logger } from '../logger.js';
 // -- USDT contracts -------------------------------------------------------
 
 export const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-export const USDT_BEP20_CONTRACT =
-  '0x55d398326f99059fF775485246999027B3197955';
-export const USDT_TON_MASTER =
-  'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
+export const USDT_BEP20_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
+export const USDT_TON_MASTER = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 
-const ERC20_TRANSFER_TOPIC =
-  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
-const TRONGRID_BASES = [
-  'https://api.trongrid.io',
-  'https://api.tronstack.io',
-];
+const TRONGRID_BASES = ['https://api.trongrid.io', 'https://api.tronstack.io'];
 const BSC_RPC_BASES = [
   'https://bsc-dataseed.binance.org',
   'https://bsc-dataseed1.defibit.io',
@@ -67,15 +62,11 @@ export type ChainVerifyResult =
 
 // -- Shared helpers -------------------------------------------------------
 
-async function fetchJson<T>(
-  url: string,
-  init?: RequestInit,
-  timeoutMs = 10_000,
-): Promise<T> {
+async function fetchJson<T>(url: string, init?: RequestInit, timeoutMs = 10_000): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, signal: ctl.signal });
+    const res = await measuredFetch(url, { ...init, signal: ctl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
     return (await res.json()) as T;
   } finally {
@@ -104,12 +95,10 @@ function tronHexToBase58(hex: string): string {
   const padded = clean.length === 64 ? clean.slice(24) : clean;
   const withPrefix = padded.length === 40 ? '41' + padded : padded;
   const bytes = Buffer.from(withPrefix, 'hex');
-  const hash = (b: Buffer): Buffer =>
-    crypto.createHash('sha256').update(b).digest();
+  const hash = (b: Buffer): Buffer => crypto.createHash('sha256').update(b).digest();
   const checksum = hash(hash(bytes)).subarray(0, 4);
   const full = Buffer.concat([bytes, checksum]);
-  const alphabet =
-    '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
   let n = BigInt('0x' + full.toString('hex'));
   let out = '';
   while (n > 0n) {
@@ -125,8 +114,7 @@ function tronHexToBase58(hex: string): string {
 }
 
 function base58ToHex(addr: string): string {
-  const alphabet =
-    '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
   let n = 0n;
   for (const ch of addr) {
     const idx = alphabet.indexOf(ch);
@@ -243,14 +231,11 @@ async function bscRpc<T>(method: string, params: unknown[]): Promise<T> {
   let lastErr: unknown = null;
   for (const base of BSC_RPC_BASES) {
     try {
-      const json = await fetchJson<{ result?: T; error?: { message: string } }>(
-        base,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
-        },
-      );
+      const json = await fetchJson<{ result?: T; error?: { message: string } }>(base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
+      });
       if (json.error) throw new Error(json.error.message);
       if (json.result === undefined || json.result === null) {
         throw new Error('empty rpc result');
@@ -316,10 +301,10 @@ export async function verifyBep20Tx(args: {
   // rather than silently accepting a stale TXID.
   let paidAtMs: number | null = null;
   try {
-    const block = await bscRpc<{ timestamp?: string } | null>(
-      'eth_getBlockByNumber',
-      [receipt.blockNumber, false],
-    );
+    const block = await bscRpc<{ timestamp?: string } | null>('eth_getBlockByNumber', [
+      receipt.blockNumber,
+      false,
+    ]);
     const tsHex = block?.timestamp;
     if (typeof tsHex === 'string' && tsHex.length > 0) {
       const tsSec = parseInt(tsHex, 16);
@@ -458,8 +443,7 @@ export async function verifyTonUsdtTx(args: {
       const msg = stringifyErr(err);
       const isNotFound = /HTTP 404/.test(msg);
       const isRateLimit = /HTTP 429/.test(msg);
-      const shouldRetry =
-        (isNotFound || isRateLimit) && attempt < TON_INDEX_RETRY_ATTEMPTS - 1;
+      const shouldRetry = (isNotFound || isRateLimit) && attempt < TON_INDEX_RETRY_ATTEMPTS - 1;
       if (shouldRetry) {
         logger.debug(
           { err, attempt, hash },
@@ -643,16 +627,10 @@ async function verifyTonViaTonCenterV3(
   for (const row of rows) {
     const rowHashHex = normalizeTonHash(row.transaction_hash ?? '');
     if (rowHashHex !== targetHex) continue;
-    if (
-      row.jetton_master &&
-      !tonAddrEq(row.jetton_master, USDT_TON_MASTER)
-    ) {
+    if (row.jetton_master && !tonAddrEq(row.jetton_master, USDT_TON_MASTER)) {
       return { ok: false, reason: 'wrong jetton (not USDT)' };
     }
-    if (
-      row.destination &&
-      !tonAddrEq(row.destination, args.expectedAddress)
-    ) {
+    if (row.destination && !tonAddrEq(row.destination, args.expectedAddress)) {
       return {
         ok: false,
         reason: `recipient mismatch (paid to ${row.destination})`,
@@ -719,11 +697,7 @@ async function verifyTonViaTonCenter(
     };
   };
   const url = `${TONCENTER_BASE}/getTransactions?address=${encodeURIComponent(args.expectedAddress)}&limit=50`;
-  const resp = await fetchJson<{ ok: boolean; result?: TcTx[] }>(
-    url,
-    { headers },
-    15_000,
-  );
+  const resp = await fetchJson<{ ok: boolean; result?: TcTx[] }>(url, { headers }, 15_000);
   if (!resp.ok || !resp.result) {
     return { ok: false, reason: 'TonCenter returned no transactions' };
   }
@@ -737,7 +711,8 @@ async function verifyTonViaTonCenter(
     // opcodes — defer to admin instead of approving blindly.
     return {
       ok: false,
-      reason: 'tx found on TonCenter but jetton amount could not be parsed — admin should verify manually',
+      reason:
+        'tx found on TonCenter but jetton amount could not be parsed — admin should verify manually',
     };
   }
 
@@ -753,7 +728,7 @@ const BLOCKCYPHER_BASE = 'https://api.blockcypher.com/v1/ltc/main';
 export async function verifyLtcTx(args: {
   txHash: string;
   expectedAddress: string;
-  /** Expected LTC amount (from the quote). Tolerance ±2%. */
+  /** Expected LTC amount (from the quote). Exact reserved amount. */
   expectedLtcAmount: number;
 }): Promise<ChainVerifyResult> {
   const hash = args.txHash.trim().toLowerCase();
@@ -779,11 +754,7 @@ export async function verifyLtcTx(args: {
 
   let tx: BcTx;
   try {
-    tx = await fetchJson<BcTx>(
-      `${BLOCKCYPHER_BASE}/txs/${hash}${tokenParam}`,
-      undefined,
-      15_000,
-    );
+    tx = await fetchJson<BcTx>(`${BLOCKCYPHER_BASE}/txs/${hash}${tokenParam}`, undefined, 15_000);
   } catch (err) {
     return { ok: false, reason: `LTC lookup failed: ${stringifyErr(err)}` };
   }
@@ -804,17 +775,15 @@ export async function verifyLtcTx(args: {
   }
   const ltcAmount = totalSats / 1e8;
 
-  // Tolerance: ±2% of expected amount (accounts for network fee dust).
-  const tolerance = args.expectedLtcAmount * 0.02;
-  if (ltcAmount < args.expectedLtcAmount - tolerance) {
+  // Reserved quotes must match to the satoshi, including overpayments.
+  if (Math.round(ltcAmount * 1e8) !== Math.round(args.expectedLtcAmount * 1e8)) {
     return {
       ok: false,
-      reason: `received ${round8(ltcAmount)} LTC but expected ${round8(args.expectedLtcAmount)} LTC (±2%)`,
+      reason: `received ${round8(ltcAmount)} LTC but expected ${round8(args.expectedLtcAmount)} LTC (exact reserved amount)`,
     };
   }
 
-  const sender =
-    tx.inputs?.[0]?.addresses?.[0] ?? 'unknown';
+  const sender = tx.inputs?.[0]?.addresses?.[0] ?? 'unknown';
 
   // BlockCypher returns `confirmed` as an ISO timestamp once the tx
   // is mined. While the tx is still unconfirmed in the mempool the
@@ -871,7 +840,10 @@ export async function fetchLtcUsdRate(): Promise<number> {
  * Given a USD amount, return the LTC amount the user must send and a
  * 10-minute expiry timestamp.
  */
-export function quoteLtc(usdAmount: number, ltcUsdRate: number): {
+export function quoteLtc(
+  usdAmount: number,
+  ltcUsdRate: number,
+): {
   ltcAmount: number;
   expiresAt: Date;
 } {

@@ -1,5 +1,3 @@
-import { adjustBalance, recordLedger } from '../db/queries.js';
-
 /** Charge the user's wallet, throwing if insufficient. Returns new balance. */
 export async function charge(
   user_id: number,
@@ -7,12 +5,9 @@ export async function charge(
   current_balance: number,
   reference: string | null = null,
 ): Promise<number> {
-  if (current_balance < amount) {
-    throw Object.assign(new Error('insufficient'), { code: 'INSUFFICIENT_FUNDS' });
-  }
-  const next = await adjustBalance(user_id, -amount);
-  await recordLedger(user_id, 'wallet_purchase', -amount, reference);
-  return next;
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('INVALID_AMOUNT');
+  const { walletChange } = await import('./checkout.js');
+  return walletChange(user_id, -amount, 'wallet_purchase', reference ?? undefined);
 }
 
 /** Credit the user's wallet (e.g. on deposit approval). */
@@ -22,7 +17,7 @@ export async function credit(
   reference: string | null = null,
   type: string = 'deposit_credit',
 ): Promise<number> {
-  const next = await adjustBalance(user_id, amount);
-  await recordLedger(user_id, type, amount, reference);
-  return next;
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('INVALID_AMOUNT');
+  const { walletChange } = await import('./checkout.js');
+  return walletChange(user_id, amount, type, reference ?? undefined);
 }

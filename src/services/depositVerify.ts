@@ -1,3 +1,4 @@
+import { supabase } from '../db/supabase.js';
 /**
  * Unified deposit auto-verification.
  *
@@ -16,26 +17,13 @@
  * entirely so the existing admin-approval UX is preserved.
  */
 import type { Api } from 'grammy';
+import { findDepositByReference, findDepositByTxHash, listPaymentMethods } from '../db/queries.js';
 import { logger } from '../logger.js';
-import {
-  findDepositByTxHash,
-  findDepositByReference,
-  setDepositStatus,
-  setDepositAmount,
-  setDepositTxHash,
-  listPaymentMethods,
-} from '../db/queries.js';
 import type { DBDeposit, DBPaymentMethod } from '../types.js';
-import { credit } from './wallet.js';
 import * as adminLog from './adminLog.js';
-import {
-  verifyTrc20Tx,
-  verifyBep20Tx,
-  verifyTonUsdtTx,
-  verifyLtcTx,
-} from './chainVerify.js';
 import { findPayTransactionByOrderId, isBinancePayEnabled } from './binance.js';
 import { isBybitPayEnabled, verifyBybitInternalDeposit } from './bybit.js';
+import { verifyBep20Tx, verifyLtcTx, verifyTonUsdtTx, verifyTrc20Tx } from './chainVerify.js';
 import { fulfilOrderForDeposit } from './orderFulfill.js';
 
 /**
@@ -173,8 +161,7 @@ export async function verifyAndCreditDeposit(args: {
     return { ok: false, reason: 'deposit created_at unparseable' };
   }
   const backwardSlack =
-    PAY_PRE_WINDOW_SLACK_MS +
-    (args.isReverify ? REVERIFY_BACKWARD_SLACK_MS : 0);
+    PAY_PRE_WINDOW_SLACK_MS + (args.isReverify ? REVERIFY_BACKWARD_SLACK_MS : 0);
   const windowStart = windowAnchorMs - backwardSlack;
   const windowEnd = windowAnchorMs + PAY_WINDOW_MS;
 
@@ -215,8 +202,7 @@ export async function verifyAndCreditDeposit(args: {
     if (!tx) {
       return {
         ok: false,
-        reason:
-          'order id not found in your Binance Pay history within the 30-minute window',
+        reason: 'order id not found in your Binance Pay history within the 30-minute window',
       };
     }
 
@@ -374,12 +360,8 @@ export async function verifyAndCreditDeposit(args: {
   }
 
   // ----- USDT chain providers (TRC20 / BEP20 / TON) -----
-  if (
-    provider === 'usdt_trc20' ||
-    provider === 'usdt_bep20' ||
-    provider === 'usdt_ton'
-  ) {
-    const txHash = submission.txHash?.trim().toLowerCase();
+  if (provider === 'usdt_trc20' || provider === 'usdt_bep20' || provider === 'usdt_ton') {
+    const txHash = submission.txHash?.trim();
     if (!txHash) return { ok: false, reason: 'tx hash required' };
     if (!method.address) return { ok: false, reason: 'wallet address not set' };
 
@@ -399,10 +381,7 @@ export async function verifyAndCreditDeposit(args: {
       }
     } else {
       // TON accepts hex (64) or base64 (43-44).
-      if (
-        !/^[0-9a-fA-F]{64}$/.test(txHash) &&
-        !/^[A-Za-z0-9+/=_-]{43,44}$/.test(txHash)
-      ) {
+      if (!/^[0-9a-fA-F]{64}$/.test(txHash) && !/^[A-Za-z0-9+/=_-]{43,44}$/.test(txHash)) {
         return { ok: false, reason: 'tx hash format invalid (expected hex or base64)' };
       }
     }
@@ -446,21 +425,31 @@ export async function verifyAndCreditDeposit(args: {
     if (result.paidAtMs > windowEnd) {
       return {
         ok: false,
-        reason:
-          'transaction was confirmed more than 30 minutes after this screen was opened',
+        reason: 'transaction was confirmed more than 30 minutes after this screen was opened',
       };
     }
 
+    if (!deposit.quote_id)
+      return {
+        ok: false,
+        reason: 'Legacy payment without a reserved quote — admin review required',
+      };
+    const { data: quote, error: quoteError } = await supabase
+      .from('payment_quotes')
+      .select('*')
+      .eq('id', deposit.quote_id)
+      .single();
+    if (quoteError || !quote || Number(quote.user_id) !== deposit.user_id)
+      return { ok: false, reason: 'Payment quote ownership mismatch' };
+    if (Math.abs(Number(result.amount) - Number(quote.exact_amount)) > 0.0000001)
+      return { ok: false, reason: 'Payment amount does not match the reserved quote' };
     // Direct-pay amount guard. Same logic as the binance_pay branch:
     // never fulfil an order if the user paid less than the locked
     // total. The chain verifiers report the on-chain USDT amount,
     // which is 1:1 with USD for our purposes.
     if (deposit.order_intent) {
       const required = Number(deposit.order_intent.total);
-      if (
-        Number.isFinite(required) &&
-        Number(result.amount) + 0.01 < required
-      ) {
+      if (Number.isFinite(required) && Number(result.amount) + 0.01 < required) {
         return {
           ok: false,
           reason: `paid amount $${Number(result.amount).toFixed(2)} is less than order total $${required.toFixed(2)}`,
@@ -485,7 +474,7 @@ export async function verifyAndCreditDeposit(args: {
 
   // ----- LTC native (quote-on-display flow) -----
   if (provider === 'ltc') {
-    const txHash = submission.txHash?.trim().toLowerCase();
+    const txHash = submission.txHash?.trim();
     if (!txHash) return { ok: false, reason: 'tx hash required' };
     if (!method.address) return { ok: false, reason: 'wallet address not set' };
     // Strict format gate — Litecoin tx hashes are 64 lowercase hex.
@@ -538,8 +527,7 @@ export async function verifyAndCreditDeposit(args: {
     if (result.paidAtMs > windowEnd) {
       return {
         ok: false,
-        reason:
-          'transaction was confirmed more than 30 minutes after this screen was opened',
+        reason: 'transaction was confirmed more than 30 minutes after this screen was opened',
       };
     }
 
@@ -607,48 +595,21 @@ async function finalizeApproval(args: {
   };
 }): Promise<AutoVerifyResult> {
   const { api, deposit, method } = args;
-  if (Number(deposit.amount) !== args.amount) {
-    await setDepositAmount(deposit.id, args.amount);
+  const { approveDeposit } = await import('./checkout.js');
+  const result = await approveDeposit(deposit, args.amount, args.txHash);
+  let orderPublicId: string | null = null;
+  if (result.order && deposit.order_intent) {
+    const delivered = await fulfilOrderForDeposit({
+      api,
+      deposit,
+      intent: deposit.order_intent,
+      provider: method.provider,
+      methodName: method.name,
+      approvedOrder: result.order,
+    });
+    if (delivered.ok) orderPublicId = delivered.orderPublicId;
   }
-  await setDepositTxHash(deposit.id, args.txHash);
-  await setDepositStatus(deposit.id, 'approved');
-
-  // ----- Direct-pay branch (per-order) -----
-  // When the deposit carries an `order_intent`, we deliver the order
-  // directly instead of crediting the wallet. fulfilOrderForDeposit
-  // refunds to the wallet when the product is gone / out of stock,
-  // so the user is never out of money.
-  if (deposit.order_intent) {
-    const intent = deposit.order_intent;
-    let orderPublicId: string | null = null;
-    let refundedToWallet = false;
-    try {
-      const result = await fulfilOrderForDeposit({
-        api,
-        deposit,
-        intent,
-        provider: method.provider,
-        methodName: method.name,
-      });
-      if (result.ok) {
-        orderPublicId = result.orderPublicId;
-      } else if (result.refundedToWallet) {
-        refundedToWallet = true;
-      }
-    } catch (err) {
-      logger.error(
-        { err, deposit_id: deposit.id },
-        'finalizeApproval: direct-pay fulfilment threw — refunding to wallet',
-      );
-      await credit(
-        deposit.user_id,
-        Number(intent.total),
-        `deposit:${deposit.id}:fulfil_error`,
-        'deposit_credit',
-      );
-      refundedToWallet = true;
-    }
-
+  if (!result.replayed)
     void adminLog
       .logTopupResolved(api, {
         user: args.logUser ?? {
@@ -661,85 +622,19 @@ async function finalizeApproval(args: {
         method: deposit.method,
         amount: args.amount,
         status: 'approved',
-        balanceAfter: null,
+        balanceAfter: result.balance,
         resolvedBy: 0,
-        // Carry the verifier's evidence into the [VERIFIED ✅] log so
-        // the admin can audit the on-chain proof for this credit
-        // without having to cross-reference the deposit row by hand.
         reference: args.txHash,
         sender: args.sender,
         onChainTimestampMs: args.onChainTimestampMs ?? null,
       })
-      .catch((err) => logger.warn({ err }, 'auto-verify: adminLog failed'));
-
-    logger.info(
-      {
-        deposit_id: deposit.id,
-        user: deposit.user_id,
-        amount: args.amount,
-        provider: method.provider,
-        orderPublicId,
-        refundedToWallet,
-      },
-      'Direct-pay deposit auto-approved',
-    );
-
-    return {
-      ok: true,
-      amount: args.amount,
-      newBalance: 0,
-      sender: args.sender,
-      provider: method.provider,
-      orderPublicId,
-    };
-  }
-
-  // ----- Wallet top-up branch (legacy) -----
-  const newBalance = await credit(
-    deposit.user_id,
-    args.amount,
-    deposit.reference ?? `deposit:${deposit.id}`,
-    'deposit_credit',
-  );
-  logger.info(
-    {
-      deposit_id: deposit.id,
-      user: deposit.user_id,
-      amount: args.amount,
-      newBalance,
-      provider: method.provider,
-    },
-    'Deposit auto-approved',
-  );
-
-  void adminLog
-    .logTopupResolved(api, {
-      user: args.logUser ?? {
-        telegram_id: deposit.user_id,
-        username: null,
-        first_name: null,
-        email: null,
-      },
-      depositDbId: deposit.id,
-      method: deposit.method,
-      amount: args.amount,
-      status: 'approved',
-      balanceAfter: Number(newBalance.toFixed(3)),
-      resolvedBy: 0,
-      // Carry the verifier's evidence into the [VERIFIED ✅] log so
-      // the admin can audit the on-chain proof for this credit
-      // without having to cross-reference the deposit row by hand.
-      reference: args.txHash,
-      sender: args.sender,
-      onChainTimestampMs: args.onChainTimestampMs ?? null,
-    })
-    .catch((err) => logger.warn({ err }, 'auto-verify: adminLog failed'));
-
+      .catch((err) => logger.warn({ err }, 'approval log failed'));
   return {
     ok: true,
     amount: args.amount,
-    newBalance,
+    newBalance: result.balance,
     sender: args.sender,
     provider: method.provider,
+    orderPublicId,
   };
 }

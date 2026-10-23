@@ -1,5 +1,6 @@
-import 'dotenv/config';
+import { config as loadDotEnv } from 'dotenv';
 import { z } from 'zod';
+if (process.env.IS_TENANT !== 'true') loadDotEnv();
 
 // Accept either TELEGRAM_BOT_TOKEN (preferred) or BOT_TOKEN (legacy alias).
 if (!process.env.TELEGRAM_BOT_TOKEN && process.env.BOT_TOKEN) {
@@ -21,7 +22,7 @@ if (!process.env.SMTP_PASS && process.env.SAFWANTIGER_SMTP_PASS) {
  * zero configuration. Override per-deployment by setting
  * `LOG_CHAT_ID` explicitly (use `LOG_CHAT_ID=0` to opt out).
  */
-const DEFAULT_LOG_CHAT = '@homlanderstore';
+const DEFAULT_LOG_CHAT = '';
 
 /**
  * Default Telegram chat for `ORDER_LOG_CHAT_ID` — the dedicated
@@ -30,7 +31,7 @@ const DEFAULT_LOG_CHAT = '@homlanderstore';
  * here; everything else (top-ups, support, settings, PDFs, etc.)
  * still goes to the main `LOG_CHAT_ID` channel.
  */
-const DEFAULT_ORDER_LOG_CHAT = '@homlanderstore';
+const DEFAULT_ORDER_LOG_CHAT = '';
 
 /** Public shop feed / watcher group. Empty means reuse the working order-log chat. */
 const DEFAULT_PUBLIC_FEED_CHAT = '';
@@ -44,9 +45,9 @@ const DEFAULT_PUBLIC_FEED_CHAT = '';
  */
 function logChannelTransformer(defaultValue: string) {
   return (value: string | undefined): number | string | undefined => {
-    if (value === undefined) return defaultValue;
+    if (value === undefined) return defaultValue || undefined;
     const cleaned = value.replace(/^["']|["']$/g, '').trim();
-    if (cleaned === '') return defaultValue;
+    if (cleaned === '') return defaultValue || undefined;
     if (/^(0|off|none|disabled)$/i.test(cleaned)) return undefined;
     if (/^-?\d+$/.test(cleaned)) return Number(cleaned);
     return cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
@@ -67,7 +68,7 @@ const schema = z.object({
   PUBLIC_BASE_URL: z.string().url().optional().or(z.literal('')),
   PORT: z.coerce.number().int().default(3000),
 
-  DEFAULT_LANG: z.enum(['en', 'ar', 'vi']).default('en'),
+  DEFAULT_LANG: z.enum(['en', 'ar', 'vi', 'zh']).default('en'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 
   OPENAI_API_KEY: z.string().optional().or(z.literal('')),
@@ -126,11 +127,7 @@ const schema = z.object({
   // fall back to the admin DM. The bot must be added to the
   // channel as an admin with "Post Messages" + "Send Documents"
   // permission for transcripts to land.
-  LOG_CHAT_ID: z
-    .string()
-    .trim()
-    .optional()
-    .transform(logChannelTransformer(DEFAULT_LOG_CHAT)),
+  LOG_CHAT_ID: z.string().trim().optional().transform(logChannelTransformer(DEFAULT_LOG_CHAT)),
 
   // ----------------------------------------------------------------
   //  Orders log channel
@@ -154,11 +151,7 @@ const schema = z.object({
   // ----------------------------------------------------------------
   // Telegram chat that receives new referral notifications.
   // Same input shapes as `LOG_CHAT_ID` (`@username`, numeric `-100…`).
-  BOT_REFERS_CHANNEL: z
-    .string()
-    .trim()
-    .optional()
-    .transform(logChannelTransformer('')),
+  BOT_REFERS_CHANNEL: z.string().trim().optional().transform(logChannelTransformer('')),
 
   // Public shop feed / watcher group (sold, stock and announcement cards).
   PUBLIC_FEED_CHAT_ID: z

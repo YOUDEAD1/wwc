@@ -11,11 +11,13 @@
  * this config at load time. Edit those files to change translations.
  */
 
-import { en } from './locales/en.js';
 import { ar } from './locales/ar.js';
+import { en } from './locales/en.js';
+import { paymentLocales } from './locales/payment.js';
 import { vi } from './locales/vi.js';
+import { zh } from './locales/zh.js';
 
-export type Lang = 'en' | 'ar' | 'vi';
+export type Lang = 'en' | 'ar' | 'vi' | 'zh';
 
 /**
  * BUTTON COLOR MODE
@@ -169,6 +171,7 @@ export const BUTTON_KEYS = {
   language_en: 'btn.language.english',
   language_ar: 'btn.language.arabic',
   language_vi: 'btn.language.vietnamese',
+  language_zh: 'btn.language.chinese',
 
   // ---- Region picker -----------------------------------------
   region_clear: 'btn.region.clear',
@@ -364,6 +367,7 @@ export const DEFAULT_BUTTON_COLORS: Record<keyof typeof BUTTON_KEYS, ColorMode> 
   language_en: 'none',
   language_ar: 'none',
   language_vi: 'none',
+  language_zh: 'none',
 
   // Region clear: destructive.
   region_clear: 'red',
@@ -968,7 +972,12 @@ export const BUTTON_ICONS: Partial<Record<keyof typeof BUTTON_KEYS, string>> = {
  *   2. import & add it to the LOCALES map below
  *   3. add the lang code to the `Lang` union and DB CHECK constraint.
  */
-export const LOCALES = { en, ar, vi } as const satisfies Record<Lang, Record<string, string>>;
+export const LOCALES: Record<Lang, Record<string, string>> = {
+  en: { ...en, ...paymentLocales.en },
+  ar: { ...ar, ...paymentLocales.ar },
+  vi: { ...vi, ...paymentLocales.vi },
+  zh,
+} as const satisfies Record<Lang, Record<string, string>>;
 
 /**
  * MAIN MENU LAYOUT (inline keyboard).
@@ -1010,8 +1019,10 @@ export function getProductEmoji(name: string): string {
   if (n.includes('netflix')) return '🎬';
   if (n.includes('spotify')) return '🎵';
   if (n.includes('youtube') || n.includes('premium')) return '📺';
-  if (n.includes('steam') || n.includes('game') || n.includes('pubg') || n.includes('free fire')) return '🎮';
-  if (n.includes('key') || n.includes('license') || n.includes('windows') || n.includes('office')) return '🔑';
+  if (n.includes('steam') || n.includes('game') || n.includes('pubg') || n.includes('free fire'))
+    return '🎮';
+  if (n.includes('key') || n.includes('license') || n.includes('windows') || n.includes('office'))
+    return '🔑';
   if (n.includes('vpn') || n.includes('nord') || n.includes('expressvpn')) return '🛡️';
   if (n.includes('crunchyroll') || n.includes('anime')) return '🍙';
   if (n.includes('discord') || n.includes('nitro')) return '👾';
@@ -1024,7 +1035,7 @@ export function getProductEmoji(name: string): string {
   if (n.includes('playstation') || n.includes('psn')) return '🕹️';
   if (n.includes('xbox')) return '💚';
   if (n.includes('roblox') || n.includes('robux')) return '🧱';
-  
+
   // Consistent hash fallback to choose one of many nice emojis
   const emojis = ['💎', '✨', '⚡', '🎁', '🔥', '👑', '🌟', '🛡️', '🎫', '🕹️', '📱', '💻'];
   let hash = 0;

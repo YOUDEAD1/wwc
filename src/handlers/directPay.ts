@@ -1,3 +1,6 @@
+import { t as paymentText } from '../i18n/index.js';
+import { reserveQuote } from '../services/checkout.js';
+import { currentInterfaceLanguage } from '../services/interfaceCustomization.js';
 /**
  * Phase B — per-order direct-pay handlers.
  *
@@ -25,6 +28,7 @@
  */
 import type { Composer } from 'grammy';
 import { InlineKeyboard } from 'grammy';
+import { QTY_MIN } from '../../config/index.js';
 import {
   createDeposit,
   findDepositByTxHash,
@@ -36,34 +40,24 @@ import {
 } from '../db/queries.js';
 import { btn, inlineBtn } from '../keyboards/helpers.js';
 import { paymentMethodsKeyboard } from '../keyboards/payMethods.js';
-import { PE } from './paymentInstructionEmojis.js';
-import { generateUniqueAmount } from '../services/uniqueAmount.js';
-import type { AppCtx } from '../middleware/user.js';
-import { renderMdHtml } from '../services/premium.js';
-import { fetchLtcUsdRate, quoteLtc } from '../services/chainVerify.js';
-import { verifyAndCreditDeposit } from '../services/depositVerify.js';
-import { classifyReason, friendlyReason } from '../services/verifyReason.js';
-import { startVerifyingMessage } from '../services/verifyingMsg.js';
 import {
   manualReviewKeyboard,
   rejectionKeyboard,
   successKeyboard,
 } from '../keyboards/verifyResult.js';
-import { consume, formatRetryAfter } from '../services/rateLimit.js';
-import {
-  applyUserPriceToProduct,
-} from '../services/pricing.js';
-import { priceBreakdown, resolvePromo } from '../services/promo.js';
 import { logger } from '../logger.js';
+import type { AppCtx } from '../middleware/user.js';
 import * as adminLog from '../services/adminLog.js';
-import { QTY_MIN } from '../../config/index.js';
-import type {
-  DBPaymentMethod,
-  DBProduct,
-  OrderIntent,
-  PaymentProvider,
-} from '../types.js';
+import { fetchLtcUsdRate } from '../services/chainVerify.js';
+import { verifyAndCreditDeposit } from '../services/depositVerify.js';
 import { renderPaymentMethodTutorial } from '../services/payMethodTutorialView.js';
+import { renderMdHtml } from '../services/premium.js';
+import { applyUserPriceToProduct } from '../services/pricing.js';
+import { priceBreakdown, resolvePromo } from '../services/promo.js';
+import { consume, formatRetryAfter } from '../services/rateLimit.js';
+import { classifyReason, friendlyReason } from '../services/verifyReason.js';
+import { startVerifyingMessage } from '../services/verifyingMsg.js';
+import type { DBPaymentMethod, DBProduct, OrderIntent, PaymentProvider } from '../types.js';
 
 const LTC_QUOTE_TTL_MIN = 10;
 
@@ -96,10 +90,7 @@ const REVERIFY_WINDOW_MS = 15 * 60 * 1000;
  *     buyer back to the product detail page so they can re-open
  *     the direct-pay screen for a fresh attempt.
  */
-async function sendTxCancelled(
-  ctx: AppCtx,
-  productId: number,
-): Promise<void> {
+async function sendTxCancelled(ctx: AppCtx, productId: number): Promise<void> {
   const kb = new InlineKeyboard();
   inlineBtn(kb, ctx.lang, 'cancel_pay', `prod:${productId}`);
   await ctx.reply(
@@ -123,12 +114,8 @@ async function sendTxCancelled(
  * gets "Where TXID?". Mirrors the helper of the same name in
  * `topup.ts` so both flows surface the tutorial card consistently.
  */
-function tutButtonKeyFor(
-  provider: PaymentProvider,
-): 'where_txid' | 'where_order_id' {
-  return provider === 'binance_pay' || provider === 'bybit_pay'
-    ? 'where_order_id'
-    : 'where_txid';
+function tutButtonKeyFor(provider: PaymentProvider): 'where_txid' | 'where_order_id' {
+  return provider === 'binance_pay' || provider === 'bybit_pay' ? 'where_order_id' : 'where_txid';
 }
 
 /**
@@ -146,12 +133,7 @@ function directPayInstructionKeyboard(
   productId: number,
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
-  inlineBtn(
-    kb,
-    ctx.lang,
-    tutButtonKeyFor(m.provider),
-    `paytut:dp:${productId}:${m.id}`,
-  );
+  inlineBtn(kb, ctx.lang, tutButtonKeyFor(m.provider), `paytut:dp:${productId}:${m.id}`);
   kb.row();
   // Bot-owner spec: every payment-instructions screen now exits via
   // a *red* `Cancel` button (not a neutral Back). `cancel_pay` is
@@ -163,11 +145,7 @@ function directPayInstructionKeyboard(
   return kb;
 }
 
-async function buildIntent(
-  ctx: AppCtx,
-  raw: DBProduct,
-  qty: number,
-): Promise<OrderIntent> {
+async function buildIntent(ctx: AppCtx, raw: DBProduct, qty: number): Promise<OrderIntent> {
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
   const { discount, total } = priceBreakdown(p.price, qty, promo);
@@ -189,7 +167,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^pay:direct:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -197,9 +175,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     const qty = ctx.session.qty[id] ?? QTY_MIN;
     const intent = await buildIntent(ctx, raw, qty);
 
-    const methods = (await listPaymentMethods()).filter(
-      (m) => m.provider !== 'manual',
-    );
+    const methods = (await listPaymentMethods()).filter((m) => m.provider !== 'manual');
     if (methods.length === 0) {
       await ctx.answerCallbackQuery({
         text: 'No direct-pay networks are configured yet — admin must add at least one auto-verify method.',
@@ -280,7 +256,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     const productId = Number(ctx.match[1]);
     const methodId = Number(ctx.match[2]);
     const raw = await getProduct(productId);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -295,11 +271,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
 
     await ctx.answerCallbackQuery();
 
-    if (
-      m.provider === 'usdt_trc20' ||
-      m.provider === 'usdt_bep20' ||
-      m.provider === 'usdt_ton'
-    ) {
+    if (m.provider === 'usdt_trc20' || m.provider === 'usdt_bep20' || m.provider === 'usdt_ton') {
       if (!m.address) {
         await ctx.editMessageText(
           renderMdHtml(
@@ -319,9 +291,13 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       // address screen. The verifier in `services/depositVerify.ts`
       // anchors its 30-min freshness window on this value so an
       // attacker can't replay an old vendor TXID.
-      const { uniqueAmount: directUniqueAmt } = generateUniqueAmount(
-        Number(intent.total), ctx.user.telegram_id, m.id,
+      const quote = await reserveQuote(
+        ctx.user.telegram_id,
+        m.provider,
+        m.address,
+        Number(intent.total),
       );
+      const directUniqueAmt = Number(quote.exact_amount);
       ctx.session.userFlow = {
         type: 'direct_chain',
         step: 'tx_hash',
@@ -333,16 +309,14 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           intent,
           opened_at_ms: Date.now(),
           unique_amount: directUniqueAmt,
+          quote_id: quote.id,
           instruction_message_id: ctx.callbackQuery?.message?.message_id,
         },
       };
-      await ctx.editMessageText(
-        renderMdHtml(buildChainDirectScreen(m, intent, directUniqueAmt)),
-        {
-          parse_mode: 'HTML',
-          reply_markup: directPayInstructionKeyboard(ctx, m, productId),
-        },
-      );
+      await ctx.editMessageText(renderMdHtml(buildChainDirectScreen(m, intent, directUniqueAmt)), {
+        parse_mode: 'HTML',
+        reply_markup: directPayInstructionKeyboard(ctx, m, productId),
+      });
       return;
     }
 
@@ -402,13 +376,10 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
         },
       };
 
-      await ctx.editMessageText(
-        renderMdHtml(buildBinanceDirectScreen(m, intent)),
-        {
-          parse_mode: 'HTML',
-          reply_markup: directPayInstructionKeyboard(ctx, m, productId),
-        },
-      );
+      await ctx.editMessageText(renderMdHtml(buildBinanceDirectScreen(m, intent)), {
+        parse_mode: 'HTML',
+        reply_markup: directPayInstructionKeyboard(ctx, m, productId),
+      });
       return;
     }
 
@@ -462,13 +433,10 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
         },
       };
 
-      await ctx.editMessageText(
-        renderMdHtml(buildBybitDirectScreen(m, intent)),
-        {
-          parse_mode: 'HTML',
-          reply_markup: directPayInstructionKeyboard(ctx, m, productId),
-        },
-      );
+      await ctx.editMessageText(renderMdHtml(buildBybitDirectScreen(m, intent)), {
+        parse_mode: 'HTML',
+        reply_markup: directPayInstructionKeyboard(ctx, m, productId),
+      });
       return;
     }
 
@@ -507,7 +475,16 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
         );
         return;
       }
-      const { ltcAmount, expiresAt } = quoteLtc(intent.total, rate);
+      const quote = await reserveQuote(
+        ctx.user.telegram_id,
+        'ltc',
+        m.address!,
+        intent.total,
+        'LTC',
+        rate,
+      );
+      const ltcAmount = Number(quote.exact_amount),
+        expiresAt = new Date(quote.expires_at);
       const expiresAtMs = expiresAt.getTime();
 
       let depId: number;
@@ -517,6 +494,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
           method: m.name,
           amount: intent.total,
           expected_amount: ltcAmount,
+          quote_id: quote.id,
           quote_expires_at: expiresAt.toISOString(),
           note: `Direct-pay LTC quote: $${intent.total} = ${ltcAmount} LTC @ $${rate}/LTC`,
           order_intent: intent,
@@ -525,9 +503,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       } catch (err) {
         logger.error({ err }, 'direct-pay LTC deposit insert failed');
         await ctx.editMessageText(
-          renderMdHtml(
-            '⚠️ Could not lock the LTC quote. Please try again or contact support.',
-          ),
+          renderMdHtml('⚠️ Could not lock the LTC quote. Please try again or contact support.'),
           {
             parse_mode: 'HTML',
             reply_markup: new InlineKeyboard().text(
@@ -592,15 +568,10 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
     // picker filters out 'manual' and only auto-verify providers
     // exist in the constraint, but keep a graceful fallback.
     await ctx.editMessageText(
-      renderMdHtml(
-        '⚠️ Direct-pay is not available for this payment method. Please pick another.',
-      ),
+      renderMdHtml('⚠️ Direct-pay is not available for this payment method. Please pick another.'),
       {
         parse_mode: 'HTML',
-        reply_markup: new InlineKeyboard().text(
-          btn(ctx.lang, 'back'),
-          `pay:direct:${productId}`,
-        ),
+        reply_markup: new InlineKeyboard().text(btn(ctx.lang, 'back'), `pay:direct:${productId}`),
       },
     );
   });
@@ -625,12 +596,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
-    await renderPaymentMethodTutorial(
-      ctx,
-      m.id,
-      m.name,
-      `pay:direct:${productId}`,
-    );
+    await renderPaymentMethodTutorial(ctx, m.id, m.name, `pay:direct:${productId}`);
   });
 
   // Step 4 — text submissions for in-flight direct-pay flows.
@@ -668,10 +634,7 @@ export function registerDirectPay(bot: Composer<AppCtx>): void {
 
 async function handleBinanceDirectSubmit(
   ctx: AppCtx,
-  flow: Extract<
-    NonNullable<AppCtx['session']['userFlow']>,
-    { type: 'direct_binance' }
-  >,
+  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'direct_binance' }>,
   text: string,
 ): Promise<void> {
   const cleaned = text.replace(/\s+/g, '');
@@ -763,10 +726,7 @@ async function handleBinanceDirectSubmit(
         `Order ID: \`${orderId}\``,
         `Charged: *$${Number(result.amount).toFixed(3)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(
-        ctx.lang,
-        `prod:${flow.data.intent.product_id}`,
-      ),
+      reply_markup: successKeyboard(ctx.lang, `prod:${flow.data.intent.product_id}`),
     });
     if (flow.data.instruction_message_id) {
       ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
@@ -774,10 +734,7 @@ async function handleBinanceDirectSubmit(
   } else {
     const klass = classifyReason(result.reason);
     try {
-      await setDepositNote(
-        depId,
-        `auto-verify failed: ${result.reason} (order id ${orderId})`,
-      );
+      await setDepositNote(depId, `auto-verify failed: ${result.reason} (order id ${orderId})`);
     } catch {
       /* noop */
     }
@@ -836,10 +793,7 @@ async function handleBinanceDirectSubmit(
 
 async function handleBybitDirectSubmit(
   ctx: AppCtx,
-  flow: Extract<
-    NonNullable<AppCtx['session']['userFlow']>,
-    { type: 'direct_bybit' }
-  >,
+  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'direct_bybit' }>,
   text: string,
 ): Promise<void> {
   const cleaned = text.replace(/\s+/g, '');
@@ -877,7 +831,9 @@ async function handleBybitDirectSubmit(
     );
     return;
   }
-  await setDepositNote(depId, `Direct-pay Bybit internal transfer TXID submitted: ${txId}`).catch(() => undefined);
+  await setDepositNote(depId, `Direct-pay Bybit internal transfer TXID submitted: ${txId}`).catch(
+    () => undefined,
+  );
 
   const verifying = await startVerifyingMessage({
     api: ctx.api,
@@ -924,10 +880,9 @@ async function handleBybitDirectSubmit(
   }
 
   const klass = classifyReason(result.reason);
-  await setDepositNote(
-    depId,
-    `auto-verify failed: ${result.reason} (bybit txid ${txId})`,
-  ).catch(() => undefined);
+  await setDepositNote(depId, `auto-verify failed: ${result.reason} (bybit txid ${txId})`).catch(
+    () => undefined,
+  );
   if (klass === 'duplicate') {
     await verifying.done({
       text: [
@@ -993,10 +948,7 @@ async function handleBybitDirectSubmit(
 
 async function handleChainDirectSubmit(
   ctx: AppCtx,
-  flow: Extract<
-    NonNullable<AppCtx['session']['userFlow']>,
-    { type: 'direct_chain' }
-  >,
+  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'direct_chain' }>,
   text: string,
 ): Promise<void> {
   // Rate-limit on-chain TX hash submissions per user to prevent
@@ -1042,15 +994,12 @@ async function handleChainDirectSubmit(
     }
     txHash = '0x' + stripped.toLowerCase();
   } else {
-    if (
-      !/^[0-9a-fA-F]{64}$/.test(cleaned) &&
-      !/^[A-Za-z0-9+/=_-]{43,44}$/.test(cleaned)
-    ) {
+    if (!/^[0-9a-fA-F]{64}$/.test(cleaned) && !/^[A-Za-z0-9+/=_-]{43,44}$/.test(cleaned)) {
       ctx.session.userFlow = undefined;
       await sendTxCancelled(ctx, flow.data.intent.product_id);
       return;
     }
-    txHash = cleaned;
+    txHash = normalizeTransactionHash(cleaned, provider);
   }
 
   const intent = flow.data.intent;
@@ -1097,6 +1046,7 @@ async function handleChainDirectSubmit(
         amount: intent.total,
         reference: txHash,
         note: 'Direct-pay on-chain tx submitted via auto-verify',
+        quote_id: (flow.data as any).quote_id,
         tx_hash: txHash,
         order_intent: intent,
       });
@@ -1114,9 +1064,7 @@ async function handleChainDirectSubmit(
         return;
       }
       logger.error({ err }, 'Direct-pay chain deposit insert failed');
-      await ctx.reply(
-        '⚠️ Could not record your payment. Please try again or contact support.',
-      );
+      await ctx.reply('⚠️ Could not record your payment. Please try again or contact support.');
       ctx.session.userFlow = undefined;
       return;
     }
@@ -1234,10 +1182,7 @@ async function handleChainDirectSubmit(
 
 async function handleLtcDirectSubmit(
   ctx: AppCtx,
-  flow: Extract<
-    NonNullable<AppCtx['session']['userFlow']>,
-    { type: 'direct_ltc' }
-  >,
+  flow: Extract<NonNullable<AppCtx['session']['userFlow']>, { type: 'direct_ltc' }>,
   text: string,
 ): Promise<void> {
   const cleaned = text.trim().toLowerCase();
@@ -1308,10 +1253,7 @@ async function handleLtcDirectSubmit(
         `Tx: \`${cleaned}\``,
         `Charged: *$${result.amount.toFixed(2)}*`,
       ].join('\n'),
-      reply_markup: successKeyboard(
-        ctx.lang,
-        `prod:${flow.data.intent.product_id}`,
-      ),
+      reply_markup: successKeyboard(ctx.lang, `prod:${flow.data.intent.product_id}`),
     });
     if (flow.data.instruction_message_id) {
       ctx.api.deleteMessage(ctx.chat!.id, flow.data.instruction_message_id).catch(() => {});
@@ -1376,54 +1318,28 @@ async function handleLtcDirectSubmit(
 
 // ----- Screen builders ----------------------------------------------------
 
-function buildBinanceDirectScreen(
-  m: DBPaymentMethod,
-  intent: OrderIntent,
-): string {
-  const totalStr = intent.total.toFixed(2);
-  return [
-    `${PE.binance_title} *Binance Pay — Direct Pay*`,
-    '',
-    `*${intent.product_name}*  ×  *${intent.qty}*`,
-    `*Send EXACTLY:*  \`${totalStr} USDT\``,
-    '',
-    `*Pay ID:* \`${m.address ?? '(not set)'}\``,
-    `*Binance Name:* \`${m.pay_name ?? '(not set)'}\``,
-    '',
-    `${PE.bullet_send} Send *exactly ${totalStr} USDT* to the Pay ID above`,
-    `${PE.bullet_paste} Paste your *Order ID* below`,
-    '',
-    `${PE.note} _Only up to 3 decimal places will be credited._`,
-    '',
-    '⏰ _Only payments completed within 30 minutes of opening this screen are auto-verified. Earlier or later payments still go to manual admin review._',
-    '',
-    '*Please send your Order ID below:*',
-  ].join('\n');
+function buildBinanceDirectScreen(m: DBPaymentMethod, intent: OrderIntent): string {
+  return paymentText(currentInterfaceLanguage(), 'payment.direct', {
+    product: intent.product_name,
+    qty: intent.qty,
+    total: intent.total.toFixed(2),
+    instructions: paymentText(currentInterfaceLanguage(), 'payment.topup.binance', {
+      address: m.address ?? '—',
+      name: m.pay_name ?? '—',
+    }),
+  });
 }
 
-function buildBybitDirectScreen(
-  m: DBPaymentMethod,
-  intent: OrderIntent,
-): string {
-  const totalStr = intent.total.toFixed(2);
-  return [
-    '*Bybit Pay - Direct Pay*',
-    '',
-    `*${intent.product_name}*  x  *${intent.qty}*`,
-    `*Send EXACTLY:*  \`${totalStr} USDT\``,
-    '',
-    `*Bybit UID / ID:* \`${m.address ?? '(not set)'}\``,
-    `*Bybit Name:* \`${m.pay_name ?? '(not set)'}\``,
-    '',
-    `${PE.bullet_send} Send *exactly ${totalStr} USDT* inside Bybit to the ID above`,
-    `${PE.bullet_paste} Paste your *Bybit internal transfer TXID* below`,
-    '',
-    `${PE.note} _Only successful USDT internal transfers are auto-verified._`,
-    '',
-    '⏰ _Only payments completed within 30 minutes of opening this screen are auto-verified. Earlier or later payments still go to manual admin review._',
-    '',
-    '*Please send your Bybit TXID below:*',
-  ].join('\n');
+function buildBybitDirectScreen(m: DBPaymentMethod, intent: OrderIntent): string {
+  return paymentText(currentInterfaceLanguage(), 'payment.direct', {
+    product: intent.product_name,
+    qty: intent.qty,
+    total: intent.total.toFixed(2),
+    instructions: paymentText(currentInterfaceLanguage(), 'payment.topup.bybit', {
+      address: m.address ?? '—',
+      name: m.pay_name ?? '—',
+    }),
+  });
 }
 
 function buildChainDirectScreen(
@@ -1431,51 +1347,24 @@ function buildChainDirectScreen(
   intent: OrderIntent,
   uniqueAmount?: number,
 ): string {
-  const headingGlyph =
-    m.provider === 'usdt_ton' ? PE.ton_title : PE.usdt_title;
-  const heading =
-    m.provider === 'usdt_bep20'
-      ? `${headingGlyph} *USDT (BEP-20) — Direct Pay*`
-      : m.provider === 'usdt_trc20'
-        ? `${headingGlyph} *USDT (TRC-20) — Direct Pay*`
-        : `${headingGlyph} *TON Network — Direct Pay*`;
-  const exactAmount = uniqueAmount ?? intent.total;
-  const totalStr = exactAmount.toFixed(3);
-  const sendLine =
-    m.provider === 'usdt_bep20'
-      ? `${PE.bullet_send} Send *exactly \`${totalStr} USDT\`* to the address above`
-      : m.provider === 'usdt_ton'
-        ? `${PE.bullet_send} Send *exactly \`${totalStr} USDT\`* (TON Jetton) to the address above`
-        : `${PE.bullet_send} Send *exactly \`${totalStr} USDT\`* (TRC-20) to the address above`;
-  const lines: string[] = [
-    heading,
-    '',
-    `*${intent.product_name}*  ×  *${intent.qty}*`,
-    `*Send EXACTLY:*  \`${totalStr} USDT\``,
-    '',
-    `\`${m.address ?? '(address not set)'}\``,
-    '',
-    sendLine,
-  ];
-  if (uniqueAmount) {
-    lines.push(
-      ``,
-      `⚠️ _أرسل *المبلغ بالضبط* \`${totalStr} USDT\` — هذا المبلغ فريد لجلستك ويمنع استخدام معاملتك من قِبل شخص آخر._`,
-    );
+  return paymentText(currentInterfaceLanguage(), 'payment.direct', {
+    product: intent.product_name,
+    qty: intent.qty,
+    total: intent.total.toFixed(2),
+    instructions: paymentText(currentInterfaceLanguage(), 'payment.chain', {
+      method: m.name,
+      address: m.address ?? '—',
+      amount: (uniqueAmount ?? intent.total).toFixed(4),
+    }),
+  });
+}
+
+function normalizeTransactionHash(value: string, provider: string) {
+  const raw = value.replace(/\s+/g, '');
+  if (provider === 'usdt_ton' && !/^(?:0x)?[a-fA-F0-9]{64}$/.test(raw)) {
+    const bytes = Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    if (bytes.length === 32) return bytes.toString('hex');
+    return raw;
   }
-  lines.push(
-    ``,
-    `${PE.bullet_paste} Paste your *Transaction Hash (TXID)* below`,
-    ``,
-  );
-  if (m.provider === 'usdt_bep20') {
-    lines.push(`${PE.note} _AA Wallet users: paste the *Bundle Hash* from BscScan, not the AA TxHash._`);
-  } else if (m.provider === 'usdt_ton') {
-    lines.push(`${PE.convert} _TON coins are automatically converted to USDT at live market rates._`);
-  } else {
-    lines.push(`${PE.convert} _TRX coins are automatically converted to USDT at live market rates._`);
-  }
-  lines.push('');
-  lines.push('*Please send your TX hash below:*');
-  return lines.join('\n');
+  return raw.toLowerCase();
 }

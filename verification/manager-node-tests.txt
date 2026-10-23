@@ -1,0 +1,23 @@
+✔ Every manager locale preserves fields; default text and callbacks fit Telegram limits (4.935324ms)
+✔ Language is selected once, deep links survive selection and user HTML is escaped (16.331905ms)
+✔ Manager setup encrypts credentials, sends SQL before activation, rejects public keys (6.641794ms)
+✔ Owner checks block forged console, grants and other store dashboards (3.697162ms)
+✔ Wallet checkout uses NSS quote and same token on confirm without client amount (2.374513ms)
+✔ Content console previews, saves a single locale, supports Premium icon, color and price (8.271109ms)
+✔ Placeholder errors preserve old copy and cached navigation avoids per-click reads/writes (3.164549ms)
+✔ Confirmation is bound to a persisted action and repeated update does not repeat a grant (3.269986ms)
+✔ Encrypted draft is user-bound and expired drafts cannot resume (3.987605ms)
+✔ Formatter preserves UTF-16 Premium entity offsets and rejects unsafe markup (0.534996ms)
+✔ NSS bridge client signs exact private path and body without redirects (0.939388ms)
+✔ Manager webhook requires its own Telegram secret and direct subscribe remains forbidden (33.572643ms)
+✔ Back navigation clears an editor draft instead of treating the next message as an old edit (3.654579ms)
+✔ An uncertain payment response keeps the same checkout reference and never confirms again automatically (2.184802ms)
+✔ Manager config quotes use the existing settings price and duration, with explicit disable (0.899329ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 464.84825

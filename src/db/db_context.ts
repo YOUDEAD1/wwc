@@ -3,13 +3,18 @@
  * يجعل كل بوت (tenant) يستخدم Supabase connection خاصه
  * بدون تعديل أي كود آخر
  */
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
 import { env } from '../env.js';
+import { measuredFetch } from '../services/networkMeter.js';
 
 type DbContext = {
   supabase: SupabaseClient;
   adminUserId: number;
+  scope: string;
+  botUsername?: string;
+  databaseUrl: string;
 };
 
 // الـ storage الذي يحفظ الـ context لكل async chain
@@ -23,8 +28,11 @@ function getDefaultContext(): DbContext {
     defaultContext = {
       supabase: createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
         auth: { persistSession: false, autoRefreshToken: false },
+        global: { fetch: measuredFetch },
       }),
       adminUserId: env.ADMIN_USER_ID,
+      scope: scopeKey(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY),
+      databaseUrl: env.SUPABASE_URL,
     };
   }
   return defaultContext;
@@ -46,21 +54,53 @@ export function runWithTenantContext<T>(
   supabaseKey: string,
   adminUserId: number,
   fn: () => Promise<T>,
+  botUsername?: string,
 ): Promise<T> {
   // cache الـ clients لتجنب إنشاء جديد في كل request
   const client = getTenantClient(supabaseUrl, supabaseKey);
-  return storage.run({ supabase: client, adminUserId }, fn);
+  return storage.run(
+    {
+      supabase: client,
+      adminUserId,
+      scope: scopeKey(supabaseUrl, supabaseKey),
+      botUsername,
+      databaseUrl: supabaseUrl,
+    },
+    fn,
+  );
 }
 
 // Cache للـ tenant clients
 const clientCache = new Map<string, SupabaseClient>();
 
 function getTenantClient(url: string, key: string): SupabaseClient {
-  const cacheKey = `${url}::${key.slice(0, 20)}`;
+  const cacheKey = scopeKey(url, key);
   if (clientCache.has(cacheKey)) return clientCache.get(cacheKey)!;
   const client = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: measuredFetch },
   });
   clientCache.set(cacheKey, client);
   return client;
+}
+function scopeKey(url: string, key: string): string {
+  return createHash('sha256')
+    .update(url + '\0' + key)
+    .digest('hex');
+}
+export function getDbScope(): string {
+  return (storage.getStore() ?? getDefaultContext()).scope;
+}
+
+export function isTenantContext() {
+  return !!storage.getStore() || process.env.IS_TENANT === 'true';
+}
+export function getContextBotUsername() {
+  return storage.getStore()?.botUsername ?? env.BOT_USERNAME;
+}
+
+export function getStoreIdentity() {
+  return createHash('sha256')
+    .update((storage.getStore() ?? getDefaultContext()).databaseUrl)
+    .digest('hex');
 }

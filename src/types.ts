@@ -6,6 +6,7 @@ export type DBUser = {
   first_name: string | null;
   last_name: string | null;
   language: Lang;
+  language_selected?: boolean;
   currency: string | null;
   balance: number;
   stock_alert: boolean;
@@ -46,6 +47,7 @@ export type DBCategory = {
 };
 
 export type DBProduct = {
+  wwc_source_id?: string | null;
   id: number;
   category_id: number | null;
   name: string;
@@ -93,6 +95,8 @@ export type DBProduct = {
   /** Optional display name for the vendor used in the auto-message. */
   delivery_vendor_label: string | null;
   active: boolean;
+  catalog_hidden?: boolean;
+  api_auto_hidden?: boolean;
   sort_order: number;
   /**
    * When true, the product is exempt from automatic sort-order moves
@@ -236,6 +240,11 @@ export type DBSupplierOrderLog = {
 };
 
 export type DBOrder = {
+  checkout_key?: string;
+  stock_reserved?: boolean;
+  is_preorder?: boolean;
+  allocated_items?: string[];
+  fulfillment_state?: string;
   id: number;
   user_id: number;
   product_id: number | null;
@@ -285,6 +294,9 @@ export type DBPromo = {
 };
 
 export type DBDeposit = {
+  quote_id?: number | null;
+  fulfilled_order_id?: number | null;
+  approval_result?: unknown;
   id: number;
   user_id: number;
   method: string;
@@ -415,6 +427,8 @@ export type DBPaymentMethod = {
   instructions: string;
   min_amount: number;
   active: boolean;
+  catalog_hidden?: boolean;
+  api_auto_hidden?: boolean;
   sort_order: number;
   provider: PaymentProvider;
   /**

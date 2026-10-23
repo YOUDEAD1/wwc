@@ -185,9 +185,7 @@ alter table public.referrals       enable row level security;
 -- =====================================================================
 -- Seed: primary admin (replace with the real ID from your .env)
 -- =====================================================================
-insert into public.admins (telegram_id, username)
-values (8004955979, 'safwantiger')
-on conflict (telegram_id) do nothing;
+-- Owner access is supplied through ADMIN_USER_ID; no third-party admin is seeded.
 
 -- Default settings seeds
 insert into public.settings (key, value) values

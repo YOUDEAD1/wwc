@@ -1,48 +1,39 @@
 import type { Composer } from 'grammy';
 import { InlineKeyboard, InputFile } from 'grammy';
-import {
-  LOCALES,
-  PRODUCTS_PER_PAGE,
-  QTY_MAX,
-  QTY_MIN,
-  type Lang,
-} from '../../config/index.js';
 import { formatPriceWithCurrency } from '../../config/currencies.js';
+import { LOCALES, PRODUCTS_PER_PAGE, QTY_MAX, QTY_MIN, type Lang } from '../../config/index.js';
 import {
+  claimProductItems,
   createOrder,
   decrementProductStock,
-  incrementProductStock,
-  getProduct,
   getOrder,
+  getProduct,
   getReferralBalance,
-  InsufficientReferralBalanceError,
   listActiveProducts,
-  claimProductItems,
-  spendReferralBalance,
   setOrderDeliveredItems,
-  readSetting,
 } from '../db/queries.js';
-import { supabase } from '../db/supabase.js';
-import {
-  applyUserPriceToProduct,
-  applyUserPriceToProducts,
-} from '../services/pricing.js';
-import {
-  nextPromoTeaser,
-  priceBreakdown,
-  resolvePromo,
-  type PromoMatch,
-} from '../services/promo.js';
-import type { DBPromo } from '../types.js';
-import { charge, credit } from '../services/wallet.js';
+import { env } from '../env.js';
+import { t as translate } from '../i18n/index.js';
+import { inlineBtn } from '../keyboards/helpers.js';
 import {
   paymentMethodKeyboard,
   productKeyboard,
   qtyKeypadKeyboard,
   shopProductsKeyboard,
 } from '../keyboards/shop.js';
-import { inlineBtn } from '../keyboards/helpers.js';
+import { logger } from '../logger.js';
 import type { AppCtx } from '../middleware/user.js';
+import * as adminLog from '../services/adminLog.js';
+import { tryApiShopAutoOrder } from '../services/apiShop.js';
+import { beginDelivery, checkout, finishDelivery } from '../services/checkout.js';
+import { createCheckoutIntent, getCheckoutIntent } from '../services/checkoutIntent.js';
+import { publicOrderId } from '../services/orderId.js';
+import { buildOrderDeliveredChunks } from '../services/orderRender.js';
+import {
+  handleDeliveryFormMessage,
+  maybeStartDeliveryFormForCtx,
+  startEditDelivery,
+} from '../services/postPurchaseDelivery.js';
 import {
   clampForTelegram,
   escapeAttr,
@@ -52,20 +43,15 @@ import {
   sanitizeButtonUrl,
   stripCustomEmojiTags,
 } from '../services/premium.js';
-import { env } from '../env.js';
-import { publicOrderId } from '../services/orderId.js';
-import { buildOrderDeliveredChunks } from '../services/orderRender.js';
-import { trySupplierAutoOrder } from '../services/supplierApi.js';
-import { tryApiShopAutoOrder } from '../services/apiShop.js';
-import * as adminLog from '../services/adminLog.js';
-import { logger } from '../logger.js';
-import { sendInvoiceEmail } from '../services/mailer.js';
-import { t as translate } from '../i18n/index.js';
+import { applyUserPriceToProduct, applyUserPriceToProducts } from '../services/pricing.js';
 import {
-  handleDeliveryFormMessage,
-  maybeStartDeliveryFormForCtx,
-  startEditDelivery,
-} from '../services/postPurchaseDelivery.js';
+  nextPromoTeaser,
+  priceBreakdown,
+  resolvePromo,
+  type PromoMatch,
+} from '../services/promo.js';
+import { trySupplierAutoOrder } from '../services/supplierApi.js';
+import type { DBPromo } from '../types.js';
 
 /**
  * Top-level Shop home — paginated all-products list. The categories
@@ -96,9 +82,17 @@ async function showShopHome(ctx: AppCtx, page = 0) {
   // clutter the body copy.
   const html = renderMdHtml(ctx.t('shop.home.header'));
   // Read layout style dynamically from settings (defaults to list)
-  const layout = await readSetting('shop_layout_style') as 'list' | 'grid' ?? 'list';
-  
-  const kb = shopProductsKeyboard(ctx.lang, rows, safePage, totalPages, layout, ctx.user.currency ?? 'USDT');
+  const { getSettingValue } = await import('../services/settings.js');
+  const layout = (getSettingValue('shop_layout_style') as 'list' | 'grid') ?? 'list';
+
+  const kb = shopProductsKeyboard(
+    ctx.lang,
+    rows,
+    safePage,
+    totalPages,
+    layout,
+    ctx.user.currency ?? 'USDT',
+  );
   if (ctx.callbackQuery) {
     await ctx.editMessageText(html, { parse_mode: 'HTML', reply_markup: kb });
   } else {
@@ -128,9 +122,7 @@ function htmlBlockquoteToMarkdown(raw: string): string | null {
 function renderStoredProductText(raw: string | null | undefined, fallbackMarkdown: string): string {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return renderMdHtml(fallbackMarkdown);
-  return STORED_HTML_RX.test(trimmed)
-    ? renderHtmlTemplate(trimmed)
-    : renderMdHtml(trimmed);
+  return STORED_HTML_RX.test(trimmed) ? renderHtmlTemplate(trimmed) : renderMdHtml(trimmed);
 }
 
 /**
@@ -161,12 +153,14 @@ function productPageText(
   const stockLabel = p.unlimited_stock ? '∞' : String(p.stock);
   const productEmoji = p.emoji_id
     ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}}`
-    : (p.emoji === '🛒' ? '' : (p.emoji ?? ''));
-  const lines: string[] = [
-    ctx.t('shop.product.line.name', { name: p.name, emoji: productEmoji }),
-  ];
+    : p.emoji === '🛒'
+      ? ''
+      : (p.emoji ?? '');
+  const lines: string[] = [ctx.t('shop.product.line.name', { name: p.name, emoji: productEmoji })];
   lines.push(
-    ctx.t('shop.product.line.price', { price: formatPriceWithCurrency(p.price, ctx.user.currency) }),
+    ctx.t('shop.product.line.price', {
+      price: formatPriceWithCurrency(p.price, ctx.user.currency),
+    }),
     ctx.t('shop.product.line.stock', { stock: stockLabel }),
     ctx.t('shop.product.line.warranty', { warranty: p.warranty ?? '—' }),
   );
@@ -185,9 +179,7 @@ function productPageText(
   //     they know the next reachable rule. We never surface a
   //     "weaker" upcoming promo on top of an active one — that
   //     would just be noise.
-  const teaserBeats = teaser
-    ? Number(teaser.discount_amount) > discount
-    : false;
+  const teaserBeats = teaser ? Number(teaser.discount_amount) > discount : false;
   if (teaser && (!eligible || teaserBeats)) {
     lines.push(
       ctx.t('shop.product.line.promo.teaser', {
@@ -209,9 +201,17 @@ function productPageText(
       }),
     );
   } else {
-    lines.push(ctx.t('shop.product.line.total', { total: formatPriceWithCurrency(total, ctx.user.currency) }));
+    lines.push(
+      ctx.t('shop.product.line.total', {
+        total: formatPriceWithCurrency(total, ctx.user.currency),
+      }),
+    );
   }
-  lines.push(ctx.t('shop.product.line.balance', { balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency) }));
+  lines.push(
+    ctx.t('shop.product.line.balance', {
+      balance: formatPriceWithCurrency(ctx.user.balance, ctx.user.currency),
+    }),
+  );
   return lines.join('\n');
 }
 
@@ -259,11 +259,7 @@ function buildProductShareUrl(productId: number): string {
  * promo is active. Centralized so the buy / pay-wallet handlers
  * can just splice it into the existing `shop.pay.title` template.
  */
-function renderPromoLine(
-  ctx: AppCtx,
-  promo: PromoMatch | null,
-  discount: number,
-): string {
+function renderPromoLine(ctx: AppCtx, promo: PromoMatch | null, discount: number): string {
   if (!promo || discount <= 0) return '';
   const label =
     promo.promo.name?.trim() ||
@@ -373,25 +369,40 @@ async function finalizeOrderDelivery(args: {
   balanceAfter: number;
   confirmationText: string;
 }): Promise<void> {
-  const { ctx, product: p, qty, total, discount, order, paidVia, balanceAfter, confirmationText } = args;
-  const preorder = isPreorder(p, qty);
-  if (!preorder) {
+  if (!(await beginDelivery(args.order))) return;
+  const {
+    ctx,
+    product: p,
+    qty,
+    total,
+    discount,
+    order,
+    paidVia,
+    balanceAfter,
+    confirmationText,
+  } = args;
+  const preorder = order.is_preorder ?? isPreorder(p, qty);
+  if (!preorder && !order.stock_reserved) {
     await decrementProductStock(p.id, qty);
     // ── Stock alert: notify admin if stock depleted or low ──
     if (!p.unlimited_stock) {
       const remaining = p.stock - qty;
       if (remaining <= 0) {
-        void adminLog.logStockAlert(ctx.api, {
-          productId: p.id,
-          productName: p.name,
-          remaining: Math.max(0, remaining),
-        }).catch((err) => logger.warn({ err }, 'logStockAlert failed'));
+        void adminLog
+          .logStockAlert(ctx.api, {
+            productId: p.id,
+            productName: p.name,
+            remaining: Math.max(0, remaining),
+          })
+          .catch((err) => logger.warn({ err }, 'logStockAlert failed'));
       } else if (remaining <= 3) {
-        void adminLog.logStockAlert(ctx.api, {
-          productId: p.id,
-          productName: p.name,
-          remaining,
-        }).catch((err) => logger.warn({ err }, 'logStockAlert failed'));
+        void adminLog
+          .logStockAlert(ctx.api, {
+            productId: p.id,
+            productName: p.name,
+            remaining,
+          })
+          .catch((err) => logger.warn({ err }, 'logStockAlert failed'));
       }
     }
   }
@@ -413,52 +424,56 @@ async function finalizeOrderDelivery(args: {
           localOrderId: order.id,
           buyerInfo: ctx.user.username ? `@${ctx.user.username}` : `tg_${ctx.user.telegram_id}`,
           onFailure: (failure) =>
-            adminLog.logSupplierOrderFailed(ctx.api, {
-              user: {
-                telegram_id: ctx.user.telegram_id,
-                username: ctx.user.username ?? null,
-                first_name: ctx.user.first_name ?? null,
-                email: ctx.user.email ?? null,
-              },
-              orderDbId: order.id,
-              orderPublicId: publicId,
-              productId: p.id,
-              productName: p.name,
-              qty,
-              total,
-              paidVia,
-              balanceAfter: Number(balanceAfter.toFixed(3)),
-              supplierName: 'API Shop',
-              supplierProductId: apiProductId,
-              reason: failure.error,
-              lowBalance: failure.lowBalance,
-            }).catch((err) => logger.warn({ err }, 'API Shop failure admin log failed')),
+            adminLog
+              .logSupplierOrderFailed(ctx.api, {
+                user: {
+                  telegram_id: ctx.user.telegram_id,
+                  username: ctx.user.username ?? null,
+                  first_name: ctx.user.first_name ?? null,
+                  email: ctx.user.email ?? null,
+                },
+                orderDbId: order.id,
+                orderPublicId: publicId,
+                productId: p.id,
+                productName: p.name,
+                qty,
+                total,
+                paidVia,
+                balanceAfter: Number(balanceAfter.toFixed(3)),
+                supplierName: 'API Shop',
+                supplierProductId: apiProductId,
+                reason: failure.error,
+                lowBalance: failure.lowBalance,
+              })
+              .catch((err) => logger.warn({ err }, 'API Shop failure admin log failed')),
         })
       : await trySupplierAutoOrder({
           localProductId: p.id,
           qty,
           localOrderId: order.id,
           onFailure: (failure) =>
-            adminLog.logSupplierOrderFailed(ctx.api, {
-              user: {
-                telegram_id: ctx.user.telegram_id,
-                username: ctx.user.username ?? null,
-                first_name: ctx.user.first_name ?? null,
-                email: ctx.user.email ?? null,
-              },
-              orderDbId: order.id,
-              orderPublicId: publicId,
-              productId: p.id,
-              productName: p.name,
-              qty,
-              total,
-              paidVia,
-              balanceAfter: Number(balanceAfter.toFixed(3)),
-              supplierName: failure.supplierName,
-              supplierProductId: failure.supplierProductId,
-              reason: failure.error,
-              lowBalance: failure.lowBalance,
-            }).catch((err) => logger.warn({ err }, 'supplier failure admin log failed')),
+            adminLog
+              .logSupplierOrderFailed(ctx.api, {
+                user: {
+                  telegram_id: ctx.user.telegram_id,
+                  username: ctx.user.username ?? null,
+                  first_name: ctx.user.first_name ?? null,
+                  email: ctx.user.email ?? null,
+                },
+                orderDbId: order.id,
+                orderPublicId: publicId,
+                productId: p.id,
+                productName: p.name,
+                qty,
+                total,
+                paidVia,
+                balanceAfter: Number(balanceAfter.toFixed(3)),
+                supplierName: failure.supplierName,
+                supplierProductId: failure.supplierProductId,
+                reason: failure.error,
+                lowBalance: failure.lowBalance,
+              })
+              .catch((err) => logger.warn({ err }, 'supplier failure admin log failed')),
         });
   const claimed = preorder
     ? []
@@ -486,10 +501,8 @@ async function finalizeOrderDelivery(args: {
   const pendingText = preorder
     ? ctx.t('shop.buy.preorder_pending')
     : ctx.t('shop.buy.delivery_pending');
-  const firstChunkBlock =
-    deliveredChunks[0]?.inlineBlock ?? `> ${pendingText}`;
-  const deliveredItemsForDb =
-    claimed.length > 0 ? claimed.join('\n') : pendingText;
+  const firstChunkBlock = deliveredChunks[0]?.inlineBlock ?? `> ${pendingText}`;
+  const deliveredItemsForDb = claimed.length > 0 ? claimed.join('\n') : pendingText;
   // Always persist `delivered_items` — even the manual-delivery
   // placeholder — so the My Orders detail screen can render the
   // order without falling back to the legacy `delivery` blob.
@@ -627,23 +640,22 @@ async function finalizeOrderDelivery(args: {
     balanceAfter: Number(balanceAfter.toFixed(3)),
     lifecycle: preorder ? 'preorder' : 'delivered',
   });
+  await finishDelivery(
+    order,
+    preorder ? 'preorder' : claimed.length ? 'delivered' : 'manual_review',
+  );
 }
 
 async function showProduct(ctx: AppCtx, productId: number) {
   const raw = await getProduct(productId);
-  if (!raw) {
+  if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
     await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
     return;
   }
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
   const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
-  const teaser = await nextPromoTeaser(
-    ctx.user.telegram_id,
-    p.id,
-    qty,
-    promo?.discount ?? 0,
-  );
+  const teaser = await nextPromoTeaser(ctx.user.telegram_id, p.id, qty, promo?.discount ?? 0);
   const shareUrl = buildProductShareUrl(p.id);
   await ctx.editMessageText(renderMdHtml(productPageText(ctx, p, qty, promo, teaser)), {
     parse_mode: 'HTML',
@@ -657,29 +669,18 @@ async function showProduct(ctx: AppCtx, productId: number) {
  * direct-pay flow after Order Delivered to drop the buyer back on
  * the qty / Buy Now page so they can buy more without re-navigating.
  */
-export async function sendProductPage(
-  ctx: AppCtx,
-  productId: number,
-): Promise<void> {
+export async function sendProductPage(ctx: AppCtx, productId: number): Promise<void> {
   const raw = await getProduct(productId);
   if (!raw) return;
   const p = await applyUserPriceToProduct(ctx.user.telegram_id, raw);
   const qty = ctx.session.qty[productId] ?? QTY_MIN;
   const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
-  const teaser = await nextPromoTeaser(
-    ctx.user.telegram_id,
-    p.id,
-    qty,
-    promo?.discount ?? 0,
-  );
+  const teaser = await nextPromoTeaser(ctx.user.telegram_id, p.id, qty, promo?.discount ?? 0);
   const shareUrl = buildProductShareUrl(p.id);
-  await ctx.reply(
-    renderMdHtml(productPageText(ctx, p, qty, promo, teaser)),
-    {
-      parse_mode: 'HTML',
-      reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
-    },
-  );
+  await ctx.reply(renderMdHtml(productPageText(ctx, p, qty, promo, teaser)), {
+    parse_mode: 'HTML',
+    reply_markup: productKeyboard(ctx.lang, p, qty, shareUrl),
+  });
 }
 
 /**
@@ -703,7 +704,7 @@ export async function sendProductPage(
  */
 async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string) {
   const raw = await getProduct(productId);
-  if (!raw) {
+  if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
     await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
     return;
   }
@@ -712,7 +713,7 @@ async function showQtyKeypad(ctx: AppCtx, productId: number, currentBuf?: string
   // Live preview qty: buffer-as-number while the user is typing,
   // else the saved qty (or QTY_MIN) so the page is never visually
   // empty before the first tap.
-  const previewQty = buf.length > 0 ? Number(buf) : ctx.session.qty[productId] ?? QTY_MIN;
+  const previewQty = buf.length > 0 ? Number(buf) : (ctx.session.qty[productId] ?? QTY_MIN);
   const promo = await resolvePromo(ctx.user.telegram_id, p.id, previewQty, p.price);
   const teaser = await nextPromoTeaser(
     ctx.user.telegram_id,
@@ -746,10 +747,7 @@ function qtyLimitForProduct(p: { unlimited_stock: boolean; stock: number }): num
   return p.stock > 0 ? Math.min(QTY_MAX, p.stock) : QTY_MAX;
 }
 
-function isPreorder(
-  p: { unlimited_stock: boolean; stock: number },
-  qty: number,
-): boolean {
+function isPreorder(p: { unlimited_stock: boolean; stock: number }, qty: number): boolean {
   return !p.unlimited_stock && p.stock < qty;
 }
 
@@ -803,7 +801,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const id = Number(ctx.match[1]);
     const direction = ctx.match[2];
     const raw = await getProduct(id);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -852,7 +850,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const id = Number(ctx.match[1]);
     const action = ctx.match[2]!;
     const raw = await getProduct(id);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -952,7 +950,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return next();
     }
     const raw = await getProduct(flow.data.productId);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       ctx.session.userFlow = undefined;
       return;
     }
@@ -967,18 +965,14 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // to a callback popup) because the user typed a message — a
       // popup wouldn't surface here.
       const warn = await ctx.reply(
-        renderMdHtml(
-          ctx.t('shop.qty.keypad.invalid', { max: ceiling }),
-        ),
+        renderMdHtml(ctx.t('shop.qty.keypad.invalid', { max: ceiling })),
         { parse_mode: 'HTML' },
       );
       // Auto-cleanup: delete the user's bad reply now and the
       // warning bubble after ~5s so the screen stays calm.
       void ctx.deleteMessage().catch(() => undefined);
       setTimeout(() => {
-        void ctx.api
-          .deleteMessage(warn.chat.id, warn.message_id)
-          .catch(() => undefined);
+        void ctx.api.deleteMessage(warn.chat.id, warn.message_id).catch(() => undefined);
       }, 5_000);
       return;
     }
@@ -996,19 +990,11 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // just deleted, so we can't editMessageText into it).
     const shareUrl = buildProductShareUrl(p.id);
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, next_, p.price);
-    const teaser = await nextPromoTeaser(
-      ctx.user.telegram_id,
-      p.id,
-      next_,
-      promo?.discount ?? 0,
-    );
-    await ctx.reply(
-      renderMdHtml(productPageText(ctx, p, next_, promo, teaser)),
-      {
-        parse_mode: 'HTML',
-        reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl),
-      },
-    );
+    const teaser = await nextPromoTeaser(ctx.user.telegram_id, p.id, next_, promo?.discount ?? 0);
+    await ctx.reply(renderMdHtml(productPageText(ctx, p, next_, promo, teaser)), {
+      parse_mode: 'HTML',
+      reply_markup: productKeyboard(ctx.lang, p, next_, shareUrl),
+    });
   });
 
   // ---- Post-purchase delivery form: per-field text capture ----
@@ -1048,10 +1034,9 @@ export function registerShop(bot: Composer<AppCtx>): void {
       // The submission is gone, the product was deleted, or the
       // delivery form was turned off mid-flight. Tell the buyer
       // gently so they can DM the admin manually.
-      await ctx.reply(
-        renderMdHtml(ctx.t('shop.delivery.edit_unavailable')),
-        { parse_mode: 'HTML' },
-      );
+      await ctx.reply(renderMdHtml(ctx.t('shop.delivery.edit_unavailable')), {
+        parse_mode: 'HTML',
+      });
     }
   });
 
@@ -1068,7 +1053,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^note:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -1097,7 +1082,10 @@ export function registerShop(bot: Composer<AppCtx>): void {
         reply_markup: kb,
       });
     } catch (err) {
-      logger.warn({ err, productId: p.id }, 'View Note HTML render failed; falling back to plain text');
+      logger.warn(
+        { err, productId: p.id },
+        'View Note HTML render failed; falling back to plain text',
+      );
       const noCustomEmojiHtml = clampForTelegram(stripCustomEmojiTags(safeHtml));
       try {
         await ctx.editMessageText(noCustomEmojiHtml, {
@@ -1105,7 +1093,10 @@ export function registerShop(bot: Composer<AppCtx>): void {
           reply_markup: kb,
         });
       } catch (retryErr) {
-        logger.warn({ err: retryErr, productId: p.id }, 'View Note HTML retry failed; falling back to plain text');
+        logger.warn(
+          { err: retryErr, productId: p.id },
+          'View Note HTML retry failed; falling back to plain text',
+        );
         const plain = htmlToPlain(safeHtml).slice(0, 3900);
         await ctx.editMessageText(plain, { reply_markup: kb });
       }
@@ -1127,7 +1118,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
     try {
       const id = Number(ctx.match[1]);
       const raw = await getProduct(id);
-      if (!raw) {
+      if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
         await ctx.reply(
           '⚠️ <b>Product no longer available.</b>\n\nThis product was removed by the admin.',
           { parse_mode: 'HTML' },
@@ -1259,7 +1250,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^pay:referral:(\d+)$/, async (ctx) => {
     const productId = Number(ctx.match[1]);
     const raw = await getProduct(productId);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -1306,7 +1297,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^pay:referral:do:(\d+)$/, async (ctx) => {
     const productId = Number(ctx.match[1]);
     const raw = await getProduct(productId);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -1335,39 +1326,19 @@ export function registerShop(bot: Composer<AppCtx>): void {
     try {
       const total = 0;
       const discount = p.price * qty;
-      const order = await createOrder({
-        user_id: ctx.from!.id,
-        product_id: productId,
-        product_name: p.name,
-        qty,
-        unit_price: p.price,
-        total,
-        discount,
-        promo_id: null,
-        delivery: ctx.t('shop.referral.delivery', { product_id: p.id, qty }),
-      });
-      try {
-        await spendReferralBalance({
+      const committed = await checkout(
+        {
           user_id: ctx.user.telegram_id,
           product_id: p.id,
-          order_id: order.id,
-          referral_cost: referral.requiredTotal,
-        });
-      } catch (spendErr) {
-        logger.warn(
-          { err: spendErr, order_id: order.id, product_id: p.id, user: ctx.user.telegram_id },
-          'referral payment failed - rolling back order',
-        );
-        await supabase.from('orders').delete().eq('id', order.id);
-        if (spendErr instanceof InsufficientReferralBalanceError) {
-          const latest = await getReferralPaymentState(ctx, p, qty);
-          if (latest) {
-            await showLowReferralBalance(ctx, p, latest);
-            return;
-          }
-        }
-        throw spendErr;
-      }
+          qty,
+          unit_price: p.price,
+          total,
+          discount,
+        },
+        'telegram:' + ctx.chat!.id + ':' + ctx.callbackQuery.message!.message_id + ':referral',
+        'referral',
+      );
+      const order = committed.order;
       const confirmationText = ctx.t('shop.referral.confirmed', {
         name: p.name,
         qty,
@@ -1400,7 +1371,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^buy:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -1411,7 +1382,9 @@ export function registerShop(bot: Composer<AppCtx>): void {
     const referral = await getReferralPaymentState(ctx, p, qty);
     const emojiStr = p.emoji_id
       ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}}`
-      : (p.emoji === '🛒' ? '' : (p.emoji ?? ''));
+      : p.emoji === '🛒'
+        ? ''
+        : (p.emoji ?? '');
     const text = ctx.t('shop.pay.title', {
       name: p.name,
       qty,
@@ -1442,7 +1415,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^pay:wallet:(\d+)$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -1464,9 +1437,7 @@ export function registerShop(bot: Composer<AppCtx>): void {
             discount: formatPriceWithCurrency(discount, ctx.user.currency),
           })
         : '';
-    const emojiStr = p.emoji_id
-      ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}}`
-      : (p.emoji ?? '');
+    const emojiStr = p.emoji_id ? `{{ce:${p.emoji_id}|${p.emoji || '📦'}}}` : (p.emoji ?? '');
     const text = ctx.t('shop.pay.confirm', {
       name: p.name,
       qty,
@@ -1476,7 +1447,8 @@ export function registerShop(bot: Composer<AppCtx>): void {
       discount_line: discountLine,
     });
     const kb = new InlineKeyboard();
-    inlineBtn(kb, ctx.lang, 'confirm_pay', `pay:wallet:do:${id}`);
+    const confirmation = createCheckoutIntent(ctx, id, qty, total);
+    inlineBtn(kb, ctx.lang, 'confirm_pay', `pay:wallet:do:${id}:${confirmation}`);
     kb.row();
     inlineBtn(kb, ctx.lang, 'cancel_pay', `buy:${id}`);
     await ctx.editMessageText(renderMdHtml(text), {
@@ -1487,10 +1459,10 @@ export function registerShop(bot: Composer<AppCtx>): void {
 
   // Actually performs the wallet charge. Only reachable after the
   // user confirmed via the `pay:wallet:<id>` confirmation card.
-  bot.callbackQuery(/^pay:wallet:do:(\d+)$/, async (ctx) => {
+  bot.callbackQuery(/^pay:wallet:do:(\d+)(?::([a-f0-9]{16}))?$/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const raw = await getProduct(id);
-    if (!raw) {
+    if (!raw || !raw.active || raw.catalog_hidden || raw.api_auto_hidden) {
       await ctx.answerCallbackQuery({ text: ctx.t('err.unknown_action') });
       return;
     }
@@ -1502,13 +1474,24 @@ export function registerShop(bot: Composer<AppCtx>): void {
     // checkout so users without a saved email can still buy. The
     // 12-hour nag (see `services/emailNag.ts`) handles the soft
     // reminder without blocking the purchase flow.
-    const qty = ctx.session.qty[id] ?? QTY_MIN;
+    let intent;
+    try {
+      intent = getCheckoutIntent(ctx, ctx.match[2], id);
+    } catch {
+      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.failed'), show_alert: true });
+      return;
+    }
+    const qty = intent?.qty ?? ctx.session.qty[id] ?? QTY_MIN;
     // Resolve the promo *server-side* — never trust the client.
     // The product page may have rendered a promo for a different
     // qty since the user tapped Buy Now; we always recompute here.
     const promo = await resolvePromo(ctx.user.telegram_id, p.id, qty, p.price);
     const breakdown = priceBreakdown(p.price, qty, promo);
     const total = breakdown.total;
+    if (intent && Math.abs(intent.total - total) > 0.001) {
+      await ctx.answerCallbackQuery({ text: ctx.t('shop.buy.failed'), show_alert: true });
+      return;
+    }
     const discount = breakdown.discount;
     if (ctx.user.balance < total) {
       await ctx.answerCallbackQuery({
@@ -1518,23 +1501,24 @@ export function registerShop(bot: Composer<AppCtx>): void {
       return;
     }
     try {
-      const order = await createOrder({
-        user_id: ctx.from!.id,
-        product_id: id,
-        product_name: p.name,
-        qty,
-        unit_price: p.price,
-        total,
-        discount,
-        promo_id: promo?.promo.id ?? null,
-        delivery: `Order #${id}-${qty}`,
-      });
-      const newBalance = await charge(
-        ctx.from!.id,
-        total,
-        ctx.user.balance,
-        `order:${order.id}`,
+      const committed = await checkout(
+        {
+          user_id: ctx.user.telegram_id,
+          product_id: id,
+          qty,
+          unit_price: p.price,
+          total,
+          discount,
+          promo_id: promo?.promo.id ?? null,
+        },
+        'telegram:' +
+          ctx.chat!.id +
+          ':' +
+          (ctx.match[2] ?? ctx.callbackQuery.message!.message_id) +
+          ':wallet',
       );
+      const order = committed.order,
+        newBalance = committed.balance;
       ctx.user.balance = newBalance;
       const confirmationText = ctx.t('shop.buy.payment_verified', {
         total: total.toFixed(2),
@@ -1563,7 +1547,10 @@ export function registerShop(bot: Composer<AppCtx>): void {
       const errMsg = (e as Error)?.message ?? '';
       if (errMsg.startsWith('API_ERROR: ')) {
         const apiErrorText = errMsg.replace('API_ERROR: ', '');
-        logger.error({ err: e, product_id: id, user: ctx.user.telegram_id }, 'pay:wallet API purchase failed');
+        logger.error(
+          { err: e, product_id: id, user: ctx.user.telegram_id },
+          'pay:wallet API purchase failed',
+        );
         try {
           await ctx.answerCallbackQuery({
             text: `❌ Error: ${apiErrorText}`,
@@ -1609,5 +1596,4 @@ export function registerShop(bot: Composer<AppCtx>): void {
   bot.callbackQuery(/^noop:/, async (ctx) => {
     await ctx.answerCallbackQuery();
   });
-
 }

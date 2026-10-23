@@ -13,8 +13,12 @@
  * 10-second timeout and structured error handling.
  */
 
-import { readSetting, setSetting, deleteSetting } from '../db/queries.js';
+import { createHash, randomUUID } from 'node:crypto';
+import { deleteSetting, readSetting, setSetting } from '../db/queries.js';
 import { logger } from '../logger.js';
+import { del, remember } from './cache.js';
+import { measuredFetch } from './networkMeter.js';
+import { freeShop, managedShop, requirePaidCapability } from '../platform/policy.js';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -115,19 +119,32 @@ export function decodeConnectionCode(code: string): { api_key: string; api_url: 
 // ─────────────────────────────────────────────────────────────────
 
 export async function getConnection(): Promise<ApiConnection | null> {
-  const raw = await readSetting(SETTINGS_KEY);
-  if (!raw || typeof raw !== 'object') return null;
-  const obj = raw as Record<string, unknown>;
-  if (!obj.api_key || !obj.api_url) return null;
-  return {
-    api_key: String(obj.api_key),
-    api_url: String(obj.api_url),
-    connected: Boolean(obj.connected),
-    connected_at: String(obj.connected_at ?? ''),
-  };
+  const pinned =
+    managedShop() && process.env.TENANT_SOURCE_KEY && process.env.TENANT_SOURCE_URL
+      ? {
+          api_key: process.env.TENANT_SOURCE_KEY,
+          api_url: process.env.TENANT_SOURCE_URL,
+          connected: true,
+          connected_at: '',
+        }
+      : null;
+  if (freeShop() && pinned) return pinned;
+  return remember('api-connection', 60000, async () => {
+    const raw = await readSetting(SETTINGS_KEY);
+    if (!raw || typeof raw !== 'object') return pinned;
+    const obj = raw as Record<string, unknown>;
+    if (!obj.api_key || !obj.api_url) return null;
+    return {
+      api_key: String(obj.api_key),
+      api_url: String(obj.api_url),
+      connected: Boolean(obj.connected),
+      connected_at: String(obj.connected_at ?? ''),
+    };
+  });
 }
 
 export async function saveConnection(api_key: string, api_url: string): Promise<void> {
+  requirePaidCapability();
   const conn: ApiConnection = {
     api_key,
     api_url,
@@ -135,10 +152,13 @@ export async function saveConnection(api_key: string, api_url: string): Promise<
     connected_at: new Date().toISOString(),
   };
   await setSetting(SETTINGS_KEY, conn);
+  del('api-connection');
 }
 
 export async function deleteConnection(): Promise<void> {
+  requirePaidCapability();
   await deleteSetting(SETTINGS_KEY);
+  del('api-connection');
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -150,16 +170,29 @@ async function apiGet<T>(
   path: string,
 ): Promise<{ ok: true; data: T } | { ok: false; error: string; status?: number }> {
   const url = `${conn.api_url}${path}`;
+  const ck =
+    'http-get:' +
+    createHash('sha256')
+      .update(url + '\0' + conn.api_key)
+      .digest('hex');
+  const saved = httpRepresentations.get(ck);
   try {
-    const res = await fetch(url, {
+    const res = await measuredFetch(url, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${conn.api_key}`,
         Accept: 'application/json',
+        ...(saved?.etag ? { 'If-None-Match': saved.etag } : {}),
       },
       signal: AbortSignal.timeout(10_000),
     });
-    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (res.status === 304 && saved) return { ok: true, data: structuredClone(saved.body) as T };
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (res.ok && res.headers.get('etag')) {
+      if (httpRepresentations.size >= 128)
+        httpRepresentations.delete(httpRepresentations.keys().next().value!);
+      httpRepresentations.set(ck, { etag: res.headers.get('etag')!, body });
+    }
     if (!res.ok) {
       return {
         ok: false,
@@ -179,20 +212,26 @@ async function apiPost<T>(
   conn: ApiConnection,
   path: string,
   body: Record<string, unknown>,
-): Promise<{ ok: true; data: T } | { ok: false; error: string; status?: number; raw?: Record<string, unknown> }> {
+): Promise<
+  | { ok: true; data: T }
+  | { ok: false; error: string; status?: number; raw?: Record<string, unknown> }
+> {
   const url = `${conn.api_url}${path}`;
   try {
-    const res = await fetch(url, {
+    const res = await measuredFetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${conn.api_key}`,
         'Content-Type': 'application/json',
+        ...(typeof body.idempotency_key === 'string'
+          ? { 'Idempotency-Key': body.idempotency_key }
+          : {}),
         Accept: 'application/json',
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
     });
-    const json = await res.json().catch(() => ({})) as Record<string, unknown>;
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok || json.error) {
       return {
         ok: false,
@@ -229,34 +268,40 @@ export async function testConnection(
 /** Fetch all visible products. */
 export async function fetchProducts(
   conn: ApiConnection,
-): Promise<{ ok: true; products: ApiProduct[] } | { ok: false; error: string }> {
-  const res = await apiGet<{ success: boolean; products: any[] }>(conn, '/products');
-  if (!res.ok) return { ok: false, error: res.error };
-  
-  const mapped: ApiProduct[] = (res.data.products ?? []).map((p: any) => {
-    const yourPrice = p.your_price !== null && p.your_price !== undefined ? Number(p.your_price) : Number(p.store_price);
-    const basePrice = Number(p.store_price);
-    let stock = -1;
-    if (p.stock !== 'unlimited' && p.stock !== null && p.stock !== undefined) {
-      const parsedStock = Number(p.stock);
-      if (Number.isFinite(parsedStock)) {
-        stock = parsedStock;
+): Promise<{ ok: true; products: ApiProduct[]; complete: boolean } | { ok: false; error: string }> {
+  const identity = createHash('sha256')
+    .update(conn.api_url + '\0' + conn.api_key)
+    .digest('hex');
+  return remember('upstream-catalog:' + identity, 45000, async () => {
+    const products: ApiProduct[] = [];
+    const ids = new Set<string>();
+    let offset = 0;
+    for (let page = 0; page < 2000; page++) {
+      const res = await apiGet<any>(conn, '/products?limit=500&offset=' + offset + '&compact=1');
+      if (!res.ok) throw new Error(res.error);
+      if (!Array.isArray(res.data.products)) throw new Error('Invalid catalog response');
+      const rows = res.data.products;
+      if (!rows.length) return { ok: true as const, products, complete: true };
+      let added = 0;
+      for (const raw of rows) {
+        const p = normalizeApiProduct(raw);
+        if (ids.has(p.id)) continue;
+        ids.add(p.id);
+        products.push(p);
+        added++;
       }
+      if (!added) return { ok: true as const, products, complete: false };
+      offset += rows.length;
+      // A total equal to a full page is ambiguous in old servers; probe the next page.
+      const total = Number(res.data.total);
+      if (Number.isFinite(total) && total > rows.length && offset >= total)
+        return { ok: true as const, products, complete: true };
     }
-    return {
-      id: String(p.id),
-      name_en: p.name_en || '',
-      name_ar: p.name_ar || undefined,
-      base_price: basePrice,
-      your_price: yourPrice,
-      stock,
-      is_manual: Boolean(p.is_manual),
-      emoji: p.emoji || undefined,
-      emoji_id: p.custom_emoji_id || undefined,
-      description: p.desc_en || p.description || undefined,
-    };
-  });
-  return { ok: true, products: mapped };
+    return { ok: true as const, products, complete: false };
+  }).catch((err) => ({
+    ok: false as const,
+    error: err instanceof Error ? err.message : String(err),
+  }));
 }
 
 /** Fetch a single product by ID. */
@@ -264,31 +309,10 @@ export async function fetchProduct(
   conn: ApiConnection,
   productId: string,
 ): Promise<{ ok: true; product: ApiProduct } | { ok: false; error: string }> {
-  const res = await apiGet<{ success: boolean; product: any }>(conn, `/product/${productId}`);
-  if (!res.ok) return { ok: false, error: res.error };
-  const p = res.data.product;
-  const yourPrice = p.your_price !== null && p.your_price !== undefined ? Number(p.your_price) : Number(p.store_price);
-  const basePrice = Number(p.store_price);
-  let stock = -1;
-  if (p.stock !== 'unlimited' && p.stock !== null && p.stock !== undefined) {
-    const parsedStock = Number(p.stock);
-    if (Number.isFinite(parsedStock)) {
-      stock = parsedStock;
-    }
-  }
-  const mapped: ApiProduct = {
-    id: String(p.id),
-    name_en: p.name_en || '',
-    name_ar: p.name_ar || undefined,
-    base_price: basePrice,
-    your_price: yourPrice,
-    stock,
-    is_manual: Boolean(p.is_manual),
-    emoji: p.emoji || undefined,
-    emoji_id: p.custom_emoji_id || undefined,
-    description: p.desc_en || p.description || undefined,
-  };
-  return { ok: true, product: mapped };
+  const res = await apiGet<any>(conn, '/product/' + encodeURIComponent(productId));
+  if (!res.ok) return res;
+  if (!res.data.product) return { ok: false, error: 'Invalid product response' };
+  return { ok: true, product: normalizeApiProduct(res.data.product) };
 }
 
 /** Fetch current API key balance. */
@@ -306,6 +330,7 @@ export async function purchase(
   productId: string,
   qty: number,
   buyerInfo: string,
+  requestId: string = randomUUID(),
 ): Promise<
   | { ok: true; data: ApiPurchaseResult }
   | { ok: false; error: string; status?: number; raw?: Record<string, unknown> }
@@ -314,8 +339,23 @@ export async function purchase(
     product_id: productId,
     qty,
     buyer_info: buyerInfo,
+    request_id: requestId,
+    idempotency_key: requestId,
   });
-  return res;
+  if (!res.ok) return res;
+  const data = res.data as any;
+  return {
+    ok: true,
+    data: {
+      ...data,
+      success: true,
+      codes: data.codes ?? data.items ?? [],
+      total_price: Number(data.total_price ?? data.total ?? 0),
+      new_balance: Number(data.new_balance ?? data.balance_after ?? data.balance ?? 0),
+      order_id: String(data.order_id ?? ''),
+      status: data.status ?? 'paid',
+    },
+  };
 }
 
 /** Fetch recent API orders. */
@@ -323,7 +363,10 @@ export async function fetchOrders(
   conn: ApiConnection,
   limit = 10,
 ): Promise<{ ok: true; orders: ApiOrder[] } | { ok: false; error: string }> {
-  const res = await apiGet<{ success: boolean; orders: ApiOrder[] }>(conn, `/orders?limit=${limit}`);
+  const res = await apiGet<{ success: boolean; orders: ApiOrder[] }>(
+    conn,
+    `/orders?limit=${limit}`,
+  );
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, orders: res.data.orders ?? [] };
 }
@@ -334,5 +377,60 @@ export async function fetchMyPrices(
 ): Promise<{ ok: true; prices: ApiPriceEntry[] } | { ok: false; error: string }> {
   const res = await apiGet<{ success: boolean; prices: ApiPriceEntry[] }>(conn, '/my_prices');
   if (!res.ok) return { ok: false, error: res.error };
-  return { ok: true, prices: res.data.prices ?? [] };
+  return { ok: true, prices: res.data.prices ?? (res.data as any).custom_products ?? [] };
+}
+
+function normalizeApiProduct(p: any): ApiProduct {
+  const base = Number(p.store_price ?? p.base_price ?? p.price ?? 0),
+    your = Number(p.your_price ?? base);
+  if (
+    p.id === undefined ||
+    !Number.isFinite(base) ||
+    !Number.isFinite(your) ||
+    base < 0 ||
+    your < 0
+  )
+    throw new Error('Invalid product data');
+  return {
+    id: String(p.id),
+    name_en: String(p.name_en ?? p.name ?? ''),
+    name_ar: p.name_ar,
+    base_price: base,
+    your_price: your,
+    stock:
+      p.stock === 'unlimited' || p.stock === null || Number(p.stock) < 0
+        ? 'unlimited'
+        : Math.max(0, Number(p.stock ?? 0)),
+    is_manual: Boolean(p.is_manual),
+    emoji: p.emoji,
+    emoji_id: p.custom_emoji_id ?? p.emoji_id,
+    description: p.desc_en ?? p.description,
+  };
+}
+
+const httpRepresentations = new Map<string, { etag: string; body: unknown }>();
+
+export async function recoverPurchase(
+  conn: ApiConnection,
+  requestId: string,
+): Promise<ApiPurchaseResult | null> {
+  return remember(
+    'nss-recovery:' +
+      createHash('sha256')
+        .update(conn.api_url + '\0' + conn.api_key + '\0' + requestId)
+        .digest('hex'),
+    60000,
+    async () => {
+      const res = await apiGet<{ status: string; code: number; data?: ApiPurchaseResult }>(
+        conn,
+        '/platform_request/' + encodeURIComponent(requestId),
+      );
+      return res.ok &&
+        res.data.status === 'done' &&
+        res.data.code === 200 &&
+        Array.isArray(res.data.data?.codes)
+        ? res.data.data!
+        : null;
+    },
+  );
 }

@@ -41,25 +41,25 @@ function getMasterDb(): SupabaseClient {
 // =========================================================
 
 async function settingsGet(key: string): Promise<unknown> {
-  const { data } = await getMasterDb()
+  const { data, error } = await getMasterDb()
     .from('settings')
     .select('value')
     .eq('key', key)
-    .single();
+    .maybeSingle();
+  if (error) throw error;
   return data?.value ?? null;
 }
 
 async function settingsSet(key: string, value: unknown): Promise<void> {
-  await getMasterDb()
+  const { error } = await getMasterDb()
     .from('settings')
     .upsert({ key, value }, { onConflict: 'key' });
+  if (error) throw error;
 }
 
 async function settingsDel(key: string): Promise<void> {
-  await getMasterDb()
-    .from('settings')
-    .delete()
-    .eq('key', key);
+  const { error } = await getMasterDb().from('settings').delete().eq('key', key);
+  if (error) throw error;
 }
 
 function generateId(): string {
@@ -88,22 +88,26 @@ export async function ensureTenantsTable(): Promise<void> {
 
 export async function listTenants(): Promise<Tenant[]> {
   const ids = await getIdList();
-  const tenants: Tenant[] = [];
-  for (const id of ids) {
-    const t = await settingsGet(`tenant:${id}`);
-    if (t) tenants.push(t as Tenant);
+  if (!ids.length) return [];
+  const rows: Tenant[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await getMasterDb()
+      .from('settings')
+      .select('value')
+      .in(
+        'key',
+        ids.slice(i, i + 100).map((id) => 'tenant:' + id),
+      );
+    if (error) throw error;
+    rows.push(...(data ?? []).map((r) => r.value as Tenant));
   }
-  return tenants.sort((a, b) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  return rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
 export async function listActiveTenants(): Promise<Tenant[]> {
   const all = await listTenants();
   const now = new Date();
-  return all.filter(
-    (t) => t.status === 'active' && new Date(t.subscription_end) > now,
-  );
+  return all.filter((t) => t.status === 'active' && new Date(t.subscription_end) > now);
 }
 
 export async function getTenant(id: string): Promise<Tenant | null> {
@@ -146,42 +150,24 @@ export async function addTenant(input: {
     updated_at: now.toISOString(),
   };
 
-  await settingsSet(`tenant:${id}`, tenant);
-  const ids = await getIdList();
-  await setIdList([...ids, id]);
+  await mutateTenant('add', id, tenant);
   return tenant;
 }
 
 export async function extendTenant(id: string, days: number): Promise<Tenant> {
-  const tenant = await getTenant(id);
-  if (!tenant) throw new Error('Tenant not found');
-  const current = new Date(tenant.subscription_end);
-  const base = current > new Date() ? current : new Date();
-  const newEnd = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
-  const updated: Tenant = {
-    ...tenant,
-    subscription_end: newEnd.toISOString(),
-    status: 'active',
-    updated_at: new Date().toISOString(),
-  };
-  await settingsSet(`tenant:${id}`, updated);
-  return updated;
+  if (!Number.isInteger(days) || days < 1) throw Error('Invalid subscription days');
+  const result = await mutateTenant('extend', id, { days });
+  const { launchTenantBot } = await import('./manager.js');
+  await launchTenantBot(result);
+  return result;
 }
 
 export async function setTenantStatus(id: string, status: TenantStatus): Promise<void> {
-  const tenant = await getTenant(id);
-  if (!tenant) return;
-  await settingsSet(`tenant:${id}`, {
-    ...tenant,
-    status,
-    updated_at: new Date().toISOString(),
-  });
+  await mutateTenant('status', id, { status });
 }
 
 export async function deleteTenant(id: string): Promise<void> {
-  await settingsDel(`tenant:${id}`);
-  const ids = await getIdList();
-  await setIdList(ids.filter((i) => i !== id));
+  await mutateTenant('delete', id, {});
 }
 
 export async function getTenantStats(tenant: Tenant): Promise<{
@@ -189,22 +175,21 @@ export async function getTenantStats(tenant: Tenant): Promise<{
   orders: number;
   revenue: number;
 }> {
-  try {
-    const db = createClient(tenant.supabase_url, tenant.supabase_service_key, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const [usersRes, ordersRes] = await Promise.all([
-      db.from('users').select('telegram_id', { count: 'exact', head: true }),
-      db.from('orders').select('total').eq('status', 'paid'),
-    ]);
-    return {
-      users: usersRes.count ?? 0,
-      orders: ordersRes.data?.length ?? 0,
-      revenue: (ordersRes.data ?? []).reduce((s, o) => s + Number(o.total ?? 0), 0),
-    };
-  } catch {
-    return { users: 0, orders: 0, revenue: 0 };
-  }
+  const db=createClient(tenant.supabase_url,tenant.supabase_service_key,{auth:{persistSession:false,autoRefreshToken:false}});
+  const {data,error}=await db.rpc('shop_statistics');if(error)throw error;
+  return {users:Number(data.users),orders:Number(data.orders),revenue:Number(data.revenue)};
 }
 
-export const TENANTS_MIGRATION_SQL = '-- No migration needed. Tenant data stored in settings table.';
+export const TENANTS_MIGRATION_SQL =
+  '-- No migration needed. Tenant data stored in settings table.';
+async function mutateTenant(action: string, id: string, payload: unknown): Promise<Tenant> {
+  const { data, error } = await getMasterDb().rpc('tenant_registry_mutation', {
+    p_action: action,
+    p_id: id,
+    p_payload: payload,
+  });
+  if (error) throw error;
+  const { invalidateTenantGateways } = await import('../services/resellerApiHttp.js');
+  invalidateTenantGateways();
+  return data as Tenant;
+}

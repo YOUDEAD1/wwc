@@ -1,0 +1,68 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> safwantiger-shop-bot@1.0.0 lint
+> eslint .
+
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/scratch-scripts/find-purchase.ts
+  2:8  warning  'path' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/db/queries.ts
+    58:16  warning  'ensureReferralRecord' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  1340:12  warning  'err' is defined but never used                                                         @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/handlers/admin/index.ts
+   1264:10  warning  'adminApiKeyboard' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+   8115:10  warning  'telegramQuoteToMarkdown' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  11252:18  warning  'apiProductName' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/handlers/profile.ts
+    85:7   warning  'EMAIL_PDF_PATH' is assigned a value but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+   131:10  warning  'autoDeleteMessage' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+   216:16  warning  'showEmailHub' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+   327:7   warning  'EMAIL_RE' is assigned a value but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+   454:16  warning  'sendRetroactiveInvoiceForOrder' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  1221:18  warning  'buildPriceListMailPdf' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/handlers/shop.ts
+  106:10  warning  'htmlBlockquoteToMarkdown' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  378:5   warning  'discount' is assigned a value but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/handlers/topup.ts
+  1338:75  warning  'tag' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/middleware/user.ts
+  70:16  warning  'sendReferralNotification' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/services/apiShop.ts
+  149:19  warning  'oldCost' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  685:14  warning  'err' is defined but never used                                                     @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/services/binance.ts
+  225:9  warning  'sig' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/services/forceSub.ts
+  180:12  warning  'err' is defined but never used                                                            @typescript-eslint/no-unused-vars
+  210:9   warning  'defaultMessage' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/services/postPurchaseDelivery.ts
+  295:9  warning  'fieldSummary' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/services/publicFeed.ts
+  22:7  warning  'CART_FALLBACK' is assigned a value but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+  23:7  warning  'TIGER_STOCK_CHAT' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/services/resellerApi.ts
+   935:16  warning  'deleteOrder' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  1050:7   warning  'balanceAfter' is never reassigned. Use 'const' instead                        prefer-const
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/tenants/store.ts
+  60:16  warning  'settingsDel' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  75:16  warning  'setIdList' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+
+/workspace/scratch/611bb45bcc11/capacity-update/WWC/src/test-reseller-multitenant.ts
+  3:32  warning  'getDb' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+✖ 29 problems (0 errors, 29 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

@@ -1,0 +1,266 @@
+[
+  {
+    "key": "platform.required",
+    "defaults": {
+      "en": "This feature requires a subscription. Free stores sell NSS products; you may edit names, descriptions, prices and margins.",
+      "ar": "هذه الميزة تحتاج اشتراكًا. المجاني يبيع منتجات NSS، ويمكنك تعديل الاسم والوصف والسعر ونسبة الربح.",
+      "vi": "Tính năng này cần đăng ký. Cửa hàng miễn phí bán hàng NSS và cho sửa tên, mô tả, giá, lợi nhuận.",
+      "zh": "此功能需要订阅。免费商店销售 NSS 商品，可修改名称、描述、售价和利润率。"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.subscribe",
+    "defaults": {
+      "en": "💎 Subscribe",
+      "ar": "💎 اشتراك",
+      "vi": "💎 Đăng ký",
+      "zh": "💎 订阅"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.guide",
+    "defaults": {
+      "en": "📘 Store guide",
+      "ar": "📘 دليل المتجر",
+      "vi": "📘 Hướng dẫn",
+      "zh": "📘 商店指南"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.plan",
+    "defaults": {
+      "en": "Plan",
+      "ar": "الخطة",
+      "vi": "Gói",
+      "zh": "套餐"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.free",
+    "defaults": {
+      "en": "Free · NSS products",
+      "ar": "مجاني · منتجات NSS",
+      "vi": "Miễn phí · hàng NSS",
+      "zh": "免费 · NSS 商品"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.paid",
+    "defaults": {
+      "en": "Paid · full store admin",
+      "ar": "مدفوع · إدارة كاملة",
+      "vi": "Trả phí · quản trị đầy đủ",
+      "zh": "付费 · 完整管理"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.back",
+    "defaults": {
+      "en": "⬅️ Admin panel",
+      "ar": "⬅️ لوحة الأدمن",
+      "vi": "⬅️ Quản trị",
+      "zh": "⬅️ 管理面板"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.folders.0",
+    "defaults": {
+      "en": "🚀 Start & store",
+      "ar": "🚀 البداية والمتجر",
+      "vi": "🚀 Bắt đầu",
+      "zh": "🚀 开始与商店"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.folders.1",
+    "defaults": {
+      "en": "🛍 Selling & prices",
+      "ar": "🛍 البيع والأسعار",
+      "vi": "🛍 Bán hàng và giá",
+      "zh": "🛍 销售与价格"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.folders.2",
+    "defaults": {
+      "en": "💳 Deposits & orders",
+      "ar": "💳 الإيداع والطلبات",
+      "vi": "💳 Nạp tiền và đơn",
+      "zh": "💳 充值与订单"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.folders.3",
+    "defaults": {
+      "en": "🎨 Texts & buttons",
+      "ar": "🎨 النصوص والأزرار",
+      "vi": "🎨 Văn bản và nút",
+      "zh": "🎨 文字与按钮"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.folders.4",
+    "defaults": {
+      "en": "🔌 Developer API",
+      "ar": "🔌 API للمطورين",
+      "vi": "🔌 API lập trình",
+      "zh": "🔌 开发者 API"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.folders.5",
+    "defaults": {
+      "en": "💎 Subscription",
+      "ar": "💎 الاشتراك",
+      "vi": "💎 Đăng ký",
+      "zh": "💎 订阅"
+    },
+    "folder": 10,
+    "button": true
+  },
+  {
+    "key": "platform.help.0",
+    "defaults": {
+      "en": "Customers use /start and you use /admin. WWC runs your store on a separate host; NSS manages activation and subscriptions.",
+      "ar": "العميل يفتح /start، وأنت تفتح /admin. WWC يشغّل متجرك على استضافة منفصلة، وNSS يدير التفعيل والاشتراك.",
+      "vi": "Khách mở /start; chủ mở /admin. WWC chạy cửa hàng riêng; NSS quản lý kích hoạt và đăng ký.",
+      "zh": "客户使用 /start，您使用 /admin。WWC 在独立主机运行商店，NSS 管理激活和订阅。"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.help.1",
+    "defaults": {
+      "en": "Free stores import NSS products and stock. You can edit the name, description, selling price and margin. Adding products, accounts, stock or other suppliers requires a subscription. Hidden or unavailable source products cannot be purchased.",
+      "ar": "المجاني يجلب منتجات NSS ومخزونها. يمكنك تعديل الاسم والوصف والسعر ونسبة الربح. إضافة المنتجات والحسابات والمخزون والموردين تحتاج اشتراكًا. المنتج المخفي أو غير المتوفر عند المصدر لا يقبل الشراء.",
+      "vi": "Gói miễn phí nhập sản phẩm NSS. Bạn có thể sửa tên, mô tả, giá và lợi nhuận. Thêm hàng, tài khoản, kho hoặc nhà cung cấp cần trả phí. Hàng ẩn hoặc hết hàng không thể mua.",
+      "zh": "免费套餐从 NSS 获取商品和库存。可修改名称、描述、售价和利润率；添加商品、账户、库存或供应商需要订阅。来源隐藏或缺货时不能购买。"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.help.2",
+    "defaults": {
+      "en": "Customers fund wallets in your store. NSS purchases use your separate NSS supplier wallet. Revenue is paid sales; known supplier profit subtracts recorded supplier costs before other expenses.",
+      "ar": "العميل يشحن محفظته داخل متجرك. شراء منتجات NSS يخصم من رصيدك المستقل عند NSS. الإيراد هو قيمة المبيعات المدفوعة، والربح المعروف يطرح تكلفة المورد المسجلة قبل بقية المصاريف.",
+      "vi": "Khách nạp vào ví cửa hàng. Chi phí NSS trừ từ ví NSS riêng của chủ. Doanh thu là đơn đã trả; lợi nhuận đã biết trừ chi phí nhà cung cấp được ghi, chưa trừ chi phí khác.",
+      "zh": "客户充值到本店钱包。NSS 采购使用店主独立的 NSS 钱包。收入是已付款销售额，已知利润减去已记录的供应商成本，尚未扣除其他费用。"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.help.3",
+    "defaults": {
+      "en": "Customize contains folders for start, shopping, deposits, settings and messages. Select the visible text or button, choose its language, preview and save. Product Premium emoji appears on product buttons.",
+      "ar": "التخصيص يحتوي مجلدات البداية والشراء والإيداع والإعدادات والرسائل. اختر النص أو الزر ثم اللغة، وعدّل وعاين واحفظ. إيموجي Premium للمنتج يظهر في زر المنتج.",
+      "vi": "Tùy chỉnh có các thư mục bắt đầu, mua, nạp tiền và cài đặt. Chọn văn bản hoặc nút, chọn ngôn ngữ, xem trước rồi lưu. Emoji Premium xuất hiện trên nút sản phẩm.",
+      "zh": "自定义按开始、购买、充值、设置和消息分组。选择文字或按钮，再选择语言、预览并保存。商品 Premium 表情会显示在商品按钮中。"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.help.4",
+    "defaults": {
+      "en": "Use /developer or /apikey to open your account API and documentation. The key grants access to your account only. /api remains the store admin source manager.",
+      "ar": "افتح /developer أو /apikey لواجهة API حسابك وتعليماتها. المفتاح يخص حسابك فقط. /api يبقى مدير اتصال المورد للأدمن.",
+      "vi": "Mở /developer hoặc /apikey để xem API tài khoản và tài liệu. Khóa chỉ truy cập tài khoản của bạn. /api vẫn quản lý nguồn cho chủ cửa hàng.",
+      "zh": "使用 /developer 或 /apikey 查看账户 API 和文档。密钥仅访问您的账户。/api 仍是管理员的供应商连接管理。"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "platform.help.5",
+    "defaults": {
+      "en": "Open NSS → My stores, or /myshops, for status, members, paid orders and renewal. Free stores have no expiry. Paid expiry returns to free permissions while retaining data. Three business inactivity pauses require the platform owner to unlock the store.",
+      "ar": "افتح NSS ثم متاجري، أو /myshops، للحالة والأعضاء والطلبات والتجديد. المجاني بلا انتهاء. انتهاء المدفوع يعيد صلاحيات المجاني مع بقاء البيانات. بعد ثلاثة إيقافات بسبب الخمول يلزم فتحه من مالك المنصة.",
+      "vi": "Mở NSS → Cửa hàng của tôi hoặc /myshops để xem trạng thái, thành viên, đơn và gia hạn. Miễn phí không hết hạn. Hết gói trả phí sẽ về gói miễn phí và giữ dữ liệu. Sau ba lần dừng do không hoạt động, chủ nền tảng phải mở khóa.",
+      "zh": "在 NSS 打开我的商店或 /myshops，查看状态、用户、订单和续订。免费商店无到期日；付费到期后恢复免费权限并保留数据。不活跃暂停三次后需平台所有者解锁。"
+    },
+    "folder": 10,
+    "button": false
+  },
+  {
+    "key": "notice.activated",
+    "folder": 11,
+    "button": false,
+    "defaults": {
+      "en": "✅ Store activated. Use /start, then /admin. Open NSS below to view your store.",
+      "ar": "✅ تم تفعيل المتجر. أرسل /start ثم /admin، وافتح NSS من الزر لمتابعة متجرك.",
+      "vi": "✅ Đã kích hoạt cửa hàng. Gửi /start rồi /admin. Mở NSS bên dưới để theo dõi.",
+      "zh": "✅ 商店已激活。发送 /start 和 /admin，并在下方打开 NSS 查看商店。"
+    }
+  },
+  {
+    "key": "notice.dashboard",
+    "folder": 11,
+    "button": true,
+    "defaults": {
+      "en": "NSS · My store",
+      "ar": "NSS · متجري",
+      "vi": "NSS · Cửa hàng của tôi",
+      "zh": "NSS · 我的商店"
+    }
+  },
+  {
+    "key": "notice.subscribe",
+    "folder": 11,
+    "button": true,
+    "defaults": {
+      "en": "💎 Subscribe",
+      "ar": "💎 اشتراك",
+      "vi": "💎 Đăng ký",
+      "zh": "💎 订阅"
+    }
+  },
+  {
+    "key": "notice.warning",
+    "folder": 11,
+    "button": false,
+    "defaults": {
+      "en": "No customer activity. Your store will pause in 24 hours. Open NSS to view your dashboard.",
+      "ar": "لا يوجد نشاط عملاء. سيتوقف متجرك بعد 24 ساعة. افتح NSS لمتابعة المتجر.",
+      "vi": "Không có khách hoạt động. Cửa hàng sẽ tạm dừng sau 24 giờ. Mở NSS để theo dõi.",
+      "zh": "暂无客户活动，商店将在 24 小时后暂停。打开 NSS 查看控制面板。"
+    }
+  },
+  {
+    "key": "notice.paused",
+    "folder": 11,
+    "button": false,
+    "defaults": {
+      "en": "Store paused after {hours} hours without customer activity. Inactivity pauses: {strikes}/3. Open NSS to resume. After the third pause, the platform owner must unlock it.",
+      "ar": "توقف المتجر بعد {hours} ساعة دون نشاط عملاء. إيقافات الخمول: {strikes}/3. افتح NSS للتشغيل. الإيقاف الثالث يحتاج فتحًا من مالك المنصة.",
+      "vi": "Cửa hàng tạm dừng sau {hours} giờ không hoạt động. Số lần: {strikes}/3. Mở NSS để chạy lại. Sau lần thứ ba, chủ nền tảng phải mở khóa.",
+      "zh": "商店因 {hours} 小时无客户活动而暂停，暂停次数：{strikes}/3。打开 NSS 恢复；第三次后需平台所有者解锁。"
+    }
+  }
+]

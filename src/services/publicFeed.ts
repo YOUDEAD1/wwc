@@ -1,21 +1,16 @@
 import type { Api } from 'grammy';
 import { InlineKeyboard } from 'grammy';
+import { getContextBotUsername } from '../db/db_context.js';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
-import { getProduct } from '../db/queries.js';
-import {
-  escapeAttr,
-  renderHtmlTemplate,
-  renderMdHtml,
-  stripCustomEmojiTags,
-} from './premium.js';
+import { escapeAttr, renderHtmlTemplate, renderMdHtml, stripCustomEmojiTags } from './premium.js';
 import {
   getEmoji,
   getPublicFeedChatIdOverride,
   getPublicFeedTpl,
-  isPublicFeedEnabled,
-  getReferralCost,
   getReferralAmount,
+  getReferralCost,
+  isPublicFeedEnabled,
 } from './settings.js';
 
 type FeedButton = {
@@ -28,7 +23,7 @@ const CART_FALLBACK = '\u{1F6D2}';
 const TIGER_STOCK_CHAT = '@TigerStockChat';
 
 export function publicFeedBotUrl(payload: string): string {
-  const username = env.BOT_USERNAME.replace(/^@+/, '').trim();
+  const username = getContextBotUsername().replace(/^@+/, '').trim();
   const start = encodeURIComponent(payload);
   return username ? `https://t.me/${username}?start=${start}` : `https://t.me/?start=${start}`;
 }
@@ -44,7 +39,7 @@ export function publicFeedChatId(): number | string {
   if (custom === undefined) return '';
   if (custom === '') {
     if (process.env.IS_TENANT === 'true') return '';
-    return TIGER_STOCK_CHAT;
+    return ''; // Public feed requires an explicit destination.
   }
   return custom;
 }
@@ -97,12 +92,15 @@ async function sendRenderedHtml(api: Api, html: string, button?: FeedButton): Pr
   }
 }
 
-export async function notifyActiveReferral(api: Api, _args: {
-  referrerName: string;
-  totalReferrals: number;
-  activeReferrals?: number;
-  totalEarned: number;
-}): Promise<void> {
+export async function notifyActiveReferral(
+  api: Api,
+  _args: {
+    referrerName: string;
+    totalReferrals: number;
+    activeReferrals?: number;
+    totalEarned: number;
+  },
+): Promise<void> {
   if (!isPublicFeedEnabled('referral')) return;
 
   const cost = getReferralCost();
@@ -125,10 +123,13 @@ export async function notifyActiveReferral(api: Api, _args: {
   });
 }
 
-export async function notifyReferralAchievement(api: Api, args: {
-  userId: number;
-  amount: number;
-}): Promise<void> {
+export async function notifyReferralAchievement(
+  api: Api,
+  args: {
+    userId: number;
+    amount: number;
+  },
+): Promise<void> {
   if (!isPublicFeedEnabled('referral')) return;
   const body = [
     '<blockquote>',
@@ -146,15 +147,18 @@ export async function notifyReferralAchievement(api: Api, args: {
   });
 }
 
-export async function notifyPurchase(api: Api, args: {
-  buyerId: number;
-  productId: number;
-  productName: string;
-  orderPublicId: string;
-  qty: number;
-  total: number;
-  paidVia: string;
-}): Promise<void> {
+export async function notifyPurchase(
+  api: Api,
+  args: {
+    buyerId: number;
+    productId: number;
+    productName: string;
+    orderPublicId: string;
+    qty: number;
+    total: number;
+    paidVia: string;
+  },
+): Promise<void> {
   if (!isPublicFeedEnabled('purchase')) return;
 
   const { getUserOrderSummary } = await import('../db/queries.js');
@@ -178,11 +182,14 @@ export async function notifyPurchase(api: Api, args: {
   });
 }
 
-export async function notifyTopup(api: Api, args: {
-  userId: number;
-  amount: number;
-  method: string;
-}): Promise<void> {
+export async function notifyTopup(
+  api: Api,
+  args: {
+    userId: number;
+    amount: number;
+    method: string;
+  },
+): Promise<void> {
   if (!isPublicFeedEnabled('topup')) return;
 
   const { getUserStats } = await import('../db/queries.js');
@@ -204,22 +211,27 @@ export async function notifyTopup(api: Api, args: {
   });
 }
 
-export async function notifyWalletCredit(api: Api, args: {
-  userId: number;
-  amount: number;
-  balanceAfter: number;
-  reason: string;
-}): Promise<void> {
-  const html = renderHtmlTemplate([
-    '<blockquote>',
-    '{feed_title} <b>New Admin Wallet Credit!</b>',
-    '',
-    `{refer_user} <b>User:</b> <b>${maskId(args.userId)}</b>`,
-    `{gift_usdt} <b>Amount:</b> <b>+${money(args.amount)} USDT</b>`,
-    `{prod_wallet} <b>Wallet Balance:</b> <b>${money(args.balanceAfter)} USDT</b>`,
-    `{orders_note} <b>Reason:</b> <b>${escapeAttr(args.reason)}</b>`,
-    '</blockquote>',
-  ].join('\n'));
+export async function notifyWalletCredit(
+  api: Api,
+  args: {
+    userId: number;
+    amount: number;
+    balanceAfter: number;
+    reason: string;
+  },
+): Promise<void> {
+  const html = renderHtmlTemplate(
+    [
+      '<blockquote>',
+      '{feed_title} <b>New Admin Wallet Credit!</b>',
+      '',
+      `{refer_user} <b>User:</b> <b>${maskId(args.userId)}</b>`,
+      `{gift_usdt} <b>Amount:</b> <b>+${money(args.amount)} USDT</b>`,
+      `{prod_wallet} <b>Wallet Balance:</b> <b>${money(args.balanceAfter)} USDT</b>`,
+      `{orders_note} <b>Reason:</b> <b>${escapeAttr(args.reason)}</b>`,
+      '</blockquote>',
+    ].join('\n'),
+  );
   await sendRenderedHtml(api, html, {
     text: 'Open Wallet',
     iconKey: 'profile_header',
@@ -227,15 +239,15 @@ export async function notifyWalletCredit(api: Api, args: {
   });
 }
 
-export async function notifyAnnouncement(api: Api, args: {
-  text: string;
-  format: 'md' | 'html';
-  button?: { text: string; productId: number; iconKey?: string };
-}): Promise<void> {
-  const html =
-    args.format === 'html'
-      ? renderHtmlTemplate(args.text)
-      : renderMdHtml(args.text);
+export async function notifyAnnouncement(
+  api: Api,
+  args: {
+    text: string;
+    format: 'md' | 'html';
+    button?: { text: string; productId: number; iconKey?: string };
+  },
+): Promise<void> {
+  const html = args.format === 'html' ? renderHtmlTemplate(args.text) : renderMdHtml(args.text);
   await sendRenderedHtml(
     api,
     html,
@@ -249,15 +261,18 @@ export async function notifyAnnouncement(api: Api, args: {
   );
 }
 
-export async function notifyStockAdded(api: Api, args: {
-  productId: number;
-  productName: string;
-  productEmoji?: string | null;
-  productEmojiId?: string | null;
-  qtyAdded: number;
-  available: number;
-  price: number;
-}): Promise<void> {
+export async function notifyStockAdded(
+  api: Api,
+  args: {
+    productId: number;
+    productName: string;
+    productEmoji?: string | null;
+    productEmojiId?: string | null;
+    qtyAdded: number;
+    available: number;
+    price: number;
+  },
+): Promise<void> {
   if (!isPublicFeedEnabled('stock')) return;
 
   const rawTpl = getPublicFeedTpl('stock');

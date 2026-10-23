@@ -1,29 +1,29 @@
-import crypto from 'node:crypto';
 import type { Api } from 'grammy';
+import crypto from 'node:crypto';
 import { QTY_MAX, QTY_MIN } from '../../config/index.js';
 import {
   claimProductItems,
   countAvailableProductItems,
-  createOrder,
-  decrementProductStock,
   findUserById,
   getProduct,
   listActiveProducts,
-  setOrderDeliveredItems,
   readSetting,
+  setOrderDeliveredItems,
   setSetting,
 } from '../db/queries.js';
+import { readAll } from '../db/readAll.js';
 import { supabase } from '../db/supabase.js';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
 import type { DBProduct, DBUser } from '../types.js';
+import * as adminLog from './adminLog.js';
+import { purchaseProduct } from './apiShop.js';
+import { get as cacheGet, set as cacheSet, remember } from './cache.js';
+import { checkout, finishDelivery, stableRequestId, supplierAttempt } from './checkout.js';
 import { publicOrderId } from './orderId.js';
 import { applyUserPriceToProduct, applyUserPriceToProducts } from './pricing.js';
 import { priceBreakdown, resolvePromo } from './promo.js';
-import { charge } from './wallet.js';
-import * as adminLog from './adminLog.js';
 import { trySupplierAutoOrder } from './supplierApi.js';
-import { purchaseProduct } from './apiShop.js';
 
 const API_KEY_PREFIX = 'stapi_';
 const API_KEY_BYTES = 32;
@@ -77,6 +77,11 @@ export type ApiProduct = {
 };
 
 export type ApiOrderResult = {
+  codes?: string[];
+  total_price?: number;
+  new_balance?: number;
+  qty?: number;
+  status?: string;
   order_id: string;
   order_db_id: number;
   product_id: number;
@@ -256,6 +261,7 @@ function productToApi(
 
 export function apiBaseUrl(): string {
   const explicit = env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, '');
+  if (explicit && process.env.WWC_MANAGED==='1')return `${explicit}/shop/${process.env.TENANT_ID}/api`;
   if (explicit) return `${explicit}/api`;
   if (env.WEBHOOK_URL) {
     try {
@@ -283,43 +289,34 @@ async function loadAdminApiData(): Promise<{
   users: Map<number, DBUser>;
   orders: Map<number, import('../types.js').DBOrder>;
 }> {
-  const [{ data: keysRaw, error: keyErr }, { data: ordersRaw, error: orderErr }] =
-    await Promise.all([
-      supabase
-        .from('reseller_api_keys')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(5000),
-      supabase
-        .from('reseller_api_orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(5000),
-    ]);
-  if (keyErr) throw keyErr;
-  if (orderErr) throw orderErr;
-
-  const keys = (keysRaw ?? []) as ApiKeyRow[];
-  const apiOrders = (ordersRaw ?? []) as ApiOrderRow[];
-  const userIds = Array.from(new Set([...keys.map((k) => k.user_id), ...apiOrders.map((o) => o.user_id)]));
-  const orderIds = Array.from(new Set(apiOrders.map((o) => o.order_id)));
-
-  const [{ data: usersRaw, error: usersErr }, { data: dbOrdersRaw, error: dbOrdersErr }] =
-    await Promise.all([
-      userIds.length
-        ? supabase.from('users').select('*').in('telegram_id', userIds)
-        : Promise.resolve({ data: [], error: null }),
-      orderIds.length
-        ? supabase.from('orders').select('*').in('id', orderIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-  if (usersErr) throw usersErr;
-  if (dbOrdersErr) throw dbOrdersErr;
-
-  const users = new Map<number, DBUser>();
-  for (const u of (usersRaw ?? []) as DBUser[]) users.set(u.telegram_id, u);
-  const orders = new Map<number, import('../types.js').DBOrder>();
-  for (const o of (dbOrdersRaw ?? []) as import('../types.js').DBOrder[]) orders.set(o.id, o);
+  const [keys, apiOrders] = await Promise.all([
+    readAll<ApiKeyRow>((from, to) =>
+      supabase.from('reseller_api_keys').select('*').order('id').range(from, to),
+    ),
+    readAll<ApiOrderRow>((from, to) =>
+      supabase.from('reseller_api_orders').select('*').order('id').range(from, to),
+    ),
+  ]);
+  const userIds = [...new Set([...keys.map((k) => k.user_id), ...apiOrders.map((o) => o.user_id)])],
+    orderIds = [...new Set(apiOrders.map((o) => o.order_id))];
+  const users = new Map<number, DBUser>(),
+    orders = new Map<number, import('../types.js').DBOrder>();
+  for (let i = 0; i < userIds.length; i += 100) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .in('telegram_id', userIds.slice(i, i + 100));
+    if (error) throw error;
+    for (const u of data ?? []) users.set(u.telegram_id, u as DBUser);
+  }
+  for (let i = 0; i < orderIds.length; i += 100) {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .in('id', orderIds.slice(i, i + 100));
+    if (error) throw error;
+    for (const o of data ?? []) orders.set(o.id, o as import('../types.js').DBOrder);
+  }
   return { keys, apiOrders, users, orders };
 }
 
@@ -332,7 +329,9 @@ function buildAdminApiUsers(args: {
   const since24h = new Date(now - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
   const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const userIds = Array.from(new Set([...args.keys.map((k) => k.user_id), ...args.apiOrders.map((o) => o.user_id)]));
+  const userIds = Array.from(
+    new Set([...args.keys.map((k) => k.user_id), ...args.apiOrders.map((o) => o.user_id)]),
+  );
 
   return userIds
     .map((userId) => {
@@ -360,7 +359,9 @@ function buildAdminApiUsers(args: {
     .sort((a, b) => {
       if (b.totalSpent !== a.totalSpent) return b.totalSpent - a.totalSpent;
       if (b.orders !== a.orders) return b.orders - a.orders;
-      return String(b.lastUsedAt ?? b.keyCreatedAt ?? '').localeCompare(String(a.lastUsedAt ?? a.keyCreatedAt ?? ''));
+      return String(b.lastUsedAt ?? b.keyCreatedAt ?? '').localeCompare(
+        String(a.lastUsedAt ?? a.keyCreatedAt ?? ''),
+      );
     });
 }
 
@@ -462,31 +463,27 @@ export async function listAdminApiOrders(args: {
 }
 
 export async function getApiStatus(userId: number): Promise<ApiStatus> {
-  const [keyRes, user, orderCountRes, orderRowsRes, recentRowsRes] =
-    await Promise.all([
-      supabase
-        .from('reseller_api_keys')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('active', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      findUserById(userId),
-      supabase
-        .from('reseller_api_orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId),
-      supabase
-        .from('reseller_api_orders')
-        .select('total')
-        .eq('user_id', userId),
-      supabase
-        .from('reseller_api_orders')
-        .select('total')
-        .eq('user_id', userId)
-        .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
-    ]);
+  const [keyRes, user, orderCountRes, orderRowsRes, recentRowsRes] = await Promise.all([
+    supabase
+      .from('reseller_api_keys')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    findUserById(userId),
+    supabase
+      .from('reseller_api_orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId),
+    supabase.from('reseller_api_orders').select('total').eq('user_id', userId),
+    supabase
+      .from('reseller_api_orders')
+      .select('total')
+      .eq('user_id', userId)
+      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
+  ]);
   const apiErr = keyRes.error ?? orderCountRes.error ?? orderRowsRes.error ?? recentRowsRes.error;
   if (apiErr) {
     if (isResellerApiMigrationError(apiErr)) throwResellerApiMigrationRequired(apiErr);
@@ -573,10 +570,13 @@ export async function authenticateApiKey(rawKey: string): Promise<{
   const user = await findUserById(key.user_id);
   if (!user) throw new ApiError(401, 'user_not_found', 'API user was not found.');
   if (user.is_banned) throw new ApiError(403, 'user_banned', 'This account is banned.');
-  await supabase
-    .from('reseller_api_keys')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('id', key.id);
+  if (!cacheGet('api-touched:' + key.id)) {
+    const { error: touchError } = await supabase
+      .from('reseller_api_keys')
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('id', key.id);
+    if (!touchError) cacheSet('api-touched:' + key.id, true, 60000);
+  }
   return { key, user };
 }
 
@@ -596,53 +596,61 @@ export async function listApiProducts(args: {
   limit?: number;
   offset?: number;
 }): Promise<{ products: ApiProduct[]; total: number }> {
-  const limit = Math.min(Math.max(Number(args.limit ?? DEFAULT_PRODUCT_LIMIT), 1), MAX_PRODUCT_LIMIT);
+  const limit = Math.min(
+    Math.max(Number(args.limit ?? DEFAULT_PRODUCT_LIMIT), 1),
+    MAX_PRODUCT_LIMIT,
+  );
   const offset = Math.max(Number(args.offset ?? 0), 0);
-  const page = Math.floor(offset / limit);
-  const { rows, total } = await listActiveProducts(page, limit);
-  const priced = await applyUserPriceToProducts(args.userId, rows);
+  const all = await remember(
+    'api-visible:' + args.userId + ':' + args.apiKeyId,
+    10000,
+    async () => {
+      const { rows } = await listActiveProducts(0, 1000000);
+      const priced = await applyUserPriceToProducts(args.userId, rows);
 
-  const [
-    { data: pricingRows },
-    { data: hiddenRows },
-    supplierLinksResult,
-    poolCountsResult,
-  ] = await Promise.all([
-    supabase.from('reseller_api_pricing').select('*').eq('api_key_id', args.apiKeyId),
-    supabase.from('reseller_api_hidden').select('product_id').eq('api_key_id', args.apiKeyId),
-    supabase.from('supplier_product_links').select('local_product_id').then(
-      (r) => ({ ok: true as const, data: r.data }),
-      () => ({ ok: false as const, data: null })
-    ),
-    supabase.from('product_items').select('product_id').is('consumed_at', null).then(
-      (r) => ({ ok: true as const, data: r.data }),
-      () => ({ ok: false as const, data: null })
-    ),
-  ]);
+      const [{ data: pricingRows }, { data: hiddenRows }, supplierLinksResult, poolCountsResult] =
+        await Promise.all([
+          supabase.from('reseller_api_pricing').select('*').eq('api_key_id', args.apiKeyId),
+          supabase.from('reseller_api_hidden').select('product_id').eq('api_key_id', args.apiKeyId),
+          supabase
+            .from('supplier_product_links')
+            .select('local_product_id')
+            .then(
+              (r) => ({ ok: true as const, data: r.data }),
+              () => ({ ok: false as const, data: null }),
+            ),
+          supabase.rpc('product_pool_counts').then(
+            (r) => ({ ok: true as const, data: r.data }),
+            () => ({ ok: false as const, data: null }),
+          ),
+        ]);
 
-  const pricing = pricingRows ?? [];
-  const hiddenIds = new Set((hiddenRows ?? []).map((h) => Number(h.product_id)));
+      const pricing = pricingRows ?? [];
+      const hiddenIds = new Set((hiddenRows ?? []).map((h) => Number(h.product_id)));
 
-  const supplierProductIds = new Set<number>();
-  if (supplierLinksResult.ok && supplierLinksResult.data) {
-    for (const link of supplierLinksResult.data) {
-      supplierProductIds.add(Number(link.local_product_id));
-    }
-  }
+      const supplierProductIds = new Set<number>();
+      if (supplierLinksResult.ok && supplierLinksResult.data) {
+        for (const link of supplierLinksResult.data) {
+          supplierProductIds.add(Number(link.local_product_id));
+        }
+      }
 
-  const poolStockMap = new Map<number, number>();
-  if (poolCountsResult.ok && poolCountsResult.data) {
-    for (const item of poolCountsResult.data) {
-      const pId = Number(item.product_id);
-      poolStockMap.set(pId, (poolStockMap.get(pId) ?? 0) + 1);
-    }
-  }
+      const poolStockMap = new Map<number, number>();
+      if (poolCountsResult.ok && poolCountsResult.data) {
+        for (const item of poolCountsResult.data) {
+          const pId = Number(item.product_id);
+          poolStockMap.set(pId, Number(item.available));
+        }
+      }
 
-  const products = priced
-    .map((p) => productToApi(p, pricing, hiddenIds, poolStockMap, supplierProductIds))
-    .filter((p): p is ApiProduct => p !== null);
+      const products = priced
+        .map((p) => productToApi(p, pricing, hiddenIds, poolStockMap, supplierProductIds))
+        .filter((p): p is ApiProduct => p !== null);
 
-  return { products, total: products.length };
+      return products;
+    },
+  );
+  return { products: all.slice(offset, offset + limit), total: all.length };
 }
 
 export async function getApiProduct(args: {
@@ -650,63 +658,47 @@ export async function getApiProduct(args: {
   userId: number;
   apiKeyId: number;
 }): Promise<ApiProduct> {
-  const raw = await getProduct(args.productId);
-  if (!raw || !raw.active) {
-    throw new ApiError(404, 'product_not_found', 'Product not found.');
+  const { products } = await listApiProducts({ ...args, limit: 1000000, offset: 0 });
+  let product = products.find((p) => Number(p.id) === args.productId);
+  if (!product) {
+    const { rows } = await listActiveProducts(0, 1000000);
+    if (rows.some((p) => p.id === args.productId)) {
+      for (let offset = products.length; offset < rows.length; offset += 500) {
+        const page = await listApiProducts({ ...args, limit: 500, offset });
+        product = page.products.find((p) => Number(p.id) === args.productId);
+        if (product) break;
+      }
+    }
   }
-  const product = await applyUserPriceToProduct(args.userId, raw);
-
-  const [
-    { data: pricingRows },
-    { data: hiddenRows },
-    supplierLinksResult,
-    poolCountsResult,
-  ] = await Promise.all([
-    supabase.from('reseller_api_pricing').select('*').eq('api_key_id', args.apiKeyId),
-    supabase.from('reseller_api_hidden').select('product_id').eq('api_key_id', args.apiKeyId),
-    supabase.from('supplier_product_links').select('local_product_id').eq('local_product_id', args.productId).then(
-      (r) => ({ ok: true as const, data: r.data }),
-      () => ({ ok: false as const, data: null })
-    ),
-    supabase.from('product_items').select('product_id').eq('product_id', args.productId).is('consumed_at', null).then(
-      (r) => ({ ok: true as const, data: r.data }),
-      () => ({ ok: false as const, data: null })
-    ),
-  ]);
-
-  const pricing = pricingRows ?? [];
-  const hiddenIds = new Set((hiddenRows ?? []).map((h) => Number(h.product_id)));
-
-  const supplierProductIds = new Set<number>();
-  if (supplierLinksResult.ok && supplierLinksResult.data && supplierLinksResult.data.length > 0) {
-    supplierProductIds.add(args.productId);
-  }
-
-  const poolStockMap = new Map<number, number>();
-  if (poolCountsResult.ok && poolCountsResult.data) {
-    poolStockMap.set(args.productId, poolCountsResult.data.length);
-  }
-
-  const mapped = productToApi(product, pricing, hiddenIds, poolStockMap, supplierProductIds);
-  if (!mapped) {
-    throw new ApiError(404, 'product_not_found', 'Product is hidden.');
-  }
-  return mapped;
+  if (!product) throw new ApiError(404, 'product_not_found', 'Product not found');
+  return product;
 }
 
 export async function getApiPrices(apiKeyId: number): Promise<any[]> {
-  const { data: pricingRows, error } = await supabase
-    .from('reseller_api_pricing')
-    .select('*')
-    .eq('api_key_id', apiKeyId);
-  if (error) throw error;
-
+  const pricingRows = await readAll<any>((from, to) =>
+    supabase
+      .from('reseller_api_pricing')
+      .select('*')
+      .eq('api_key_id', apiKeyId)
+      .order('product_id')
+      .range(from, to),
+  );
+  const ids = [...new Set(pricingRows.map((row) => Number(row.product_id)))],
+    products = new Map<number, { id: number; name: string; price: number }>();
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id,name,price')
+      .in('id', ids.slice(offset, offset + 100));
+    if (error) throw error;
+    for (const p of data ?? []) products.set(Number(p.id), p);
+  }
   const results: any[] = [];
-  for (const row of pricingRows ?? []) {
-    const p = await getProduct(Number(row.product_id));
+  for (const row of pricingRows) {
+    const p = products.get(Number(row.product_id));
     if (!p) continue;
-    const storePrice = Number(p.price);
-    const yourPrice = Number(row.sell_price);
+    const storePrice = Number(p.price),
+      yourPrice = Number(row.sell_price);
     results.push({
       product_id: String(p.id),
       original_name: p.name,
@@ -731,21 +723,9 @@ export async function getApiStats(userId: number): Promise<{
   balance: number;
 }> {
   const status = await getApiStatus(userId);
-  const { data: orders } = await supabase
-    .from('reseller_api_orders')
-    .select('total')
-    .eq('user_id', userId);
-
-  const totalOrders = orders?.length ?? 0;
-  const totalSpent = (orders ?? []).reduce((sum, o) => sum + Number(o.total ?? 0), 0);
-
-  return {
-    total_orders: totalOrders,
-    completed_orders: totalOrders,
-    pending_orders: 0,
-    total_revenue: Number(totalSpent.toFixed(3)),
-    balance: status.balance,
-  };
+  const { data, error } = await supabase.rpc('api_account_statistics', { p_user_id: userId });
+  if (error) throw error;
+  return { ...data, balance: status.balance };
 }
 
 export async function setApiPrice(args: {
@@ -761,17 +741,22 @@ export async function setApiPrice(args: {
   const priced = await applyUserPriceToProduct(args.userId, p);
   const storePrice = Number(priced.price);
   if (args.price < storePrice) {
-    throw new ApiError(400, 'invalid_price', `Price cannot be lower than wholesale price: $${storePrice.toFixed(2)}`);
+    throw new ApiError(
+      400,
+      'invalid_price',
+      `Price cannot be lower than wholesale price: $${storePrice.toFixed(2)}`,
+    );
   }
 
-  const { error } = await supabase
-    .from('reseller_api_pricing')
-    .upsert({
+  const { error } = await supabase.from('reseller_api_pricing').upsert(
+    {
       api_key_id: args.apiKeyId,
       product_id: args.productId,
       sell_price: args.price,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'api_key_id,product_id' });
+    },
+    { onConflict: 'api_key_id,product_id' },
+  );
 
   if (error) throw error;
 
@@ -804,7 +789,11 @@ export async function setApiProduct(args: {
   let sellPrice = storePrice;
   if (args.price !== undefined) {
     if (args.price < storePrice) {
-      throw new ApiError(400, 'invalid_price', `Price cannot be lower than wholesale price: $${storePrice.toFixed(2)}`);
+      throw new ApiError(
+        400,
+        'invalid_price',
+        `Price cannot be lower than wholesale price: $${storePrice.toFixed(2)}`,
+      );
     }
     sellPrice = args.price;
   }
@@ -816,20 +805,22 @@ export async function setApiProduct(args: {
     .eq('product_id', args.productId)
     .maybeSingle();
 
-  const finalSellPrice = args.price !== undefined ? sellPrice : (existing ? Number(existing.sell_price) : storePrice);
+  const finalSellPrice =
+    args.price !== undefined ? sellPrice : existing ? Number(existing.sell_price) : storePrice;
 
-  const { error } = await supabase
-    .from('reseller_api_pricing')
-    .upsert({
+  const { error } = await supabase.from('reseller_api_pricing').upsert(
+    {
       api_key_id: args.apiKeyId,
       product_id: args.productId,
       sell_price: finalSellPrice,
-      name_ar: args.name_ar !== undefined ? args.name_ar : (existing?.name_ar || null),
-      name_en: args.name_en !== undefined ? args.name_en : (existing?.name_en || null),
-      desc_ar: args.desc_ar !== undefined ? args.desc_ar : (existing?.desc_ar || null),
-      desc_en: args.desc_en !== undefined ? args.desc_en : (existing?.desc_en || null),
+      name_ar: args.name_ar !== undefined ? args.name_ar : existing?.name_ar || null,
+      name_en: args.name_en !== undefined ? args.name_en : existing?.name_en || null,
+      desc_ar: args.desc_ar !== undefined ? args.desc_ar : existing?.desc_ar || null,
+      desc_en: args.desc_en !== undefined ? args.desc_en : existing?.desc_en || null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'api_key_id,product_id' });
+    },
+    { onConflict: 'api_key_id,product_id' },
+  );
 
   if (error) throw error;
 
@@ -870,11 +861,7 @@ export async function getApiOrder(orderIdStr: string, userId: number): Promise<a
     throw new ApiError(404, 'order_not_found', 'Order not found.');
   }
 
-  const { data: order } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('id', dbId)
-    .maybeSingle();
+  const { data: order } = await supabase.from('orders').select('*').eq('id', dbId).maybeSingle();
 
   if (!order) {
     throw new ApiError(404, 'order_not_found', 'Order not found.');
@@ -965,21 +952,49 @@ export async function placeApiOrder(args: {
   if (!Number.isInteger(args.productId) || args.productId <= 0) {
     throw new ApiError(400, 'invalid_product_id', 'product_id must be a positive number.');
   }
-  const requestId = args.requestId?.trim() || null;
-  if (requestId) {
-    const { data: existing } = await supabase
-      .from('reseller_api_orders')
-      .select('id')
-      .eq('user_id', args.user.telegram_id)
-      .eq('request_id', requestId)
-      .maybeSingle();
-    if (existing) {
-      throw new ApiError(409, 'duplicate_request_id', 'request_id was already used.');
-    }
+  const requestId = args.requestId?.trim() || crypto.randomUUID();
+  if (requestId.length > 200)
+    throw new ApiError(400, 'invalid_request_id', 'request_id is too long');
+  const { data: previous, error: replayError } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('user_id', args.user.telegram_id)
+    .eq('checkout_key', requestId)
+    .maybeSingle();
+  if (replayError) throw replayError;
+  if (previous) {
+    if (previous.product_id !== args.productId || previous.qty !== qty)
+      throw new ApiError(
+        409,
+        'idempotency_conflict',
+        'request_id was already used for a different purchase',
+      );
+    const items = previous.delivered_items?.split('\n') ?? previous.allocated_items ?? [];
+    return {
+      order_id: publicOrderId(previous),
+      order_db_id: previous.id,
+      product_id: previous.product_id,
+      product_name: previous.product_name,
+      quantity: previous.qty,
+      qty: previous.qty,
+      unit_price: Number(previous.unit_price),
+      discount: Number(previous.discount),
+      total: Number(previous.total),
+      total_price: Number(previous.total),
+      balance_after: Number(args.user.balance),
+      new_balance: Number(args.user.balance),
+      items,
+      codes: items,
+      status: previous.fulfillment_state,
+    };
   }
-
   const rawProduct = await getProduct(args.productId);
-  if (!rawProduct || !rawProduct.active) {
+  if (
+    !rawProduct ||
+    !rawProduct.active ||
+    rawProduct.catalog_hidden ||
+    rawProduct.api_auto_hidden
+  ) {
     throw new ApiError(404, 'product_not_found', 'Product not found.');
   }
   const product = await applyUserPriceToProduct(args.user.telegram_id, rawProduct);
@@ -1016,18 +1031,41 @@ export async function placeApiOrder(args: {
     throw new ApiError(402, 'insufficient_balance', 'Insufficient wallet/API balance.');
   }
 
-  const order = await createOrder({
-    user_id: args.user.telegram_id,
-    product_id: product.id,
-    product_name: product.name,
-    qty,
-    unit_price: product.price,
-    total,
-    discount,
-    promo_id: promo?.promo.id ?? null,
-    delivery: `API order #${product.id}-${qty}`,
-  });
-
+  const committed = await checkout(
+    {
+      user_id: args.user.telegram_id,
+      product_id: product.id,
+      qty,
+      unit_price: product.price,
+      total,
+      discount,
+      promo_id: promo?.promo.id ?? null,
+    },
+    requestId,
+    'api',
+    false,
+    args.apiKeyId,
+  );
+  const order = committed.order;
+  let balanceAfter = committed.balance;
+  if (committed.replayed)
+    return {
+      order_id: publicOrderId(order),
+      order_db_id: order.id,
+      product_id: product.id,
+      product_name: product.name,
+      quantity: qty,
+      qty,
+      unit_price: Number(product.price),
+      discount,
+      total,
+      total_price: total,
+      balance_after: balanceAfter,
+      new_balance: balanceAfter,
+      items: order.delivered_items?.split('\n') ?? order.allocated_items ?? [],
+      codes: order.delivered_items?.split('\n') ?? order.allocated_items ?? [],
+      status: order.fulfillment_state ?? 'pending',
+    };
   let claimed: string[] = [];
   if (isSupplier) {
     const supplierOrder = await trySupplierAutoOrder({
@@ -1036,7 +1074,7 @@ export async function placeApiOrder(args: {
       localOrderId: order.id,
     });
     if (!supplierOrder) {
-      await deleteOrder(order.id);
+      await finishDelivery(order, 'manual_review');
       throw new ApiError(503, 'supplier_order_failed', 'Supplier API order failed to deliver.');
     }
     claimed = supplierOrder.items;
@@ -1044,20 +1082,26 @@ export async function placeApiOrder(args: {
     const match = product.note!.match(/\[API_PRODUCT_ID:([^\]]+)\]/);
     const apiProductId = match ? match[1]! : null;
     if (!apiProductId) {
-      await deleteOrder(order.id);
+      await finishDelivery(order, 'manual_review');
       throw new ApiError(500, 'api_shop_error', 'Invalid API Shop product ID note.');
     }
-    const apiShopRes = await purchaseProduct(apiProductId, qty, `api_order:${order.id}`);
-    if (!apiShopRes.ok) {
-      await deleteOrder(order.id);
-      throw new ApiError(503, 'api_shop_order_failed', `API Shop order failed: ${apiShopRes.error}`);
+    const apiShopRes = await supplierAttempt(order.id, () =>
+      purchaseProduct(apiProductId, qty, `api_order:${order.id}`, stableRequestId(order.id)),
+    );
+    if (!apiShopRes || !apiShopRes.ok) {
+      await finishDelivery(order, 'manual_review');
+      throw new ApiError(
+        503,
+        'api_shop_order_failed',
+        `API Shop order failed: ${apiShopRes?.error ?? 'Pending manual review'}`,
+      );
     }
     claimed = apiShopRes.codes;
   } else if (isAutomatic) {
     claimed = await claimProductItems(product.id, qty, order.id);
     if (claimed.length < qty) {
       await rollbackClaimedItems(order.id);
-      await deleteOrder(order.id);
+      await finishDelivery(order, 'manual_review');
       throw new ApiError(409, 'delivery_race', 'Stock was just taken. Please retry.');
     }
   } else {
@@ -1065,32 +1109,11 @@ export async function placeApiOrder(args: {
     claimed = ['Manual delivery — admin will follow up shortly.'];
   }
 
-  let balanceAfter = currentBalance;
-  try {
-    balanceAfter = await charge(args.user.telegram_id, total, currentBalance, `api_order:${order.id}`);
-    await decrementProductStock(product.id, qty);
-    await setOrderDeliveredItems(order.id, claimed.join('\n'));
-    const { error: apiOrderErr } = await supabase.from('reseller_api_orders').insert({
-      user_id: args.user.telegram_id,
-      api_key_id: args.apiKeyId,
-      order_id: order.id,
-      product_id: product.id,
-      qty,
-      total,
-      request_id: requestId,
-    });
-    if (apiOrderErr) {
-      logger.warn({ err: apiOrderErr, orderId: order.id }, 'API order stats insert failed');
-    }
-  } catch (err) {
-    await rollbackClaimedItems(order.id);
-    await deleteOrder(order.id);
-    logger.error({ err, orderId: order.id }, 'API order failed after create');
-    throw err instanceof ApiError
-      ? err
-      : new ApiError(500, 'order_failed', 'Order could not be completed.');
-  }
-
+  await setOrderDeliveredItems(order.id, claimed.join('\n'));
+  await finishDelivery(
+    order,
+    claimed.length && !claimed[0]?.startsWith('Manual delivery') ? 'delivered' : 'manual_review',
+  );
   void adminLog.logOrderCreated(args.api, {
     user: {
       telegram_id: args.user.telegram_id,
@@ -1121,5 +1144,10 @@ export async function placeApiOrder(args: {
     total,
     balance_after: Number(balanceAfter.toFixed(3)),
     items: claimed,
+    codes: claimed,
+    total_price: total,
+    new_balance: balanceAfter,
+    qty,
+    status: order.fulfillment_state ?? 'paid',
   };
 }

@@ -105,10 +105,7 @@ function pickPreview(
   filename: string,
 ): DeliveredItemsBlock {
   const fullBlock = renderBlock(items);
-  if (
-    items.length <= ITEMS_BULK_THRESHOLD &&
-    fullBlock.length <= ITEMS_INLINE_BUDGET
-  ) {
+  if (items.length <= ITEMS_BULK_THRESHOLD && fullBlock.length <= ITEMS_INLINE_BUDGET) {
     return { inlineBlock: fullBlock, attach: null };
   }
   for (let n = Math.min(ITEMS_PREVIEW_TARGET, items.length); n >= 1; n--) {
@@ -147,8 +144,7 @@ export function buildOrderDeliveredItemsBlock(
   if (items.length === 0) return { inlineBlock: '', attach: null };
   const filename = opts.filename ?? 'delivered-items.txt';
   const attachText = items.join('\n') + '\n';
-  const renderBlock = (xs: string[]) =>
-    xs.map((it) => quotePayload(it)).join('\n>\n');
+  const renderBlock = (xs: string[]) => xs.map((it) => quotePayload(it)).join('\n>\n');
   return pickPreview(items, renderBlock, '\n>\n', attachText, filename);
 }
 
@@ -185,18 +181,39 @@ export function buildOrderDeliveredChunks(
   items: string[],
   chunkSize: number = ORDER_DELIVERED_CHUNK_SIZE,
 ): DeliveredChunk[] {
-  if (items.length === 0) return [];
-  const size = Math.max(1, Math.floor(chunkSize));
-  const chunks: DeliveredChunk[] = [];
-  for (let i = 0; i < items.length; i += size) {
-    const slice = items.slice(i, i + size);
-    chunks.push({
-      inlineBlock: slice.map((it) => quotePayload(it)).join('\n>\n'),
-      isFirst: i === 0,
-      isLast: i + size >= items.length,
-    });
+  const blocks: string[] = [];
+  let current: string[] = [];
+  let length = 0;
+  for (const item of items) {
+    let rest = item;
+    const parts: string[] = [];
+    while (rest.length > 1800) {
+      let n = 1800;
+      if (/[\uD800-\uDBFF]/u.test(rest[n - 1]!)) n--;
+      parts.push(rest.slice(0, n));
+      rest = rest.slice(n);
+    }
+    parts.push(rest);
+    for (const part of parts) {
+      const quoted = quotePayload(part);
+      if (
+        current.length &&
+        (length + quoted.length + 3 > 2000 || current.length >= Math.max(1, chunkSize))
+      ) {
+        blocks.push(current.join('\n>\n'));
+        current = [];
+        length = 0;
+      }
+      current.push(quoted);
+      length += quoted.length + 3;
+    }
   }
-  return chunks;
+  if (current.length) blocks.push(current.join('\n>\n'));
+  return blocks.map((inlineBlock, i) => ({
+    inlineBlock,
+    isFirst: i === 0,
+    isLast: i === blocks.length - 1,
+  }));
 }
 
 /**
@@ -237,8 +254,6 @@ export function buildOrderDetailReceivedBlock(
  * New call sites should prefer `buildOrderDetailReceivedBlock` so
  * they can also forward the optional `.txt` attachment.
  */
-export function formatReceivedItemsBlock(
-  deliveredItems: string | null | undefined,
-): string {
+export function formatReceivedItemsBlock(deliveredItems: string | null | undefined): string {
   return buildOrderDetailReceivedBlock(deliveredItems).inlineBlock;
 }

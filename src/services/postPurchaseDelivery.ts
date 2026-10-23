@@ -1,3 +1,4 @@
+import { supabase } from '../db/supabase.js';
 /**
  * Post-purchase product delivery form.
  *
@@ -23,24 +24,16 @@
  */
 import type { Api, InlineKeyboard as InlineKeyboardType } from 'grammy';
 import { InlineKeyboard } from 'grammy';
-import { logger } from '../logger.js';
+import type { Lang } from '../../config/index.js';
+import { getDeliverySubmission, getProduct, upsertDeliverySubmission } from '../db/queries.js';
 import { env } from '../env.js';
 import { t as translate } from '../i18n/index.js';
+import { applyButtonChrome, btn } from '../keyboards/helpers.js';
+import { logger } from '../logger.js';
+import type { AppCtx } from '../middleware/user.js';
+import type { DBOrderDeliverySubmission, DBProduct, DeliveryFieldSpec } from '../types.js';
 import { renderMdHtml } from './premium.js';
 import { getAdminContactUrlWithPrefill } from './settings.js';
-import {
-  getDeliverySubmission,
-  getProduct,
-  upsertDeliverySubmission,
-} from '../db/queries.js';
-import { applyButtonChrome, btn } from '../keyboards/helpers.js';
-import type { Lang } from '../../config/index.js';
-import type {
-  DBOrderDeliverySubmission,
-  DBProduct,
-  DeliveryFieldSpec,
-} from '../types.js';
-import type { AppCtx } from '../middleware/user.js';
 
 /**
  * `#order-ORDXXXX` tag attached to vendor DMs so the seller can
@@ -99,10 +92,7 @@ export function productHasDeliveryForm(p: DBProduct): boolean {
  * deep links. Empty answers are rendered as `(blank)` so the vendor
  * can immediately see optional fields the buyer skipped.
  */
-function renderPayloadBlock(
-  fields: DeliveryFieldSpec[],
-  payload: Record<string, string>,
-): string {
+function renderPayloadBlock(fields: DeliveryFieldSpec[], payload: Record<string, string>): string {
   const lines: string[] = [];
   for (const f of fields) {
     const raw = payload[f.key];
@@ -117,10 +107,7 @@ function renderPayloadBlock(
  * text ("I have sent email foo@bar / password ***"). Skips empty
  * answers so the message reads naturally.
  */
-function renderFieldSummary(
-  fields: DeliveryFieldSpec[],
-  payload: Record<string, string>,
-): string {
+function renderFieldSummary(fields: DeliveryFieldSpec[], payload: Record<string, string>): string {
   const parts: string[] = [];
   for (const f of fields) {
     const v = payload[f.key];
@@ -130,8 +117,7 @@ function renderFieldSummary(
 }
 
 function tFor(lang: Lang) {
-  return (key: string, vars?: Record<string, string | number>) =>
-    translate(lang, key, vars);
+  return (key: string, vars?: Record<string, string | number>) => translate(lang, key, vars);
 }
 
 /**
@@ -149,10 +135,7 @@ function buildSuccessKeyboard(args: {
   kb.text(btn(args.lang, 'delivery_edit'), `delivery:edit:${args.orderId}`);
   applyButtonChrome(kb, 'delivery_edit');
   kb.row();
-  kb.url(
-    btn(args.lang, 'delivery_admin_help'),
-    getAdminContactUrlWithPrefill(args.helpText),
-  );
+  kb.url(btn(args.lang, 'delivery_admin_help'), getAdminContactUrlWithPrefill(args.helpText));
   applyButtonChrome(kb, 'delivery_admin_help');
   return kb;
 }
@@ -173,9 +156,7 @@ function renderPrompt(args: {
   const field = args.fields[args.cursor];
   if (!field) return '';
   const promptKey =
-    field.required === false
-      ? 'shop.delivery.box.prompt_optional'
-      : 'shop.delivery.box.prompt';
+    field.required === false ? 'shop.delivery.box.prompt_optional' : 'shop.delivery.box.prompt';
   const promptLine = t(promptKey, { label: field.label });
   if (total <= 1) return promptLine;
   const header = t('shop.delivery.box.header', {
@@ -259,12 +240,10 @@ async function sendVendorMessage(args: {
   const t = tFor(env.DEFAULT_LANG);
   const handle = args.buyer.username
     ? `@${args.buyer.username}`
-    : args.buyer.first_name ?? String(args.buyer.telegram_id);
+    : (args.buyer.first_name ?? String(args.buyer.telegram_id));
   const buyerStr = `${handle} (${args.buyer.telegram_id})`;
   const detailsBlock = renderPayloadBlock(args.fields, args.submission.payload);
-  const key = args.isResubmit
-    ? 'shop.delivery.vendor.resubmit'
-    : 'shop.delivery.vendor.new';
+  const key = args.isResubmit ? 'shop.delivery.vendor.resubmit' : 'shop.delivery.vendor.new';
   const body = t(key, {
     order_tag: buildOrderTag(args.orderPublicId),
     product_name: args.product.name,
@@ -315,12 +294,10 @@ async function finalizeSubmission(args: {
   const effectiveFields = getEffectiveDeliveryFields(args.product);
   const fieldSummary = renderFieldSummary(effectiveFields, args.payload);
   const helpText = t(
-    args.isResubmit
-      ? 'shop.delivery.admin_help.resubmit'
-      : 'shop.delivery.admin_help.first',
+    args.isResubmit ? 'shop.delivery.admin_help.resubmit' : 'shop.delivery.admin_help.first',
     {
       product_name: args.product.name,
-      field_summary: fieldSummary,
+      field_summary: 'Order reference only; details are available privately in the admin panel.',
       order_tag: buildOrderTag(args.orderPublicId),
     },
   );
@@ -331,19 +308,13 @@ async function finalizeSubmission(args: {
     .map((f) =>
       t('shop.delivery.box.summary_row', {
         label: f.label,
-        value: args.payload[f.key] && args.payload[f.key]!.length > 0
-          ? args.payload[f.key]!
-          : '—',
+        value: args.payload[f.key] && args.payload[f.key]!.length > 0 ? args.payload[f.key]! : '—',
       }),
     )
     .join('\n');
   const summaryHtml = `${summaryHeader}\n\n${renderMdHtml(summaryRows)}`;
   const successHtml = renderMdHtml(
-    t(
-      args.isResubmit
-        ? 'shop.delivery.success.resubmitted'
-        : 'shop.delivery.success.default',
-    ),
+    t(args.isResubmit ? 'shop.delivery.success.resubmitted' : 'shop.delivery.success.default'),
   );
   const kb = buildSuccessKeyboard({
     lang: args.lang,
@@ -407,20 +378,13 @@ export async function maybeStartDeliveryFormFromApi(args: {
   const effectiveFields = getEffectiveDeliveryFields(args.product);
   const instruction = args.product.delivery_instruction?.trim();
   const instructionText =
-    instruction && instruction.length > 0
-      ? instruction
-      : t('shop.delivery.instruction.default');
+    instruction && instruction.length > 0 ? instruction : t('shop.delivery.instruction.default');
   try {
-    await args.api.sendMessage(
-      args.buyerTelegramId,
-      renderMdHtml(instructionText),
-      { parse_mode: 'HTML' },
-    );
+    await args.api.sendMessage(args.buyerTelegramId, renderMdHtml(instructionText), {
+      parse_mode: 'HTML',
+    });
   } catch (err) {
-    logger.warn(
-      { err, userId: args.buyerTelegramId },
-      'delivery: instruction send failed',
-    );
+    logger.warn({ err, userId: args.buyerTelegramId }, 'delivery: instruction send failed');
   }
   const promptMessageId = await pushPromptCard({
     api: args.api,
@@ -499,25 +463,22 @@ export async function maybeStartDeliveryFormForCtx(args: {
       prompt_message_id: promptMessageId,
     },
   };
+  {
+    const { error } = await supabase
+      .from('delivery_form_sessions')
+      .upsert({
+        user_id: ctx.user.telegram_id,
+        data: ctx.session.userFlow,
+        updated_at: new Date().toISOString(),
+      });
+    if (error) throw error;
+  }
   return true;
 }
 
-/**
- * Same as the ctx variant but writes the flow into a Telegram user
- * session that does NOT currently have a ctx — used by the
- * direct-pay path. We can't access the session middleware from
- * outside an update, so we simply leave it to the user's next
- * message: the catch-all message handler will reconstruct the flow
- * from `pending_order` if needed (see `restoreFromPendingOrder`
- * fallback below).
- *
- * For now this is a no-op placeholder kept for symmetry; direct-pay
- * still works because the buyer's first reply is caught by the
- * session-less path in `handleDeliveryFormMessage` which falls back
- * to looking up the most recent unfinished submission for the user.
- *
- * Future improvement: a tiny `deliveryFormPending` table keyed by
- * `user_id` so a process restart can recover mid-flow.
+/** Persist an API/direct-pay delivery form until the buyer's next update.
+ * handleDeliveryFormMessage validates ownership and resumes this state,
+ * including after a worker restart. Progress is saved after each field.
  */
 async function seedDeliveryFormState(_args: {
   telegramId: number;
@@ -529,12 +490,26 @@ async function seedDeliveryFormState(_args: {
   editMode: boolean;
   prefill: Record<string, string>;
 }): Promise<void> {
-  // No external persistence yet — session-flow seed-on-next-message
-  // is enough for the wallet-pay path because the session is alive
-  // throughout. Direct-pay sets up the prompt but relies on the
-  // user's first reply triggering session middleware which assigns
-  // a fresh state.
-  return;
+  const data = {
+    type: 'delivery_form',
+    step: 'fields',
+    data: {
+      order_id: _args.orderId,
+      order_public_id: _args.orderPublicId,
+      product_id: _args.product.id,
+      product_name: _args.product.name,
+      fields: getEffectiveDeliveryFields(_args.product),
+      collected: _args.prefill,
+      cursor: 0,
+      edit_mode: _args.editMode,
+      prompt_chat_id: _args.promptChatId,
+      prompt_message_id: _args.promptMessageId,
+    },
+  };
+  const { error } = await supabase
+    .from('delivery_form_sessions')
+    .upsert({ user_id: _args.telegramId, data, updated_at: new Date().toISOString() });
+  if (error) throw error;
 }
 
 /**
@@ -546,6 +521,25 @@ async function seedDeliveryFormState(_args: {
  * routing (e.g. the catch-all "echo / Live Support" path).
  */
 export async function handleDeliveryFormMessage(ctx: AppCtx): Promise<boolean> {
+  if (ctx.session.adminFlow || ctx.session.customizeFlow || ctx.message?.text?.startsWith('/'))
+    return false;
+  if (!ctx.session.userFlow) {
+    const { data, error } = await supabase
+      .from('delivery_form_sessions')
+      .select('data')
+      .eq('user_id', ctx.user.telegram_id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) {
+      const { data: owned, error: ownershipError } = await supabase
+        .from('orders')
+        .select('user_id')
+        .eq('id', data.data.data.order_id)
+        .maybeSingle();
+      if (ownershipError) throw ownershipError;
+      if (owned?.user_id === ctx.user.telegram_id) ctx.session.userFlow = data.data;
+    }
+  }
   const flow = ctx.session.userFlow;
   if (!flow || flow.type !== 'delivery_form') return false;
   const text = ctx.message?.text?.trim();
@@ -561,16 +555,19 @@ export async function handleDeliveryFormMessage(ctx: AppCtx): Promise<boolean> {
   if (field.required === false && /^skip$/i.test(value)) {
     value = '';
   } else if (field.required !== false && value.length === 0) {
-    await ctx.reply(
-      renderMdHtml(
-        ctx.t('shop.delivery.box.invalid', { label: field.label }),
-      ),
-      { parse_mode: 'HTML' },
-    );
+    await ctx.reply(renderMdHtml(ctx.t('shop.delivery.box.invalid', { label: field.label })), {
+      parse_mode: 'HTML',
+    });
     return true;
   }
   flow.data.collected[field.key] = value;
   flow.data.cursor += 1;
+  {
+    const { error } = await supabase
+      .from('delivery_form_sessions')
+      .upsert({ user_id: ctx.user.telegram_id, data: flow, updated_at: new Date().toISOString() });
+    if (error) throw error;
+  }
   // Auto-delete the user's typed answer so the chat stays clean —
   // the in-place prompt card already shows their progress via
   // step counter. Best-effort: passwords / keys shouldn't linger.
@@ -618,14 +615,13 @@ export async function handleDeliveryFormMessage(ctx: AppCtx): Promise<boolean> {
     isResubmit: flow.data.edit_mode,
   });
   ctx.session.userFlow = undefined;
+  await supabase.from('delivery_form_sessions').delete().eq('user_id', ctx.user.telegram_id);
   // Also clear the in-place prompt card — it's been replaced by
   // the summary + success card.
   if (flow.data.prompt_message_id !== undefined) {
-    void ctx.api
-      .deleteMessage(flow.data.prompt_chat_id, flow.data.prompt_message_id)
-      .catch(() => {
-        /* prompt already gone — fine */
-      });
+    void ctx.api.deleteMessage(flow.data.prompt_chat_id, flow.data.prompt_message_id).catch(() => {
+      /* prompt already gone — fine */
+    });
   }
   return true;
 }
@@ -636,12 +632,9 @@ export async function handleDeliveryFormMessage(ctx: AppCtx): Promise<boolean> {
  * thing. Called from the `delivery:edit:<orderId>` callback handler
  * registered in `handlers/shop.ts`.
  */
-export async function startEditDelivery(args: {
-  ctx: AppCtx;
-  orderId: number;
-}): Promise<boolean> {
+export async function startEditDelivery(args: { ctx: AppCtx; orderId: number }): Promise<boolean> {
   const submission = await getDeliverySubmission(args.orderId);
-  if (!submission) return false;
+  if (!submission || submission.user_id !== args.ctx.user.telegram_id) return false;
   const product = await getProduct(submission.product_id);
   if (!product) return false;
   const publicId = await derivePublicOrderId(args.orderId);

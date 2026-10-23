@@ -273,7 +273,7 @@ async function showApiPanel(ctx: AppCtx, newKey?: string): Promise<void> {
 }
 
 export function registerResellerApi(bot: Composer<AppCtx>): void {
-  bot.command(['api', 'apikey'], async (ctx) => {
+  bot.command(['developer', 'apikey'], async (ctx) => {
     await showApiPanel(ctx);
   });
 

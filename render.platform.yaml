@@ -1,0 +1,59 @@
+# Use this Blueprint for the WWC controller. NSS uses its own existing host.
+services:
+  - type: web
+    name: wwc-store-platform
+    runtime: node
+    plan: free
+    numInstances: 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:platform
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: warn
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: NSS_API_ORIGIN
+        sync: false
+      - key: NSS_BOT_USERNAME
+        sync: false
+      - key: WWC_MANAGER_TOKEN
+        sync: false
+      - key: WWC_MANAGER_USERNAME
+        sync: false
+      - key: WWC_PLATFORM_OWNERS
+        sync: false
+      - key: WWC_PLATFORM_SECRET
+        sync: false
+      - key: WWC_ENCRYPTION_KEY
+        sync: false
+      - key: WWC_MAX_WARM_WORKERS
+        value: 1
+      - key: WWC_MAX_ACTIVE_SHOPS
+        value: 20
+      - key: WWC_MAX_OWNER_SHOPS
+        value: 1
+      - key: WWC_WORKER_HEAP_MB
+        value: 128
+      - key: WWC_WORKER_IDLE_SECONDS
+        value: 180
+      - key: WWC_WORKER_QUEUE_LIMIT
+        value: 32
+      - key: WWC_WORKER_QUEUE_WAIT_SECONDS
+        value: 15
+      - key: WWC_INACTIVITY_HOURS
+        value: 72
+      - key: WWC_SUBSCRIPTION_STARS
+        value: 500
+      - key: WWC_SUBSCRIPTION_USD
+        sync: false
+      - key: WWC_SUBSCRIPTION_DAYS
+        value: 30

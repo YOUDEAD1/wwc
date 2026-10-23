@@ -12,9 +12,6 @@
 -- so the delete is safe.
 -- =====================================================================
 
-insert into public.admins (telegram_id, username)
-values (8004955979, 'safwantiger')
-on conflict (telegram_id) do nothing;
+-- Owner access is supplied through ADMIN_USER_ID; no third-party admin is seeded.
 
-delete from public.admins
- where telegram_id = 7913962419;
+-- Existing admin rows are retained.

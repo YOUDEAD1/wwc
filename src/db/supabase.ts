@@ -13,4 +13,4 @@ export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
   },
 });
 
-export { getDb };
+export { getDb };

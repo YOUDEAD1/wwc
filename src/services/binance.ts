@@ -1,3 +1,5 @@
+import { getDbScope } from '../db/db_context.js';
+import { recordTransfer } from './networkMeter.js';
 /**
  * Binance Pay personal-account verifier client.
  *
@@ -158,7 +160,7 @@ function readProxyRoutes(): ProxyRoute[] {
   for (const proxyUrl of configured) {
     const label = formatProxyLabel(proxyUrl);
     try {
-      routes.push({ label, dispatcher: new ProxyAgent(proxyUrl) });
+      routes.push({ label, dispatcher: getProxyAgent(proxyUrl) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ err, proxy: label }, 'binance: invalid proxy URL');
@@ -201,11 +203,13 @@ function summarizeFailures(failures: AttemptFailure[]): string {
  * given time window. The endpoint caps results at 100 per call and
  * accepts an optional `[startTime, endTime]` range (epoch ms).
  */
-export async function listPayTransactions(opts: {
-  startTime?: number;
-  endTime?: number;
-  limit?: number;
-} = {}): Promise<BinanceApiResult<BinancePayTransaction[]>> {
+export async function listPayTransactions(
+  opts: {
+    startTime?: number;
+    endTime?: number;
+    limit?: number;
+  } = {},
+): Promise<BinanceApiResult<BinancePayTransaction[]>> {
   const creds = readCreds();
   if (!creds) {
     return { ok: false, reason: 'binance api credentials missing' };
@@ -220,13 +224,24 @@ export async function listPayTransactions(opts: {
   const query = params.toString();
   const sig = signQuery(query, creds.apiSecret);
 
+  const scope = getDbScope();
+  const blocked = providerCooldown.get(scope) ?? 0;
+  if (blocked > Date.now())
+    return { ok: false, reason: 'binance retry deferred; provider temporarily unavailable' };
+  const deadline = Date.now() + 15000;
+  let attempts = 0;
   const failures: AttemptFailure[] = [];
   const baseUrls = readBaseUrls();
   const proxyRoutes = readProxyRoutes();
 
-  for (const proxy of proxyRoutes) {
-    for (const baseUrl of baseUrls) {
+  const choices = proxyRoutes.flatMap((proxy) => baseUrls.map((baseUrl) => ({ proxy, baseUrl })));
+  const cursor = routeCursor.get(scope) ?? 0;
+  for (let n = 0; n < choices.length && attempts < 2 && Date.now() < deadline; n++) {
+    const index = (cursor + n) % choices.length;
+    const { proxy, baseUrl } = choices[index]!;
+    {
       const route = routeLabel(baseUrl, proxy);
+      routeCursor.set(scope, (index + 1) % choices.length);
       if (proxy.initError) {
         failures.push({
           route,
@@ -235,10 +250,15 @@ export async function listPayTransactions(opts: {
         continue;
       }
 
-      const url = `${baseUrl}${ENDPOINT}?${query}&signature=${sig}`;
+      params.set('timestamp', String(Date.now()));
+      const freshQuery = params.toString();
+      const freshSignature = signQuery(freshQuery, creds.apiSecret);
+      const url = `${baseUrl}${ENDPOINT}?${freshQuery}&signature=${freshSignature}`;
       let resp: Response;
       try {
+        attempts++;
         resp = await fetch(url, {
+          signal: AbortSignal.timeout(Math.max(1, Math.min(7000, deadline - Date.now()))),
           headers: { 'X-MBX-APIKEY': creds.apiKey },
           ...(proxy.dispatcher ? { dispatcher: proxy.dispatcher } : {}),
         });
@@ -249,6 +269,13 @@ export async function listPayTransactions(opts: {
         continue;
       }
 
+      recordTransfer(
+        'binance',
+        baseUrl,
+        Number(resp.headers.get('content-length') ?? 0),
+        resp.status >= 400,
+      );
+      if ([401, 403, 451].includes(resp.status)) providerCooldown.set(scope, Date.now() + 60000);
       const bodyText = await resp.text();
       if (resp.status === 451) {
         failures.push({ route, status: resp.status, reason: 'http 451 region-blocked' });
@@ -297,12 +324,15 @@ export async function listPayTransactions(opts: {
           'binance: verifier succeeded after route fallback',
         );
       }
+      providerCooldown.delete(scope);
+      routeCursor.set(scope, index);
       return { ok: true, data: obj.data };
     }
   }
 
   const reason = summarizeFailures(failures);
   logger.warn({ failures }, 'binance: all verifier routes failed');
+  providerCooldown.set(scope, Math.max(providerCooldown.get(scope) ?? 0, Date.now() + 15000));
   return { ok: false, reason };
 }
 
@@ -326,4 +356,21 @@ export async function findPayTransactionByOrderId(
 /** Whether the Binance Pay verifier is enabled (both env vars set). */
 export function isBinancePayEnabled(): boolean {
   return readCreds() !== null;
+}
+const providerCooldown = new Map<string, number>();
+const routeCursor = new Map<string, number>();
+
+const proxyAgents = new Map<string, ProxyAgent>();
+function getProxyAgent(url: string) {
+  let agent = proxyAgents.get(url);
+  if (!agent) {
+    if (proxyAgents.size >= 16) {
+      const key = proxyAgents.keys().next().value!;
+      void proxyAgents.get(key)!.close();
+      proxyAgents.delete(key);
+    }
+    agent = new ProxyAgent(url);
+    proxyAgents.set(url, agent);
+  }
+  return agent;
 }

@@ -1,3 +1,4 @@
+import { getContextBotUsername, isTenantContext } from '../db/db_context.js';
 /**
  * Central "everything the admin needs to know" notification service.
  *
@@ -27,11 +28,11 @@
  */
 import type { Api, InputFile } from 'grammy';
 import { InlineKeyboard } from 'grammy';
+import { getContextAdminId } from '../db/db_context.js';
 import { env } from '../env.js';
 import { logger } from '../logger.js';
-import { getLogChatIdOverride, getOrderLogChatIdOverride } from './settings.js';
-import { getContextAdminId } from '../db/db_context.js';
 import * as publicFeed from './publicFeed.js';
+import { getLogChatIdOverride, getOrderLogChatIdOverride } from './settings.js';
 
 /**
  * Shared user shape every event payload includes. Keep this small
@@ -72,10 +73,7 @@ function formatLoggedAt(date: Date = new Date()): string {
 }
 
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function userBlock(u: LogUser): string[] {
@@ -83,9 +81,7 @@ function userBlock(u: LogUser): string[] {
   lines.push('👤 <b>User</b>');
   lines.push(`🆔 Telegram ID: <code>${u.telegram_id}</code>`);
   // Safer than tg://user — opens reliably in Telegram apps.
-  lines.push(
-    `👤 User link: <a href="tg://user?id=${u.telegram_id}">open profile</a>`,
-  );
+  lines.push(`👤 User link: <a href="tg://user?id=${u.telegram_id}">open profile</a>`);
   lines.push(`🏷 Username: @${escapeHtml(u.username ?? '—')}`);
   if (u.first_name)
     lines.push(`📛 Name: ${escapeHtml(`${u.first_name}${u.last_name ? ' ' + u.last_name : ''}`)}`);
@@ -132,7 +128,7 @@ function compose(args: {
   // unset the line still carries the "Source: bot" anchor so the
   // shape stays stable.
   out.push(
-    `<i>Source: bot • @${escapeHtml(env.BOT_USERNAME ?? '—')} • ${ADMIN_LOG_TZ_LABEL}</i>`,
+    `<i>Source: bot • @${escapeHtml(getContextBotUsername() ?? '—')} • ${ADMIN_LOG_TZ_LABEL}</i>`,
   );
   return out.join('\n');
 }
@@ -164,10 +160,10 @@ function chatChain(channel: LogChannel): ChatId[] {
     chain.push(chat);
   };
   if (channel === 'orders') {
-    push(getOrderLogChatIdOverride() ?? env.ORDER_LOG_CHAT_ID);
-    push(getLogChatIdOverride() ?? env.LOG_CHAT_ID);
+    push(getOrderLogChatIdOverride() ?? (isTenantContext() ? undefined : env.ORDER_LOG_CHAT_ID));
+    push(getLogChatIdOverride() ?? (isTenantContext() ? undefined : env.LOG_CHAT_ID));
   } else {
-    push(getLogChatIdOverride() ?? env.LOG_CHAT_ID);
+    push(getLogChatIdOverride() ?? (isTenantContext() ? undefined : env.LOG_CHAT_ID));
   }
   push(getContextAdminId());
   return chain;
@@ -226,11 +222,14 @@ async function sendDocument(
 //  Public API — one function per event tag.
 // ---------------------------------------------------------------------------
 
-export async function logFirstStart(api: Api, args: {
-  user: LogUser;
-  referralCode: string | null;
-  referredBy: number | null;
-}): Promise<void> {
+export async function logFirstStart(
+  api: Api,
+  args: {
+    user: LogUser;
+    referralCode: string | null;
+    referredBy: number | null;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'START',
     title: 'New User Joined',
@@ -243,19 +242,22 @@ export async function logFirstStart(api: Api, args: {
   await send(api, body);
 }
 
-export async function logOrderCreated(api: Api, args: {
-  user: LogUser;
-  orderDbId: number;
-  orderPublicId: string;
-  productId: number;
-  productName: string;
-  qty: number;
-  unitPrice: number;
-  total: number;
-  paidVia: string;
-  balanceAfter: number;
-  lifecycle?: 'delivered' | 'preorder' | 'auto_delivered';
-}): Promise<void> {
+export async function logOrderCreated(
+  api: Api,
+  args: {
+    user: LogUser;
+    orderDbId: number;
+    orderPublicId: string;
+    productId: number;
+    productName: string;
+    qty: number;
+    unitPrice: number;
+    total: number;
+    paidVia: string;
+    balanceAfter: number;
+    lifecycle?: 'delivered' | 'preorder' | 'auto_delivered';
+  },
+): Promise<void> {
   const preorder = args.lifecycle === 'preorder';
   const autoDelivered = args.lifecycle === 'auto_delivered';
   const body = compose({
@@ -300,21 +302,24 @@ export async function logOrderCreated(api: Api, args: {
   await send(api, body, 'orders');
 }
 
-export async function logSupplierOrderFailed(api: Api, args: {
-  user: LogUser;
-  orderDbId: number;
-  orderPublicId: string;
-  productId: number;
-  productName: string;
-  qty: number;
-  total: number;
-  paidVia: string;
-  balanceAfter: number;
-  supplierName: string;
-  supplierProductId: string;
-  reason: string;
-  lowBalance: boolean;
-}): Promise<void> {
+export async function logSupplierOrderFailed(
+  api: Api,
+  args: {
+    user: LogUser;
+    orderDbId: number;
+    orderPublicId: string;
+    productId: number;
+    productName: string;
+    qty: number;
+    total: number;
+    paidVia: string;
+    balanceAfter: number;
+    supplierName: string;
+    supplierProductId: string;
+    reason: string;
+    lowBalance: boolean;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'SUPPLIER',
     title: args.lowBalance
@@ -356,8 +361,6 @@ export async function logSupplierOrderFailed(api: Api, args: {
   await send(api, body, 'orders', kb);
 }
 
-
-
 /**
  * Hard cap user-pasted strings rendered into the admin feed so a
  * malicious paste (10k chars of HTML / control bytes) can't blow up
@@ -373,15 +376,18 @@ function clampForLog(s: string, max = 256): string {
   return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned;
 }
 
-export async function logTopupSubmitted(api: Api, args: {
-  user: LogUser;
-  depositDbId: number;
-  method: string;
-  /** Auto-verify reference (on-chain tx hash). */
-  reference: string;
-  /** Optional reason auto-verify deferred to manual (verifier message). */
-  reason?: string;
-}): Promise<void> {
+export async function logTopupSubmitted(
+  api: Api,
+  args: {
+    user: LogUser;
+    depositDbId: number;
+    method: string;
+    /** Auto-verify reference (on-chain tx hash). */
+    reference: string;
+    /** Optional reason auto-verify deferred to manual (verifier message). */
+    reason?: string;
+  },
+): Promise<void> {
   // Defensive: even though `topup.ts` / `directPay.ts` cap and
   // sanitize their inputs before calling us, anyone calling this
   // helper from another path (or future code) inherits the same
@@ -424,37 +430,40 @@ export async function logTopupSubmitted(api: Api, args: {
   await send(api, body, 'main', kb);
 }
 
-export async function logTopupResolved(api: Api, args: {
-  user: LogUser;
-  depositDbId: number;
-  method: string;
-  amount: number;
-  status: 'approved' | 'rejected';
-  balanceAfter: number | null;
-  /**
-   * Telegram ID of the admin who resolved the deposit, or `0` for an
-   * automated on-chain auto-verify resolution. The `0` sentinel is
-   * also what flips the title prefix to `[VERIFIED ✅]`.
-   */
-  resolvedBy: number;
-  /**
-   * Optional on-chain reference (TXID / Order ID) the verifier
-   * matched against. Surfaced to the admin so they can audit which
-   * specific transaction was credited.
-   */
-  reference?: string | null;
-  /**
-   * Optional sender address pulled from the on-chain receipt
-   * (`from` field of the chain TX). Surfaced so the admin can spot
-   * unusual senders / cross-check a flagged customer.
-   */
-  sender?: string | null;
-  /**
-   * Optional on-chain block / receipt timestamp (ms since epoch)
-   * pulled from the verifier. Distinct from `Logged At` (= now).
-   */
-  onChainTimestampMs?: number | null;
-}): Promise<void> {
+export async function logTopupResolved(
+  api: Api,
+  args: {
+    user: LogUser;
+    depositDbId: number;
+    method: string;
+    amount: number;
+    status: 'approved' | 'rejected';
+    balanceAfter: number | null;
+    /**
+     * Telegram ID of the admin who resolved the deposit, or `0` for an
+     * automated on-chain auto-verify resolution. The `0` sentinel is
+     * also what flips the title prefix to `[VERIFIED ✅]`.
+     */
+    resolvedBy: number;
+    /**
+     * Optional on-chain reference (TXID / Order ID) the verifier
+     * matched against. Surfaced to the admin so they can audit which
+     * specific transaction was credited.
+     */
+    reference?: string | null;
+    /**
+     * Optional sender address pulled from the on-chain receipt
+     * (`from` field of the chain TX). Surfaced so the admin can spot
+     * unusual senders / cross-check a flagged customer.
+     */
+    sender?: string | null;
+    /**
+     * Optional on-chain block / receipt timestamp (ms since epoch)
+     * pulled from the verifier. Distinct from `Logged At` (= now).
+     */
+    onChainTimestampMs?: number | null;
+  },
+): Promise<void> {
   // `resolvedBy === 0` is the agreed sentinel for "auto-verified by
   // the bot" (see `services/depositVerify.ts`). We translate that to
   // a [VERIFIED ✅] prefix on the title row so the admin can tell at
@@ -465,22 +474,17 @@ export async function logTopupResolved(api: Api, args: {
     args.status === 'approved'
       ? `${isAuto ? '[VERIFIED ✅]' : '[MANUAL]'} Top-up Approved`
       : `${isAuto ? '[VERIFIED ✅]' : '[MANUAL]'} Top-up Rejected`;
-  const safeRef = args.reference
-    ? escapeHtml(clampForLog(args.reference))
-    : null;
+  const safeRef = args.reference ? escapeHtml(clampForLog(args.reference)) : null;
   const safeSender = args.sender ? escapeHtml(clampForLog(args.sender)) : null;
   const onChainAt =
-    typeof args.onChainTimestampMs === 'number' &&
-    Number.isFinite(args.onChainTimestampMs)
+    typeof args.onChainTimestampMs === 'number' && Number.isFinite(args.onChainTimestampMs)
       ? formatLoggedAt(new Date(args.onChainTimestampMs))
       : null;
   const body = compose({
     tag: 'TOPUP',
     title: stampedTitle,
     user: args.user,
-    headerLines: [
-      `🆔 Deposit DB ID: ${args.depositDbId}`,
-    ],
+    headerLines: [`🆔 Deposit DB ID: ${args.depositDbId}`],
     bodyLines: [
       '💸 <b>Top-up</b>',
       `Method: ${escapeHtml(args.method)}`,
@@ -509,13 +513,16 @@ export async function logTopupResolved(api: Api, args: {
   await send(api, body);
 }
 
-export async function logBalanceChange(api: Api, args: {
-  user: LogUser;
-  delta: number;
-  balanceAfter: number;
-  reason: string;
-  by: 'admin' | 'gift_code' | 'order' | 'topup' | 'refund' | 'referral';
-}): Promise<void> {
+export async function logBalanceChange(
+  api: Api,
+  args: {
+    user: LogUser;
+    delta: number;
+    balanceAfter: number;
+    reason: string;
+    by: 'admin' | 'gift_code' | 'order' | 'topup' | 'refund' | 'referral';
+  },
+): Promise<void> {
   const sign = args.delta >= 0 ? '+' : '';
   const body = compose({
     tag: 'BALANCE',
@@ -540,12 +547,15 @@ export async function logBalanceChange(api: Api, args: {
   await send(api, body);
 }
 
-export async function logEmail(api: Api, args: {
-  user: LogUser;
-  mode: 'set' | 'change' | 'delete';
-  oldEmail: string | null;
-  newEmail: string | null;
-}): Promise<void> {
+export async function logEmail(
+  api: Api,
+  args: {
+    user: LogUser;
+    mode: 'set' | 'change' | 'delete';
+    oldEmail: string | null;
+    newEmail: string | null;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'EMAIL',
     title:
@@ -565,12 +575,15 @@ export async function logEmail(api: Api, args: {
   await send(api, body);
 }
 
-export async function logRegion(api: Api, args: {
-  user: LogUser;
-  mode: 'set' | 'clear';
-  region: string | null;
-  timezone: string | null;
-}): Promise<void> {
+export async function logRegion(
+  api: Api,
+  args: {
+    user: LogUser;
+    mode: 'set' | 'clear';
+    region: string | null;
+    timezone: string | null;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'REGION',
     title: args.mode === 'set' ? 'Region Set' : 'Region Cleared',
@@ -584,12 +597,15 @@ export async function logRegion(api: Api, args: {
   await send(api, body);
 }
 
-export async function logRefer(api: Api, args: {
-  user: LogUser;
-  refCode: string;
-  referralLink: string;
-  totalReferrals: number;
-}): Promise<void> {
+export async function logRefer(
+  api: Api,
+  args: {
+    user: LogUser;
+    refCode: string;
+    referralLink: string;
+    totalReferrals: number;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'REFER',
     title: 'Referral Link Copied / Shared',
@@ -604,12 +620,15 @@ export async function logRefer(api: Api, args: {
   await send(api, body);
 }
 
-export async function logGiftRedeem(api: Api, args: {
-  user: LogUser;
-  code: string;
-  amount: number;
-  balanceAfter: number;
-}): Promise<void> {
+export async function logGiftRedeem(
+  api: Api,
+  args: {
+    user: LogUser;
+    code: string;
+    amount: number;
+    balanceAfter: number;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'GIFT',
     title: 'Gift Code Redeemed',
@@ -626,28 +645,31 @@ export async function logGiftRedeem(api: Api, args: {
   await send(api, body);
 }
 
-export async function logLanguageChange(api: Api, args: {
-  user: LogUser;
-  oldLang: string | null;
-  newLang: string;
-}): Promise<void> {
+export async function logLanguageChange(
+  api: Api,
+  args: {
+    user: LogUser;
+    oldLang: string | null;
+    newLang: string;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'LANG',
     title: 'Language Changed',
     user: args.user,
-    bodyLines: [
-      `From: ${args.oldLang ?? '—'}`,
-      `To: ${args.newLang}`,
-    ],
+    bodyLines: [`From: ${args.oldLang ?? '—'}`, `To: ${args.newLang}`],
   });
   await send(api, body);
 }
 
-export async function logNotificationToggle(api: Api, args: {
-  user: LogUser;
-  channel: 'stock' | 'announcements' | 'wallet' | 'email_reports';
-  enabled: boolean;
-}): Promise<void> {
+export async function logNotificationToggle(
+  api: Api,
+  args: {
+    user: LogUser;
+    channel: 'stock' | 'announcements' | 'wallet' | 'email_reports';
+    enabled: boolean;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'NOTIF',
     title: `${args.enabled ? 'Enabled' : 'Disabled'} ${args.channel} notifications`,
@@ -660,11 +682,14 @@ export async function logNotificationToggle(api: Api, args: {
   await send(api, body);
 }
 
-export async function logSupportStart(api: Api, args: {
-  user: LogUser;
-  userTopicId: number | undefined;
-  adminTopicId: number | undefined;
-}): Promise<void> {
+export async function logSupportStart(
+  api: Api,
+  args: {
+    user: LogUser;
+    userTopicId: number | undefined;
+    adminTopicId: number | undefined;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'SUPPORT',
     title: 'Live Support Started',
@@ -678,12 +703,15 @@ export async function logSupportStart(api: Api, args: {
   await send(api, body);
 }
 
-export async function logSupportEnd(api: Api, args: {
-  user: LogUser;
-  endedBy: 'user' | 'admin';
-  durationSeconds: number;
-  messageCount: number;
-}): Promise<void> {
+export async function logSupportEnd(
+  api: Api,
+  args: {
+    user: LogUser;
+    endedBy: 'user' | 'admin';
+    durationSeconds: number;
+    messageCount: number;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'SUPPORT',
     title: `Live Support Ended (by ${args.endedBy})`,
@@ -697,12 +725,15 @@ export async function logSupportEnd(api: Api, args: {
   await send(api, body);
 }
 
-export async function logPdfSent(api: Api, args: {
-  user: LogUser;
-  kind: 'orders' | 'deposits' | 'stats' | 'support';
-  destinationEmail: string;
-  rowCount: number;
-}): Promise<void> {
+export async function logPdfSent(
+  api: Api,
+  args: {
+    user: LogUser;
+    kind: 'orders' | 'deposits' | 'stats' | 'support';
+    destinationEmail: string;
+    rowCount: number;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'PDF',
     title: `${args.kind} PDF generated & emailed`,
@@ -724,21 +755,21 @@ export async function logPdfSent(api: Api, args: {
  * user only ever sees the short retry message — the full upstream
  * error body and provider identity stays in the admin feed.
  */
-export async function logAiError(api: Api, args: {
-  user: LogUser;
-  provider: string;
-  model: string;
-  status?: number | string;
-  errorMessage: string;
-  question: string;
-}): Promise<void> {
+export async function logAiError(
+  api: Api,
+  args: {
+    user: LogUser;
+    provider: string;
+    model: string;
+    status?: number | string;
+    errorMessage: string;
+    question: string;
+  },
+): Promise<void> {
   const status = args.status === undefined ? '—' : String(args.status);
-  const trimmedQ = args.question.length > 200
-    ? args.question.slice(0, 200) + '…'
-    : args.question;
-  const trimmedErr = args.errorMessage.length > 800
-    ? args.errorMessage.slice(0, 800) + '…'
-    : args.errorMessage;
+  const trimmedQ = args.question.length > 200 ? args.question.slice(0, 200) + '…' : args.question;
+  const trimmedErr =
+    args.errorMessage.length > 800 ? args.errorMessage.slice(0, 800) + '…' : args.errorMessage;
   const body = compose({
     tag: 'AI',
     title: 'Kiwi AI provider call failed',
@@ -755,12 +786,15 @@ export async function logAiError(api: Api, args: {
   await send(api, body);
 }
 
-export async function logSupportTranscript(api: Api, args: {
-  user: LogUser;
-  durationSeconds: number;
-  messageCount: number;
-  pdf: InputFile;
-}): Promise<void> {
+export async function logSupportTranscript(
+  api: Api,
+  args: {
+    user: LogUser;
+    durationSeconds: number;
+    messageCount: number;
+    pdf: InputFile;
+  },
+): Promise<void> {
   const caption = compose({
     tag: 'SUPPORT',
     title: 'Live Support — Full Transcript (PDF)',
@@ -774,11 +808,14 @@ export async function logSupportTranscript(api: Api, args: {
   await sendDocument(api, args.pdf, caption);
 }
 // ─── Stock Depletion / Low Stock Alert ────────────────────────
-export async function logStockAlert(api: Api, args: {
-  productId: number;
-  productName: string;
-  remaining: number;
-}): Promise<void> {
+export async function logStockAlert(
+  api: Api,
+  args: {
+    productId: number;
+    productName: string;
+    remaining: number;
+  },
+): Promise<void> {
   const isDepleted = args.remaining <= 0;
   const tag = isDepleted ? 'STOCK_DEPLETED' : 'STOCK_LOW';
   const lines = [
@@ -790,22 +827,23 @@ export async function logStockAlert(api: Api, args: {
     `🆔 ID: <code>${args.productId}</code>`,
     `📊 Remaining: <b>${args.remaining}</b>`,
     '',
-    isDepleted
-      ? '⛔ This product is now <b>OUT OF STOCK</b>.'
-      : '⚠️ Restock recommended.',
+    isDepleted ? '⛔ This product is now <b>OUT OF STOCK</b>.' : '⚠️ Restock recommended.',
     '',
-    `<i>Source: bot • @${escapeHtml(env.BOT_USERNAME ?? '—')} • ${ADMIN_LOG_TZ_LABEL}</i>`,
+    `<i>Source: bot • @${escapeHtml(getContextBotUsername() ?? '—')} • ${ADMIN_LOG_TZ_LABEL}</i>`,
   ];
   await send(api, lines.join('\n'));
 }
 
-export async function logStockAdded(api: Api, args: {
-  adminUser: LogUser;
-  productId: number;
-  productName: string;
-  qtyAdded: number;
-  totalStock: number;
-}): Promise<void> {
+export async function logStockAdded(
+  api: Api,
+  args: {
+    adminUser: LogUser;
+    productId: number;
+    productName: string;
+    qtyAdded: number;
+    totalStock: number;
+  },
+): Promise<void> {
   const body = compose({
     tag: 'STOCK_ADDED',
     title: 'New Stock Added',
@@ -839,9 +877,10 @@ export async function logSupplierPriceChangedAlert(
   const isIncrease = args.newSupplierCost > args.oldSupplierCost;
   const trendIcon = isIncrease ? '📈' : '📉';
   const diff = Math.abs(args.newSupplierCost - args.oldSupplierCost).toFixed(2);
-  const diffPercent = args.oldSupplierCost > 0
-    ? (((args.newSupplierCost - args.oldSupplierCost) / args.oldSupplierCost) * 100).toFixed(1)
-    : '0';
+  const diffPercent =
+    args.oldSupplierCost > 0
+      ? (((args.newSupplierCost - args.oldSupplierCost) / args.oldSupplierCost) * 100).toFixed(1)
+      : '0';
 
   const body = [
     `⚠️ <b>تنبيه: تغير سعر المنتج لدى المورد/API!</b>`,
@@ -862,7 +901,10 @@ export async function logSupplierPriceChangedAlert(
     .join('\n');
 
   const kb = new InlineKeyboard()
-    .text(`⚡ تطبيق النسبة ($${args.suggestedSellPrice.toFixed(2)})`, `adm:pchange:apply:${args.productId}:${args.suggestedSellPrice.toFixed(2)}`)
+    .text(
+      `⚡ تطبيق النسبة ($${args.suggestedSellPrice.toFixed(2)})`,
+      `adm:pchange:apply:${args.productId}:${args.suggestedSellPrice.toFixed(2)}`,
+    )
     .row()
     .text('📊 تحديد نسبة ربح %', `adm:pchange:setp:${args.productId}`)
     .text('💲 تحديد سعر يدوي', `adm:pchange:setm:${args.productId}`)
@@ -871,4 +913,3 @@ export async function logSupplierPriceChangedAlert(
 
   await send(api, body, 'main', kb);
 }
-

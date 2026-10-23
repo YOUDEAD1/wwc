@@ -1,0 +1,5 @@
+src/services/telegramFetch.ts 70ms (unchanged)
+src/services/networkMeter.ts 42ms (unchanged)
+src/platform/manager/bot.ts 205ms
+tests/external-manager.test.mjs 24ms
+tests/telegram-upload.test.mjs 10ms (unchanged)

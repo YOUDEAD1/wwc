@@ -1,58 +1,50 @@
 import type { Composer } from 'grammy';
 import { getCurrency, normalizeCurrency } from '../../config/currencies.js';
 import { type Lang } from '../../config/index.js';
-import { POPULAR_REGIONS, formatLocalTime, getRegion } from '../../config/regions.js';
+import { formatLocalTime, getRegion, POPULAR_REGIONS } from '../../config/regions.js';
 import {
-  adjustBalance,
   convertReferralBalance,
-  countReferralsSince,
   countGiftCodeRedemptions,
   countGiftCodeRedemptionsByUser,
-  findUserByEmail,
+  countReferralsSince,
   getGiftCode,
-  InsufficientReferralBalanceError,
   getOrder,
   getReferralBalance,
   getReferralEarnings,
   getUserStats,
-  listAllProducts,
+  InsufficientReferralBalanceError,
   listActivePromos,
+  listAllProducts,
   listDeposits,
   listOrders,
   listOrdersPaginated,
   listWalletLedger,
-  recordGiftCodeRedemption,
-  recordLedger,
-  setUserEmail,
   setUserCurrency,
   setUserLanguage,
   setUserRegion,
-  toggleEmailReports,
   toggleNotification,
 } from '../db/queries.js';
+import { env } from '../env.js';
+import { orderDetailKeyboard, ORDERS_PER_PAGE, ordersListKeyboard } from '../keyboards/orders.js';
 import {
-  profileKeyboard,
-  notificationsKeyboard,
-  languageKeyboard,
-  statsKeyboard,
   backToSettingsKeyboard,
   botTutorialKeyboard,
-  depositsActionsKeyboard,
-  emailDeleteConfirmKeyboard,
-  emailHubKeyboard,
-  emailScreenKeyboard,
-  priceListKeyboard,
-  referKeyboard,
-  whyEmailKeyboard,
   currencyKeyboard,
+  depositsActionsKeyboard,
+  emailHubKeyboard,
+  languageKeyboard,
+  notificationsKeyboard,
+  priceListKeyboard,
+  profileKeyboard,
+  referKeyboard,
+  statsKeyboard,
 } from '../keyboards/profile.js';
-import { regionPickerKeyboard } from '../keyboards/region.js';
-import { ordersListKeyboard, orderDetailKeyboard, ORDERS_PER_PAGE } from '../keyboards/orders.js';
 import { redeemKeyboard } from '../keyboards/redeem.js';
-import { publicOrderId, parsePublicOrderId } from '../services/orderId.js';
-import { buildOrderDetailReceivedBlock } from '../services/orderRender.js';
+import { regionPickerKeyboard } from '../keyboards/region.js';
 import type { AppCtx } from '../middleware/user.js';
-import { env } from '../env.js';
+import { type ReportKind, sendInvoiceEmail, sendReportEmail } from '../services/mailer.js';
+import { parsePublicOrderId, publicOrderId } from '../services/orderId.js';
+import { buildOrderDetailReceivedBlock } from '../services/orderRender.js';
 import {
   clampForTelegram,
   escapeAttr,
@@ -61,39 +53,31 @@ import {
   renderPremium,
   sanitizeButtonUrl,
 } from '../services/premium.js';
-import {
-  type ReportKind,
-  sendWelcomeEmail,
-  sendReportEmail,
-  sendInvoiceEmail,
-  sendPriceListEmail,
-} from '../services/mailer.js';
 
+import { InputFile } from 'grammy';
+import { dirname, resolve as pathResolve } from 'path';
+import { fileURLToPath } from 'url';
+import { logger } from '../logger.js';
+import * as adminLog from '../services/adminLog.js';
 import {
-  buildOrdersPdf,
-  buildDepositsPdf,
-  buildStatsPdf,
-  buildPriceListPdf,
-} from '../services/pdfReport.js';
-import {
-  buildOrdersCsv,
   buildDepositsCsv,
+  buildOrdersCsv,
   buildPriceListCsv,
   buildStatsCsv,
 } from '../services/csvReport.js';
-import { logger } from '../logger.js';
 import {
-  getEmailPdfUrl,
+  buildDepositsPdf,
+  buildOrdersPdf,
+  buildPriceListPdf,
+  buildStatsPdf,
+} from '../services/pdfReport.js';
+import {
   getAdminContactUrlWithPrefill,
   getBotTutorial,
-  getStoreName,
-  getReferralCost,
   getReferralAmount,
+  getReferralCost,
+  getStoreName,
 } from '../services/settings.js';
-import * as adminLog from '../services/adminLog.js';
-import { InputFile } from 'grammy';
-import { fileURLToPath } from 'url';
-import { dirname, resolve as pathResolve } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -188,7 +172,9 @@ function profileText(ctx: AppCtx): string {
       currency: getCurrency(u.currency).code,
     })}`,
   );
-  lines.push(`{profile_language} ${ctx.t('profile.row.language', { language: ctx.lang.toUpperCase() })}`);
+  lines.push(
+    `{profile_language} ${ctx.t('profile.row.language', { language: ctx.lang.toUpperCase() })}`,
+  );
   if (u.region && u.timezone) {
     const tz = u.timezone;
     const reg = getRegion(u.region);
@@ -228,9 +214,7 @@ export async function showProfile(ctx: AppCtx, opts: { forceReply?: boolean } = 
 }
 
 async function showEmailHub(ctx: AppCtx) {
-  const current = ctx.user.email
-    ? `\`${ctx.user.email}\``
-    : '_not set_';
+  const current = ctx.user.email ? `\`${ctx.user.email}\`` : '_not set_';
   // Compact two-line layout: title + "Email: <current>".
   const text = [
     ctx.t('profile.email.hub.title'),
@@ -350,10 +334,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * triggered the action from is never edited — they remain on the
  * same orders / deposits / stats list.
  */
-async function sendReportPdfFromCallback(
-  ctx: AppCtx,
-  kind: ReportKind,
-): Promise<void> {
+async function sendReportPdfFromCallback(ctx: AppCtx, kind: ReportKind): Promise<void> {
   // Email Reports OFF blocks every Send-PDF button so we don't keep
   // firing emails the user explicitly muted (per the bot-owner spec).
   if (ctx.user.email_nag_disabled) {
@@ -480,10 +461,7 @@ async function sendRetroactiveInvoiceForOrder(args: {
   try {
     const order = await getOrder(args.orderId);
     if (!order) {
-      logger.info(
-        { orderId: args.orderId },
-        'retroactive invoice: order not found, skipping',
-      );
+      logger.info({ orderId: args.orderId }, 'retroactive invoice: order not found, skipping');
       return;
     }
     if (order.user_id !== args.telegramId) {
@@ -542,7 +520,7 @@ export async function showReferScreen(
   options: { refreshCallback?: string; backCallback?: string; forceReply?: boolean } = {},
 ): Promise<void> {
   const code = ctx.user.ref_code ?? `R${ctx.user.telegram_id.toString(36).toUpperCase()}`;
-  const link = `https://t.me/${env.BOT_USERNAME}?start=${code}`;
+  const link = `https://t.me/${ctx.me.username}?start=${code}`;
   const DAY = 24 * 60 * 60 * 1000;
   const defaultBalance = { total: 0, spent: 0, available: 0 };
   const defaultEarnings = { total: 0, available: 0, transferred: 0, withdrawn: 0 };
@@ -669,11 +647,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   // Paginated 2-column grid: each row is [Product Name] [Active status]
   // and tapping anywhere opens that order's detail screen.
   async function showOrdersPage(ctx: AppCtx, page: number): Promise<void> {
-    const { rows, total } = await listOrdersPaginated(
-      ctx.user.telegram_id,
-      page,
-      ORDERS_PER_PAGE,
-    );
+    const { rows, total } = await listOrdersPaginated(ctx.user.telegram_id, page, ORDERS_PER_PAGE);
     if (total === 0) {
       await ctx.editMessageText(renderMdHtml(ctx.t('orders.empty')), {
         parse_mode: 'HTML',
@@ -726,8 +700,8 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       order.status === 'paid'
         ? ctx.t('orders.status.active')
         : order.status === 'refunded'
-        ? ctx.t('orders.status.refunded')
-        : ctx.t('orders.status.cancelled');
+          ? ctx.t('orders.status.refunded')
+          : ctx.t('orders.status.cancelled');
     const when = formatAbsoluteUtc(order.created_at);
     const total = Number(order.total).toFixed(order.total % 1 === 0 ? 0 : 2);
     const lines = [
@@ -768,10 +742,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
       filename: txtFilename,
     });
     if (itemsRender.inlineBlock) {
-      lines.push(
-        '',
-        ctx.t('orders.detail.received', { received: itemsRender.inlineBlock }),
-      );
+      lines.push('', ctx.t('orders.detail.received', { received: itemsRender.inlineBlock }));
     } else if (order.delivery) {
       const urlMatch = order.delivery.match(/https?:\/\/\S+/);
       const deliveryText = urlMatch ? urlMatch[0] : order.delivery;
@@ -825,10 +796,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
           { caption: `📎 Order #${pubId} — full items list` },
         );
       } catch (err) {
-        logger.warn(
-          { err, orderId },
-          'profile: order detail .txt attachment failed',
-        );
+        logger.warn({ err, orderId }, 'profile: order detail .txt attachment failed');
       }
     }
   }
@@ -860,21 +828,13 @@ export function registerProfile(bot: Composer<AppCtx>): void {
 
   // ---- Redeem Gift Code ----
   async function showRedeemScreen(ctx: AppCtx): Promise<void> {
-    const balance = Number(ctx.user.balance).toFixed(
-      ctx.user.balance % 1 === 0 ? 0 : 2,
-    );
-    const text = [
-      ctx.t('gift.title'),
-      '',
-      ctx.t('gift.body', { balance }),
-    ].join('\n');
+    const balance = Number(ctx.user.balance).toFixed(ctx.user.balance % 1 === 0 ? 0 : 2);
+    const text = [ctx.t('gift.title'), '', ctx.t('gift.body', { balance })].join('\n');
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
       reply_markup: redeemKeyboard(
         ctx.lang,
-        getAdminContactUrlWithPrefill(
-          'Hi sir i wanna buy gift coupon code money: ',
-        ),
+        getAdminContactUrlWithPrefill('Hi sir i wanna buy gift coupon code money: '),
       ),
     });
   }
@@ -922,25 +882,21 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     // All checks passed — credit the wallet, log the ledger entry,
     // record the redemption row.
     const amount = Number(gift.amount);
-    const newBalance = await adjustBalance(ctx.user.telegram_id, amount);
-    await recordLedger(
-      ctx.user.telegram_id,
-      'gift_code',
-      amount,
-      `gift:${code}`,
-    );
-    await recordGiftCodeRedemption({
-      code,
-      user_id: ctx.user.telegram_id,
-      amount,
-    });
+    const { rpc } = await import('../services/checkout.js');
+    let redeemed: { balance: number };
+    try {
+      redeemed = await rpc('redeem_gift_atomic', { p_user_id: ctx.user.telegram_id, p_code: code });
+    } catch {
+      await ctx.reply(renderMdHtml(ctx.t('gift.already_used')), { parse_mode: 'HTML' });
+      return;
+    }
+    const newBalance = Number(redeemed.balance);
     ctx.user.balance = newBalance;
     ctx.session.userFlow = undefined;
     const formatted = amount.toFixed(amount % 1 === 0 ? 0 : 2);
-    await ctx.reply(
-      renderMdHtml(ctx.t('gift.redeemed', { amount: formatted })),
-      { parse_mode: 'HTML' },
-    );
+    await ctx.reply(renderMdHtml(ctx.t('gift.redeemed', { amount: formatted })), {
+      parse_mode: 'HTML',
+    });
     void adminLog.logGiftRedeem(ctx.api, {
       user: {
         telegram_id: ctx.user.telegram_id,
@@ -1096,7 +1052,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     }
   });
 
-
   // ---------------------------------------------------------------
   //  Bot Tutorial (Settings → Bot Tutorial)
   //  Renders the admin-editable tutorial page (text + optional
@@ -1222,11 +1177,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
   // ---------------------------------------------------------------
   bot.callbackQuery('profile:pricelist', async (ctx) => {
     await ctx.answerCallbackQuery();
-    const text = [
-      ctx.t('profile.pricelist.title'),
-      '',
-      ctx.t('profile.pricelist.body'),
-    ].join('\n');
+    const text = [ctx.t('profile.pricelist.title'), '', ctx.t('profile.pricelist.body')].join('\n');
     await ctx.editMessageText(renderMdHtml(text), {
       parse_mode: 'HTML',
       reply_markup: priceListKeyboard(ctx.lang),
@@ -1294,8 +1245,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   }
 
-
-
   bot.callbackQuery('profile:pricelist:chat', async (ctx) => {
     await ctx.answerCallbackQuery({
       text: ctx.t('profile.pricelist.sending'),
@@ -1330,7 +1279,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-  bot.callbackQuery(/^lang:(en|ar|vi)$/, async (ctx) => {
+  bot.callbackQuery(/^lang:(en|ar|vi|zh)$/, async (ctx) => {
     const next = ctx.match[1] as Lang;
     const prev = ctx.user.language;
     await setUserLanguage(ctx.user.telegram_id, next);
@@ -1427,7 +1376,6 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     });
   });
 
-
   // ---- My Deposits ----
   // Two-section screen:
   //   1. Payment Deposits (rows from `deposits` table)
@@ -1454,17 +1402,14 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     if (deposits.length > 0) {
       lines.push(ctx.t('profile.deposits.payments_header'));
       deposits.forEach((d, i) => {
-        const statusKey =
-          `profile.deposits.status.${d.status}` as const;
+        const statusKey = `profile.deposits.status.${d.status}` as const;
         const status = ctx.t(statusKey);
         const block = [
           ctx.t('profile.deposits.line.id', { n: i + 1 }),
           ctx.t('profile.deposits.line.amount', { amount: Number(d.amount) }),
           ctx.t('profile.deposits.line.method', { method: d.method }),
           ctx.t('profile.deposits.line.status', { status }),
-          d.reference
-            ? ctx.t('profile.deposits.line.reference', { reference: d.reference })
-            : '',
+          d.reference ? ctx.t('profile.deposits.line.reference', { reference: d.reference }) : '',
           ctx.t('profile.deposits.line.when', {
             when: formatRelative(ctx, d.created_at),
           }),
@@ -1479,8 +1424,7 @@ export function registerProfile(bot: Composer<AppCtx>): void {
     if (ledger.length > 0) {
       lines.push(ctx.t('profile.deposits.wallet_header'));
       ledger.forEach((row, i) => {
-        const typeKey =
-          `profile.deposits.wallet.type.${row.type}` as const;
+        const typeKey = `profile.deposits.wallet.type.${row.type}` as const;
         const typeLabel = ctx.t(typeKey, {});
         // Fallback when the type isn't in our locale map.
         const displayType = typeLabel === typeKey ? row.type : typeLabel;

@@ -1,18 +1,27 @@
 import { Bot } from 'grammy';
 import { env } from './env.js';
-import { logger } from './logger.js';
-import { sessionMiddleware, type SessionCtx } from './middleware/session.js';
-import { userMiddleware, type AppCtx } from './middleware/user.js';
-import { banMiddleware } from './middleware/ban.js';
-import { registerStart } from './handlers/start.js';
-import { registerShop } from './handlers/shop.js';
+import { customizeBot } from './handlers/admin/customize.js';
+import { registerDirectPay } from './handlers/directPay.js';
 import { registerProfile } from './handlers/profile.js';
+import { registerShop } from './handlers/shop.js';
+import { registerStart } from './handlers/start.js';
 import { registerSupport, restoreLiveSupportSession } from './handlers/support.js';
 import { registerTopup } from './handlers/topup.js';
-import { registerDirectPay } from './handlers/directPay.js';
-// import { registerResellerApi } from './handlers/resellerApi.js';
-import { registerPublicGroup } from './handlers/publicGroup.js';
+import { logger } from './logger.js';
+import { banMiddleware } from './middleware/ban.js';
+import { sessionMiddleware, type SessionCtx } from './middleware/session.js';
+import { userMiddleware, type AppCtx } from './middleware/user.js';
+import {
+  installInterfaceCustomization,
+  withInterfaceLanguage,
+} from './services/interfaceCustomization.js';
+import { measuredFetch, withNetworkOrigin } from './services/networkMeter.js';
+import { serial } from './services/serial.js';
+import { ensureLoaded } from './services/settings.js';
+import { registerResellerApi } from './handlers/resellerApi.js';
+import { platformMiddleware } from './platform/policy.js';
 import { adminBot } from './handlers/admin/index.js';
+import { registerPublicGroup } from './handlers/publicGroup.js';
 import { superAdminBot } from './handlers/superAdmin.js';
 
 export type BotOptions = {
@@ -21,46 +30,26 @@ export type BotOptions = {
 
 export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
   const isTenant = opts.isTenant === true;
-  const bot = new Bot<AppCtx>(env.BOT_TOKEN);
+  const bot = new Bot<AppCtx>(env.BOT_TOKEN, { client: { fetch: measuredFetch } });
 
+  installInterfaceCustomization(bot.api);
+  bot.use((ctx, next) =>
+    withNetworkOrigin(ctx.callbackQuery ? 'bot/callback' : 'bot/message', next),
+  );
   // منظم تسلسلي لكل مستخدم لمنع التعارض والعمليات المتكررة وتخفيف الضغط
-  const userLocks = new Map<number, Promise<void>>();
-  bot.use(async (ctx, next) => {
-    const userId = ctx.from?.id;
-    if (!userId) return next();
-
-    const prevPromise = userLocks.get(userId) || Promise.resolve();
-
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<void>((resolve) => {
-      timeoutId = setTimeout(() => {
-        logger.warn({ userId }, 'User request queue lock timed out');
-        resolve();
-      }, 15000);
-    });
-
-    let resolveLock: () => void;
-    const newPromise = new Promise<void>((resolve) => {
-      resolveLock = resolve;
-    });
-
-    userLocks.set(userId, newPromise);
-
-    try {
-      await Promise.race([prevPromise, timeoutPromise]);
-      if (timeoutId) clearTimeout(timeoutId);
-      await next();
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-      resolveLock!();
-      if (userLocks.get(userId) === newPromise) {
-        userLocks.delete(userId);
-      }
-    }
+  bot.use((ctx, next) => serial(String(ctx.from?.id ?? ctx.chat?.id ?? 0), next));
+  bot.use(async (_ctx, next) => {
+    await ensureLoaded();
+    return next();
   });
 
-  bot.use(sessionMiddleware as unknown as (ctx: SessionCtx, next: () => Promise<void>) => Promise<void>);
+  bot.use(
+    sessionMiddleware as unknown as (ctx: SessionCtx, next: () => Promise<void>) => Promise<void>,
+  );
   bot.use(userMiddleware);
+  bot.use((ctx, next) => withInterfaceLanguage(ctx.lang ?? 'en', next));
+  bot.use(customizeBot);
+  bot.use(platformMiddleware);
   bot.use(banMiddleware);
 
   // ===== Forced Subscription Middleware =====
@@ -95,7 +84,7 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
       if (!subCheck.pass) {
         if (ctx.callbackQuery) {
           await ctx.answerCallbackQuery({
-            text: '⛔ يجب الاشتراك في القناة أولاً لتتمكن من استخدام البوت!',
+            text: ctx.t('fsub.required'),
             show_alert: true,
           });
         } else {
@@ -107,13 +96,10 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
             const channelLink = ch.startsWith('@')
               ? `https://t.me/${ch.slice(1)}`
               : `https://t.me/c/${ch.replace('-100', '')}`;
-            kb.url(`📢 اشترك في القناة ${idx++}`, channelLink).row();
+            kb.url(ctx.t('fsub.join', { number: idx++ }), channelLink).row();
           }
-          kb.text('✅ اشتركت، تحقق الآن', 'forcesub:check');
-          await ctx.reply(
-            renderMdHtml(subCheck.message),
-            { parse_mode: 'HTML', reply_markup: kb },
-          );
+          kb.text(ctx.t('fsub.check'), 'forcesub:check');
+          await ctx.reply(renderMdHtml(subCheck.message), { parse_mode: 'HTML', reply_markup: kb });
         }
         return;
       }
@@ -136,13 +122,17 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
     if (isLeft) {
       const { getForceSub } = await import('./services/forceSub.js');
       const config = await getForceSub();
-      
-      const isFsubChannel = 
-        config.channelId === String(channelId) || 
-        (config.channels && config.channels.some(c => c === String(channelId) || c === `@${update.chat.username}`));
+
+      const isFsubChannel =
+        config.channelId === String(channelId) ||
+        (config.channels &&
+          config.channels.some((c) => c === String(channelId) || c === `@${update.chat.username}`));
 
       if (isFsubChannel) {
-        logger.info({ userId: targetUserId, channelId }, 'User left forced subscription channel, invalidating referral');
+        logger.info(
+          { userId: targetUserId, channelId },
+          'User left forced subscription channel, invalidating referral',
+        );
         const { invalidateReferral } = await import('./services/forceSub.js');
         await invalidateReferral(ctx.api, targetUserId);
       }
@@ -155,7 +145,7 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
   registerSupport(bot);
   registerTopup(bot);
   registerDirectPay(bot);
-  // registerResellerApi(bot);
+  registerResellerApi(bot);
   registerPublicGroup(bot);
   bot.use(adminBot);
 
@@ -168,20 +158,28 @@ export async function buildBot(opts: BotOptions = {}): Promise<Bot<AppCtx>> {
     const msg = (err.error as { description?: string } | undefined)?.description ?? '';
     if (msg.includes('message is not modified')) return;
     if (msg.includes('query is too old') || msg.includes('query ID is invalid')) return;
-    if (msg.includes('blocked by the user') || msg.includes('chat not found') || msg.includes('user is deactivated')) return;
+    if (
+      msg.includes('blocked by the user') ||
+      msg.includes('chat not found') ||
+      msg.includes('user is deactivated')
+    )
+      return;
     logger.error({ err: err.error }, 'Unhandled bot error');
+    if (env.BOT_MODE === 'webhook') throw err.error;
   });
 
   if (!isTenant) {
     await restoreLiveSupportSession();
   }
 
-  try {
+  if (!process.env.WWC_MANAGED) try {
     await bot.api.setMyCommands([{ command: 'start', description: 'Open the main menu' }]);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   const adminId = env.ADMIN_USER_ID;
-  if (adminId) {
+  if (adminId && !process.env.WWC_MANAGED) {
     try {
       await bot.api.sendChatAction(adminId, 'typing');
       logger.info({ adminUserId: adminId }, 'live-support: admin chat reachable');

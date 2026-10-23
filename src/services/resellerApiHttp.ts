@@ -1,42 +1,63 @@
-import type http from 'node:http';
-import { Api } from 'grammy';
 import { createClient } from '@supabase/supabase-js';
+import { Api } from 'grammy';
+import { createHash } from 'node:crypto';
+import type http from 'node:http';
+import { getTenantClient } from '../db/context.js';
 import { runWithTenantContext } from '../db/db_context.js';
-import { listActiveTenants, type Tenant } from '../tenants/store.js';
 import { logger } from '../logger.js';
+import { getTenant, listActiveTenants, type Tenant } from '../tenants/store.js';
+import { withNetworkOrigin } from './networkMeter.js';
+import { consume as consumeLimit } from './rateLimit.js';
 import {
   ApiError,
   apiBaseUrl,
   authenticateApiKey,
+  getApiOrder,
+  getApiPrices,
+  getApiProduct,
+  getApiSecretPath,
+  getApiStats,
   getApiStatus,
+  listApiOrders,
   listApiProducts,
   placeApiOrder,
-  getApiSecretPath,
-  getApiProduct,
-  getApiPrices,
-  getApiStats,
   setApiPrice,
   setApiProduct,
-  getApiOrder,
-  listApiOrders,
 } from './resellerApi.js';
+import { ensureLoaded } from './settings.js';
 
 const BODY_LIMIT_BYTES = 64 * 1024;
 
 type JsonRecord = Record<string, unknown>;
 
-function sendJson(
-  res: http.ServerResponse,
-  status: number,
-  body: JsonRecord,
-): void {
+function sendJson(res: http.ServerResponse, status: number, body: JsonRecord): void {
+  const request = apiRequests.get(res);
+  const payload = JSON.stringify(body);
+  const conditional =
+    status === 200 && request?.method === 'GET' && /\/products?(?:\/|\?|$)/.test(request.url ?? '');
+  const etag = conditional
+    ? '"' + createHash('sha256').update(payload).digest('hex') + '"'
+    : undefined;
+  if (etag && request?.headers['if-none-match'] === etag) {
+    res.writeHead(304, {
+      etag,
+      'cache-control': 'private,max-age=10',
+      vary: 'Authorization,x-api-key',
+      'access-control-allow-origin': '*',
+    });
+    res.end();
+    return;
+  }
   res.writeHead(status, {
+    ...(etag
+      ? { etag, 'cache-control': 'private,max-age=10', vary: 'Authorization,x-api-key' }
+      : { 'cache-control': 'no-store' }),
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key',
+    'access-control-allow-headers': 'authorization,content-type,x-api-key,if-none-match',
   });
-  res.end(JSON.stringify(body, null, 2));
+  res.end(payload);
 }
 
 function sendText(res: http.ServerResponse, status: number, body: string): void {
@@ -114,6 +135,7 @@ type CachedTenant = {
   isMain: boolean;
   tenant: Tenant | null;
   secretPath: string;
+  expires?: number;
 };
 
 // Map from secretPath to CachedTenant
@@ -121,29 +143,59 @@ const gatewayCache = new Map<string, CachedTenant>();
 
 // Last time we scanned the active tenants to find new ones
 let lastTenantScanTime = 0;
-const TENANT_SCAN_COOLDOWN_MS = 10000; // 10 seconds
+const TENANT_SCAN_COOLDOWN_MS = 60000; // 10 seconds
 
 async function resolveTenantForGateway(requestGateway: string): Promise<CachedTenant | null> {
   // 1. Check cache first
   const cached = gatewayCache.get(requestGateway);
-  if (cached) return cached;
+  if (cached && (cached.expires ?? 0) > Date.now()) return cached;
+  if (cached && !cached.isMain && cached.tenant) {
+    const latest = await getTenant(cached.tenant.id);
+    if (
+      !latest ||
+      latest.status !== 'active' ||
+      new Date(latest.subscription_end).getTime() <= Date.now()
+    ) {
+      gatewayCache.delete(requestGateway);
+      return null;
+    }
+    const { data, error } = await getTenantClient(latest.supabase_url, latest.supabase_service_key)
+      .from('settings')
+      .select('value')
+      .eq('key', 'api_secret_path')
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.value !== requestGateway) {
+      gatewayCache.delete(requestGateway);
+      return null;
+    }
+    const refreshed = { ...cached, tenant: latest, expires: Date.now() + 10000 };
+    gatewayCache.set(requestGateway, refreshed);
+    return refreshed;
+  }
 
   // 2. Check main bot's secret path or backward-compatible 'api' gateway
   const mainSecret = await getApiSecretPath();
   if (requestGateway === 'api' || mainSecret === requestGateway) {
-    const info = { isMain: true, tenant: null, secretPath: requestGateway };
+    const info = {
+      isMain: true,
+      tenant: null,
+      secretPath: requestGateway,
+      expires: Date.now() + 15000,
+    };
     gatewayCache.set(requestGateway, info);
     return info;
   }
 
+  if (process.env.WWC_MANAGED==='1')return null;
   // 3. Check if we should scan active tenants (enforce cooldown to prevent DoS)
   const now = Date.now();
   if (now - lastTenantScanTime > TENANT_SCAN_COOLDOWN_MS) {
     lastTenantScanTime = now;
-    
+
     // Fetch all active tenants from main database
     const activeTenants = await listActiveTenants();
-    
+
     // For each active tenant, get their secret path and cache it
     await Promise.all(
       activeTenants.map(async (tenant) => {
@@ -152,14 +204,14 @@ async function resolveTenantForGateway(requestGateway: string): Promise<CachedTe
           const tenantDb = createClient(tenant.supabase_url, tenant.supabase_service_key, {
             auth: { persistSession: false, autoRefreshToken: false },
           });
-          
+
           // Read 'api_secret_path' setting
           const { data } = await tenantDb
             .from('settings')
             .select('value')
             .eq('key', 'api_secret_path')
             .maybeSingle();
-            
+
           const secret = data?.value;
           if (typeof secret === 'string' && secret.trim()) {
             const secretTrimmed = secret.trim();
@@ -167,14 +219,15 @@ async function resolveTenantForGateway(requestGateway: string): Promise<CachedTe
               isMain: false,
               tenant,
               secretPath: secretTrimmed,
+              expires: Date.now() + 10000,
             });
           }
         } catch (err) {
           logger.warn({ tenantId: tenant.id, err }, 'Failed to read api_secret_path for tenant');
         }
-      })
+      }),
     );
-    
+
     // Re-check cache after scanning
     const cachedAfterScan = gatewayCache.get(requestGateway);
     if (cachedAfterScan) return cachedAfterScan;
@@ -188,12 +241,13 @@ export async function handleResellerApiRequest(
   res: http.ServerResponse,
   api: Api,
 ): Promise<boolean> {
+  apiRequests.set(res, req);
   const host = req.headers.host ?? 'localhost';
   const url = new URL(req.url ?? '/', `http://${host}`);
-  
+
   // Normalise pathname by removing trailing slashes
   const cleanPath = url.pathname.replace(/\/+$/, '');
-  
+
   // Extract the first path segment (the gateway/secret path)
   const parts = cleanPath.split('/').filter(Boolean);
   if (parts.length === 0) return false;
@@ -202,6 +256,10 @@ export async function handleResellerApiRequest(
   // Resolve the tenant configuration corresponding to this gateway
   const resolved = await resolveTenantForGateway(requestGateway);
   if (!resolved) return false;
+  if (!allowHttpRequest('ip:' + req.socket.remoteAddress, 600)) {
+    sendJson(res, 429, { error: 'rate_limited' });
+    return true;
+  }
 
   if (req.method === 'OPTIONS') {
     sendJson(res, 204, {});
@@ -209,9 +267,7 @@ export async function handleResellerApiRequest(
   }
 
   // Define the target API client and context runner
-  const targetApi = resolved.isMain || !resolved.tenant
-    ? api
-    : new Api(resolved.tenant.bot_token);
+  const targetApi = resolved.isMain || !resolved.tenant ? api : new Api(resolved.tenant.bot_token);
 
   const runHandler = async () => {
     try {
@@ -229,7 +285,14 @@ export async function handleResellerApiRequest(
 
       const keyValue = readApiKey(req, url);
       if (!keyValue) throw new ApiError(401, 'missing_api_key', 'API key is required.');
+      if (!allowHttpRequest('key:' + createHash('sha256').update(keyValue).digest('hex'), 300))
+        throw new ApiError(429, 'rate_limited', 'Too many requests.');
       const auth = await authenticateApiKey(keyValue);
+      await ensureLoaded();
+      if (req.method === 'POST') {
+        const limited = await consumeLimit('api-write:' + auth.key.id, 30, 60000);
+        if (!limited.ok) throw new ApiError(429, 'rate_limited', 'Too many write requests.');
+      }
 
       // 1. GET /products
       if (req.method === 'GET' && action === 'products') {
@@ -295,7 +358,7 @@ export async function handleResellerApiRequest(
       // 6. GET /my_prices
       if (req.method === 'GET' && action === 'my_prices') {
         const prices = await getApiPrices(auth.key.id);
-        sendJson(res, 200, { success: true, custom_products: prices });
+        sendJson(res, 200, { success: true, custom_products: prices, prices });
         return true;
       }
 
@@ -311,15 +374,16 @@ export async function handleResellerApiRequest(
         const body = await readJsonBody(req);
         const productId = Number(body.product_id ?? body.productId ?? body.id);
         const qty = Number(body.quantity ?? body.qty ?? 1);
-        const requestId = typeof body.request_id === 'string'
-          ? body.request_id
-          : typeof body.requestId === 'string'
-            ? body.requestId
-            : typeof body.external_order_id === 'string'
-              ? body.external_order_id
-              : typeof body.externalOrderId === 'string'
-                ? body.externalOrderId
-                : null;
+        const requestId =
+          typeof body.request_id === 'string'
+            ? body.request_id
+            : typeof body.requestId === 'string'
+              ? body.requestId
+              : typeof body.external_order_id === 'string'
+                ? body.external_order_id
+                : typeof body.externalOrderId === 'string'
+                  ? body.externalOrderId
+                  : null;
         const order = await placeApiOrder({
           api: targetApi,
           apiKeyId: auth.key.id,
@@ -390,20 +454,21 @@ export async function handleResellerApiRequest(
       sendJson(res, 500, {
         success: false,
         error: 'internal_error',
-        message: err instanceof Error ? err.message : 'Internal API error.',
+        message: 'Internal API error. Please contact the shop administrator.',
       });
       return true;
     }
   };
 
   if (resolved.isMain || !resolved.tenant) {
-    return runHandler();
+    return await withNetworkOrigin('incoming-api', runHandler);
   } else {
     return runWithTenantContext(
       resolved.tenant.supabase_url,
       resolved.tenant.supabase_service_key,
       resolved.tenant.owner_telegram_id,
-      runHandler,
+      () => withNetworkOrigin('incoming-api', runHandler),
+      resolved.tenant.bot_username ?? undefined,
     );
   }
 }
@@ -411,9 +476,26 @@ export async function handleResellerApiRequest(
 export function handleHealthRequest(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   const host = req.headers.host ?? 'localhost';
   const url = new URL(req.url ?? '/', `http://${host}`);
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   if (url.pathname !== '/healthz' && url.pathname !== '/') return false;
   sendText(res, 200, 'work');
   return true;
 }
 
+export function invalidateTenantGateways() {
+  gatewayCache.clear();
+  lastTenantScanTime = 0;
+}
 
+const apiRequests = new WeakMap<http.ServerResponse, http.IncomingMessage>();
+const httpLimits = new Map<string, { count: number; until: number }>();
+function allowHttpRequest(key: string, max: number) {
+  const now = Date.now();
+  let state = httpLimits.get(key);
+  if (!state || state.until <= now) {
+    if (httpLimits.size >= 10000) httpLimits.delete(httpLimits.keys().next().value!);
+    state = { count: 0, until: now + 60000 };
+    httpLimits.set(key, state);
+  }
+  return ++state.count <= max;
+}

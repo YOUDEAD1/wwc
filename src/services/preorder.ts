@@ -2,7 +2,6 @@ import type { Api } from 'grammy';
 import {
   claimProductItems,
   countAvailableProductItems,
-  decrementProductStock,
   findUserById,
   getProduct,
   getSupplierProductLinkByProduct,
@@ -12,17 +11,18 @@ import {
   tryStartPreorderFulfillment,
 } from '../db/queries.js';
 import { env } from '../env.js';
-import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
 import { t as translate } from '../i18n/index.js';
+import { InlineKeyboard, inlineBtn } from '../keyboards/helpers.js';
 import { logger } from '../logger.js';
 import * as adminLog from './adminLog.js';
+import { tryApiShopAutoOrder } from './apiShop.js';
+import { finishDelivery, rpc } from './checkout.js';
 import { sendInvoiceEmail } from './mailer.js';
-import { buildOrderDeliveredChunks } from './orderRender.js';
 import { publicOrderId } from './orderId.js';
+import { buildOrderDeliveredChunks } from './orderRender.js';
 import { maybeStartDeliveryFormFromApi } from './postPurchaseDelivery.js';
 import { renderMdHtml } from './premium.js';
 import { isSupplierMigrationError, trySupplierAutoOrder } from './supplierApi.js';
-import { tryApiShopAutoOrder } from './apiShop.js';
 
 export type PreorderFulfillResult = {
   fulfilled: number;
@@ -69,8 +69,7 @@ export async function fulfillPendingPreordersForProduct(
 
     const user = await findUserById(order.user_id);
     const lang = user?.language ?? env.DEFAULT_LANG;
-    const t = (key: string, vars?: Record<string, string | number>) =>
-      translate(lang, key, vars);
+    const t = (key: string, vars?: Record<string, string | number>) => translate(lang, key, vars);
     const preorderPendingText = t('shop.buy.preorder_pending');
     const publicId = publicOrderId(order);
 
@@ -78,11 +77,16 @@ export async function fulfillPendingPreordersForProduct(
     if (!locked) continue;
 
     try {
+      if (!(await rpc<boolean>('reserve_preorder_stock', { p_order_id: order.id }))) {
+        await restorePreorderPending(order.id, preorderPendingText);
+        break;
+      }
       const shouldClaimFromPool = poolAvailable >= order.qty;
       let deliveredItems: string[] = [];
       if (shouldClaimFromPool) {
         deliveredItems = await claimProductItems(productId, order.qty, order.id);
         if (deliveredItems.length < order.qty) {
+          await rpc('release_preorder_stock', { p_order_id: order.id });
           await restorePreorderPending(order.id, preorderPendingText);
           break;
         }
@@ -97,28 +101,33 @@ export async function fulfillPendingPreordersForProduct(
             localOrderId: order.id,
             buyerInfo: user?.username ? `@${user.username}` : `tg_${order.user_id}`,
             onFailure: (failure) =>
-              adminLog.logSupplierOrderFailed(api, {
-                user: {
-                  telegram_id: order.user_id,
-                  username: user?.username ?? null,
-                  first_name: user?.first_name ?? null,
-                  email: user?.email ?? null,
-                },
-                orderDbId: order.id,
-                orderPublicId: publicId,
-                productId,
-                productName: order.product_name,
-                qty: order.qty,
-                total: Number(order.total),
-                paidVia: paidViaForPreorder(Number(order.total)),
-                balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
-                supplierName: 'API Shop',
-                supplierProductId: apiProductId,
-                reason: failure.error,
-                lowBalance: failure.lowBalance,
-              }).catch((err) => logger.warn({ err }, 'preorder: API Shop failure admin log failed')),
+              adminLog
+                .logSupplierOrderFailed(api, {
+                  user: {
+                    telegram_id: order.user_id,
+                    username: user?.username ?? null,
+                    first_name: user?.first_name ?? null,
+                    email: user?.email ?? null,
+                  },
+                  orderDbId: order.id,
+                  orderPublicId: publicId,
+                  productId,
+                  productName: order.product_name,
+                  qty: order.qty,
+                  total: Number(order.total),
+                  paidVia: paidViaForPreorder(Number(order.total)),
+                  balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+                  supplierName: 'API Shop',
+                  supplierProductId: apiProductId,
+                  reason: failure.error,
+                  lowBalance: failure.lowBalance,
+                })
+                .catch((err) =>
+                  logger.warn({ err }, 'preorder: API Shop failure admin log failed'),
+                ),
           });
           if (!supplierOrder || supplierOrder.items.length === 0) {
+            await rpc('release_preorder_stock', { p_order_id: order.id });
             await restorePreorderPending(order.id, preorderPendingText);
             break;
           }
@@ -135,28 +144,33 @@ export async function fulfillPendingPreordersForProduct(
               qty: order.qty,
               localOrderId: order.id,
               onFailure: (failure) =>
-                adminLog.logSupplierOrderFailed(api, {
-                  user: {
-                    telegram_id: order.user_id,
-                    username: user?.username ?? null,
-                    first_name: user?.first_name ?? null,
-                    email: user?.email ?? null,
-                  },
-                  orderDbId: order.id,
-                  orderPublicId: publicId,
-                  productId,
-                  productName: order.product_name,
-                  qty: order.qty,
-                  total: Number(order.total),
-                  paidVia: paidViaForPreorder(Number(order.total)),
-                  balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
-                  supplierName: failure.supplierName,
-                  supplierProductId: failure.supplierProductId,
-                  reason: failure.error,
-                  lowBalance: failure.lowBalance,
-                }).catch((err) => logger.warn({ err }, 'preorder: supplier failure admin log failed')),
+                adminLog
+                  .logSupplierOrderFailed(api, {
+                    user: {
+                      telegram_id: order.user_id,
+                      username: user?.username ?? null,
+                      first_name: user?.first_name ?? null,
+                      email: user?.email ?? null,
+                    },
+                    orderDbId: order.id,
+                    orderPublicId: publicId,
+                    productId,
+                    productName: order.product_name,
+                    qty: order.qty,
+                    total: Number(order.total),
+                    paidVia: paidViaForPreorder(Number(order.total)),
+                    balanceAfter: Number((user?.balance ?? 0).toFixed(3)),
+                    supplierName: failure.supplierName,
+                    supplierProductId: failure.supplierProductId,
+                    reason: failure.error,
+                    lowBalance: failure.lowBalance,
+                  })
+                  .catch((err) =>
+                    logger.warn({ err }, 'preorder: supplier failure admin log failed'),
+                  ),
             });
             if (!supplierOrder || supplierOrder.items.length === 0) {
+              await rpc('release_preorder_stock', { p_order_id: order.id });
               await restorePreorderPending(order.id, preorderPendingText);
               break;
             }
@@ -165,16 +179,13 @@ export async function fulfillPendingPreordersForProduct(
         }
       }
 
-      if (!product.unlimited_stock) {
-        await decrementProductStock(productId, order.qty);
-      }
-
       const deliveredChunks = buildOrderDeliveredChunks(deliveredItems);
       const pendingText = t('shop.buy.delivery_pending');
       const firstChunkBlock = deliveredChunks[0]?.inlineBlock ?? `> ${pendingText}`;
       const deliveredItemsForDb =
         deliveredItems.length > 0 ? deliveredItems.join('\n') : pendingText;
       await setOrderDeliveredItems(order.id, deliveredItemsForDb);
+      await finishDelivery(order, 'delivered');
 
       const deliveredKb = new InlineKeyboard();
       inlineBtn(deliveredKb, lang, 'using_method', `tut:${productId}`);
@@ -216,10 +227,7 @@ export async function fulfillPendingPreordersForProduct(
         buyerTelegramId: order.user_id,
         buyerLang: lang,
       }).catch((err) => {
-        logger.warn(
-          { err, orderId: order.id, productId },
-          'preorder: delivery form start failed',
-        );
+        logger.warn({ err, orderId: order.id, productId }, 'preorder: delivery form start failed');
       });
 
       void adminLog
@@ -263,9 +271,14 @@ export async function fulfillPendingPreordersForProduct(
         });
       }
 
+      await finishDelivery(order, 'delivered');
       fulfilled += 1;
     } catch (err) {
       logger.error({ err, orderId: order.id, productId }, 'preorder fulfillment failed');
+      const { getOrder } = await import('../db/queries.js');
+      const latest = await getOrder(order.id);
+      if (latest?.fulfillment_state === 'delivered') break;
+      await rpc('release_preorder_stock', { p_order_id: order.id });
       await restorePreorderPending(order.id, preorderPendingText).catch((restoreErr) => {
         logger.warn(
           { err: restoreErr, orderId: order.id },

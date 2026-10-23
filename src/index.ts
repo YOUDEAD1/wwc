@@ -1,17 +1,19 @@
+import { createHmac } from 'node:crypto';
 import http from 'node:http';
 import { buildBot } from './bot.js';
 import { env } from './env.js';
 import { logger } from './logger.js';
 import { logMailerStatus } from './services/mailer.js';
-import { startAllTenantBots, handleTenantWebhookRequest } from './tenants/manager.js';
-import { ensureTenantsTable } from './tenants/store.js';
-import {
-  handleHealthRequest,
-  handleResellerApiRequest,
-} from './services/resellerApiHttp.js';
+import { handleHealthRequest, handleResellerApiRequest } from './services/resellerApiHttp.js';
 import { startSupplierStockSyncLoop } from './services/supplierAutoSync.js';
+import { handleTenantWebhookRequest, startAllTenantBots } from './tenants/manager.js';
+import { ensureTenantsTable } from './tenants/store.js';
 
 async function main() {
+  const { assertSchemaReady } = await import('./services/checkout.js');
+  await assertSchemaReady();
+  const webhookSecret =
+    env.WEBHOOK_SECRET || createHmac('sha256', env.BOT_TOKEN).update('main-webhook').digest('hex');
   // البوت الرئيسي
   const bot = await buildBot({ isTenant: false });
   try {
@@ -26,6 +28,14 @@ async function main() {
   const startHttpServer = (telegramHandler?: http.RequestListener) => {
     const server = http.createServer((req, res) => {
       void (async () => {
+        if (
+          telegramHandler &&
+          new URL(req.url ?? '/', 'http://localhost').pathname ===
+            new URL(env.WEBHOOK_URL!).pathname
+        ) {
+          telegramHandler(req, res);
+          return;
+        }
         if (handleHealthRequest(req, res)) return;
         if (await handleTenantWebhookRequest(req, res)) return;
         if (await handleResellerApiRequest(req, res, bot.api)) return;
@@ -56,7 +66,12 @@ async function main() {
 
   // فحص انتهاء الاشتراكات كل ساعة
   const { checkExpiredTenants } = await import('./tenants/manager.js');
-  setInterval(() => { void checkExpiredTenants(); }, 60 * 60 * 1000);
+  setInterval(
+    () => {
+      void checkExpiredTenants();
+    },
+    60 * 60 * 1000,
+  );
 
   if (env.BOT_MODE === 'webhook') {
     if (!env.WEBHOOK_URL) {
@@ -65,18 +80,19 @@ async function main() {
     }
     const { webhookCallback } = await import('grammy');
 
+    await bot.init();
     await bot.api.setWebhook(env.WEBHOOK_URL, {
-      secret_token: env.WEBHOOK_SECRET || undefined,
+      secret_token: webhookSecret,
       allowed_updates: ['message', 'callback_query', 'chat_member'],
     });
 
     const handler = webhookCallback(bot, 'http', {
-      secretToken: env.WEBHOOK_SECRET || undefined,
+      secretToken: webhookSecret,
     });
     startHttpServer(handler);
   } else {
     startHttpServer();
-    await bot.api.deleteWebhook({ drop_pending_updates: true });
+    await bot.api.deleteWebhook({ drop_pending_updates: false });
 
     logger.info('Starting main bot with long-polling…');
     await bot.start({

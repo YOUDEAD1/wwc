@@ -15,3 +15,7 @@ coverage/
 wireguard*.conf
 *.ovpn
 *.wg
+
+# Never commit generated platform keys or local credentials
+.env.platform
+platform-keys.txt

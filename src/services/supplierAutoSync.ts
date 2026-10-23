@@ -1,19 +1,18 @@
 import type { Api } from 'grammy';
-import {
-  getProduct,
-  listSupplierApiSources,
-  listSupplierProductLinks,
-} from '../db/queries.js';
+import { listSupplierApiSources, listSupplierProductLinks } from '../db/queries.js';
+import { supabase } from '../db/supabase.js';
 import { logger } from '../logger.js';
+import type { DBProduct } from '../types.js';
+import { getConnection } from './apiConnect.js';
+import { syncProducts as syncApiShopProducts } from './apiShop.js';
 import { fulfillPendingPreordersForProduct } from './preorder.js';
+import { ensureLoaded, getSettingValue } from './settings.js';
 import {
   fetchSupplierProducts,
   importSupplierProduct,
   isSupplierMigrationError,
   syncSupplierProductLink,
 } from './supplierApi.js';
-import { syncProducts as syncApiShopProducts } from './apiShop.js';
-import { getConnection } from './apiConnect.js';
 
 const DEFAULT_SUPPLIER_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -21,7 +20,13 @@ let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
 
 function intervalMs(): number {
-  const raw = Number(process.env.SUPPLIER_SYNC_INTERVAL_MS ?? DEFAULT_SUPPLIER_SYNC_INTERVAL_MS);
+  const configured = Number(getSettingValue('supplier.sync_minutes'));
+  const raw = Number(
+    configured > 0
+      ? configured * 60000
+      : (process.env.SUPPLIER_SYNC_INTERVAL_MS ?? DEFAULT_SUPPLIER_SYNC_INTERVAL_MS),
+  );
+  if(process.env.WWC_MANAGED==='1')return Math.max(600000,Number.isFinite(raw)?raw:DEFAULT_SUPPLIER_SYNC_INTERVAL_MS);
   if (!Number.isFinite(raw) || raw < 60_000) return DEFAULT_SUPPLIER_SYNC_INTERVAL_MS;
   return Math.floor(raw);
 }
@@ -43,6 +48,8 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
   let failed = 0;
 
   try {
+    const { recoverPendingDeliveries } = await import('./deliveryRecovery.js');
+    await recoverPendingDeliveries(api);
     const sources = await listSupplierApiSources(0, 100).catch((err) => {
       if (isSupplierMigrationError(err)) return { rows: [], total: 0 };
       throw err;
@@ -55,22 +62,48 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
         throw err;
       });
 
+      const snapshot = await fetchSupplierProducts(source);
+      const localRows = new Map<number, DBProduct>();
+      const ids = links.map((link) => link.local_product_id);
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id,name,price,stock,unlimited_stock,active,catalog_hidden,api_auto_hidden')
+          .in('id', ids.slice(offset, offset + 100));
+        if (error) throw error;
+        for (const row of data ?? []) localRows.set(row.id, row as DBProduct);
+      }
       for (const link of links) {
         if (!link.auto_sync_stock) continue;
         checked += 1;
         try {
-          const result = await syncSupplierProductLink(link, api);
+          const result = await syncSupplierProductLink(
+            link,
+            api,
+            snapshot,
+            source,
+            localRows.get(link.local_product_id),
+          );
           if (result.updatedLocal) updated += 1;
 
-
-          const product = await getProduct(link.local_product_id).catch(() => null);
+          const product = result.matched
+            ? {
+                ...localRows.get(link.local_product_id),
+                id: link.local_product_id,
+                unlimited_stock: result.matched.stock === null,
+                stock: result.matched.stock ?? 0,
+              }
+            : null;
           if (product && !product.unlimited_stock && product.stock > 0) {
             const preorders = await fulfillPendingPreordersForProduct(api, product.id);
             fulfilled += preorders.fulfilled;
           }
         } catch (err) {
           failed += 1;
-          logger.warn({ err, supplierId: source.id, linkId: link.id }, 'supplier auto stock sync failed');
+          logger.warn(
+            { err, supplierId: source.id, linkId: link.id },
+            'supplier auto stock sync failed',
+          );
         }
       }
 
@@ -79,7 +112,7 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
           const seen = new Set(
             (await listSupplierProductLinks(source.id)).map((link) => link.supplier_product_id),
           );
-          const products = await fetchSupplierProducts(source);
+          const products = snapshot;
           for (const product of products) {
             if (seen.has(product.id)) continue;
             try {
@@ -110,26 +143,35 @@ export async function syncSupplierStocksOnce(api: Api): Promise<{
     try {
       const conn = await getConnection();
       if (conn) {
-        logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync started');
+        logger.info(
+          { tenantId: process.env.TENANT_ID ?? 'main' },
+          'background API Shop sync started',
+        );
         const res = await syncApiShopProductsOnce(api);
         if (res.ok) {
-          logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync finished successfully');
+          logger.info(
+            { tenantId: process.env.TENANT_ID ?? 'main' },
+            'background API Shop sync finished successfully',
+          );
         }
       }
     } catch (apiShopErr) {
-      logger.warn({ err: apiShopErr, tenantId: process.env.TENANT_ID ?? 'main' }, 'background API Shop sync failed');
+      logger.warn(
+        { err: apiShopErr, tenantId: process.env.TENANT_ID ?? 'main' },
+        'background API Shop sync failed',
+      );
     }
 
     if (checked > 0 || imported > 0 || fulfilled > 0 || failed > 0) {
-      logger.info(
-        { checked, updated, imported, fulfilled, failed },
-        'supplier auto sync finished',
-      );
+      logger.info({ checked, updated, imported, fulfilled, failed }, 'supplier auto sync finished');
     }
     return { checked, updated, imported, fulfilled, failed };
   } finally {
     running = false;
-    logger.info({ tenantId: process.env.TENANT_ID ?? 'main' }, 'background auto sync loop completed');
+    logger.info(
+      { tenantId: process.env.TENANT_ID ?? 'main' },
+      'background auto sync loop completed',
+    );
   }
 }
 
@@ -150,16 +192,17 @@ export async function syncApiShopProductsOnce(api?: Api): Promise<{ ok: boolean;
 
 export function startSupplierStockSyncLoop(api: Api): void {
   if (timer) return;
-  const ms = intervalMs();
-  timer = setInterval(() => {
-    void syncSupplierStocksOnce(api);
-  }, ms);
+  let last = process.env.WWC_MANAGED==='1'?Date.now():0;
+  const tick = async () => {
+    await ensureLoaded();
+    if (Date.now() - last < intervalMs()) return;
+    last = Date.now();
+    await syncSupplierStocksOnce(api);
+  };
+  timer = setInterval(
+    () => void tick().catch((err) => logger.warn({ err }, 'supplier sync deferred')),
+    30000,
+  );
   timer.unref?.();
-
-  const firstRun = setTimeout(() => {
-    void syncSupplierStocksOnce(api);
-  }, 30_000);
-  firstRun.unref?.();
-
-  logger.info({ intervalMs: ms }, 'supplier auto sync loop started');
+  logger.info({ intervalMs: intervalMs() }, 'supplier auto sync loop started');
 }
